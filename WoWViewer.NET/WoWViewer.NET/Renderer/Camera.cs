@@ -4,12 +4,12 @@ public class Camera
 {
     public Vector3 Position { get; set; }
     public Vector3 Front { get; set; }
-
     public Vector3 Up { get; private set; }
     public float AspectRatio { get; set; }
 
     public float Yaw { get; set; } = 0f;
     public float Pitch { get; set; }
+    public float Roll { get; set; }
 
     public Vector3 Direction = new();
 
@@ -31,17 +31,12 @@ public class Camera
 
     public void ModifyDirection(float xOffset, float yOffset)
     {
-        return;
-        Console.WriteLine($"xOffset: {xOffset}, yOffset: {yOffset}");
-        Pitch += yOffset;
-        Yaw -= xOffset;
-        Console.WriteLine(Pitch + " " + Yaw);
-        //We don't want to be able to look behind us by going over our head or under our feet so make sure it stays within these bounds
-        //Pitch = Math.Clamp(Pitch, -89f, 89f);
+        Yaw += yOffset;
+        Pitch -= xOffset;
 
-        Direction.X -= xOffset;
-        //Direction.Y = MathF.Sin(DegreesToRadians(Yaw));
-        //cameraDirection.Z = MathF.Sin(DegreesToRadians(Yaw)) * MathF.Cos(DegreesToRadians(Pitch)) * -1;
+        Direction.X = MathF.Cos(DegreesToRadians(Yaw)) * MathF.Cos(DegreesToRadians(Pitch));
+        Direction.Y = MathF.Sin(DegreesToRadians(Pitch));
+        Direction.Z = MathF.Sin(DegreesToRadians(Yaw)) * MathF.Cos(DegreesToRadians(Pitch));
 
         Front = Vector3.Normalize(Direction);
     }

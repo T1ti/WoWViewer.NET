@@ -1,6 +1,5 @@
 ﻿using CASCLib;
 using ImGuiNET;
-using Newtonsoft.Json.Linq;
 using Silk.NET.Input;
 using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
@@ -8,18 +7,16 @@ using Silk.NET.Windowing;
 using System.ComponentModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Xml.Linq;
-using WoWFormatLib.Structs.M2;
-using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Loaders;
 using WoWViewer.NET.Objects;
+using WoWViewer.NET.Utils;
 
 namespace WoWViewer.NET
 {
     internal class Program
     {
-        private static readonly BackgroundWorkerEx cascWorker = new BackgroundWorkerEx();
-        private static readonly BackgroundWorkerEx listfileWorker = new BackgroundWorkerEx();
+        private static readonly BackgroundWorkerEx cascWorker = new();
+        private static readonly BackgroundWorkerEx listfileWorker = new();
 
         private static bool cascLoaded = false;
         private static bool listfileLoaded = true;
@@ -97,7 +94,7 @@ namespace WoWViewer.NET
                 m2ShaderProgram = compiler.CompileShader("m2");
                 basicShaderProgram = compiler.CompileShader("basic");
 
-                activeCamera = new Camera(Vector3.UnitZ * 6, Vector3.UnitX, Vector3.UnitZ *-1, window.Size.X / window.Size.Y);
+                activeCamera = new Camera(Vector3.UnitZ * 6, Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
 
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
@@ -109,7 +106,8 @@ namespace WoWViewer.NET
 
                 unsafe
                 {
-                    gl.DebugMessageCallback((source, type, id, severity, length, message, userparam) => {
+                    gl.DebugMessageCallback((source, type, id, severity, length, message, userparam) =>
+                    {
                         string msg = Marshal.PtrToStringAnsi(message, length);
                         if (id == 131185)
                             return;
@@ -132,8 +130,8 @@ namespace WoWViewer.NET
 
                 var baseMoveSpeed = 5.0f;
 
-                if(primaryKeyboard.IsKeyPressed(Key.ShiftLeft))
-                    baseMoveSpeed *= 2.0f;  
+                if (primaryKeyboard.IsKeyPressed(Key.ShiftLeft))
+                    baseMoveSpeed *= 2.0f;
 
                 var moveSpeed = baseMoveSpeed * (float)delta;
 
@@ -158,6 +156,12 @@ namespace WoWViewer.NET
                     //Move right
                     activeCamera.Position -= Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * (moveSpeed * 4.0f);
                 }
+
+                if (primaryKeyboard.IsKeyPressed(Key.Up))
+                    activeCamera.Position -= moveSpeed * activeCamera.Up;
+
+                if (primaryKeyboard.IsKeyPressed(Key.Down))
+                    activeCamera.Position += moveSpeed * activeCamera.Up;
 
                 if (primaryKeyboard.IsKeyPressed(Key.R))
                 {
@@ -204,23 +208,37 @@ namespace WoWViewer.NET
                 }
                 else
                 {
-                    ImGui.Begin("Test");
-                    if (ImGui.Button("Test"))
-                    {
-                        var m2 = M2Loader.LoadM2(gl, 397940, m2ShaderProgram);
-                        var m2Container = new M2Container(m2, "axistestobject.m2");
-                        sceneObjects.Add(m2Container);
-                    }
-                    ImGui.Text(sceneObjects.Count.ToString() + " scene objects loaded");
+                    ImGui.Begin("3D debug");
 
                     var newPos = activeCamera.Position;
-                    ImGui.DragFloat3("Position", ref newPos);
+                    ImGui.DragFloat3("Camera position", ref newPos);
                     activeCamera.Position = newPos;
 
                     var newFront = activeCamera.Front;
-                    ImGui.DragFloat3("Front", ref newFront);
+                    ImGui.DragFloat3("Camera front", ref newFront);
                     activeCamera.Front = newFront;
-                    
+
+                    var yaw = activeCamera.Yaw;
+                    ImGui.DragFloat("Camera yaw", ref yaw);
+                    activeCamera.Yaw = yaw;
+
+                    var pitch = activeCamera.Pitch;
+                    ImGui.DragFloat("Camera pitch", ref pitch);
+                    activeCamera.Pitch = pitch;
+
+                    var roll = activeCamera.Roll;
+                    ImGui.DragFloat("Camera roll", ref roll);
+                    activeCamera.Roll = roll;
+
+                    var modelviewMatrix = Matrix4x4.CreateRotationZ(MathF.PI / 180f * 90f);
+                    ImGuiExtensions.DrawMatrix4x4("Modelview matrix", modelviewMatrix);
+
+                    var rotationMatrix = activeCamera.GetViewMatrix();
+                    ImGuiExtensions.DrawMatrix4x4("Rotation matrix", rotationMatrix);
+
+                    var projectionMatrix = activeCamera.GetProjectionMatrix();
+                    ImGuiExtensions.DrawMatrix4x4("Projection matrix", projectionMatrix);
+
                     ImGui.End();
                 }
 
@@ -325,12 +343,10 @@ namespace WoWViewer.NET
 
         private static unsafe void OnMouseMove(IMouse mouse, Vector2 position)
         {
-            return;
-            if (!mouse.IsButtonPressed(MouseButton.Left))
+            if (!mouse.IsButtonPressed(MouseButton.Left) || ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow))
             {
                 LastMousePosition = default;
                 return;
-
             }
 
             var lookSensitivity = 0.1f;
@@ -344,7 +360,6 @@ namespace WoWViewer.NET
                 activeCamera.ModifyDirection(xOffset, yOffset);
             }
         }
-
         private static unsafe void OnMouseWheel(IMouse mouse, ScrollWheel scrollWheel)
         {
             activeCamera.ModifyZoom(scrollWheel.Y);
@@ -379,7 +394,7 @@ namespace WoWViewer.NET
                     gl.UniformMatrix4(projection_location, 1, false, (float*)&projectionMatrix);
 
                     var alphaRefLoc = gl.GetUniformLocation(m2ShaderProgram, "alphaRef");
-                    
+
                     gl.BindVertexArray(m2.vao);
 
                     for (var i = 0; i < m2.submeshes.Length; i++)
