@@ -128,6 +128,7 @@ namespace WoWViewer.NET
             window.FramebufferResize += s =>
             {
                 gl.Viewport(s);
+                activeCamera.AspectRatio = s.X / s.Y;
             };
 
             window.FocusChanged += focused =>
@@ -191,7 +192,7 @@ namespace WoWViewer.NET
 
                 gl.Enable(EnableCap.DepthTest);
 
-                gl.ClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+                gl.ClearColor(0f, 0f, 0f, 0.5f);
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
                 if (cascLoaded && listfileLoaded && sceneObjects.Count == 0)
