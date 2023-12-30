@@ -2,6 +2,7 @@
 using System.Numerics;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.M2;
+using WoWViewer.NET.Renderer;
 using static WoWViewer.NET.Renderer.Structs;
 
 namespace WoWViewer.NET.Loaders
@@ -83,7 +84,7 @@ namespace WoWViewer.NET.Loaders
                 if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
                     textureFileDataID = MISSING_TEXTURE_ID;
 
-                doodadBatch.mats[i].textureID = BLPLoader.LoadTexture(gl, textureFileDataID);
+                doodadBatch.mats[i].textureID = Cache.GetOrLoadBLP(gl, textureFileDataID);
                 doodadBatch.mats[i].filename = textureFileDataID.ToString();
             }
 
@@ -124,7 +125,7 @@ namespace WoWViewer.NET.Loaders
                         if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
                             textureFileDataID = MISSING_TEXTURE_ID;
 
-                        doodadBatch.submeshes[i].material = (uint)BLPLoader.LoadTexture(gl, textureFileDataID);
+                        doodadBatch.submeshes[i].material = (uint)Cache.GetOrLoadBLP(gl, textureFileDataID);
                     }
                 }
             }

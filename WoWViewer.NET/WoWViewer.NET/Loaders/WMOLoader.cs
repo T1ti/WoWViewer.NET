@@ -2,6 +2,7 @@
 using System.Numerics;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.WMO;
+using WoWViewer.NET.Renderer;
 using static WoWViewer.NET.Renderer.Structs;
 
 namespace WoWViewer.NET.Loaders
@@ -125,27 +126,28 @@ namespace WoWViewer.NET.Loaders
                 if (wmo.textures == null)
                 {
                     if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture1))
-                        wmoBatch.mats[i].textureID1 = BLPLoader.LoadTexture(gl, wmo.materials[i].texture1);
+                        wmoBatch.mats[i].textureID1 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture1);
 
                     if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture2))
-                        wmoBatch.mats[i].textureID2 = BLPLoader.LoadTexture(gl, wmo.materials[i].texture2);
+                        wmoBatch.mats[i].textureID2 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture2);
 
                     if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture3))
-                        wmoBatch.mats[i].textureID3 = BLPLoader.LoadTexture(gl, wmo.materials[i].texture3);
+                        wmoBatch.mats[i].textureID3 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture3);
                 }
                 else
                 {
-                    for (var ti = 0; ti < wmo.textures.Count(); ti++)
-                    {
-                        if (wmo.textures[ti].startOffset == wmo.materials[i].texture1)
-                            wmoBatch.mats[i].textureID1 = BLPLoader.LoadTexture(gl, wmo.textures[ti].filename);
+                    throw new Exception("old style WMO not supported");
+                    //for (var ti = 0; ti < wmo.textures.Count(); ti++)
+                    //{
+                    //    if (wmo.textures[ti].startOffset == wmo.materials[i].texture1)
+                    //        wmoBatch.mats[i].textureID1 = Cache.GetOrLoadBLP(gl, wmo.textures[ti].filename);
 
-                        if (wmo.textures[ti].startOffset == wmo.materials[i].texture2)
-                            wmoBatch.mats[i].textureID2 = BLPLoader.LoadTexture(gl, wmo.textures[ti].filename);
+                    //    if (wmo.textures[ti].startOffset == wmo.materials[i].texture2)
+                    //        wmoBatch.mats[i].textureID2 = Cache.GetOrLoadBLP(gl, wmo.textures[ti].filename);
 
-                        if (wmo.textures[ti].startOffset == wmo.materials[i].texture3)
-                            wmoBatch.mats[i].textureID3 = BLPLoader.LoadTexture(gl, wmo.textures[ti].filename);
-                    }
+                    //    if (wmo.textures[ti].startOffset == wmo.materials[i].texture3)
+                    //        wmoBatch.mats[i].textureID3 = Cache.GetOrLoadBLP(gl, wmo.textures[ti].filename);
+                    //}
                 }
             }
 

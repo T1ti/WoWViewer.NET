@@ -23,17 +23,22 @@ namespace WoWViewer.NET.Loaders
             var textureID = gl.GenTexture();
             using (var blp = new BlpFile(CASC.OpenFile(fileDataID)))
             {
-                var bmp = blp.GetImage(0);
-                if (bmp == null)
-                    throw new Exception("BMP is null!");
+                Console.WriteLine("Loading BLP " + fileDataID + " " + blp.preferredFormat.ToString());
 
                 gl.BindTexture(TextureTarget.Texture2D, textureID);
 
-                var pixelBytes = new byte[bmp.Width * bmp.Height * 4];
-                bmp.CopyPixelDataTo(pixelBytes);
+                //for (var i = 0; i < 1; i++)
+                //{
+                    var bmp = blp.GetImage(0);
+                    if (bmp == null)
+                        throw new Exception("BMP is null!");
 
-                fixed (byte* buf = pixelBytes)
-                    gl.TexImage2D(GLEnum.Texture2D, 0, InternalFormat.Rgba, (uint)bmp.Width, (uint)bmp.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
+                    var pixelBytes = new byte[bmp.Width * bmp.Height * 4];
+                    bmp.CopyPixelDataTo(pixelBytes);
+
+                    fixed (byte* buf = pixelBytes)
+                        gl.TexImage2D(GLEnum.Texture2D, 0, InternalFormat.Rgba, (uint)bmp.Width, (uint)bmp.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
+                //}
 
                 gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
                 gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
@@ -71,11 +76,6 @@ namespace WoWViewer.NET.Loaders
                 gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
                 //  gl.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (int)TextureEnvMode.Modulate);
-
-                if (true)
-                {
-                    image.SaveAsPng("alphatest_" + textureId + ".png");
-                }
             }
 
             gl.ActiveTexture(TextureUnit.Texture0);

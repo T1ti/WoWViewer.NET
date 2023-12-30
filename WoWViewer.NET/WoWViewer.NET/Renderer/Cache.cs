@@ -6,6 +6,7 @@ namespace WoWViewer.NET.Renderer
 {
     public static class Cache
     {
+        private static Dictionary<uint, uint> BLPCache = new();
         private static Dictionary<string, Terrain> ADTCache = new();
         private static Dictionary<uint, WorldModel> WMOCache = new();
         private static Dictionary<uint, DoodadBatch> M2Cache = new();
@@ -28,6 +29,26 @@ namespace WoWViewer.NET.Renderer
             WMOCache.Add(fileDataId, WMOLoader.LoadWMO(gl, fileDataId, shaderProgram));
 
             return WMOCache[fileDataId];
+        }
+
+        //public static Terrain GetOrLoadADT(GL gl, string fileName, uint shaderProgram)
+        //{
+        //    if (ADTCache.ContainsKey(fileName))
+        //        return ADTCache[fileName];
+
+        //    ADTCache.Add(fileName, ADTLoader.LoadADT(gl, fileName, shaderProgram));
+
+        //    return ADTCache[fileName];
+        //}
+
+        public static uint GetOrLoadBLP(GL gl, uint fileDataId)
+        {
+            if (BLPCache.ContainsKey(fileDataId))
+                return BLPCache[fileDataId];
+
+            BLPCache.Add(fileDataId, BLPLoader.LoadTexture(gl, fileDataId));
+
+            return BLPCache[fileDataId];
         }
     }
 }

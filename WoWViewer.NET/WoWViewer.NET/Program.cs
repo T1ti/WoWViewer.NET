@@ -26,7 +26,6 @@ namespace WoWViewer.NET
         private static string progressStatus = "";
         private static int progressPCT = 0;
 
-        private static uint basicShaderProgram;
         private static uint adtShaderProgram;
         private static uint wmoShaderProgram;
         private static uint m2ShaderProgram;
@@ -95,7 +94,6 @@ namespace WoWViewer.NET
                 adtShaderProgram = compiler.CompileShader("adt");
                 wmoShaderProgram = compiler.CompileShader("wmo");
                 m2ShaderProgram = compiler.CompileShader("m2");
-                basicShaderProgram = compiler.CompileShader("basic");
 
                 activeCamera = new Camera(new Vector3(-8938, 625, 200), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
 
@@ -199,9 +197,9 @@ namespace WoWViewer.NET
 
                     var usedUUIDs = new List<uint>();
 
-                    for(byte x = 29; x < 31; x++)
+                    for(byte x = 29; x < 32; x++)
                     {
-                        for(byte y = 47; y < 49; y++)
+                        for(byte y = 47; y < 50; y++)
                         {
                             var mapTile = new MapTile();
                             mapTile.tileX = x;

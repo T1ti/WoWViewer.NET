@@ -41,7 +41,7 @@ namespace WoWViewer.NET.Loaders
                 {
                     var material = new Material();
                     material.filename = adt.diffuseTextureFileDataIDs[ti].ToString();
-                    material.textureID = BLPLoader.LoadTexture(gl, adt.diffuseTextureFileDataIDs[ti]);
+                    material.textureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti]);
 
                     if (adt.texParams != null && adt.texParams.Count() >= ti)
                     {
@@ -54,11 +54,11 @@ namespace WoWViewer.NET.Loaders
                             if (!WoWFormatLib.Utils.CASC.FileExists(adt.heightTextureFileDataIDs[ti]))
                             {
                                 Console.WriteLine("Height texture: " + adt.heightTextureFileDataIDs[ti] + " does not exist! Falling back to original texture (hack)..");
-                                material.heightTexture = BLPLoader.LoadTexture(gl, adt.diffuseTextureFileDataIDs[ti]);
+                                material.heightTexture = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti]);
                             }
                             else
                             {
-                                material.heightTexture = BLPLoader.LoadTexture(gl, adt.heightTextureFileDataIDs[ti]);
+                                material.heightTexture = Cache.GetOrLoadBLP(gl, adt.heightTextureFileDataIDs[ti]);
                             }
                         }
                         else
@@ -191,12 +191,12 @@ namespace WoWViewer.NET.Loaders
 
                         var texFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(adt.textures.filenames[adt.texChunks[c].layers[li].textureId]);
 
-                        layerMaterials.Add(BLPLoader.LoadTexture(gl, texFileDataID));
+                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, texFileDataID));
                         curMat = materials.Where(material => material.filename == adt.textures.filenames[adt.texChunks[c].layers[li].textureId]).Single();
                     }
                     else
                     {
-                        layerMaterials.Add(BLPLoader.LoadTexture(gl, adt.diffuseTextureFileDataIDs[adt.texChunks[c].layers[li].textureId]));
+                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.texChunks[c].layers[li].textureId]));
                         curMat = materials.Where(material => material.filename == adt.diffuseTextureFileDataIDs[adt.texChunks[c].layers[li].textureId].ToString()).Single();
                     }
 
