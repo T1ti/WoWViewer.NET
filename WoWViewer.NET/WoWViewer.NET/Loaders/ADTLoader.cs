@@ -266,7 +266,7 @@ namespace WoWViewer.NET.Loaders
                     {
                         position = new Vector3(-(modelentry.position.X - 17066), modelentry.position.Y, -(modelentry.position.Z - 17066)),
                         rotation = new Vector3(modelentry.rotation.X, modelentry.rotation.Y, modelentry.rotation.Z),
-                        scale = modelentry.scale,
+                        scale = modelentry.scale / 1024.0f,
                         fileDataID = modelentry.mmidEntry
                     });
                 }
@@ -281,7 +281,8 @@ namespace WoWViewer.NET.Loaders
                         position = new Vector3(-(wmodelentry.position.X - 17066.666f), wmodelentry.position.Y, -(wmodelentry.position.Z - 17066.666f)),
                         rotation = new Vector3(wmodelentry.rotation.X, wmodelentry.rotation.Y, wmodelentry.rotation.Z),
                         fileDataID = wmoFDID,
-                        uniqueID = wmodelentry.uniqueId
+                        uniqueID = wmodelentry.uniqueId,
+                        scale = wmodelentry.scale / 1024.0f
                     });
                 }
             }

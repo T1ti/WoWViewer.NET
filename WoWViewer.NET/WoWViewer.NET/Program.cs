@@ -101,8 +101,8 @@ namespace WoWViewer.NET
                 m2ShaderProgram = compiler.CompileShader("m2");
 
                 // sw new Vector3(-8938, 625, 200)
-
-                activeCamera = new Camera(new Vector3(0, 0, 200), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
+                // 32 new Vector3(0, 0, 200)
+                activeCamera = new Camera(new Vector3(-8938, 625, 200), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
 
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
@@ -200,13 +200,16 @@ namespace WoWViewer.NET
                     //var m2Container = new M2Container(gl, 397940, m2ShaderProgram);
                     //sceneObjects.Add(m2Container);
 
+                    var m2Container = new M2Container(gl, 1109379, m2ShaderProgram);
+                    m2Container.Position = new Vector3(-8855, 584, 145.854f);
+                    m2Container.forceRender = true;
                     //var wmoContainer = new WMOContainer(gl, 106685, wmoShaderProgram);
                     //sceneObjects.Add(wmoContainer);
 
                     var usedUUIDs = new List<uint>();
 
-                    byte startX = 32;
-                    byte startY = 32;
+                    byte startX = 29;
+                    byte startY = 47;
 
                     for (byte x = startX; x < startX + 3; x++)
                     {
@@ -227,16 +230,18 @@ namespace WoWViewer.NET
                                 var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
                                 worldModelContainer.Position = worldModel.position;
                                 worldModelContainer.Rotation = worldModel.rotation;
+                                worldModelContainer.Scale = worldModel.scale;
                                 sceneObjects.Add(worldModelContainer);
                                 usedUUIDs.Add(worldModel.uniqueID);
                             }
 
                             foreach (var doodad in adt.doodads)
                             {
-                                var m2Container = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
-                                m2Container.Position = doodad.position;
-                                m2Container.Rotation = doodad.rotation;
-                                sceneObjects.Add(m2Container);
+                                var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
+                                doodadContainer.Position = doodad.position;
+                                doodadContainer.Rotation = doodad.rotation;
+                                doodadContainer.Scale = doodad.scale;
+                                sceneObjects.Add(doodadContainer);
                             }
                         }
                     }
@@ -297,6 +302,7 @@ namespace WoWViewer.NET
                     ImGui.DragFloat3("WMO pos", ref firstWMOPos);
                     firstWMO.Position = firstWMOPos;
 
+                    ImGui.ShowDemoWindow();
                     ImGui.End();
                 }
 
@@ -430,7 +436,7 @@ namespace WoWViewer.NET
             {
                 if (sceneObject is M2Container activeM2)
                 {
-                    if (!renderM2)
+                    if (!renderM2 && !activeM2.forceRender)
                         continue;
 
                     var m2 = Cache.GetOrLoadM2(gl, activeM2.FileDataId, m2ShaderProgram);
@@ -449,7 +455,7 @@ namespace WoWViewer.NET
 
                     // Model matrix contains position, rotation and scale
                     int modelMatrixLoc = gl.GetUniformLocation(m2ShaderProgram, "model_matrix");
-                    var modelMatrix = Matrix4x4.CreateScale(1f);
+                    var modelMatrix = Matrix4x4.CreateScale(sceneObject.Scale);
 
                     // Apply ADT rotation
                     modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (sceneObject.Rotation.Y - 270f));
@@ -525,7 +531,7 @@ namespace WoWViewer.NET
 
                     // Model matrix contains position, rotation and scale
                     int modelMatrixLoc = gl.GetUniformLocation(wmoShaderProgram, "model_matrix");
-                    var modelMatrix = Matrix4x4.CreateScale(1f);
+                    var modelMatrix = Matrix4x4.CreateScale(sceneObject.Scale);
 
                     // Apply ADT rotation
                     modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (wmoContainer.Rotation.Y - 270f));

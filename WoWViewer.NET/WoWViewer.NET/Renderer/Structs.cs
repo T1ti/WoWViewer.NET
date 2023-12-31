@@ -99,6 +99,7 @@ namespace WoWViewer.NET.Renderer
         {
             public Vector3 position;
             public Vector3 rotation;
+            public float scale;
             public uint fileDataID;
             public uint uniqueID;
         }

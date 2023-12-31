@@ -6,6 +6,8 @@ namespace WoWViewer.NET.Objects
     public class M2Container : Container3D
     {
         public bool[] EnabledGeosets { get; }
+
+        public bool forceRender { get; set; } = false;
         public M2Container(GL gl, uint fileDataID, uint shaderProgram) : base(gl, fileDataID, shaderProgram)
         {
             var m2 = Cache.GetOrLoadM2(gl, fileDataID, shaderProgram);
