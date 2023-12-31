@@ -427,6 +427,9 @@ namespace WoWViewer.NET
         }
         private static unsafe void OnMouseWheel(IMouse mouse, ScrollWheel scrollWheel)
         {
+            if (ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow) || ImGui.IsAnyItemActive())
+                return;
+
             activeCamera.ModifyZoom(scrollWheel.Y);
         }
 
