@@ -136,8 +136,8 @@ namespace WoWViewer.NET
 
             window.FramebufferResize += s =>
             {
+                activeCamera.AspectRatio = (float)s.X / (float)s.Y;
                 gl.Viewport(s);
-                activeCamera.AspectRatio = s.X / s.Y;
             };
 
             window.FocusChanged += focused =>
