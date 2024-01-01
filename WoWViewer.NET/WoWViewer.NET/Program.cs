@@ -1,5 +1,7 @@
 ﻿using CASCLib;
 using ImGuiNET;
+using Newtonsoft.Json;
+using SceneScriptLib;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
@@ -46,6 +48,7 @@ namespace WoWViewer.NET
         private static bool renderWMO = true;
         private static bool renderM2 = false;
 
+        private static List<TimelineScene> scenes = new();
         static void Main(string[] args)
         {
             cascWorker.DoWork += CASCworker_DoWork;
@@ -111,7 +114,8 @@ namespace WoWViewer.NET
 
                 // sw new Vector3(-8938, 625, 200)
                 // 32 new Vector3(0, 0, 200)
-                activeCamera = new Camera(new Vector3(-8938, 625, 200), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
+                // amird new Vector3(-138, 8208, 200)
+                activeCamera = new Camera(new Vector3(0, 0, 100), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
 
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
@@ -130,6 +134,18 @@ namespace WoWViewer.NET
                             return;
                         Console.Error.WriteLine($"[DebugMessageCallback] source: {source}, type: {type}, id: {id}, severity {severity}, length {length}, userParam {userparam}\n{msg}\n\n");
                     }, (void*)0);
+                }
+
+                foreach (var file in Directory.GetFiles("G:\\NewmansLandingProject\\scenes\\10.0.0 Newman's Landing Machinima\\", "*.lua"))
+                {
+                    Console.WriteLine(Path.GetFileNameWithoutExtension(file));
+                    var pathFileName = Path.GetFileNameWithoutExtension(file);
+                    if (pathFileName.Contains("Documentation"))
+                        continue;
+
+                    var contents = File.ReadAllText(file);
+                    var script = SceneScriptReader.ParseTimelineScript(contents);
+                    scenes.Add(script);
                 }
 
             };
@@ -209,16 +225,39 @@ namespace WoWViewer.NET
                     //var m2Container = new M2Container(gl, 397940, m2ShaderProgram);
                     //sceneObjects.Add(m2Container);
 
-                    var m2Container = new M2Container(gl, 1109379, m2ShaderProgram);
-                    m2Container.Position = new Vector3(-8855, 584, 145.854f);
-                    m2Container.forceRender = true;
-                    //var wmoContainer = new WMOContainer(gl, 106685, wmoShaderProgram);
-                    //sceneObjects.Add(wmoContainer);
+                    //foreach(var scene in scenes)
+                    //{
+                    //    foreach(var actor in scene.actors)
+                    //    {
+                    //        if(actor.Value.properties.Transform != null && actor.Value.properties.Transform?.events != null)
+                    //        {
+                    //            foreach (var transformEvent in actor.Value.properties.Transform.Value.events)
+                    //            {
+                    //                // {<-8855. 584. 145.854>}
+                    //                var m2Container = new M2Container(gl, 1109379, m2ShaderProgram);
+                    //                m2Container.Position = new Vector3(transformEvent.Value.Position.Y, transformEvent.Value.Position.Z, transformEvent.Value.Position.X);
+                    //                m2Container.Rotation = new Vector3(0f, transformEvent.Value.Yaw, 0f);
+                    //                m2Container.forceRender = true;
+                    //                m2Container.Scale = 100f;
+                    //                sceneObjects.Add(m2Container);
+                    //                Console.WriteLine("Spawning camera at " + transformEvent.Value.Position);
+                    //            }
+                    //        }
+                    //    }
+                    //}
+
+                    var wmoContainer = new WMOContainer(gl, 5161342, wmoShaderProgram);
+                    wmoContainer.Position = new Vector3(0, 0, 0);
+                    sceneObjects.Add(wmoContainer);
 
                     var usedUUIDs = new List<uint>();
 
-                    byte startX = 29;
-                    byte startY = 47;
+
+                    // sw 29 47
+                    // amird 16 32
+                    // valdr 33 31
+                    byte startX = 32;
+                    byte startY = 32;
 
                     for (byte x = startX; x < startX + 3; x++)
                     {
@@ -228,8 +267,10 @@ namespace WoWViewer.NET
                             mapTile.tileX = x;
                             mapTile.tileY = y;
                             mapTile.wdtFileDataID = 775971;
+                            //mapTile.wdtFileDataID = 5339421; // amidr
+                            //mapTile.wdtFileDataID = 3694921; // valdr
                             var adt = ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
-                            var adtContainer = new ADTContainer(gl, adt, 775971, adtShaderProgram);
+                            var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
                             sceneObjects.Add(adtContainer);
 
                             foreach (var worldModel in adt.worldModelBatches)
@@ -307,12 +348,12 @@ namespace WoWViewer.NET
                     var projectionMatrix = activeCamera.GetProjectionMatrix();
                     ImGuiExtensions.DrawMatrix4x4("Projection matrix", projectionMatrix);
 
-                    var firstWMO = sceneObjects[1] as WMOContainer;
-                    var firstWMOPos = firstWMO.Position;
-                    ImGui.DragFloat3("WMO pos", ref firstWMOPos);
-                    firstWMO.Position = firstWMOPos;
+                    //var firstWMO = sceneObjects[1] as WMOContainer;
+                    //var firstWMOPos = firstWMO.Position;
+                    //ImGui.DragFloat3("WMO pos", ref firstWMOPos);
+                    //firstWMO.Position = firstWMOPos;
 
-                    ImGui.ShowDemoWindow();
+                    //ImGui.ShowDemoWindow();
                     ImGui.End();
                 }
 
@@ -490,6 +531,13 @@ namespace WoWViewer.NET
                     if (!renderM2 && !activeM2.forceRender)
                         continue;
 
+                    if (activeM2.FileDataId == 2061670)
+                    {
+                        activeM2.FileDataId = 2061670;
+                        activeM2.Rotation = new Vector3(activeM2.Rotation.X, activeM2.Rotation.Y * -1, activeM2.Rotation.Z);
+                        activeM2.Scale = 1f;
+                    }
+
                     var m2 = Cache.GetOrLoadM2(gl, activeM2.FileDataId, m2ShaderProgram);
 
                     gl.UseProgram(m2ShaderProgram);
@@ -545,6 +593,21 @@ namespace WoWViewer.NET
                                 gl.Enable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                                break;
+                            case 3:
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
+                                break;
+                            case 4:
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.DstAlpha, BlendingFactor.Zero);
+                                break;
+                            case 7:
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One);
                                 break;
                             default:
                                 gl.Disable(EnableCap.Blend);
@@ -622,13 +685,22 @@ namespace WoWViewer.NET
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
                                 break;
+                            case 3:
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
+                                break;
                             default:
                                 gl.Disable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 break;
                         }
 
-                        gl.BindTexture(TextureTarget.Texture2D, wmo.wmoRenderBatch[j].materialID[0]);
+                        if (wmo.wmoRenderBatch[j].shader == 23)
+                            gl.BindTexture(TextureTarget.Texture2D, wmo.wmoRenderBatch[j].materialID[1]);
+                        else
+                            gl.BindTexture(TextureTarget.Texture2D, wmo.wmoRenderBatch[j].materialID[0]);
+
                         gl.DrawElements(PrimitiveType.Triangles, wmo.wmoRenderBatch[j].numFaces, DrawElementsType.UnsignedInt, (void*)(wmo.wmoRenderBatch[j].firstFace * 4));
 
                     }
@@ -657,7 +729,7 @@ namespace WoWViewer.NET
                     var heightOffsetLoc = gl.GetUniformLocation(adtShaderProgram, "pc_heightOffset");
 
                     gl.BindVertexArray(adt.Terrain.vao);
-
+                    gl.Disable(EnableCap.Blend);
                     for (int i = 0; i < adt.Terrain.renderBatches.Length; i++)
                     {
                         gl.Uniform4(heightScaleLoc, adt.Terrain.renderBatches[i].heightScales);

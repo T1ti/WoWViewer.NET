@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using WoWViewer.NET.Loaders;
 
 namespace WoWViewer.NET.Renderer
 {
@@ -31,8 +30,18 @@ namespace WoWViewer.NET.Renderer
             public Vector3 Normal;
             public Vector2 TexCoord;
             public Vector3 Position;
-
         }
+
+        public struct WMOVertex
+        {
+            public Vector3 Normal;
+            public Vector2 TexCoord;
+            public Vector2 TexCoord2;
+            public Vector2 TexCoord3;
+            public Vector2 TexCoord4;
+            public Vector3 Position;
+        }
+
         public struct Material
         {
             public string filename;
@@ -44,9 +53,19 @@ namespace WoWViewer.NET.Renderer
             public uint textureID1;
             public uint textureID2;
             public uint textureID3;
+            public uint textureID4;
+            public uint textureID5;
+            public uint textureID6;
+            public uint textureID7;
+            public uint textureID8;
             internal uint texture1;
             internal uint texture2;
             internal uint texture3;
+            internal uint texture4;
+            internal uint texture5;
+            internal uint texture6;
+            internal uint texture7;
+            internal uint texture8;
 
             // ADT
             public float scale;
@@ -66,6 +85,7 @@ namespace WoWViewer.NET.Renderer
             /* WMO ONLY */
             public uint groupID;
             public uint blendType;
+            public uint shader;
             /* ADT ONLY */
             public int[] alphaMaterialID;
             public float[] scales;

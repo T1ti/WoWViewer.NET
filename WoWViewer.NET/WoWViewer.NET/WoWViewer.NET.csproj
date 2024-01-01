@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\SceneScriptLib\SceneScriptLib.csproj" />
     <ProjectReference Include="C:\Users\ictma\Documents\GitHub\WoWViewer.NET\WoWViewer.NET\WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj" />
   </ItemGroup>
 

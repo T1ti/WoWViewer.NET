@@ -15,6 +15,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SereniaBLPLib", "C:\Users\i
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CascLib", "C:\Users\ictma\Documents\GitHub\WoWViewer.NET\WoWViewer.NET\WoWFormatLib\CascLib\CascLib\CascLib.csproj", "{10C566D9-7BE4-439F-83F4-3518758BB42B}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SceneScriptLib", "..\SceneScriptLib\SceneScriptLib.csproj", "{EB7D3E95-5C31-487E-B745-24F6FE36920C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SceneScriptTest", "SceneScriptTest\SceneScriptTest.csproj", "{9E5FCE05-9E49-4A26-A7B7-46585559629B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -45,6 +49,14 @@ Global
 		{10C566D9-7BE4-439F-83F4-3518758BB42B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{10C566D9-7BE4-439F-83F4-3518758BB42B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{10C566D9-7BE4-439F-83F4-3518758BB42B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EB7D3E95-5C31-487E-B745-24F6FE36920C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EB7D3E95-5C31-487E-B745-24F6FE36920C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EB7D3E95-5C31-487E-B745-24F6FE36920C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EB7D3E95-5C31-487E-B745-24F6FE36920C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E5FCE05-9E49-4A26-A7B7-46585559629B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E5FCE05-9E49-4A26-A7B7-46585559629B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E5FCE05-9E49-4A26-A7B7-46585559629B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E5FCE05-9E49-4A26-A7B7-46585559629B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
