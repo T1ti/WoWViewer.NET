@@ -91,36 +91,73 @@ namespace WoWViewer.NET.Loaders
                         wmovertices[i].TexCoord4 = new Vector2(0.0f, 0.0f);
                     else
                         wmovertices[i].TexCoord4 = new Vector2(wmo.group[g].mogp.textureCoords[3][i].X, wmo.group[g].mogp.textureCoords[3][i].Y);
+
+                    if (wmo.group[g].mogp.colors != null)
+                    {
+                        wmovertices[i].Color = new Vector4(wmo.group[g].mogp.colors[i].X, wmo.group[g].mogp.colors[i].Y, wmo.group[g].mogp.colors[i].Z, wmo.group[g].mogp.colors[i].W);
+                    }
+                    else
+                    {
+                        wmovertices[i].Color = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+
+                    if (wmo.group[g].mogp.colors2 != null)
+                    {
+                        wmovertices[i].Color2 = new Vector4(wmo.group[g].mogp.colors2[i].X, wmo.group[g].mogp.colors2[i].Y, wmo.group[g].mogp.colors2[i].Z, wmo.group[g].mogp.colors2[i].W);
+                    }
+                    else
+                    {
+                        wmovertices[i].Color2 = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+
+                    if (wmo.group[g].mogp.colors3 != null)
+                    {
+                        wmovertices[i].Color3 = new Vector4(wmo.group[g].mogp.colors3[i].X, wmo.group[g].mogp.colors3[i].Y, wmo.group[g].mogp.colors3[i].Z, wmo.group[g].mogp.colors3[i].W);
+                    }
+                    else
+                    {
+                        wmovertices[i].Color3 = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+                    }
                 }
 
                 //Push to buffer
                 fixed (WMOVertex* buf = wmovertices)
-                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(wmovertices.Length * 14 * sizeof(float)), buf, BufferUsageARB.StaticDraw);
+                    gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(wmovertices.Length * 26 * sizeof(float)), buf, BufferUsageARB.StaticDraw);
 
                 //Set pointers in buffer
                 var normalAttrib = gl.GetAttribLocation(shaderProgram, "normal");
                 gl.EnableVertexAttribArray((uint)normalAttrib);
-                gl.VertexAttribPointer((uint)normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 0));
+                gl.VertexAttribPointer((uint)normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 0));
 
                 var texCoordAttrib = gl.GetAttribLocation(shaderProgram, "texCoord");
                 gl.EnableVertexAttribArray((uint)texCoordAttrib);
-                gl.VertexAttribPointer((uint)texCoordAttrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 3));
-
+                gl.VertexAttribPointer((uint)texCoordAttrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 3));
                 var texCoord2Attrib = gl.GetAttribLocation(shaderProgram, "texCoord2");
                 gl.EnableVertexAttribArray((uint)texCoord2Attrib);
-                gl.VertexAttribPointer((uint)texCoord2Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 5));
+                gl.VertexAttribPointer((uint)texCoord2Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 5));
 
                 var texCoord3Attrib = gl.GetAttribLocation(shaderProgram, "texCoord3");
                 gl.EnableVertexAttribArray((uint)texCoord3Attrib);
-                gl.VertexAttribPointer((uint)texCoord3Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 7));
-
+                gl.VertexAttribPointer((uint)texCoord3Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 7));
                 var texCoord4Attrib = gl.GetAttribLocation(shaderProgram, "texCoord4");
                 gl.EnableVertexAttribArray((uint)texCoord4Attrib);
-                gl.VertexAttribPointer((uint)texCoord4Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 9));
+                gl.VertexAttribPointer((uint)texCoord4Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 9));
 
                 var posAttrib = gl.GetAttribLocation(shaderProgram, "position");
                 gl.EnableVertexAttribArray((uint)posAttrib);
-                gl.VertexAttribPointer((uint)posAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 11));
+                gl.VertexAttribPointer((uint)posAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 11));
+
+                var colorAttrib = gl.GetAttribLocation(shaderProgram, "color");
+                gl.EnableVertexAttribArray((uint)colorAttrib);
+                gl.VertexAttribPointer((uint)colorAttrib, 4, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 14));
+
+                var color2Attrib = gl.GetAttribLocation(shaderProgram, "color2");
+                gl.EnableVertexAttribArray((uint)color2Attrib);
+                gl.VertexAttribPointer((uint)color2Attrib, 4, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 18));
+
+                var color3Attrib = gl.GetAttribLocation(shaderProgram, "color3");
+                gl.EnableVertexAttribArray((uint)color3Attrib);
+                gl.VertexAttribPointer((uint)color3Attrib, 4, VertexAttribPointerType.Float, false, sizeof(float) * 26, (void*)(sizeof(float) * 22));
 
                 //Switch to Index buffer
                 gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, wmoBatch.groupBatches[g].indiceBuffer);
@@ -136,13 +173,21 @@ namespace WoWViewer.NET.Loaders
                 wmoBatch.mats[i].texture2 = wmo.materials[i].texture2;
                 wmoBatch.mats[i].texture3 = wmo.materials[i].texture3;
 
-                if ((uint)wmo.materials[i].shader == 23)
+                var (VertexShader, PixelShader) = ShaderEnums.WMOShaders[(int)wmo.materials[i].shader];
+                if (PixelShader == ShaderEnums.WMOPixelShader.MapObjParallax)
                 {
                     wmoBatch.mats[i].texture4 = wmo.materials[i].color3;
-                    wmoBatch.mats[i].texture5 = wmo.materials[i].runtimeData0;
-                    wmoBatch.mats[i].texture6 = wmo.materials[i].runtimeData1;
-                    wmoBatch.mats[i].texture7 = wmo.materials[i].runtimeData2;
-                    wmoBatch.mats[i].texture8 = wmo.materials[i].runtimeData3;
+                    wmoBatch.mats[i].texture5 = wmo.materials[i].flags3;
+                    wmoBatch.mats[i].texture6 = wmo.materials[i].runtimeData0;
+                }
+                else if (PixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
+                {
+                    wmoBatch.mats[i].texture4 = wmo.materials[i].color3;
+                    wmoBatch.mats[i].texture5 = wmo.materials[i].flags3;
+                    wmoBatch.mats[i].texture6 = wmo.materials[i].runtimeData0;
+                    wmoBatch.mats[i].texture7 = wmo.materials[i].runtimeData1;
+                    wmoBatch.mats[i].texture8 = wmo.materials[i].runtimeData2;
+                    wmoBatch.mats[i].texture9 = wmo.materials[i].runtimeData3;
                 }
 
                 if (FileProvider.FileExists(wmo.materials[i].texture1))
@@ -154,22 +199,26 @@ namespace WoWViewer.NET.Loaders
                 if (FileProvider.FileExists(wmo.materials[i].texture3))
                     wmoBatch.mats[i].textureID3 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture3);
 
-                if ((uint)wmo.materials[i].shader == 23)
+
+                if (PixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
                 {
                     if (FileProvider.FileExists(wmo.materials[i].color3))
                         wmoBatch.mats[i].textureID4 = Cache.GetOrLoadBLP(gl, wmo.materials[i].color3);
 
+                    if (FileProvider.FileExists(wmo.materials[i].flags3))
+                        wmoBatch.mats[i].textureID5 = Cache.GetOrLoadBLP(gl, wmo.materials[i].flags3);
+
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData0))
-                        wmoBatch.mats[i].textureID5 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData0);
+                        wmoBatch.mats[i].textureID6 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData0);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData1))
-                        wmoBatch.mats[i].textureID6 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData1);
+                        wmoBatch.mats[i].textureID7 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData1);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData2))
-                        wmoBatch.mats[i].textureID7 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData2);
+                        wmoBatch.mats[i].textureID8 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData2);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData3))
-                        wmoBatch.mats[i].textureID8 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData3);
+                        wmoBatch.mats[i].textureID9 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData3);
                 }
             }
 
@@ -224,7 +273,7 @@ namespace WoWViewer.NET.Loaders
                         firstFace = group.mogp.renderBatches[i].firstFace,
                         numFaces = group.mogp.renderBatches[i].numFaces,
                         shader = (uint)wmo.materials[group.mogp.renderBatches[i].materialID].shader,
-                        materialID = new uint[8],
+                        materialID = new uint[9],
                         blendType = wmo.materials[group.mogp.renderBatches[i].materialID].blendMode,
                         groupID = (uint)g
                     };
@@ -250,17 +299,20 @@ namespace WoWViewer.NET.Loaders
                         if (wmo.materials[matID].color3 == wmoBatch.mats[ti].texture4)
                             renderBatch.materialID[3] = wmoBatch.mats[ti].textureID4;
 
-                        if (wmo.materials[matID].runtimeData0 == wmoBatch.mats[ti].texture5)
+                        if (wmo.materials[matID].flags3 == wmoBatch.mats[ti].texture5)
                             renderBatch.materialID[4] = wmoBatch.mats[ti].textureID5;
 
-                        if (wmo.materials[matID].runtimeData1 == wmoBatch.mats[ti].texture6)
+                        if (wmo.materials[matID].runtimeData0 == wmoBatch.mats[ti].texture6)
                             renderBatch.materialID[5] = wmoBatch.mats[ti].textureID6;
 
-                        if (wmo.materials[matID].runtimeData2 == wmoBatch.mats[ti].texture7)
+                        if (wmo.materials[matID].runtimeData1 == wmoBatch.mats[ti].texture7)
                             renderBatch.materialID[6] = wmoBatch.mats[ti].textureID7;
 
-                        if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture8)
+                        if (wmo.materials[matID].runtimeData2 == wmoBatch.mats[ti].texture8)
                             renderBatch.materialID[7] = wmoBatch.mats[ti].textureID8;
+
+                        if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture9)
+                            renderBatch.materialID[8] = wmoBatch.mats[ti].textureID9;
                     }
 
                     renderBatch.blendType = wmo.materials[matID].blendMode;

@@ -110,6 +110,9 @@ namespace WoWViewer.NET.Renderer
             public Vector2 TexCoord3;
             public Vector2 TexCoord4;
             public Vector3 Position;
+            public Vector4 Color;
+            public Vector4 Color2;
+            public Vector4 Color3;
         }
 
         public struct Material
@@ -128,6 +131,7 @@ namespace WoWViewer.NET.Renderer
             public uint textureID6;
             public uint textureID7;
             public uint textureID8;
+            public uint textureID9;
             internal uint texture1;
             internal uint texture2;
             internal uint texture3;
@@ -136,6 +140,7 @@ namespace WoWViewer.NET.Renderer
             internal uint texture6;
             internal uint texture7;
             internal uint texture8;
+            internal uint texture9;
 
             // ADT
             public float scale;

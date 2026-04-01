@@ -5,6 +5,9 @@ in vec2 TexCoord;
 in vec2 TexCoord2;
 in vec2 TexCoord3;
 in vec2 TexCoord4;
+in vec4 vColor;
+in vec4 vColor2;
+in vec4 vColor3;
 out vec4 outputColor;
 
 uniform float pixelShader;
@@ -14,6 +17,11 @@ layout(binding=0) uniform sampler2D texture1;
 layout(binding=1) uniform sampler2D texture2;
 layout(binding=2) uniform sampler2D texture3;
 layout(binding=3) uniform sampler2D texture4;
+layout(binding=4) uniform sampler2D texture5;
+layout(binding=5) uniform sampler2D texture6;
+layout(binding=6) uniform sampler2D texture7;
+layout(binding=7) uniform sampler2D texture8;
+layout(binding=8) uniform sampler2D texture9;
 
 void main()
 {
@@ -21,8 +29,7 @@ void main()
 	vec4 tex = texture(texture1, TexCoord);
 	vec4 tex2 = texture(texture2, TexCoord2);
 	vec4 tex3 = texture(texture3, TexCoord3);
-
-    vec4 vColor2 = vec4(1.0); // temp
+    vec4 tex4 = texture(texture4, TexCoord4);
 
 	vec3 matDiffuse = vec3(0.0);
     vec3 spec = vec3(0.0);
@@ -97,7 +104,7 @@ void main()
 
     } else if (uPixelShader == 9) { //MapObjDiffuseEmissive
 
-        matDiffuse = tex.rgb ;
+        matDiffuse = tex2.rgb ;
         emissive = tex2.rgb * tex2.a * vColor2.a;
 
         finalOpacity = tex.a;
@@ -118,10 +125,9 @@ void main()
                 ((tex3.rgb * tex3.a) * vColor2.a)
             );
         finalOpacity = tex.a;
-
+       
     } else if (uPixelShader == 12) { //MapObjTwoLayerDiffuseOpaque
         matDiffuse = mix(tex2.rgb, tex.rgb, vColor2.a);
-
         finalOpacity = 1.0;
     } else if (uPixelShader == 13) { //MapObjTwoLayerDiffuseEmissive
         vec3 t1diffuse = (tex2.rgb * (1.0 - tex2.a));
@@ -137,6 +143,7 @@ void main()
             tex.rgb,
             vec3(tex.a)
         );
+
         finalOpacity = 1.0;
     } else if (uPixelShader == 15) { //MapObjTwoLayerDiffuseMod2x
         vec3 layer1 = tex.rgb;
@@ -158,8 +165,9 @@ void main()
         matDiffuse = ((layer3 * tex3.rgb) * 2.0);
         finalOpacity = tex.a;
     } else if (uPixelShader == 18) { //MapObjLod
-        matDiffuse = tex.rgb ;
+        matDiffuse = tex.rgb;
         finalOpacity = tex.a;
+        
     } else if (uPixelShader == 19) { //MapObjParallax
         /*
         vec4 tex_6 = texture(uTexture6, vTexCoord2).rgba;
@@ -195,20 +203,20 @@ void main()
         .*/
 
     } else if (uPixelShader == 20) { //MapObjUnkShader
-        /*
-        vec4 tex_1 = texture(uTexture, posToTexCoord(vPosition.xyz, vNormal.xyz));
-        vec4 tex_2 = texture(uTexture2, vTexCoord);
-        vec4 tex_3 = texture(uTexture3, vTexCoord2);
-        vec4 tex_4 = texture(uTexture4, vTexCoord3);
-        vec4 tex_5 = texture(uTexture5, vTexCoord4);
+        //vec4 tex_1 = texture(uTexture, posToTexCoord(vPosition.xyz, vNormal.xyz));
+        vec4 tex_1 = vec4(0.0);
+        vec4 tex_2 = texture(texture2, TexCoord);
+        vec4 tex_3 = texture(texture3, TexCoord2);
+        vec4 tex_4 = texture(texture4, TexCoord3);
+        vec4 tex_5 = texture(texture5, TexCoord4);
 
-        vec4 tex_6 = texture(uTexture6, vTexCoord).rgba;
-        vec4 tex_7 = texture(uTexture7, vTexCoord2).rgba;
-        vec4 tex_8 = texture(uTexture8, vTexCoord3).rgba;
-        vec4 tex_9 = texture(uTexture9, vTexCoord4).rgba;
+        vec4 tex_6 = texture(texture6, TexCoord);
+        vec4 tex_7 = texture(texture7, TexCoord2);
+        vec4 tex_8 = texture(texture8, TexCoord3);
+        vec4 tex_9 = texture(texture9, TexCoord4);
 
-        float secondColorSum = dot(vColorSecond.bgr, vec3(1.0));
-        vec4 alphaVec = max(vec4(tex_6.a, tex_7.a, tex_8.a, tex_9.a), 0.004) * vec4(vColorSecond.bgr, 1.0 - clamp(secondColorSum, 0.0, 1.0));
+        float secondColorSum = dot(vColor3.bgr, vec3(1.0));
+        vec4 alphaVec = max(vec4(tex_6.a, tex_7.a, tex_8.a, tex_9.a), 0.004) * vec4(vColor3.bgr, 1.0 - clamp(secondColorSum, 0.0, 1.0));
         float maxAlpha = max(alphaVec.r, max(alphaVec.g, max(alphaVec.r, alphaVec.a)));
         vec4 alphaVec2 = (1.0 - clamp(vec4(maxAlpha) - alphaVec, 0.0, 1.0));
         alphaVec2 = alphaVec2 * alphaVec;
@@ -222,8 +230,9 @@ void main()
 
         emissive = (texMixed.w * tex_1.rgb) * texMixed.rgb;
         vec3 diffuseColor = vec3(0,0,0); //<= it's unknown where this color comes from. But it's not MOMT chunk
-        matDiffuse = (diffuseColor - texMixed.rgb) * vColorSecond.a + texMixed.rgb;
-        */
+        matDiffuse = (diffuseColor - texMixed.rgb) * vColor3.a + texMixed.rgb;
+        finalOpacity = texMixed.a;
+        
     }
 
     outputColor = vec4(matDiffuse, finalOpacity);

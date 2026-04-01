@@ -12,12 +12,18 @@ in vec2 texCoord;
 in vec2 texCoord2;
 in vec2 texCoord3;
 in vec2 texCoord4;
+in vec4 color;
+in vec4 color2;
+in vec4 color3;
 
 out vec3 Normal;
 out vec2 TexCoord;
 out vec2 TexCoord2;
 out vec2 TexCoord3;
 out vec2 TexCoord4;
+out vec4 vColor;
+out vec4 vColor2;
+out vec4 vColor3;
 
 // Based on deamon's webwowviewercpp
 
@@ -38,6 +44,10 @@ void main()
 
     mat4 viewModelMatForNormal = transpose(inverse(view_matrix));
     Normal = normalize(viewModelMatForNormal * vec4(normal, 0.0)).xyz;
+
+    vColor = color;
+    vColor2 = color2;
+    vColor3 = color3;
 
 	int VertexShader = int(vertexShader);
 
@@ -67,7 +77,7 @@ void main()
         TexCoord3 = texCoord3; //not used
     } else if (VertexShader == 4) { //MapObjDiffuse_Comp
         TexCoord = texCoord;
-        TexCoord3 = texCoord2; //not used
+        TexCoord2 = texCoord2;
         TexCoord3 = texCoord3; //not used
     } else if (VertexShader == 5) { //MapObjDiffuse_Comp_Refl
         TexCoord = texCoord;

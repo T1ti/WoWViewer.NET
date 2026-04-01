@@ -6,13 +6,11 @@ using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using Silk.NET.Windowing;
-using System.ComponentModel;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using TACTSharp;
 using WoWFormatLib.FileProviders;
-using WoWViewer.NET.Loaders;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Renderer;
 
@@ -123,7 +121,7 @@ namespace WoWViewer.NET
 
                 if (buildInstance.Encoding == null || buildInstance.Root == null || buildInstance.Install == null || buildInstance.GroupIndex == null)
                     throw new Exception("Failed to load build components");
-               
+
                 tactFileProvider.InitTACT(buildInstance);
 
                 FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
@@ -257,6 +255,7 @@ namespace WoWViewer.NET
                     activeCamera.Position = Vector3.One;
                 }
 
+                // Note -- this is extremely slow but allows for shader hot-reloading
                 foreach (var file in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Shaders"), "*.shader"))
                 {
                     if (shaderMTimes[file] < File.GetLastWriteTime(file))
@@ -339,7 +338,7 @@ namespace WoWViewer.NET
                     // valdr 33 31
                     byte startX = 34;
                     byte startY = 34;
-                    /*
+                  
                     for (byte x = startX; x < startX + 3; x++)
                     {
                         for (byte y = startY; y < startY + 3; y++)
@@ -350,7 +349,7 @@ namespace WoWViewer.NET
                             mapTile.wdtFileDataID = 4914790;
                             //mapTile.wdtFileDataID = 5339421; // amidr
                             //mapTile.wdtFileDataID = 3694921; // valdr
-                            var adt = ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
+                            var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
                             var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
                             sceneObjects.Add(adtContainer);
 
@@ -375,8 +374,8 @@ namespace WoWViewer.NET
                             //    sceneObjects.Add(doodadContainer);
                             //}
                         }
-                    }*/
-
+                    }
+                 
                     Console.WriteLine("loaded model");
                 }
 

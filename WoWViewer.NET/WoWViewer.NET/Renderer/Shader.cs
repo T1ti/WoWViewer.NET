@@ -1,4 +1,5 @@
 ﻿using Silk.NET.OpenGL;
+using System.Diagnostics;
 
 namespace WoWViewer.NET
 {
@@ -11,9 +12,27 @@ namespace WoWViewer.NET
             Console.WriteLine("OpenGL version: " + _gl.GetStringS(StringName.Version));
             Console.WriteLine("OpenGL vendor: " + _gl.GetStringS(StringName.Vendor));
 
+            var vertexSource = ""; 
+            var fragmentSource = "";
+
+            while(true)
+            {
+                try
+                {
+                    vertexSource = File.ReadAllText("Shaders/" + type + ".vertex.shader");
+                    fragmentSource = File.ReadAllText("Shaders/" + type + ".fragment.shader");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error reading shader files: " + ex.Message);
+                    Console.WriteLine("Retrying in 100ms");
+                    Thread.Sleep(100);
+                }
+            }
+
             var vertexShader = _gl.CreateShader(ShaderType.VertexShader);
 
-            var vertexSource = File.ReadAllText("Shaders/" + type + ".vertex.shader");
             _gl.ShaderSource(vertexShader, vertexSource);
 
             _gl.CompileShader(vertexShader);
@@ -27,7 +46,6 @@ namespace WoWViewer.NET
             // Fragment shader
             var fragmentShader = _gl.CreateShader(ShaderType.FragmentShader);
 
-            var fragmentSource = File.ReadAllText("Shaders/" + type + ".fragment.shader");
             _gl.ShaderSource(fragmentShader, fragmentSource);
 
             _gl.CompileShader(fragmentShader);
@@ -53,6 +71,10 @@ namespace WoWViewer.NET
             Console.WriteLine("[" + type + "] [PROGRAM] Program link status: " + programStatus);
             _gl.UseProgram(shaderProgram);
 
+            if(programStatus == 0)
+            {
+                Console.WriteLine("Shader program failed to link.");
+            }
             _gl.ValidateProgram(shaderProgram);
 
             _gl.DetachShader(shaderProgram, vertexShader);
