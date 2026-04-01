@@ -36,8 +36,8 @@ namespace WoWViewer.NET
             }
 
             var lines = File.ReadAllLines("listfile.csv");
-    
-            foreach(var line in lines)
+
+            foreach (var line in lines)
             {
                 string[] tokens = line.Split(';');
 

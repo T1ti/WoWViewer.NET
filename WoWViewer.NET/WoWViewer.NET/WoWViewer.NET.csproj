@@ -2,20 +2,21 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Silk.NET" Version="2.20.0" />
-    <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.20.0" />
+    <PackageReference Include="Silk.NET" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.OpenGL.Extensions.ImGui" Version="2.23.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\SceneScriptLib\SceneScriptLib.csproj" />
-    <ProjectReference Include="C:\Users\ictma\Documents\GitHub\WoWViewer.NET\WoWViewer.NET\WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj" />
+    <ProjectReference Include="..\BLPSharp\BLPSharp\BLPSharp.csproj" />
+    <ProjectReference Include="..\WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj" />
   </ItemGroup>
 
   <ItemGroup>

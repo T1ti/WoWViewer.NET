@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.M2;
 using WoWViewer.NET.Renderer;
@@ -27,7 +28,7 @@ namespace WoWViewer.NET.Loaders
         {
             M2Model model = new M2Model();
 
-            if (WoWFormatLib.Utils.CASC.FileExists(fileDataID))
+            if (FileProvider.FileExists(fileDataID))
             {
                 var modelReader = new M2Reader();
                 modelReader.LoadM2(fileDataID);
@@ -69,7 +70,8 @@ namespace WoWViewer.NET.Loaders
                         if (model.textureFileDataIDs != null && model.textureFileDataIDs.Length > 0 && model.textureFileDataIDs[i] != 0)
                             textureFileDataID = model.textureFileDataIDs[i];
                         else
-                            textureFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(model.textures[i].filename);
+                            throw new NotImplementedException();
+                        //textureFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(model.textures[i].filename);
                         break;
                     case 1: // TEX_COMPONENT_SKIN
                     case 2: // TEX_COMPONENT_OBJECT_SKIN
@@ -81,7 +83,7 @@ namespace WoWViewer.NET.Loaders
                 if (textureFileDataID == 0)
                     textureFileDataID = DEFAULT_TEXTURE_ID;
 
-                if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
+                if (!FileProvider.FileExists(textureFileDataID))
                     textureFileDataID = MISSING_TEXTURE_ID;
 
                 doodadBatch.mats[i].textureID = Cache.GetOrLoadBLP(gl, textureFileDataID);
@@ -101,7 +103,7 @@ namespace WoWViewer.NET.Loaders
                         doodadBatch.submeshes[i].blendType = model.renderflags[model.skins[0].textureunit[tu].renderFlags].blendingMode;
 
                         uint textureFileDataID = DEFAULT_TEXTURE_ID;
-                        if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
+                        if (!FileProvider.FileExists(textureFileDataID))
                             textureFileDataID = MISSING_TEXTURE_ID;
 
                         if (model.textureFileDataIDs != null && model.textureFileDataIDs.Length > 0 && model.textureFileDataIDs[model.texlookup[model.skins[0].textureunit[tu].texture].textureID] != 0)
@@ -117,12 +119,12 @@ namespace WoWViewer.NET.Loaders
                             else
                             {
                                 textureFileDataID = DEFAULT_TEXTURE_ID;
-                                if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
+                                if (!FileProvider.FileExists(textureFileDataID))
                                     textureFileDataID = MISSING_TEXTURE_ID;
                             }
                         }
 
-                        if (!WoWFormatLib.Utils.CASC.FileExists(textureFileDataID))
+                        if (!FileProvider.FileExists(textureFileDataID))
                             textureFileDataID = MISSING_TEXTURE_ID;
 
                         doodadBatch.submeshes[i].material = (uint)Cache.GetOrLoadBLP(gl, textureFileDataID);

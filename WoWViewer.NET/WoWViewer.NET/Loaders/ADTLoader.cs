@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.ADT;
 using WoWViewer.NET.Renderer;
@@ -14,10 +15,12 @@ namespace WoWViewer.NET.Loaders
             ADT adt = new ADT();
             Terrain result = new Terrain();
             ADTReader adtReader = new ADTReader();
+            var wdtReader = new WDTReader();
+            wdtReader.LoadWDT(mapTile.wdtFileDataID);
 
             Listfile.FDIDToFilename.TryGetValue(mapTile.wdtFileDataID, out string wdtFilename);
 
-            adtReader.LoadADT(mapTile.wdtFileDataID, mapTile.tileX, mapTile.tileY, true, wdtFilename);
+            adtReader.LoadADT(wdtReader.wdtfile, mapTile.tileX, mapTile.tileY, true, wdtFilename);
             adt = adtReader.adtfile;
 
             var TileSize = 1600.0f / 3.0f; //533.333
@@ -51,7 +54,7 @@ namespace WoWViewer.NET.Loaders
                             material.heightScale = adt.texParams[ti].height;
                             material.heightOffset = adt.texParams[ti].offset;
 
-                            if (!WoWFormatLib.Utils.CASC.FileExists(adt.heightTextureFileDataIDs[ti]))
+                            if (!FileProvider.FileExists(adt.heightTextureFileDataIDs[ti]))
                             {
                                 Console.WriteLine("Height texture: " + adt.heightTextureFileDataIDs[ti] + " does not exist! Falling back to original texture (hack)..");
                                 material.heightTexture = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti]);
@@ -93,7 +96,7 @@ namespace WoWViewer.NET.Loaders
                             material.heightOffset = adt.texParams[ti].offset;
 
                             var heightName = adt.textures.filenames[ti].Replace(".blp", "_h.blp");
-                            if (!WoWFormatLib.Utils.CASC.FileExists(heightName))
+                            if (!FileProvider.FileExists(heightName))
                             {
                                 Console.WriteLine("Height texture: " + heightName + " does not exist! Falling back to original texture (hack)..");
                                 material.heightTexture = BLPLoader.LoadTexture(gl, adt.textures.filenames[ti]);
@@ -176,11 +179,10 @@ namespace WoWViewer.NET.Loaders
 
                 batch.heightScales = new Vector4();
                 batch.heightOffsets = new Vector4();
-
-                for (var li = 0; li < adt.texChunks[c].layers.Count(); li++)
+                for (var li = 0; li < adt.chunks[c].layers.Count(); li++)
                 {
-                    if (adt.texChunks[c].alphaLayer != null)
-                        alphalayermats.Add((int)BLPLoader.GenerateAlphaTexture(gl, adt.texChunks[c].alphaLayer[li].layer));
+                    if (adt.chunks[c].alphaLayer != null)
+                        alphalayermats.Add((int)BLPLoader.GenerateAlphaTexture(gl, adt.chunks[c].alphaLayer[li].layer));
 
                     Material curMat;
 
@@ -189,15 +191,16 @@ namespace WoWViewer.NET.Loaders
                         if (adt.textures.filenames == null)
                             throw new Exception("ADT has no textures?");
 
-                        var texFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(adt.textures.filenames[adt.texChunks[c].layers[li].textureId]);
+                        throw new NotImplementedException("Old style filename based texture loading not implemented");
 
-                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, texFileDataID));
-                        curMat = materials.Where(material => material.filename == adt.textures.filenames[adt.texChunks[c].layers[li].textureId]).Single();
+                        //var texFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(adt.textures.filenames[adt.chunks[c].layers[li].textureId]);
+                        // layerMaterials.Add(Cache.GetOrLoadBLP(gl, texFileDataID));
+                        //curMat = materials.Where(material => material.filename == adt.textures.filenames[adt.chunks[c].layers[li].textureId]).Single();
                     }
                     else
                     {
-                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.texChunks[c].layers[li].textureId]));
-                        curMat = materials.Where(material => material.filename == adt.diffuseTextureFileDataIDs[adt.texChunks[c].layers[li].textureId].ToString()).Single();
+                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId]));
+                        curMat = materials.Where(material => material.filename == adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId].ToString()).Single();
                     }
 
                     layerscales.Add(curMat.scale);

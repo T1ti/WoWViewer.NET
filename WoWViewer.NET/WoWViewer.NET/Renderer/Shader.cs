@@ -2,17 +2,11 @@
 
 namespace WoWViewer.NET
 {
-    public class ShaderCompiler
+    public static class ShaderCompiler
     {
-        private static GL _gl;
-
-        public ShaderCompiler(GL gl)
+        public static uint CompileShader(string type)
         {
-            _gl = gl;
-        }
-
-        public uint CompileShader(string type)
-        {
+            var _gl = Program.gl;
             // Print OpenGL version/vendor
             Console.WriteLine("OpenGL version: " + _gl.GetStringS(StringName.Version));
             Console.WriteLine("OpenGL vendor: " + _gl.GetStringS(StringName.Vendor));

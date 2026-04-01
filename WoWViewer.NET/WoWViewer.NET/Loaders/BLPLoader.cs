@@ -1,8 +1,6 @@
-﻿using SereniaBLPLib;
+﻿using BLPSharp;
 using Silk.NET.OpenGL;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using WoWFormatLib.Utils;
+using WoWFormatLib.FileProviders;
 
 namespace WoWViewer.NET.Loaders
 {
@@ -21,9 +19,8 @@ namespace WoWViewer.NET.Loaders
             gl.ActiveTexture(TextureUnit.Texture0);
 
             var textureID = gl.GenTexture();
-            using (var blp = new BlpFile(CASC.OpenFile(fileDataID)))
+            using (var blp = new BLPFile(FileProvider.OpenFile(fileDataID)))
             {
-                Console.WriteLine("Loading BLP " + fileDataID + " " + blp.preferredFormat.ToString());
                 gl.BindTexture(TextureTarget.Texture2D, textureID);
 
                 if (
@@ -43,12 +40,13 @@ namespace WoWViewer.NET.Loaders
 
                     var maxMip = 0;
 
-                    for(int i = 0; i < blp.MipMapCount; i++)
+                    for (int i = 0; i < blp.MipMapCount; i++)
                     {
-                        var bytes = blp.GetPixels(i, out int width, out int height, true, true);
+                        int scale = (int)Math.Pow(2, i);
 
-                        if (width == 0 || height == 0 || bytes.Length == 0)
-                            continue;
+                        var width = blp.width / scale;
+                        var height = blp.height / scale;
+                        var bytes = blp.GetPictureData(i, width, height);
 
                         maxMip = i;
 
@@ -61,12 +59,9 @@ namespace WoWViewer.NET.Loaders
                 }
                 else
                 {
-                    var bmp = blp.GetImage(0) ?? throw new Exception("BMP is null!");
-                    var pixelBytes = new byte[bmp.Width * bmp.Height * 4];
-                    bmp.CopyPixelDataTo(pixelBytes);
-
+                    var pixelBytes = blp.GetPixels(0, out int width, out int height) ?? throw new Exception("BMP is null!");
                     fixed (byte* buf = pixelBytes)
-                        gl.TexImage2D(GLEnum.Texture2D, 0, InternalFormat.Rgba, (uint)bmp.Width, (uint)bmp.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
+                        gl.TexImage2D(GLEnum.Texture2D, 0, InternalFormat.Rgba, (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
 
                     gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
                 }
@@ -93,20 +88,18 @@ namespace WoWViewer.NET.Loaders
                     pixelList[(x * 64) + y] = values[x * 64 + y];
                 }
             }
-            using (var image = Image.LoadPixelData<A8>(pixelList, 64, 64))
-            {
-                gl.BindTexture(TextureTarget.Texture2D, textureId);
 
-                fixed (byte* buf = pixelList)
-                    gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.R8, 64, 64, 0, PixelFormat.Red, PixelType.UnsignedByte, buf);
+            gl.BindTexture(TextureTarget.Texture2D, textureId);
 
-                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-                gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            fixed (byte* buf = pixelList)
+                gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.R8, 64, 64, 0, PixelFormat.Red, PixelType.UnsignedByte, buf);
 
-                //  gl.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (int)TextureEnvMode.Modulate);
-            }
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            //  gl.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (int)TextureEnvMode.Modulate);
 
             gl.ActiveTexture(TextureUnit.Texture0);
 

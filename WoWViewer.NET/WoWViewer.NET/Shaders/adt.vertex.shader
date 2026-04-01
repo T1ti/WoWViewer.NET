@@ -1,6 +1,6 @@
 ﻿#version 330
 
-uniform mat4 modelview_matrix;
+uniform mat4 model_matrix;
 uniform mat4 projection_matrix;
 uniform mat4 rotation_matrix;
 
@@ -15,7 +15,7 @@ out vec4 VColor;
 
 void main()
 {
-	gl_Position = projection_matrix * modelview_matrix * rotation_matrix * vec4(vec3(position.x - firstPos.x, position.y - firstPos.y, position.z), 1);
+	gl_Position = projection_matrix * model_matrix * rotation_matrix * vec4(vec3(position.x - firstPos.x, position.y - firstPos.y, position.z), 1);
 	TexCoord = texCoord;
 	VColor = color;
 }

@@ -13,8 +13,8 @@ namespace WoWViewer.NET.Renderer
 
         public static DoodadBatch GetOrLoadM2(GL gl, uint fileDataId, uint shaderProgram)
         {
-            if (M2Cache.ContainsKey(fileDataId))
-                return M2Cache[fileDataId];
+            if (M2Cache.TryGetValue(fileDataId, out DoodadBatch value))
+                return value;
 
             M2Cache.Add(fileDataId, M2Loader.LoadM2(gl, fileDataId, shaderProgram));
 
@@ -23,8 +23,8 @@ namespace WoWViewer.NET.Renderer
 
         public static WorldModel GetOrLoadWMO(GL gl, uint fileDataId, uint shaderProgram)
         {
-            if (WMOCache.ContainsKey(fileDataId))
-                return WMOCache[fileDataId];
+            if (WMOCache.TryGetValue(fileDataId, out WorldModel value))
+                return value;
 
             WMOCache.Add(fileDataId, WMOLoader.LoadWMO(gl, fileDataId, shaderProgram));
 
@@ -43,8 +43,8 @@ namespace WoWViewer.NET.Renderer
 
         public static uint GetOrLoadBLP(GL gl, uint fileDataId)
         {
-            if (BLPCache.ContainsKey(fileDataId))
-                return BLPCache[fileDataId];
+            if (BLPCache.TryGetValue(fileDataId, out uint value))
+                return value;
 
             BLPCache.Add(fileDataId, BLPLoader.LoadTexture(gl, fileDataId));
 

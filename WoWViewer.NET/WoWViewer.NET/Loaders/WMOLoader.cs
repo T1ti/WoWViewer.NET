@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.WMO;
 using WoWViewer.NET.Renderer;
@@ -12,9 +13,9 @@ namespace WoWViewer.NET.Loaders
         public static unsafe WorldModel LoadWMO(GL gl, string fileName, uint shaderProgram)
         {
             if (!Listfile.TryGetFileDataID(fileName, out uint fileDataID))
-                CASCLib.Logger.WriteLine("Could not get filedataid for " + fileName);
+                Console.WriteLine("Could not get filedataid for " + fileName);
 
-            if (!WoWFormatLib.Utils.CASC.FileExists(fileDataID))
+            if (!FileProvider.FileExists(fileDataID))
                 throw new Exception("WMO " + fileName + " does not exist!");
 
             return LoadWMO(gl, fileDataID, shaderProgram, fileName);
@@ -25,21 +26,21 @@ namespace WoWViewer.NET.Loaders
             Console.WriteLine("Loading WMO " + fileDataID);
             WMO wmo = new WMOReader().LoadWMO(fileDataID, 0, fileName);
 
-            if (wmo.group.Count() == 0)
+            if (wmo.group.Length == 0)
             {
-                CASCLib.Logger.WriteLine("WMO has no groups: ", fileName);
+                Console.WriteLine("WMO has no groups: ", fileName);
                 throw new Exception("Broken WMO! Report to developer (mail marlamin@marlamin.com) with this filename: " + fileName);
             }
 
             var wmoBatch = new Renderer.Structs.WorldModel()
             {
-                groupBatches = new Renderer.Structs.WorldModelGroupBatches[wmo.group.Count()]
+                groupBatches = new Renderer.Structs.WorldModelGroupBatches[wmo.group.Length]
             };
 
-            for (var g = 0; g < wmo.group.Count(); g++)
+            for (var g = 0; g < wmo.group.Length; g++)
             {
                 string groupName = null;
-                for (var i = 0; i < wmo.groupNames.Count(); i++)
+                for (var i = 0; i < wmo.groupNames.Length; i++)
                     if (wmo.group[g].mogp.nameOffset == wmo.groupNames[i].offset)
                         groupName = wmo.groupNames[i].name.Replace(" ", "_");
 
@@ -60,13 +61,14 @@ namespace WoWViewer.NET.Loaders
                 wmoBatch.groupBatches[g].vao = gl.GenVertexArray();
                 wmoBatch.groupBatches[g].vertexBuffer = gl.GenBuffer();
                 wmoBatch.groupBatches[g].indiceBuffer = gl.GenBuffer();
+                wmoBatch.groupBatches[g].verticeCount = (uint)wmo.group[g].mogp.vertices.Length;
 
                 gl.BindVertexArray(wmoBatch.groupBatches[g].vao);
                 gl.BindBuffer(BufferTargetARB.ArrayBuffer, wmoBatch.groupBatches[g].vertexBuffer);
 
-                var wmovertices = new WMOVertex[wmo.group[g].mogp.vertices.Count()];
+                var wmovertices = new WMOVertex[wmo.group[g].mogp.vertices.Length];
 
-                for (var i = 0; i < wmo.group[g].mogp.vertices.Count(); i++)
+                for (var i = 0; i < wmo.group[g].mogp.vertices.Length; i++)
                 {
                     wmovertices[i].Position = new Vector3(wmo.group[g].mogp.vertices[i].vector.X, wmo.group[g].mogp.vertices[i].vector.Y, wmo.group[g].mogp.vertices[i].vector.Z);
                     wmovertices[i].Normal = new Vector3(wmo.group[g].mogp.normals[i].normal.X, wmo.group[g].mogp.normals[i].normal.Y, wmo.group[g].mogp.normals[i].normal.Z);
@@ -96,25 +98,25 @@ namespace WoWViewer.NET.Loaders
                     gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(wmovertices.Length * 14 * sizeof(float)), buf, BufferUsageARB.StaticDraw);
 
                 //Set pointers in buffer
-                //var normalAttrib = GL.GetAttribLocation(shaderProgram, "normal");
-                //GL.EnableVertexAttribArray(normalAttrib);
-                //GL.VertexAttribPointer(normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 14, sizeof(float) * 0);
-                
+                var normalAttrib = gl.GetAttribLocation(shaderProgram, "normal");
+                gl.EnableVertexAttribArray((uint)normalAttrib);
+                gl.VertexAttribPointer((uint)normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 0));
+
                 var texCoordAttrib = gl.GetAttribLocation(shaderProgram, "texCoord");
                 gl.EnableVertexAttribArray((uint)texCoordAttrib);
                 gl.VertexAttribPointer((uint)texCoordAttrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 3));
 
-                //var texCoord2Attrib = gl.GetAttribLocation(shaderProgram, "texCoord2");
-                //gl.EnableVertexAttribArray((uint)texCoord2Attrib);
-                //gl.VertexAttribPointer((uint)texCoord2Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 5));
+                var texCoord2Attrib = gl.GetAttribLocation(shaderProgram, "texCoord2");
+                gl.EnableVertexAttribArray((uint)texCoord2Attrib);
+                gl.VertexAttribPointer((uint)texCoord2Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 5));
 
-                //var texCoord3Attrib = gl.GetAttribLocation(shaderProgram, "texCoord3");
-                //gl.EnableVertexAttribArray((uint)texCoord3Attrib);
-                //gl.VertexAttribPointer((uint)texCoord3Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 7));
+                var texCoord3Attrib = gl.GetAttribLocation(shaderProgram, "texCoord3");
+                gl.EnableVertexAttribArray((uint)texCoord3Attrib);
+                gl.VertexAttribPointer((uint)texCoord3Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 7));
 
-                //var texCoord4Attrib = gl.GetAttribLocation(shaderProgram, "texCoord4");
-                //gl.EnableVertexAttribArray((uint)texCoord4Attrib);
-                //gl.VertexAttribPointer((uint)texCoord4Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 9));
+                var texCoord4Attrib = gl.GetAttribLocation(shaderProgram, "texCoord4");
+                gl.EnableVertexAttribArray((uint)texCoord4Attrib);
+                gl.VertexAttribPointer((uint)texCoord4Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 14, (void*)(sizeof(float) * 9));
 
                 var posAttrib = gl.GetAttribLocation(shaderProgram, "position");
                 gl.EnableVertexAttribArray((uint)posAttrib);
@@ -123,29 +125,18 @@ namespace WoWViewer.NET.Loaders
                 //Switch to Index buffer
                 gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, wmoBatch.groupBatches[g].indiceBuffer);
 
-                var wmoindicelist = new List<uint>();
-                for (var i = 0; i < wmo.group[g].mogp.indices.Count(); i++)
-                    wmoindicelist.Add(wmo.group[g].mogp.indices[i].indice);
-
-                wmoBatch.groupBatches[g].indices = wmoindicelist.ToArray();
-
-                fixed (uint* buf = wmoBatch.groupBatches[g].indices)
-                    gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(wmoBatch.groupBatches[g].indices.Length * sizeof(uint)), buf, BufferUsageARB.StaticDraw);
-
-                if (fileDataID == 342280)
-                {
-                    Console.WriteLine("Created indice buffer " + wmoBatch.groupBatches[g].indiceBuffer + " with " + wmoBatch.groupBatches[g].indices.Length + " indices");
-                }
+                fixed (ushort* buf = wmo.group[g].mogp.indices)
+                    gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(wmo.group[g].mogp.indices.Length * sizeof(ushort)), buf, BufferUsageARB.StaticDraw);
             }
 
-            wmoBatch.mats = new Renderer.Structs.Material[wmo.materials.Count()];
-            for (var i = 0; i < wmo.materials.Count(); i++)
+            wmoBatch.mats = new Renderer.Structs.Material[wmo.materials.Length];
+            for (var i = 0; i < wmo.materials.Length; i++)
             {
                 wmoBatch.mats[i].texture1 = wmo.materials[i].texture1;
                 wmoBatch.mats[i].texture2 = wmo.materials[i].texture2;
                 wmoBatch.mats[i].texture3 = wmo.materials[i].texture3;
 
-                if (wmo.materials[i].shader == 23)
+                if ((uint)wmo.materials[i].shader == 23)
                 {
                     wmoBatch.mats[i].texture4 = wmo.materials[i].color3;
                     wmoBatch.mats[i].texture5 = wmo.materials[i].runtimeData0;
@@ -153,31 +144,31 @@ namespace WoWViewer.NET.Loaders
                     wmoBatch.mats[i].texture7 = wmo.materials[i].runtimeData2;
                     wmoBatch.mats[i].texture8 = wmo.materials[i].runtimeData3;
                 }
-    
-                if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture1))
+
+                if (FileProvider.FileExists(wmo.materials[i].texture1))
                     wmoBatch.mats[i].textureID1 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture1);
 
-                if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture2))
+                if (FileProvider.FileExists(wmo.materials[i].texture2))
                     wmoBatch.mats[i].textureID2 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture2);
 
-                if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].texture3))
+                if (FileProvider.FileExists(wmo.materials[i].texture3))
                     wmoBatch.mats[i].textureID3 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture3);
 
-                if (wmo.materials[i].shader == 23)
+                if ((uint)wmo.materials[i].shader == 23)
                 {
-                    if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].color3))
+                    if (FileProvider.FileExists(wmo.materials[i].color3))
                         wmoBatch.mats[i].textureID4 = Cache.GetOrLoadBLP(gl, wmo.materials[i].color3);
 
-                    if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].runtimeData0))
+                    if (FileProvider.FileExists(wmo.materials[i].runtimeData0))
                         wmoBatch.mats[i].textureID5 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData0);
 
-                    if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].runtimeData1))
+                    if (FileProvider.FileExists(wmo.materials[i].runtimeData1))
                         wmoBatch.mats[i].textureID6 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData1);
 
-                    if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].runtimeData2))
+                    if (FileProvider.FileExists(wmo.materials[i].runtimeData2))
                         wmoBatch.mats[i].textureID7 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData2);
 
-                    if (WoWFormatLib.Utils.CASC.FileExists(wmo.materials[i].runtimeData3))
+                    if (FileProvider.FileExists(wmo.materials[i].runtimeData3))
                         wmoBatch.mats[i].textureID8 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData3);
                 }
             }
@@ -187,12 +178,12 @@ namespace WoWViewer.NET.Loaders
             for (uint i = 0; i < wmo.doodadSets.Length; i++)
                 wmoBatch.doodadSets[i] = wmo.doodadSets[i].setName;
 
-            wmoBatch.doodads = new Renderer.Structs.WMODoodad[wmo.doodadDefinitions.Count()];
-            for (var i = 0; i < wmo.doodadDefinitions.Count(); i++)
+            wmoBatch.doodads = new WMODoodad[wmo.doodadDefinitions.Length];
+            for (var i = 0; i < wmo.doodadDefinitions.Length; i++)
             {
                 if (wmo.doodadNames != null)
                 {
-                    for (var j = 0; j < wmo.doodadNames.Count(); j++)
+                    for (var j = 0; j < wmo.doodadNames.Length; j++)
                         if (wmo.doodadDefinitions[i].offset == wmo.doodadNames[j].startOffset)
                             wmoBatch.doodads[i].filename = wmo.doodadNames[j].filename;
                 }
@@ -220,57 +211,130 @@ namespace WoWViewer.NET.Loaders
                 }
             }
 
-            var numRenderbatches = 0;
-            //Get total amount of render batches
-            for (var i = 0; i < wmo.group.Count(); i++)
-            {
-                if (wmo.group[i].mogp.renderBatches == null) { continue; }
-                numRenderbatches = numRenderbatches + wmo.group[i].mogp.renderBatches.Count();
-            }
+            var renderBatches = new List<RenderBatch>();
 
-            wmoBatch.wmoRenderBatch = new Renderer.Structs.RenderBatch[numRenderbatches];
-
-            var rb = 0;
-            for (var g = 0; g < wmo.group.Count(); g++)
+            for (var g = 0; g < wmo.group.Length; g++)
             {
                 var group = wmo.group[g];
                 if (group.mogp.renderBatches == null) { continue; }
-                for (var i = 0; i < group.mogp.renderBatches.Count(); i++)
+                for (var i = 0; i < group.mogp.renderBatches.Length; i++)
                 {
-                    wmoBatch.wmoRenderBatch[rb].firstFace = group.mogp.renderBatches[i].firstFace;
-                    wmoBatch.wmoRenderBatch[rb].numFaces = group.mogp.renderBatches[i].numFaces;
+                    var renderBatch = new RenderBatch()
+                    {
+                        firstFace = group.mogp.renderBatches[i].firstFace,
+                        numFaces = group.mogp.renderBatches[i].numFaces,
+                        shader = (uint)wmo.materials[group.mogp.renderBatches[i].materialID].shader,
+                        materialID = new uint[8],
+                        blendType = wmo.materials[group.mogp.renderBatches[i].materialID].blendMode,
+                        groupID = (uint)g
+                    };
+
                     uint matID = 0;
 
-                    if (group.mogp.renderBatches[i].flags == 2)
-                    {
+                    if ((group.mogp.renderBatches[i].flags & 2) == 2)
                         matID = (uint)group.mogp.renderBatches[i].possibleBox2_3;
-                    }
                     else
-                    {
                         matID = group.mogp.renderBatches[i].materialID;
-                    }
 
-                    wmoBatch.wmoRenderBatch[rb].shader = wmo.materials[matID].shader;
-
-                    wmoBatch.wmoRenderBatch[rb].materialID = new uint[3];
-                    for (var ti = 0; ti < wmoBatch.mats.Count(); ti++)
+                    for (var ti = 0; ti < wmoBatch.mats.Length; ti++)
                     {
                         if (wmo.materials[matID].texture1 == wmoBatch.mats[ti].texture1)
-                            wmoBatch.wmoRenderBatch[rb].materialID[0] = (uint)wmoBatch.mats[ti].textureID1;
+                            renderBatch.materialID[0] = wmoBatch.mats[ti].textureID1;
 
                         if (wmo.materials[matID].texture2 == wmoBatch.mats[ti].texture2)
-                            wmoBatch.wmoRenderBatch[rb].materialID[1] = (uint)wmoBatch.mats[ti].textureID2;
+                            renderBatch.materialID[1] = wmoBatch.mats[ti].textureID2;
 
                         if (wmo.materials[matID].texture3 == wmoBatch.mats[ti].texture3)
-                            wmoBatch.wmoRenderBatch[rb].materialID[2] = (uint)wmoBatch.mats[ti].textureID3;
+                            renderBatch.materialID[2] = wmoBatch.mats[ti].textureID3;
+
+                        if (wmo.materials[matID].color3 == wmoBatch.mats[ti].texture4)
+                            renderBatch.materialID[3] = wmoBatch.mats[ti].textureID4;
+
+                        if (wmo.materials[matID].runtimeData0 == wmoBatch.mats[ti].texture5)
+                            renderBatch.materialID[4] = wmoBatch.mats[ti].textureID5;
+
+                        if (wmo.materials[matID].runtimeData1 == wmoBatch.mats[ti].texture6)
+                            renderBatch.materialID[5] = wmoBatch.mats[ti].textureID6;
+
+                        if (wmo.materials[matID].runtimeData2 == wmoBatch.mats[ti].texture7)
+                            renderBatch.materialID[6] = wmoBatch.mats[ti].textureID7;
+
+                        if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture8)
+                            renderBatch.materialID[7] = wmoBatch.mats[ti].textureID8;
                     }
 
-                    wmoBatch.wmoRenderBatch[rb].blendType = wmo.materials[matID].blendMode;
-                    wmoBatch.wmoRenderBatch[rb].groupID = (uint)g;
-                    rb++;
+                    renderBatch.blendType = wmo.materials[matID].blendMode;
+                    renderBatch.groupID = (uint)g;
+
+                    renderBatches.Add(renderBatch);
                 }
+
+                //var definingRenderBatch = false;
+                //var currentRenderBatch = new RenderBatch()
+                //{
+                //    firstFace = 0,
+                //    numFaces = 1,
+                //    shader = 99,
+                //    materialID = [1, 1, 1],
+                //    blendType = 1,
+                //    groupID = (uint)g
+                //};
+
+                //for (var i = 0; i < group.mogp.materialInfo.Length; i++)
+                //{
+                //    var materialInfo = group.mogp.materialInfo[i];
+                //    if(materialInfo.materialID == 0xFF)
+                //    {
+                //        if (!definingRenderBatch)
+                //        {
+                //            currentRenderBatch.firstFace = (uint)i;
+                //            currentRenderBatch.numFaces = 1;
+                //            definingRenderBatch = true;
+                //        }
+                //        else
+                //        {
+                //            currentRenderBatch.numFaces++;
+                //        }
+                //    }
+                //    else
+                //    {
+                //        if (definingRenderBatch)
+                //        {
+                //            definingRenderBatch = false;
+                //            renderBatches.Add(currentRenderBatch);
+                //            currentRenderBatch = new RenderBatch()
+                //            {
+                //                firstFace = 0,
+                //                numFaces = 1,
+                //                shader = 99,
+                //                materialID = [1, 1, 1],
+                //                blendType = 1,
+                //                groupID = (uint)g
+                //            };
+                //        }
+                //    }
+                //}
+
+                //if (definingRenderBatch)
+                //    renderBatches.Add(currentRenderBatch);
+
+                //for(var i = 0; i < group.mogp.bspNodes.Length; i++)
+                //{
+                //    var renderBatch = new RenderBatch()
+                //    {
+                //        firstFace = group.mogp.bspNodes[i].faceStart,
+                //        numFaces = group.mogp.bspNodes[i].nFaces,
+                //        shader = 99,
+                //        materialID = [1, 1, 1],
+                //        blendType = 1,
+                //        groupID = (uint)g
+                //    };
+
+                //    renderBatches.Add(renderBatch);
+                //}
             }
 
+            wmoBatch.wmoRenderBatch = [.. renderBatches];
             return wmoBatch;
         }
     }
