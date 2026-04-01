@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using TACTSharp;
 using WoWFormatLib.FileProviders;
+using WoWViewer.NET.Loaders;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Renderer;
 
@@ -163,11 +164,12 @@ namespace WoWViewer.NET
                 m2ShaderProgram = ShaderCompiler.CompileShader("m2");
                 shadersReady = true;
 
+
                 // sw new Vector3(-8938, 625, 200)
                 // 32 new Vector3(0, 0, 200)
                 // amird new Vector3(-138, 8208, 200)
-                activeCamera = new Camera(new Vector3(-29.472f, 33.547f, 32.624f), Vector3.UnitX, Vector3.UnitZ * -1, window.Size.X / window.Size.Y);
-
+                activeCamera = new Camera(new Vector3(-29.472f, 33.547f, 32.624f), Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
+                gl.Viewport(window.FramebufferSize);
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
                 var err2 = gl.GetError();
@@ -201,7 +203,6 @@ namespace WoWViewer.NET
                 //}
 
             };
-
 
             window.FramebufferResize += s =>
             {
@@ -237,12 +238,12 @@ namespace WoWViewer.NET
                 if (primaryKeyboard.IsKeyPressed(Key.A))
                 {
                     //Move left
-                    activeCamera.Position += Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * (moveSpeed * 4.0f);
+                    activeCamera.Position += Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * moveSpeed;
                 }
                 if (primaryKeyboard.IsKeyPressed(Key.D))
                 {
                     //Move right
-                    activeCamera.Position -= Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * (moveSpeed * 4.0f);
+                    activeCamera.Position -= Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * moveSpeed;
                 }
 
                 if (primaryKeyboard.IsKeyPressed(Key.Up))
@@ -338,43 +339,43 @@ namespace WoWViewer.NET
                     // valdr 33 31
                     byte startX = 34;
                     byte startY = 34;
+                    /*
+                    for (byte x = startX; x < startX + 3; x++)
+                    {
+                        for (byte y = startY; y < startY + 3; y++)
+                        {
+                            var mapTile = new Structs.MapTile();
+                            mapTile.tileX = x;
+                            mapTile.tileY = y;
+                            mapTile.wdtFileDataID = 4914790;
+                            //mapTile.wdtFileDataID = 5339421; // amidr
+                            //mapTile.wdtFileDataID = 3694921; // valdr
+                            var adt = ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
+                            var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
+                            sceneObjects.Add(adtContainer);
 
-                    //for (byte x = startX; x < startX + 3; x++)
-                    //{
-                    //    for (byte y = startY; y < startY + 3; y++)
-                    //    {
-                    //        var mapTile = new Structs.MapTile();
-                    //        mapTile.tileX = x;
-                    //        mapTile.tileY = y;
-                    //        mapTile.wdtFileDataID = 4914790;
-                    //        //mapTile.wdtFileDataID = 5339421; // amidr
-                    //        //mapTile.wdtFileDataID = 3694921; // valdr
-                    //        var adt = ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
-                    //        var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
-                    //        sceneObjects.Add(adtContainer);
+                            foreach (var worldModel in adt.worldModelBatches)
+                            {
+                                if (usedUUIDs.Contains(worldModel.uniqueID))
+                                    continue;
+                                var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
+                                worldModelContainer.Position = worldModel.position;
+                                worldModelContainer.Rotation = worldModel.rotation;
+                                worldModelContainer.Scale = worldModel.scale;
+                                sceneObjects.Add(worldModelContainer);
+                                usedUUIDs.Add(worldModel.uniqueID);
+                            }
 
-                    //        foreach (var worldModel in adt.worldModelBatches)
-                    //        {
-                    //            if (usedUUIDs.Contains(worldModel.uniqueID))
-                    //                continue;
-                    //            var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
-                    //            worldModelContainer.Position = worldModel.position;
-                    //            worldModelContainer.Rotation = worldModel.rotation;
-                    //            worldModelContainer.Scale = worldModel.scale;
-                    //            sceneObjects.Add(worldModelContainer);
-                    //            usedUUIDs.Add(worldModel.uniqueID);
-                    //        }
-
-                    //        foreach (var doodad in adt.doodads)
-                    //        {
-                    //            var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
-                    //            doodadContainer.Position = doodad.position;
-                    //            doodadContainer.Rotation = doodad.rotation;
-                    //            doodadContainer.Scale = doodad.scale;
-                    //            sceneObjects.Add(doodadContainer);
-                    //        }
-                    //    }
-                    //}
+                            //foreach (var doodad in adt.doodads)
+                            //{
+                            //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
+                            //    doodadContainer.Position = doodad.position;
+                            //    doodadContainer.Rotation = doodad.rotation;
+                            //    doodadContainer.Scale = doodad.scale;
+                            //    sceneObjects.Add(doodadContainer);
+                            //}
+                        }
+                    }*/
 
                     Console.WriteLine("loaded model");
                 }
