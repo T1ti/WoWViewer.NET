@@ -165,9 +165,8 @@ namespace WoWViewer.NET.Renderer
             public int[] alphaMaterialID;
             public float[] scales;
             public int[] heightMaterialIDs;
-
-            public Vector4 heightScales;
-            public Vector4 heightOffsets;
+            public float[] heightScales;
+            public float[] heightOffsets;
         }
 
         public struct Doodad

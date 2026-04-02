@@ -40,13 +40,13 @@ namespace WoWViewer.NET.Loaders
 
             if (adt.textures.filenames == null)
             {
-                for (var ti = 0; ti < adt.diffuseTextureFileDataIDs.Count(); ti++)
+                for (var ti = 0; ti < adt.diffuseTextureFileDataIDs.Length; ti++)
                 {
                     var material = new Material();
                     material.filename = adt.diffuseTextureFileDataIDs[ti].ToString();
                     material.textureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti]);
 
-                    if (adt.texParams != null && adt.texParams.Count() >= ti)
+                    if (adt.texParams != null && adt.texParams.Length >= ti)
                     {
                         material.scale = (float)Math.Pow(2, (adt.texParams[ti].flags & 0xF0) >> 4);
                         if (adt.texParams[ti].height != 0.0 || adt.texParams[ti].offset != 1.0)
@@ -81,13 +81,13 @@ namespace WoWViewer.NET.Loaders
             }
             else
             {
-                for (var ti = 0; ti < adt.textures.filenames.Count(); ti++)
+                for (var ti = 0; ti < adt.textures.filenames.Length; ti++)
                 {
                     var material = new Material();
                     material.filename = adt.textures.filenames[ti];
                     material.textureID = BLPLoader.LoadTexture(gl, adt.textures.filenames[ti]);
 
-                    if (adt.texParams != null && adt.texParams.Count() >= ti)
+                    if (adt.texParams != null && adt.texParams.Length >= ti)
                     {
                         material.scale = (float)Math.Pow(2, (adt.texParams[ti].flags & 0xF0) >> 4);
                         if (adt.texParams[ti].height != 0.0 || adt.texParams[ti].offset != 1.0)
@@ -128,15 +128,16 @@ namespace WoWViewer.NET.Loaders
 
             var renderBatches = new List<RenderBatch>();
 
-            for (uint c = 0; c < adt.chunks.Count(); c++)
+            for (uint c = 0; c < adt.chunks.Length; c++)
             {
                 var chunk = adt.chunks[c];
 
-                var off = verticelist.Count();
+                var off = verticelist.Count;
 
-                var batch = new RenderBatch();
-
-                batch.groupID = c;
+                var batch = new RenderBatch
+                {
+                    groupID = c
+                };
 
                 for (int i = 0, idx = 0; i < 17; i++)
                 {
@@ -161,7 +162,7 @@ namespace WoWViewer.NET.Loaders
 
                 result.startPos = verticelist[0];
 
-                batch.firstFace = (uint)indicelist.Count();
+                batch.firstFace = (uint)indicelist.Count;
                 for (var j = 9; j < 145; j++)
                 {
                     indicelist.AddRange(new int[] { off + j + 8, off + j - 9, off + j });
@@ -170,50 +171,46 @@ namespace WoWViewer.NET.Loaders
                     indicelist.AddRange(new int[] { off + j + 9, off + j + 8, off + j });
                     if ((j + 1) % (9 + 8) == 0) j += 9;
                 }
-                batch.numFaces = (uint)(indicelist.Count()) - batch.firstFace;
+                batch.numFaces = (uint)(indicelist.Count) - batch.firstFace;
 
-                var layerMaterials = new List<int>();
-                var alphalayermats = new List<int>();
-                var layerscales = new List<float>();
-                var layerheights = new List<int>();
+                var layerMaterials = new List<int>(8){ -1, -1, -1, -1, -1, -1, -1, -1 };
+                var alphalayermats = new List<int>(8){ -1, -1, -1, -1, -1, -1, -1, -1 };
+                var layerheights = new List<int>(8) { -1, -1, -1, -1, -1, -1, -1, -1 };
 
-                batch.heightScales = new Vector4();
-                batch.heightOffsets = new Vector4();
-                for (var li = 0; li < adt.chunks[c].layers.Count(); li++)
+                var layerscales = new List<float>(8){ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+                var heightScales = new List<float>(8){ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+                var heightOffsets = new List<float>(8) { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+                for (var li = 0; li < adt.chunks[c].layers.Length; li++)
                 {
                     if (adt.chunks[c].alphaLayer != null)
-                        alphalayermats.Add((int)BLPLoader.GenerateAlphaTexture(gl, adt.chunks[c].alphaLayer[li].layer));
+                        alphalayermats[li] = (int)BLPLoader.GenerateAlphaTexture(gl, adt.chunks[c].alphaLayer[li].layer);
 
                     Material curMat;
 
                     if (adt.diffuseTextureFileDataIDs == null)
                     {
-                        if (adt.textures.filenames == null)
-                            throw new Exception("ADT has no textures?");
-
                         throw new NotImplementedException("Old style filename based texture loading not implemented");
-
-                        //var texFileDataID = WoWFormatLib.Utils.CASC.getFileDataIdByName(adt.textures.filenames[adt.chunks[c].layers[li].textureId]);
-                        // layerMaterials.Add(Cache.GetOrLoadBLP(gl, texFileDataID));
-                        //curMat = materials.Where(material => material.filename == adt.textures.filenames[adt.chunks[c].layers[li].textureId]).Single();
                     }
                     else
                     {
-                        layerMaterials.Add((int)Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId]));
+                        layerMaterials[li] = (int)Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId]);
                         curMat = materials.Where(material => material.filename == adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId].ToString()).Single();
                     }
 
-                    layerscales.Add(curMat.scale);
-                    layerheights.Add((int)curMat.heightTexture);
+                    layerheights[li] = (int)curMat.heightTexture;
 
-                    batch.heightScales[li] = curMat.heightScale;
-                    batch.heightOffsets[li] = curMat.heightOffset;
+                    layerscales[li] = curMat.scale;
+                    heightScales[li] = curMat.heightScale;
+                    heightOffsets[li] = curMat.heightOffset;
                 }
 
-                batch.materialID = layerMaterials.ToArray();
-                batch.alphaMaterialID = alphalayermats.ToArray();
-                batch.scales = layerscales.ToArray();
-                batch.heightMaterialIDs = layerheights.ToArray();
+                batch.heightScales = [.. heightScales];
+                batch.heightOffsets = [.. heightOffsets];
+
+                batch.materialID = [.. layerMaterials];
+                batch.alphaMaterialID = [.. alphalayermats];
+                batch.scales = [.. layerscales];
+                batch.heightMaterialIDs = [.. layerheights];
 
                 var indices = indicelist.ToArray();
                 var vertices = verticelist.ToArray();
@@ -250,7 +247,7 @@ namespace WoWViewer.NET.Loaders
 
             if (loadModels)
             {
-                for (var mi = 0; mi < adt.objects.models.entries.Count(); mi++)
+                for (var mi = 0; mi < adt.objects.models.entries.Length; mi++)
                 {
                     var modelentry = adt.objects.models.entries[mi];
                     //var mmid = adt.objects.m2NameOffsets.offsets[modelentry.mmidEntry];
@@ -274,7 +271,7 @@ namespace WoWViewer.NET.Loaders
                     });
                 }
 
-                for (var wmi = 0; wmi < adt.objects.worldModels.entries.Count(); wmi++)
+                for (var wmi = 0; wmi < adt.objects.worldModels.entries.Length; wmi++)
                 {
                     var wmodelentry = adt.objects.worldModels.entries[wmi];
                     var wmoFDID = wmodelentry.mwidEntry;
@@ -290,9 +287,9 @@ namespace WoWViewer.NET.Loaders
                 }
             }
 
-            result.renderBatches = renderBatches.ToArray();
-            result.doodads = doodads.ToArray();
-            result.worldModelBatches = worldModelBatches.ToArray();
+            result.renderBatches = [.. renderBatches];
+            result.doodads = [.. doodads];
+            result.worldModelBatches = [.. worldModelBatches];
 
             return result;
         }

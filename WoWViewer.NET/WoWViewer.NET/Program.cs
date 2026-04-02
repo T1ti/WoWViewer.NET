@@ -1,5 +1,4 @@
-﻿using CASCLib;
-using Evergine.Bindings.RenderDoc;
+﻿using Evergine.Bindings.RenderDoc;
 using ImGuiNET;
 using SceneScriptLib;
 using Silk.NET.Input;
@@ -189,7 +188,9 @@ namespace WoWViewer.NET
                 // sw new Vector3(-8938, 625, 200)
                 // 32 new Vector3(0, 0, 200)
                 // amird new Vector3(-138, 8208, 200)
-                activeCamera = new Camera(new Vector3(-29.472f, 33.547f, 32.624f), Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
+
+                // wmo test new Vector3(-29.472f, 33.547f, 32.624f)
+                activeCamera = new Camera(new Vector3(4292.753f, -1930.982f, 547f), Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
                 gl.Viewport(window.FramebufferSize);
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
@@ -364,46 +365,47 @@ namespace WoWViewer.NET
                     // sw 29 47
                     // amird 16 32
                     // valdr 33 31
-                    byte startX = 33;
-                    byte startY = 31;
-                    /*
-                      for (byte x = startX; x < startX + 3; x++)
-                      {
-                          for (byte y = startY; y < startY + 3; y++)
-                          {
-                              var mapTile = new Structs.MapTile();
-                              mapTile.tileX = x;
-                              mapTile.tileY = y;
-                              //mapTile.wdtFileDataID = 4914790;
-                              //mapTile.wdtFileDataID = 5339421; // amidr
-                              mapTile.wdtFileDataID = 3694921; // valdr
-                              var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
-                              var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
-                              sceneObjects.Add(adtContainer);
+                    byte startX = 37;
+                    byte startY = 22;
+                    for (byte x = startX; x < startX + 3; x++)
+                    {
+                        for (byte y = startY; y < startY + 3; y++)
+                        {
+                            var mapTile = new Structs.MapTile();
+                            mapTile.tileX = x;
+                            mapTile.tileY = y;
+                            mapTile.wdtFileDataID = 775971; // azeroth
+                            //mapTile.wdtFileDataID = 4914790;
+                            //mapTile.wdtFileDataID = 5339421; // amidr
+                            //mapTile.wdtFileDataID = 3694921; // valdr
+                            //mapTile.wdtFileDataID = 5660542; // foudners point
+                            //mapTile.wdtFileDataID = 4540695; // Khaz Algar Surface
+                            var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
+                            var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
+                            sceneObjects.Add(adtContainer);
 
-                              foreach (var worldModel in adt.worldModelBatches)
-                              {
-                                  if (usedUUIDs.Contains(worldModel.uniqueID))
-                                      continue;
-                                  var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
-                                  worldModelContainer.Position = worldModel.position;
-                                  worldModelContainer.Rotation = worldModel.rotation;
-                                  worldModelContainer.Scale = worldModel.scale;
-                                  sceneObjects.Add(worldModelContainer);
-                                  usedUUIDs.Add(worldModel.uniqueID);
-                              }
+                            foreach (var worldModel in adt.worldModelBatches)
+                            {
+                                if (usedUUIDs.Contains(worldModel.uniqueID))
+                                    continue;
+                                var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
+                                worldModelContainer.Position = worldModel.position;
+                                worldModelContainer.Rotation = worldModel.rotation;
+                                worldModelContainer.Scale = worldModel.scale;
+                                sceneObjects.Add(worldModelContainer);
+                                usedUUIDs.Add(worldModel.uniqueID);
+                            }
 
-                              //foreach (var doodad in adt.doodads)
-                              //{
-                              //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
-                              //    doodadContainer.Position = doodad.position;
-                              //    doodadContainer.Rotation = doodad.rotation;
-                              //    doodadContainer.Scale = doodad.scale;
-                              //    sceneObjects.Add(doodadContainer);
-                              //}
-                          }
-                      }
-                   */
+                            //foreach (var doodad in adt.doodads)
+                            //{
+                            //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
+                            //    doodadContainer.Position = doodad.position;
+                            //    doodadContainer.Rotation = doodad.rotation;
+                            //    doodadContainer.Scale = doodad.scale;
+                            //    sceneObjects.Add(doodadContainer);
+                            //}
+                        }
+                    }
                     Console.WriteLine("loaded model");
                 }
 
@@ -864,48 +866,48 @@ namespace WoWViewer.NET
                     gl.Disable(EnableCap.Blend);
                     for (int i = 0; i < adt.Terrain.renderBatches.Length; i++)
                     {
-                        gl.Uniform4(heightScaleLoc, adt.Terrain.renderBatches[i].heightScales);
-                        gl.Uniform4(heightOffsetLoc, adt.Terrain.renderBatches[i].heightOffsets);
-
-                        for (int j = 0; j < adt.Terrain.renderBatches[i].materialID.Length; j++)
+                        for (var l = 0; l < adt.Terrain.renderBatches[i].heightScales.Length; l++)
                         {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "pt_layer" + j);
-                            gl.Uniform1(textureLoc, j);
+                            gl.Uniform1(gl.GetUniformLocation(adtShaderProgram, "heightScales[" + l + "]"), adt.Terrain.renderBatches[i].heightScales[l]);
+                        }
 
-                            var scaleLoc = gl.GetUniformLocation(adtShaderProgram, "layer" + j + "scale");
-                            gl.Uniform1(scaleLoc, adt.Terrain.renderBatches[i].scales[j]);
+                        for (var l = 0; l < adt.Terrain.renderBatches[i].heightOffsets.Length; l++)
+                        {
+                            gl.Uniform1(gl.GetUniformLocation(adtShaderProgram, "heightOffsets[" + l + "]"), adt.Terrain.renderBatches[i].heightOffsets[l]);
+                        }
+
+                        for (int j = 1; j < 8; j++)
+                        {
+                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "alphaLayers[" + (j - 1) + "]");
+                            gl.Uniform1(textureLoc, j - 1);
 
                             gl.ActiveTexture(TextureUnit.Texture0 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (uint)adt.Terrain.renderBatches[i].materialID[j]);
+                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].alphaMaterialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].alphaMaterialID[j]);
+
                         }
-
-                        for (int j = 1; j < adt.Terrain.renderBatches[i].alphaMaterialID.Length; j++)
+                        for (int j = 0; j < 8; j++)
                         {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "pt_blend" + j);
-                            gl.Uniform1(textureLoc, 3 + j);
+                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "diffuseLayers[" + j + "]");
+                            gl.Uniform1(textureLoc, j + 7);
 
-                            gl.ActiveTexture(TextureUnit.Texture3 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (uint)adt.Terrain.renderBatches[i].alphaMaterialID[j]);
-                        }
-
-                        for (int j = 0; j < adt.Terrain.renderBatches[i].heightMaterialIDs.Length; j++)
-                        {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "pt_height" + j);
-                            gl.Uniform1(textureLoc, 7 + j);
+                            var scaleLoc = gl.GetUniformLocation(adtShaderProgram, "layerScales[" + j + "]");
+                            gl.Uniform1(scaleLoc, adt.Terrain.renderBatches[i].scales[j]);
 
                             gl.ActiveTexture(TextureUnit.Texture7 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (uint)adt.Terrain.renderBatches[i].heightMaterialIDs[j]);
+                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].materialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].materialID[j]);
+
+                        }
+
+                        for (int j = 0; j < 8; j++)
+                        {
+                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "heightLayers[" + j + "]");
+                            gl.Uniform1(textureLoc, j + 15);
+
+                            gl.ActiveTexture(TextureUnit.Texture15 + j);
+                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].heightMaterialIDs[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].heightMaterialIDs[j]);
                         }
 
                         gl.DrawElements(PrimitiveType.Triangles, adt.Terrain.renderBatches[i].numFaces, DrawElementsType.UnsignedInt, (void*)(adt.Terrain.renderBatches[i].firstFace * 4));
-
-                        for (int j = 0; j < 11; j++)
-                        {
-                            gl.ActiveTexture(TextureUnit.Texture0 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, 0);
-                        }
-
-                        gl.DrawRangeElements(PrimitiveType.Triangles, adt.Terrain.renderBatches[i].firstFace, adt.Terrain.renderBatches[i].firstFace + adt.Terrain.renderBatches[i].numFaces, adt.Terrain.renderBatches[i].numFaces, DrawElementsType.UnsignedInt, (void*)(adt.Terrain.renderBatches[i].firstFace * 4));
                     }
 
                     var err = gl.GetError();
