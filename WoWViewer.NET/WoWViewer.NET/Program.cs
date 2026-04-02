@@ -152,25 +152,25 @@ namespace WoWViewer.NET
 
                 cascLoaded = true;
 
-                Console.WriteLine("Loading listfile..");
-                if (!File.Exists("listfile.csv"))
-                {
-                    Listfile.Update();
-                }
-                else if (DateTime.Now.AddDays(-7) > File.GetLastWriteTime("listfile.csv"))
-                {
-                    Listfile.Update();
-                }
+                //Console.WriteLine("Loading listfile..");
+                //if (!File.Exists("listfile.csv"))
+                //{
+                //    Listfile.Update();
+                //}
+                //else if (DateTime.Now.AddDays(-7) > File.GetLastWriteTime("listfile.csv"))
+                //{
+                //    Listfile.Update();
+                //}
 
-                try
-                {
-                    if (Listfile.FDIDToFilename.Count == 0)
-                        Listfile.Load();
-                }
-                catch (Exception ex)
-                {
-                    Logger.WriteLine("Error loading listfile: " + ex.Message);
-                }
+                //try
+                //{
+                //    if (Listfile.FDIDToFilename.Count == 0)
+                //        Listfile.Load();
+                //}
+                //catch (Exception ex)
+                //{
+                //    Logger.WriteLine("Error loading listfile: " + ex.Message);
+                //}
 
                 listfileLoaded = true;
 
