@@ -1,4 +1,5 @@
 ﻿using Silk.NET.OpenGL;
+using System.Diagnostics;
 using System.Numerics;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
@@ -299,22 +300,22 @@ namespace WoWViewer.NET.Loaders
                 if (group.mogp.renderBatches == null) { continue; }
                 for (var i = 0; i < group.mogp.renderBatches.Length; i++)
                 {
-                    var renderBatch = new RenderBatch()
-                    {
-                        firstFace = group.mogp.renderBatches[i].firstFace,
-                        numFaces = group.mogp.renderBatches[i].numFaces,
-                        shader = (uint)wmo.materials[group.mogp.renderBatches[i].materialID].shader,
-                        materialID = [-1, -1, -1, -1, -1, -1, -1, -1, -1],
-                        blendType = wmo.materials[group.mogp.renderBatches[i].materialID].blendMode,
-                        groupID = (uint)g
-                    };
-
                     int matID = 0;
 
                     if ((group.mogp.renderBatches[i].flags & 2) == 2)
                         matID = group.mogp.renderBatches[i].possibleBox2_3;
                     else
                         matID = group.mogp.renderBatches[i].materialID;
+
+                    var renderBatch = new RenderBatch()
+                    {
+                        firstFace = group.mogp.renderBatches[i].firstFace,
+                        numFaces = group.mogp.renderBatches[i].numFaces,
+                        shader = (uint)wmo.materials[matID].shader,
+                        materialID = [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+                        blendType = wmo.materials[matID].blendMode,
+                        groupID = (uint)g
+                    };
 
                     for (var ti = 0; ti < wmoBatch.mats.Length; ti++)
                     {
@@ -345,6 +346,7 @@ namespace WoWViewer.NET.Loaders
                         if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture9)
                             renderBatch.materialID[8] = (int)wmoBatch.mats[ti].textureID9;
                     }
+
 
                     renderBatch.blendType = wmo.materials[matID].blendMode;
                     renderBatch.groupID = (uint)g;
