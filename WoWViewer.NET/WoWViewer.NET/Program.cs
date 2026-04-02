@@ -1,4 +1,5 @@
 ﻿using CASCLib;
+using Evergine.Bindings.RenderDoc;
 using ImGuiNET;
 using SceneScriptLib;
 using Silk.NET.Input;
@@ -55,6 +56,8 @@ namespace WoWViewer.NET
             windowOptions.Size = new Vector2D<int>(1920, 1080);
             windowOptions.Title = "WoWViewer.NET";
             window = Window.Create(windowOptions);
+
+            RenderDoc.Load(out RenderDoc renderDoc);
 
             gl = null;
 
