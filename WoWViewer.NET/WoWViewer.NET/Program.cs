@@ -733,28 +733,76 @@ namespace WoWViewer.NET
 
                         switch (wmo.wmoRenderBatch[j].blendType)
                         {
-                            case 0:
+                            case 0: // GxBlend_Opaque
                                 gl.Disable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 break;
-                            case 1:
+                            case 1: // GxBlend_AlphaKey
                                 gl.Disable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, 0.90393700787f);
                                 break;
-                            case 2:
+                            case 2: // GxBlend_Alpha
                                 gl.Enable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
                                 break;
-                            case 3:
+                            case 3: // GxBlend_Add
                                 gl.Enable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
                                 gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
                                 break;
-                            default:
-                                gl.Disable(EnableCap.Blend);
+                            case 4: // GxBlend_Mod
+                                gl.Enable(EnableCap.Blend);
                                 gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.DstAlpha, BlendingFactor.Zero);
                                 break;
+                            case 5: // GxBlend_Mod2x
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.SrcColor, BlendingFactor.DstAlpha, BlendingFactor.SrcAlpha);
+                                break;
+                            case 6: // GxBlend_ModAdd
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.One, BlendingFactor.DstAlpha, BlendingFactor.One);
+                                break;
+                            case 7: // GxBlend_InvSrcAlphaAdd
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One);
+                                break;
+                            case 8: // GxBlend_InvSrcAlphaOpaque
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero);
+                                break;
+                            case 9: // GxBlend_SrcAlphaOpaque
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.Zero, BlendingFactor.SrcAlpha, BlendingFactor.Zero);
+                                break;
+                            case 10: // GxBlend_NoAlphaAdd
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
+                                break;
+                            case 11: // GxBlend_ConstantAlpha
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha, BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha);
+                                break;
+                            case 12: // GxBlend_Screen
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.OneMinusDstColor, BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero);
+                                break;
+                            case 13: // GxBlendAdd
+                                gl.Enable(EnableCap.Blend);
+                                gl.Uniform1(alphaRefLoc, -1.0f);
+                                gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
+                                break;
+                            default:
+                                throw new Exception("Unsupport blend mode: " + wmo.wmoRenderBatch[j].blendType);
                         }
 
                         for (var m = 0; m < wmo.wmoRenderBatch[j].materialID.Length; m++)
