@@ -123,24 +123,24 @@ namespace WoWViewer.NET.Renderer
             public uint textureID;
 
             // WMO
-            public uint textureID1;
-            public uint textureID2;
-            public uint textureID3;
-            public uint textureID4;
-            public uint textureID5;
-            public uint textureID6;
-            public uint textureID7;
-            public uint textureID8;
-            public uint textureID9;
-            internal uint texture1;
-            internal uint texture2;
-            internal uint texture3;
-            internal uint texture4;
-            internal uint texture5;
-            internal uint texture6;
-            internal uint texture7;
-            internal uint texture8;
-            internal uint texture9;
+            public int textureID1;
+            public int textureID2;
+            public int textureID3;
+            public int textureID4;
+            public int textureID5;
+            public int textureID6;
+            public int textureID7;
+            public int textureID8;
+            public int textureID9;
+            internal int texture1;
+            internal int texture2;
+            internal int texture3;
+            internal int texture4;
+            internal int texture5;
+            internal int texture6;
+            internal int texture7;
+            internal int texture8;
+            internal int texture9;
 
             // ADT
             public float scale;
@@ -156,7 +156,7 @@ namespace WoWViewer.NET.Renderer
         {
             public uint firstFace;
             public uint numFaces;
-            public uint[] materialID;
+            public int[] materialID;
             /* WMO ONLY */
             public uint groupID;
             public uint blendType;

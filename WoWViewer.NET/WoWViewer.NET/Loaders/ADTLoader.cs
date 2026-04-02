@@ -172,7 +172,7 @@ namespace WoWViewer.NET.Loaders
                 }
                 batch.numFaces = (uint)(indicelist.Count()) - batch.firstFace;
 
-                var layerMaterials = new List<uint>();
+                var layerMaterials = new List<int>();
                 var alphalayermats = new List<int>();
                 var layerscales = new List<float>();
                 var layerheights = new List<int>();
@@ -199,7 +199,7 @@ namespace WoWViewer.NET.Loaders
                     }
                     else
                     {
-                        layerMaterials.Add(Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId]));
+                        layerMaterials.Add((int)Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId]));
                         curMat = materials.Where(material => material.filename == adt.diffuseTextureFileDataIDs[adt.chunks[c].layers[li].textureId].ToString()).Single();
                     }
 

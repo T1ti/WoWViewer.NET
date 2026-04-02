@@ -48,6 +48,26 @@ namespace WoWViewer.NET
         private static Dictionary<string, DateTime> shaderMTimes = new();
 
         private static List<TimelineScene> scenes = new();
+
+        private static uint defaultTextureID;
+
+        private static unsafe uint MakeDefaultTexture()
+        {
+            var defaultTexture = gl.GenTexture();
+            gl.BindTexture(TextureTarget.Texture2D, defaultTexture);
+            byte[] fill = [0, 0, 0, 0];
+            fixed (byte* fillPtr = fill)
+            {
+                gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, fillPtr);
+            }
+
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+            return defaultTexture;
+        }
         static void Main(string[] args)
         {
             var windowOptions = WindowOptions.Default;
@@ -191,6 +211,8 @@ namespace WoWViewer.NET
                     }, (void*)0);
                 }
 
+                defaultTextureID = MakeDefaultTexture();
+
                 //foreach (var file in Directory.GetFiles("G:\\NewmansLandingProject\\scenes\\10.0.0 Newman's Landing Machinima\\", "*.lua"))
                 //{
                 //    Console.WriteLine(Path.GetFileNameWithoutExtension(file));
@@ -201,6 +223,7 @@ namespace WoWViewer.NET
                 //    var contents = File.ReadAllText(file);
                 //    var script = SceneScriptReader.ParseTimelineScript(contents);
                 //    scenes.Add(script);
+
                 //}
 
             };
@@ -329,7 +352,8 @@ namespace WoWViewer.NET
                     //}
 
                     //var wmoContainer = new WMOContainer(gl, 2756726, wmoShaderProgram);
-                    var wmoContainer = new WMOContainer(gl, 5386825, wmoShaderProgram);
+                    //var wmoContainer = new WMOContainer(gl, 5386825, wmoShaderProgram);
+                    var wmoContainer = new WMOContainer(gl, 3924066, wmoShaderProgram);
                     wmoContainer.Position = new Vector3(34f, 17f, 42f);
                     wmoContainer.Scale = 1f;
                     sceneObjects.Add(wmoContainer);
@@ -339,46 +363,46 @@ namespace WoWViewer.NET
                     // sw 29 47
                     // amird 16 32
                     // valdr 33 31
-                    byte startX = 34;
-                    byte startY = 34;
-                  
-                    for (byte x = startX; x < startX + 3; x++)
-                    {
-                        for (byte y = startY; y < startY + 3; y++)
-                        {
-                            var mapTile = new Structs.MapTile();
-                            mapTile.tileX = x;
-                            mapTile.tileY = y;
-                            mapTile.wdtFileDataID = 4914790;
-                            //mapTile.wdtFileDataID = 5339421; // amidr
-                            //mapTile.wdtFileDataID = 3694921; // valdr
-                            var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
-                            var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
-                            sceneObjects.Add(adtContainer);
+                    byte startX = 33;
+                    byte startY = 31;
+                    /*
+                      for (byte x = startX; x < startX + 3; x++)
+                      {
+                          for (byte y = startY; y < startY + 3; y++)
+                          {
+                              var mapTile = new Structs.MapTile();
+                              mapTile.tileX = x;
+                              mapTile.tileY = y;
+                              //mapTile.wdtFileDataID = 4914790;
+                              //mapTile.wdtFileDataID = 5339421; // amidr
+                              mapTile.wdtFileDataID = 3694921; // valdr
+                              var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
+                              var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
+                              sceneObjects.Add(adtContainer);
 
-                            foreach (var worldModel in adt.worldModelBatches)
-                            {
-                                if (usedUUIDs.Contains(worldModel.uniqueID))
-                                    continue;
-                                var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
-                                worldModelContainer.Position = worldModel.position;
-                                worldModelContainer.Rotation = worldModel.rotation;
-                                worldModelContainer.Scale = worldModel.scale;
-                                sceneObjects.Add(worldModelContainer);
-                                usedUUIDs.Add(worldModel.uniqueID);
-                            }
+                              foreach (var worldModel in adt.worldModelBatches)
+                              {
+                                  if (usedUUIDs.Contains(worldModel.uniqueID))
+                                      continue;
+                                  var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram);
+                                  worldModelContainer.Position = worldModel.position;
+                                  worldModelContainer.Rotation = worldModel.rotation;
+                                  worldModelContainer.Scale = worldModel.scale;
+                                  sceneObjects.Add(worldModelContainer);
+                                  usedUUIDs.Add(worldModel.uniqueID);
+                              }
 
-                            //foreach (var doodad in adt.doodads)
-                            //{
-                            //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
-                            //    doodadContainer.Position = doodad.position;
-                            //    doodadContainer.Rotation = doodad.rotation;
-                            //    doodadContainer.Scale = doodad.scale;
-                            //    sceneObjects.Add(doodadContainer);
-                            //}
-                        }
-                    }
-                 
+                              //foreach (var doodad in adt.doodads)
+                              //{
+                              //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
+                              //    doodadContainer.Position = doodad.position;
+                              //    doodadContainer.Rotation = doodad.rotation;
+                              //    doodadContainer.Scale = doodad.scale;
+                              //    sceneObjects.Add(doodadContainer);
+                              //}
+                          }
+                      }
+                   */
                     Console.WriteLine("loaded model");
                 }
 
@@ -811,7 +835,10 @@ namespace WoWViewer.NET
                         for (var m = 0; m < wmo.wmoRenderBatch[j].materialID.Length; m++)
                         {
                             gl.ActiveTexture(TextureUnit.Texture0 + m);
-                            gl.BindTexture(TextureTarget.Texture2D, wmo.wmoRenderBatch[j].materialID[m]);
+                            if (wmo.wmoRenderBatch[j].materialID[m] == -1)
+                                gl.BindTexture(TextureTarget.Texture2D, defaultTextureID);
+                            else
+                                gl.BindTexture(TextureTarget.Texture2D, (uint)wmo.wmoRenderBatch[j].materialID[m]);
                         }
 
                         gl.DrawElements(PrimitiveType.Triangles, numFaces, DrawElementsType.UnsignedShort, (void*)(firstFace * 2));
@@ -848,7 +875,7 @@ namespace WoWViewer.NET
                             gl.Uniform1(scaleLoc, adt.Terrain.renderBatches[i].scales[j]);
 
                             gl.ActiveTexture(TextureUnit.Texture0 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, adt.Terrain.renderBatches[i].materialID[j]);
+                            gl.BindTexture(TextureTarget.Texture2D, (uint)adt.Terrain.renderBatches[i].materialID[j]);
                         }
 
                         for (int j = 1; j < adt.Terrain.renderBatches[i].alphaMaterialID.Length; j++)

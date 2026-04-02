@@ -95,5 +95,9 @@ void main()
         TexCoord = texCoord;
         TexCoord2 = texCoord2;
         TexCoord3 = texCoord3;
+    } else {
+        TexCoord = vec2(0.0, 1.0);
+        TexCoord2 = vec2(0.0, 1.0);
+        TexCoord3 = vec2(0.0, 1.0);
     }
 }

@@ -169,56 +169,87 @@ namespace WoWViewer.NET.Loaders
             wmoBatch.mats = new Renderer.Structs.Material[wmo.materials.Length];
             for (var i = 0; i < wmo.materials.Length; i++)
             {
-                wmoBatch.mats[i].texture1 = wmo.materials[i].texture1;
-                wmoBatch.mats[i].texture2 = wmo.materials[i].texture2;
-                wmoBatch.mats[i].texture3 = wmo.materials[i].texture3;
+                wmoBatch.mats[i].texture1 = (int)wmo.materials[i].texture1;
+                wmoBatch.mats[i].texture2 = (int)wmo.materials[i].texture2;
+                wmoBatch.mats[i].texture3 = (int)wmo.materials[i].texture3;
+                wmoBatch.mats[i].texture4 = -1;
+                wmoBatch.mats[i].texture5 = -1;
+                wmoBatch.mats[i].texture6 = -1;
+                wmoBatch.mats[i].texture7 = -1;
+                wmoBatch.mats[i].texture8 = -1;
+                wmoBatch.mats[i].texture9 = -1;
+
+                wmoBatch.mats[i].textureID1 = -1;
+                wmoBatch.mats[i].textureID2 = -1;
+                wmoBatch.mats[i].textureID3 = -1;
+                wmoBatch.mats[i].textureID4 = -1;
+                wmoBatch.mats[i].textureID5 = -1;
+                wmoBatch.mats[i].textureID6 = -1;
+                wmoBatch.mats[i].textureID7 = -1;
+                wmoBatch.mats[i].textureID8 = -1;
+                wmoBatch.mats[i].textureID9 = -1;
 
                 var (VertexShader, PixelShader) = ShaderEnums.WMOShaders[(int)wmo.materials[i].shader];
                 if (PixelShader == ShaderEnums.WMOPixelShader.MapObjParallax)
                 {
-                    wmoBatch.mats[i].texture4 = wmo.materials[i].color3;
-                    wmoBatch.mats[i].texture5 = wmo.materials[i].flags3;
-                    wmoBatch.mats[i].texture6 = wmo.materials[i].runtimeData0;
+                    if((int)wmo.materials[i].color3 != 0)
+                        wmoBatch.mats[i].texture4 = (int)wmo.materials[i].color3;
+
+                    if((int)wmo.materials[i].flags3 != 0)
+                        wmoBatch.mats[i].texture5 = (int)wmo.materials[i].flags3;
+
+                    if((int)wmo.materials[i].runtimeData0 != 0)
+                        wmoBatch.mats[i].texture6 = (int)wmo.materials[i].runtimeData0;
                 }
                 else if (PixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
                 {
-                    wmoBatch.mats[i].texture4 = wmo.materials[i].color3;
-                    wmoBatch.mats[i].texture5 = wmo.materials[i].flags3;
-                    wmoBatch.mats[i].texture6 = wmo.materials[i].runtimeData0;
-                    wmoBatch.mats[i].texture7 = wmo.materials[i].runtimeData1;
-                    wmoBatch.mats[i].texture8 = wmo.materials[i].runtimeData2;
-                    wmoBatch.mats[i].texture9 = wmo.materials[i].runtimeData3;
+                    if ((int)wmo.materials[i].color3 != 0)
+                        wmoBatch.mats[i].texture4 = (int)wmo.materials[i].color3;
+
+                    if ((int)wmo.materials[i].flags3 != 0)
+                        wmoBatch.mats[i].texture5 = (int)wmo.materials[i].flags3;
+
+                    if ((int)wmo.materials[i].runtimeData0 != 0)
+                        wmoBatch.mats[i].texture6 = (int)wmo.materials[i].runtimeData0;
+
+                    if ((int)wmo.materials[i].runtimeData1 != 0)
+                        wmoBatch.mats[i].texture7 = (int)wmo.materials[i].runtimeData1;
+
+                    if ((int)wmo.materials[i].runtimeData2 != 0)
+                        wmoBatch.mats[i].texture8 = (int)wmo.materials[i].runtimeData2;
+
+                    if ((int)wmo.materials[i].runtimeData3 != 0)
+                        wmoBatch.mats[i].texture9 = (int)wmo.materials[i].runtimeData3;
                 }
 
                 if (FileProvider.FileExists(wmo.materials[i].texture1))
-                    wmoBatch.mats[i].textureID1 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture1);
+                    wmoBatch.mats[i].textureID1 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].texture1);
 
                 if (FileProvider.FileExists(wmo.materials[i].texture2))
-                    wmoBatch.mats[i].textureID2 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture2);
+                    wmoBatch.mats[i].textureID2 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].texture2);
 
                 if (FileProvider.FileExists(wmo.materials[i].texture3))
-                    wmoBatch.mats[i].textureID3 = Cache.GetOrLoadBLP(gl, wmo.materials[i].texture3);
-
+                    wmoBatch.mats[i].textureID3 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].texture3);
 
                 if (PixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
                 {
                     if (FileProvider.FileExists(wmo.materials[i].color3))
-                        wmoBatch.mats[i].textureID4 = Cache.GetOrLoadBLP(gl, wmo.materials[i].color3);
+                        wmoBatch.mats[i].textureID4 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].color3);
 
                     if (FileProvider.FileExists(wmo.materials[i].flags3))
-                        wmoBatch.mats[i].textureID5 = Cache.GetOrLoadBLP(gl, wmo.materials[i].flags3);
+                        wmoBatch.mats[i].textureID5 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].flags3);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData0))
-                        wmoBatch.mats[i].textureID6 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData0);
+                        wmoBatch.mats[i].textureID6 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData0);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData1))
-                        wmoBatch.mats[i].textureID7 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData1);
+                        wmoBatch.mats[i].textureID7 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData1);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData2))
-                        wmoBatch.mats[i].textureID8 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData2);
+                        wmoBatch.mats[i].textureID8 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData2);
 
                     if (FileProvider.FileExists(wmo.materials[i].runtimeData3))
-                        wmoBatch.mats[i].textureID9 = Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData3);
+                        wmoBatch.mats[i].textureID9 = (int)Cache.GetOrLoadBLP(gl, wmo.materials[i].runtimeData3);
                 }
             }
 
@@ -273,46 +304,46 @@ namespace WoWViewer.NET.Loaders
                         firstFace = group.mogp.renderBatches[i].firstFace,
                         numFaces = group.mogp.renderBatches[i].numFaces,
                         shader = (uint)wmo.materials[group.mogp.renderBatches[i].materialID].shader,
-                        materialID = new uint[9],
+                        materialID = [-1, -1, -1, -1, -1, -1, -1, -1, -1],
                         blendType = wmo.materials[group.mogp.renderBatches[i].materialID].blendMode,
                         groupID = (uint)g
                     };
 
-                    uint matID = 0;
+                    int matID = 0;
 
                     if ((group.mogp.renderBatches[i].flags & 2) == 2)
-                        matID = (uint)group.mogp.renderBatches[i].possibleBox2_3;
+                        matID = group.mogp.renderBatches[i].possibleBox2_3;
                     else
                         matID = group.mogp.renderBatches[i].materialID;
 
                     for (var ti = 0; ti < wmoBatch.mats.Length; ti++)
                     {
                         if (wmo.materials[matID].texture1 == wmoBatch.mats[ti].texture1)
-                            renderBatch.materialID[0] = wmoBatch.mats[ti].textureID1;
+                            renderBatch.materialID[0] = (int)wmoBatch.mats[ti].textureID1;
 
                         if (wmo.materials[matID].texture2 == wmoBatch.mats[ti].texture2)
-                            renderBatch.materialID[1] = wmoBatch.mats[ti].textureID2;
+                            renderBatch.materialID[1] = (int)wmoBatch.mats[ti].textureID2;
 
                         if (wmo.materials[matID].texture3 == wmoBatch.mats[ti].texture3)
-                            renderBatch.materialID[2] = wmoBatch.mats[ti].textureID3;
+                            renderBatch.materialID[2] = (int)wmoBatch.mats[ti].textureID3;
 
                         if (wmo.materials[matID].color3 == wmoBatch.mats[ti].texture4)
-                            renderBatch.materialID[3] = wmoBatch.mats[ti].textureID4;
+                            renderBatch.materialID[3] = (int)wmoBatch.mats[ti].textureID4;
 
                         if (wmo.materials[matID].flags3 == wmoBatch.mats[ti].texture5)
-                            renderBatch.materialID[4] = wmoBatch.mats[ti].textureID5;
+                            renderBatch.materialID[4] = (int)wmoBatch.mats[ti].textureID5;
 
                         if (wmo.materials[matID].runtimeData0 == wmoBatch.mats[ti].texture6)
-                            renderBatch.materialID[5] = wmoBatch.mats[ti].textureID6;
+                            renderBatch.materialID[5] = (int)wmoBatch.mats[ti].textureID6;
 
                         if (wmo.materials[matID].runtimeData1 == wmoBatch.mats[ti].texture7)
-                            renderBatch.materialID[6] = wmoBatch.mats[ti].textureID7;
+                            renderBatch.materialID[6] = (int)wmoBatch.mats[ti].textureID7;
 
                         if (wmo.materials[matID].runtimeData2 == wmoBatch.mats[ti].texture8)
-                            renderBatch.materialID[7] = wmoBatch.mats[ti].textureID8;
+                            renderBatch.materialID[7] = (int)wmoBatch.mats[ti].textureID8;
 
                         if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture9)
-                            renderBatch.materialID[8] = wmoBatch.mats[ti].textureID9;
+                            renderBatch.materialID[8] = (int)wmoBatch.mats[ti].textureID9;
                     }
 
                     renderBatch.blendType = wmo.materials[matID].blendMode;

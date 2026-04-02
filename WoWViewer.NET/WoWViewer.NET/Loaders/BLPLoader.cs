@@ -46,6 +46,10 @@ namespace WoWViewer.NET.Loaders
 
                         var width = blp.width / scale;
                         var height = blp.height / scale;
+
+                        if (width == 0 || height == 0)
+                            break;
+
                         var bytes = blp.GetPictureData(i, width, height);
 
                         maxMip = i;
