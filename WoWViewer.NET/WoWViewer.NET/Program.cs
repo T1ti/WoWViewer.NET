@@ -128,14 +128,14 @@ namespace WoWViewer.NET
                 var buildConfig = "f8891ed6ab01b319b43b9aa0ceeb5f58";
                 var cdnConfig = "99cd3ee53f0b63144232eef9ff25fc06";
 
-                var basedir = @"C:\World of Warcraft\";
+                var basedir = @"C:\World of Warcraft";
                 if (Directory.Exists(basedir))
                 {
                     buildInstance.Settings.BaseDir = basedir;
                     buildInstance.Settings.BuildConfig = buildConfig;
                     buildInstance.Settings.CDNConfig = cdnConfig;
                 }
-
+                buildInstance.Settings.AdditionalCDNs = ["casc.wago.tools", "cdn.arctium.tools"];
                 buildInstance.LoadConfigs(buildConfig, cdnConfig);
                 if (buildInstance.BuildConfig == null || buildInstance.CDNConfig == null)
                     throw new Exception("Failed to load build configs");
@@ -397,14 +397,14 @@ namespace WoWViewer.NET
                                 usedUUIDs.Add(worldModel.uniqueID);
                             }
 
-                            //foreach (var doodad in adt.doodads)
-                            //{
-                            //    var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
-                            //    doodadContainer.Position = doodad.position;
-                            //    doodadContainer.Rotation = doodad.rotation;
-                            //    doodadContainer.Scale = doodad.scale;
-                            //    sceneObjects.Add(doodadContainer);
-                            //}
+                            foreach (var doodad in adt.doodads)
+                            {
+                                var doodadContainer = new M2Container(gl, doodad.fileDataID, m2ShaderProgram);
+                                doodadContainer.Position = doodad.position;
+                                doodadContainer.Rotation = doodad.rotation;
+                                doodadContainer.Scale = doodad.scale;
+                                sceneObjects.Add(doodadContainer);
+                            }
                         }
                     }
                     Console.WriteLine("loaded model");
@@ -467,7 +467,7 @@ namespace WoWViewer.NET
                         foreach (var sceneObject in sceneObjects.Where(x => x is WMOContainer))
                         {
                             var wmoContainer = (WMOContainer)sceneObject;
-                            var wmoString = "WMO #" + i + " FDID " + wmoContainer.FileDataId.ToString() + " " + Listfile.FDIDToFilename[wmoContainer.FileDataId];
+                            var wmoString = "WMO #" + i + " FDID " + wmoContainer.FileDataId.ToString();
 
                             if (ImGui.CollapsingHeader(wmoString))
                             {
@@ -494,7 +494,7 @@ namespace WoWViewer.NET
                         foreach (var sceneObject in sceneObjects.Where(x => x is M2Container))
                         {
                             var m2Container = (M2Container)sceneObject;
-                            if (ImGui.CollapsingHeader("M2 #" + i + " FDID " + m2Container.FileDataId.ToString() + " " + Listfile.FDIDToFilename[m2Container.FileDataId]))
+                            if (ImGui.CollapsingHeader("M2 #" + i + " FDID " + m2Container.FileDataId.ToString()))
                             {
                                 var curPos = m2Container.Position;
                                 ImGui.DragFloat3("M2 Pos " + i, ref curPos);
@@ -533,7 +533,6 @@ namespace WoWViewer.NET
 
             window.Dispose();
         }
-
 
         private static void ImGUIDockSpace()
         {
@@ -640,6 +639,9 @@ namespace WoWViewer.NET
             for (int i = 0; i < 8; i++)
                 heightLayerUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"heightLayers[{i}]");
 
+            var m2AlphaRefLoc = gl.GetUniformLocation(m2ShaderProgram, "alphaRef");
+            var wmoAlphaRefLoc = gl.GetUniformLocation(wmoShaderProgram, "alphaRef");
+
             var projectionMatrix = activeCamera.GetProjectionMatrix();
 
             foreach (var sceneObject in sceneObjects)
@@ -682,7 +684,6 @@ namespace WoWViewer.NET
 
                     gl.UniformMatrix4(m2ModelLocation, 1, false, (float*)&modelMatrix);
 
-                    var alphaRefLoc = gl.GetUniformLocation(m2ShaderProgram, "alphaRef");
                     gl.ActiveTexture(TextureUnit.Texture0);
 
                     gl.BindVertexArray(m2.vao);
@@ -693,45 +694,11 @@ namespace WoWViewer.NET
                         if (!activeM2.EnabledGeosets[i])
                             continue;
 
-                        switch (submesh.blendType)
-                        {
-                            case 0:
-                                gl.Disable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                break;
-                            case 1:
-                                gl.Disable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, 0.90393700787f);
-                                break;
-                            case 2:
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-                                break;
-                            case 3:
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
-                                break;
-                            case 4:
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.DstAlpha, BlendingFactor.Zero);
-                                break;
-                            case 7:
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One);
-                                break;
-                            default:
-                                gl.Disable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                break;
-                        }
+                        SwitchBlendMode((int)submesh.blendType, gl, m2AlphaRefLoc);
 
                         gl.BindTexture(TextureTarget.Texture2D, submesh.material);
-
                         gl.DrawElements(PrimitiveType.Triangles, submesh.numFaces, DrawElementsType.UnsignedInt, (void*)(submesh.firstFace * 4));
+                        gl.BindTexture(TextureTarget.Texture2D, 0);
                     }
 
                     var err = gl.GetError();
@@ -767,8 +734,6 @@ namespace WoWViewer.NET
 
                     gl.UniformMatrix4(wmoModelLocation, 1, false, (float*)&modelMatrix);
 
-                    var alphaRefLoc = gl.GetUniformLocation(wmoShaderProgram, "alphaRef");
-
                     for (var j = 0; j < wmo.wmoRenderBatch.Length; j++)
                     {
                         if (wmo.groupBatches[wmo.wmoRenderBatch[j].groupID].vao == 0)
@@ -782,79 +747,7 @@ namespace WoWViewer.NET
                         gl.Uniform1(wmoVertexShaderIDLocation, (float)ShaderEnums.WMOShaders[(int)wmo.wmoRenderBatch[j].shader].VertexShader);
                         gl.Uniform1(wmoPixelShaderIDLocation, (float)ShaderEnums.WMOShaders[(int)wmo.wmoRenderBatch[j].shader].PixelShader);
 
-                        switch (wmo.wmoRenderBatch[j].blendType)
-                        {
-                            case 0: // GxBlend_Opaque
-                                gl.Disable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                break;
-                            case 1: // GxBlend_AlphaKey
-                                gl.Disable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, 0.90393700787f);
-                                break;
-                            case 2: // GxBlend_Alpha
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-                                break;
-                            case 3: // GxBlend_Add
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
-                                break;
-                            case 4: // GxBlend_Mod
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.DstAlpha, BlendingFactor.Zero);
-                                break;
-                            case 5: // GxBlend_Mod2x
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.SrcColor, BlendingFactor.DstAlpha, BlendingFactor.SrcAlpha);
-                                break;
-                            case 6: // GxBlend_ModAdd
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.One, BlendingFactor.DstAlpha, BlendingFactor.One);
-                                break;
-                            case 7: // GxBlend_InvSrcAlphaAdd
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One);
-                                break;
-                            case 8: // GxBlend_InvSrcAlphaOpaque
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero);
-                                break;
-                            case 9: // GxBlend_SrcAlphaOpaque
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.Zero, BlendingFactor.SrcAlpha, BlendingFactor.Zero);
-                                break;
-                            case 10: // GxBlend_NoAlphaAdd
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
-                                break;
-                            case 11: // GxBlend_ConstantAlpha
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha, BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha);
-                                break;
-                            case 12: // GxBlend_Screen
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.OneMinusDstColor, BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero);
-                                break;
-                            case 13: // GxBlendAdd
-                                gl.Enable(EnableCap.Blend);
-                                gl.Uniform1(alphaRefLoc, -1.0f);
-                                gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
-                                break;
-                            default:
-                                throw new Exception("Unsupport blend mode: " + wmo.wmoRenderBatch[j].blendType);
-                        }
+                        SwitchBlendMode((int)wmo.wmoRenderBatch[j].blendType, gl, wmoAlphaRefLoc);
 
                         for (var m = 0; m < wmo.wmoRenderBatch[j].materialID.Length; m++)
                         {
@@ -866,6 +759,12 @@ namespace WoWViewer.NET
                         }
 
                         gl.DrawElements(PrimitiveType.Triangles, numFaces, DrawElementsType.UnsignedShort, (void*)(firstFace * 2));
+
+                        for (var m = 0; m < wmo.wmoRenderBatch[j].materialID.Length; m++)
+                        {
+                            gl.ActiveTexture(TextureUnit.Texture0 + m);
+                            gl.BindTexture(TextureTarget.Texture2D, 0);
+                        }
                     }
 
                     var err = gl.GetError();
@@ -885,6 +784,7 @@ namespace WoWViewer.NET
 
                     gl.BindVertexArray(adt.Terrain.vao);
                     gl.Disable(EnableCap.Blend);
+
                     for (int i = 0; i < adt.Terrain.renderBatches.Length; i++)
                     {
                         for (int j = 1; j < 8; j++)
@@ -903,13 +803,23 @@ namespace WoWViewer.NET
                             gl.Uniform1(diffuseLayerUniforms[j], j + 7);
                             gl.ActiveTexture(TextureUnit.Texture7 + j);
                             gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].materialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].materialID[j]);
-                        
+
                             gl.Uniform1(heightLayerUniforms[j], j + 15);
                             gl.ActiveTexture(TextureUnit.Texture15 + j);
                             gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].heightMaterialIDs[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].heightMaterialIDs[j]);
                         }
 
                         gl.DrawElements(PrimitiveType.Triangles, adt.Terrain.renderBatches[i].numFaces, DrawElementsType.UnsignedInt, (void*)(adt.Terrain.renderBatches[i].firstFace * 4));
+
+                        for (int j = 0; j < 8; j++)
+                        {
+                            gl.ActiveTexture(TextureUnit.Texture0 + j);
+                            gl.BindTexture(TextureTarget.Texture2D, 0);
+                            gl.ActiveTexture(TextureUnit.Texture7 + j);
+                            gl.BindTexture(TextureTarget.Texture2D, 0);
+                            gl.ActiveTexture(TextureUnit.Texture15 + j);
+                            gl.BindTexture(TextureTarget.Texture2D, 0);
+                        }
                     }
 
                     var err = gl.GetError();
@@ -919,6 +829,83 @@ namespace WoWViewer.NET
             }
 
             gl.BindVertexArray(0);
+        }
+
+        private static void SwitchBlendMode(int blendType, GL gl, int alphaRefLoc)
+        {
+            switch (blendType)
+            {
+                case 0: // GxBlend_Opaque
+                    gl.Disable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    break;
+                case 1: // GxBlend_AlphaKey
+                    gl.Disable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, 0.90393700787f);
+                    break;
+                case 2: // GxBlend_Alpha
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                    break;
+                case 3: // GxBlend_Add
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
+                    break;
+                case 4: // GxBlend_Mod
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.Zero, BlendingFactor.DstAlpha, BlendingFactor.Zero);
+                    break;
+                case 5: // GxBlend_Mod2x
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.SrcColor, BlendingFactor.DstAlpha, BlendingFactor.SrcAlpha);
+                    break;
+                case 6: // GxBlend_ModAdd
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.DstColor, BlendingFactor.One, BlendingFactor.DstAlpha, BlendingFactor.One);
+                    break;
+                case 7: // GxBlend_InvSrcAlphaAdd
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One);
+                    break;
+                case 8: // GxBlend_InvSrcAlphaOpaque
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.Zero);
+                    break;
+                case 9: // GxBlend_SrcAlphaOpaque
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.Zero, BlendingFactor.SrcAlpha, BlendingFactor.Zero);
+                    break;
+                case 10: // GxBlend_NoAlphaAdd
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero, BlendingFactor.One);
+                    break;
+                case 11: // GxBlend_ConstantAlpha
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha, BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha);
+                    break;
+                case 12: // GxBlend_Screen
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.OneMinusDstColor, BlendingFactor.One, BlendingFactor.One, BlendingFactor.Zero);
+                    break;
+                case 13: // GxBlendAdd
+                    gl.Enable(EnableCap.Blend);
+                    gl.Uniform1(alphaRefLoc, -1.0f);
+                    gl.BlendFuncSeparate(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
+                    break;
+                default:
+                    throw new Exception("Unsupport blend mode: " + blendType);
+            }
         }
     }
 }
