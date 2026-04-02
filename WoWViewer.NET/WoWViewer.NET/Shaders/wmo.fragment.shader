@@ -103,12 +103,10 @@ void main()
         finalOpacity = tex.a;
 
     } else if (uPixelShader == 9) { //MapObjDiffuseEmissive
-
-        matDiffuse = tex2.rgb ;
+        matDiffuse = tex.rgb;
         emissive = tex2.rgb * tex2.a * vColor2.a;
 
         finalOpacity = tex.a;
-
     } else if (uPixelShader == 10) { //MapObjMaskedEnvMetal
 
         float mixFactor = clamp((tex3.a * vColor2.a), 0.0, 1.0);
