@@ -615,9 +615,29 @@ namespace WoWViewer.NET
             var adtRotLocation = gl.GetUniformLocation(adtShaderProgram, "rotation_matrix");
             var adtModelLocation = gl.GetUniformLocation(adtShaderProgram, "model_matrix");
 
-            var heightScaleLoc = gl.GetUniformLocation(adtShaderProgram, "pc_heightScale");
-            var heightOffsetLoc = gl.GetUniformLocation(adtShaderProgram, "pc_heightOffset");
+            var heightScaleUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                heightScaleUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"heightScales[{i}]");
 
+            var heightOffsetUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                heightOffsetUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"heightOffsets[{i}]");
+
+            var layerScaleUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                layerScaleUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"layerScales[{i}]");
+
+            var alphaLayerUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                alphaLayerUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"alphaLayers[{i}]");
+
+            var diffuseLayerUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                diffuseLayerUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"diffuseLayers[{i}]");
+
+            var heightLayerUniforms = new int[8];
+            for (int i = 0; i < 8; i++)
+                heightLayerUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"heightLayers[{i}]");
 
             var projectionMatrix = activeCamera.GetProjectionMatrix();
 
@@ -866,43 +886,24 @@ namespace WoWViewer.NET
                     gl.Disable(EnableCap.Blend);
                     for (int i = 0; i < adt.Terrain.renderBatches.Length; i++)
                     {
-                        for (var l = 0; l < adt.Terrain.renderBatches[i].heightScales.Length; l++)
-                        {
-                            gl.Uniform1(gl.GetUniformLocation(adtShaderProgram, "heightScales[" + l + "]"), adt.Terrain.renderBatches[i].heightScales[l]);
-                        }
-
-                        for (var l = 0; l < adt.Terrain.renderBatches[i].heightOffsets.Length; l++)
-                        {
-                            gl.Uniform1(gl.GetUniformLocation(adtShaderProgram, "heightOffsets[" + l + "]"), adt.Terrain.renderBatches[i].heightOffsets[l]);
-                        }
-
                         for (int j = 1; j < 8; j++)
                         {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "alphaLayers[" + (j - 1) + "]");
-                            gl.Uniform1(textureLoc, j - 1);
-
+                            gl.Uniform1(alphaLayerUniforms[j - 1], j - 1);
                             gl.ActiveTexture(TextureUnit.Texture0 + j);
                             gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].alphaMaterialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].alphaMaterialID[j]);
-
                         }
+
                         for (int j = 0; j < 8; j++)
                         {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "diffuseLayers[" + j + "]");
-                            gl.Uniform1(textureLoc, j + 7);
+                            gl.Uniform1(heightScaleUniforms[j], adt.Terrain.renderBatches[i].heightScales[j]);
+                            gl.Uniform1(heightOffsetUniforms[j], adt.Terrain.renderBatches[i].heightOffsets[j]);
+                            gl.Uniform1(layerScaleUniforms[j], adt.Terrain.renderBatches[i].scales[j]);
 
-                            var scaleLoc = gl.GetUniformLocation(adtShaderProgram, "layerScales[" + j + "]");
-                            gl.Uniform1(scaleLoc, adt.Terrain.renderBatches[i].scales[j]);
-
+                            gl.Uniform1(diffuseLayerUniforms[j], j + 7);
                             gl.ActiveTexture(TextureUnit.Texture7 + j);
                             gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].materialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].materialID[j]);
-
-                        }
-
-                        for (int j = 0; j < 8; j++)
-                        {
-                            var textureLoc = gl.GetUniformLocation(adtShaderProgram, "heightLayers[" + j + "]");
-                            gl.Uniform1(textureLoc, j + 15);
-
+                        
+                            gl.Uniform1(heightLayerUniforms[j], j + 15);
                             gl.ActiveTexture(TextureUnit.Texture15 + j);
                             gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].heightMaterialIDs[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].heightMaterialIDs[j]);
                         }
