@@ -321,11 +321,13 @@ namespace WoWViewer.NET
                 if (!hasFocus || !shadersReady)
                     return;
 
+#if DEBUG
                 var err = gl.GetError();
                 if (err != GLEnum.NoError)
                 {
                     Console.WriteLine("Window Render GL Error: " + err);
                 }
+#endif
 
                 gl.Enable(EnableCap.DepthTest);
 
@@ -711,9 +713,11 @@ namespace WoWViewer.NET
                         gl.BindTexture(TextureTarget.Texture2D, 0);
                     }
 
+#if DEBUG
                     var err = gl.GetError();
                     if (err != GLEnum.NoError)
                         Console.WriteLine("M2 render GL Error: " + err);
+#endif
                 }
                 else if (sceneObject is WMOContainer wmoContainer)
                 {
@@ -735,6 +739,10 @@ namespace WoWViewer.NET
                     var modelMatrix = Matrix4x4.CreateScale(sceneObject.Scale);
 
                     // Apply ADT rotation
+
+                    // TODO: FIX
+                    //modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * (wmoContainer.Rotation.X));
+                    //modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * (-wmoContainer.Rotation.Z));
                     modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (wmoContainer.Rotation.Y - 270f));
 
                     modelMatrix *= Matrix4x4.CreateTranslation(wmoContainer.Position.X, wmoContainer.Position.Z * -1, wmoContainer.Position.Y);
@@ -777,9 +785,11 @@ namespace WoWViewer.NET
                         }
                     }
 
+#if DEBUG
                     var err = gl.GetError();
                     if (err != GLEnum.NoError)
                         Console.WriteLine("WMO render GL Error: " + err);
+#endif
                 }
                 else if (sceneObject is ADTContainer adt)
                 {
@@ -835,9 +845,11 @@ namespace WoWViewer.NET
                         }
                     }
 
+#if DEBUG
                     var err = gl.GetError();
                     if (err != GLEnum.NoError)
                         Console.WriteLine("ADT render GL Error: " + err);
+#endif
                 }
             }
 
