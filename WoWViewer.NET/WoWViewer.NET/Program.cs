@@ -1,5 +1,4 @@
-﻿using Evergine.Bindings.RenderDoc;
-using ImGuiNET;
+﻿using ImGuiNET;
 using SceneScriptLib;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -9,7 +8,6 @@ using Silk.NET.Windowing;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using TACTSharp;
 using WoWFormatLib.FileProviders;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Renderer;
@@ -19,10 +17,9 @@ namespace WoWViewer.NET
     internal class Program
     {
         private static bool cascLoaded = false;
-        private static bool listfileLoaded = false;
+        private static bool sceneLoaded = false;
 
-        private static string progressStatus = "";
-        private static int progressPCT = 0;
+        private static string statusMessage = "";
 
         private static uint adtShaderProgram;
         private static uint wmoShaderProgram;
@@ -93,72 +90,11 @@ namespace WoWViewer.NET
                 ImGui.GetStyle().WindowPadding = new Vector2(0.0f, 0.0f);
                 ImGui.GetStyle().FrameRounding = 12.0f;
 
-                //ImGui.DockSpaceOverViewport(ImGui.GetMainViewport());
-
                 for (int i = 0; i < inputContext.Mice.Count; i++)
                 {
-                    //inputContext.Mice[i].Cursor.CursorMode = CursorMode.Raw;
                     inputContext.Mice[i].MouseMove += OnMouseMove;
                     inputContext.Mice[i].Scroll += OnMouseWheel;
                 }
-
-                var tactFileProvider = new TACTSharpFileProvider();
-
-                var buildInstance = new BuildInstance();
-                buildInstance.Settings.Product = "wowt";
-
-                buildInstance.Settings.Locale = RootInstance.LocaleFlags.enUS;
-                buildInstance.Settings.Region = "us";
-                buildInstance.Settings.RootMode = RootInstance.LoadMode.Normal;
-
-                var buildConfig = "f8891ed6ab01b319b43b9aa0ceeb5f58";
-                var cdnConfig = "99cd3ee53f0b63144232eef9ff25fc06";
-
-                var basedir = @"C:\World of Warcraft";
-                if (Directory.Exists(basedir))
-                {
-                    buildInstance.Settings.BaseDir = basedir;
-                    buildInstance.Settings.BuildConfig = buildConfig;
-                    buildInstance.Settings.CDNConfig = cdnConfig;
-                }
-                buildInstance.Settings.AdditionalCDNs = ["casc.wago.tools", "cdn.arctium.tools"];
-                buildInstance.LoadConfigs(buildConfig, cdnConfig);
-                if (buildInstance.BuildConfig == null || buildInstance.CDNConfig == null)
-                    throw new Exception("Failed to load build configs");
-
-                buildInstance.Load();
-
-                if (buildInstance.Encoding == null || buildInstance.Root == null || buildInstance.Install == null || buildInstance.GroupIndex == null)
-                    throw new Exception("Failed to load build components");
-
-                tactFileProvider.InitTACT(buildInstance);
-
-                FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
-                FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
-
-                cascLoaded = true;
-
-                //Console.WriteLine("Loading listfile..");
-                //if (!File.Exists("listfile.csv"))
-                //{
-                //    Listfile.Update();
-                //}
-                //else if (DateTime.Now.AddDays(-7) > File.GetLastWriteTime("listfile.csv"))
-                //{
-                //    Listfile.Update();
-                //}
-
-                //try
-                //{
-                //    if (Listfile.FDIDToFilename.Count == 0)
-                //        Listfile.Load();
-                //}
-                //catch (Exception ex)
-                //{
-                //    Logger.WriteLine("Error loading listfile: " + ex.Message);
-                //}
-
-                listfileLoaded = true;
 
                 var err = gl.GetError();
                 if (err != GLEnum.NoError)
@@ -171,11 +107,22 @@ namespace WoWViewer.NET
                 m2ShaderProgram = ShaderCompiler.CompileShader("m2");
                 shadersReady = true;
 
-                // sw new Vector3(-8938, 625, 200)
-                // 32 new Vector3(0, 0, 200)
-                // amird new Vector3(-138, 8208, 200)
+                // Start CASC initialization in background
+                statusMessage = "Initializing CASC..";
+                Task.Run(async () =>
+                {
+                    await Services.CASC.Initialize();
 
-                // wmo test new Vector3(-29.472f, 33.547f, 32.624f)
+                    var tactFileProvider = new TACTSharpFileProvider();
+                    tactFileProvider.InitTACT(Services.CASC.buildInstance);
+                    FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
+                    FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
+
+                    cascLoaded = true;
+
+                    statusMessage = "";
+                });
+
                 activeCamera = new Camera(new Vector3(0f, -0f, 200f), Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
                 gl.Viewport(window.FramebufferSize);
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
@@ -199,20 +146,6 @@ namespace WoWViewer.NET
                 }
 
                 defaultTextureID = MakeDefaultTexture();
-
-                //foreach (var file in Directory.GetFiles("G:\\NewmansLandingProject\\scenes\\10.0.0 Newman's Landing Machinima\\", "*.lua"))
-                //{
-                //    Console.WriteLine(Path.GetFileNameWithoutExtension(file));
-                //    var pathFileName = Path.GetFileNameWithoutExtension(file);
-                //    if (pathFileName.Contains("Documentation"))
-                //        continue;
-
-                //    var contents = File.ReadAllText(file);
-                //    var script = SceneScriptReader.ParseTimelineScript(contents);
-                //    scenes.Add(script);
-
-                //}
-
             };
 
             window.FramebufferResize += s =>
@@ -306,45 +239,12 @@ namespace WoWViewer.NET
                 gl.ClearColor(0f, 0f, 0f, 0.5f);
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-                if (cascLoaded && listfileLoaded && sceneObjects.Count == 0)
+                if (cascLoaded && sceneObjects.Count == 0 && !sceneLoaded)
                 {
-                    var m2Container = new M2Container(gl, 397940, m2ShaderProgram);
-                    sceneObjects.Add(m2Container);
-
-                    //foreach(var scene in scenes)
-                    //{
-                    //    foreach(var actor in scene.actors)
-                    //    {
-                    //        if(actor.Value.properties.Transform != null && actor.Value.properties.Transform?.events != null)
-                    //        {
-                    //            foreach (var transformEvent in actor.Value.properties.Transform.Value.events)
-                    //            {
-                    //                // {<-8855. 584. 145.854>}
-                    //                var m2Container = new M2Container(gl, 1109379, m2ShaderProgram);
-                    //                m2Container.Position = new Vector3(transformEvent.Value.Position.Y, transformEvent.Value.Position.Z, transformEvent.Value.Position.X);
-                    //                m2Container.Rotation = new Vector3(0f, transformEvent.Value.Yaw, 0f);
-                    //                m2Container.forceRender = true;
-                    //                m2Container.Scale = 100f;
-                    //                sceneObjects.Add(m2Container);
-                    //                Console.WriteLine("Spawning camera at " + transformEvent.Value.Position);
-                    //            }
-                    //        }
-                    //    }
-                    //}
-
-                    //var wmoContainer = new WMOContainer(gl, 2756726, wmoShaderProgram); // hs tavern
-                    //var wmoContainer = new WMOContainer(gl, 5386825, wmoShaderProgram); // goblin building
-                    //var wmoContainer = new WMOContainer(gl, 3924066, wmoShaderProgram); // dragon inn
-                    var wmoContainer = new WMOContainer(gl, 6653586, wmoShaderProgram); // human folktower
-                    wmoContainer.Position = new Vector3(34f, 17f, 42f);
-                    wmoContainer.Scale = 1f;
-                    sceneObjects.Add(wmoContainer);
-
+                    sceneLoaded = true;
+                    Console.WriteLine("Loading");
                     var usedUUIDs = new List<uint>();
 
-                    // sw 29 47
-                    // amird 16 32
-                    // valdr 33 31
                     byte startX = 32;
                     byte startY = 32;
                     for (byte x = startX; x < startX + 3; x++)
@@ -354,12 +254,7 @@ namespace WoWViewer.NET
                             var mapTile = new Structs.MapTile();
                             mapTile.tileX = x;
                             mapTile.tileY = y;
-                            mapTile.wdtFileDataID = 775971; // azeroth
-                            //mapTile.wdtFileDataID = 4914790;
-                            //mapTile.wdtFileDataID = 5339421; // amidr
-                            //mapTile.wdtFileDataID = 3694921; // valdr
-                            //mapTile.wdtFileDataID = 5660542; // foudners point
-                            //mapTile.wdtFileDataID = 4540695; // Khaz Algar Surface
+                            mapTile.wdtFileDataID = 775971;
                             var adt = Loaders.ADTLoader.LoadADT(gl, mapTile, adtShaderProgram, true);
                             var adtContainer = new ADTContainer(gl, adt, mapTile.wdtFileDataID, adtShaderProgram);
                             sceneObjects.Add(adtContainer);
@@ -390,22 +285,18 @@ namespace WoWViewer.NET
                             }
                         }
                     }
-                    Console.WriteLine("loaded model");
                 }
 
                 ImGUIDockSpace();
-                if (!cascLoaded || !listfileLoaded)
-                {
-                    if (!cascLoaded)
-                        ImGui.Begin("Loading CASC filesystem");
-                    else if (!listfileLoaded)
-                        ImGui.Begin("Loading listfile");
 
-                    ImGui.ProgressBar(progressPCT / 100f, new Vector2(300, 0));
-                    ImGui.Text(progressStatus);
+                if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    ImGui.Begin("Loading");
+                    ImGui.Text(statusMessage);
                     ImGui.End();
                 }
-                else
+
+                if (sceneObjects.Count > 0)
                 {
                     ImGui.Begin("3D debug");
 
@@ -755,7 +646,7 @@ namespace WoWViewer.NET
                 }
                 else if (sceneObject is ADTContainer adt)
                 {
-                    if(!renderADT)
+                    if (!renderADT)
                         continue;
 
                     gl.UseProgram(adtShaderProgram);
