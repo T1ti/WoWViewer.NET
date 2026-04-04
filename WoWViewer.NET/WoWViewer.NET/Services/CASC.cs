@@ -31,12 +31,54 @@ namespace WoWViewer.NET.Services
             if (buildInstance.BuildConfig == null || buildInstance.CDNConfig == null)
                 throw new Exception("Failed to load build configs");
 
+            LoadKeys();
+
             buildInstance.Load();
 
             if (buildInstance.Encoding == null || buildInstance.Root == null || buildInstance.Install == null || buildInstance.GroupIndex == null)
                 throw new Exception("Failed to load build components");
 
             IsInitialized = true;
+        }
+        public static bool LoadKeys(bool forceRedownload = false)
+        {
+            var download = forceRedownload;
+            if (File.Exists("WoW.txt"))
+            {
+                var info = new FileInfo("WoW.txt");
+                if (info.Length == 0 || DateTime.Now.Subtract(TimeSpan.FromHours(12)) > info.LastWriteTime)
+                {
+                    Console.WriteLine("TACT Keys outdated, redownloading..");
+                    download = true;
+                }
+            }
+            else
+            {
+                download = true;
+            }
+
+            if (download)
+            {
+                Console.WriteLine("Downloading TACT keys");
+
+                using (var WebClient = new HttpClient())
+                using (var s = WebClient.GetStreamAsync("https://raw.githubusercontent.com/wowdev/TACTKeys/refs/heads/master/WoW.txt?=v" + (long)DateTime.UtcNow.Subtract(DateTime.UnixEpoch).TotalSeconds).Result)
+                using (var fs = new FileStream("WoW.txt", FileMode.Create))
+                {
+                    s.CopyTo(fs);
+                }
+            }
+
+            foreach (var line in File.ReadAllLines("WoW.txt"))
+            {
+                var splitLine = line.Split(' ');
+                var lookup = ulong.Parse(splitLine[0], System.Globalization.NumberStyles.HexNumber);
+                byte[] key = Convert.FromHexString(splitLine[1].Trim());
+
+                TACTSharp.KeyService.SetKey(lookup, key);
+            }
+
+            return true;
         }
     }
 }
