@@ -1,5 +1,4 @@
 ﻿using Silk.NET.OpenGL;
-using System.Diagnostics;
 
 namespace WoWViewer.NET
 {
@@ -8,14 +7,10 @@ namespace WoWViewer.NET
         public static uint CompileShader(string type)
         {
             var _gl = Program.gl;
-            // Print OpenGL version/vendor
-            Console.WriteLine("OpenGL version: " + _gl.GetStringS(StringName.Version));
-            Console.WriteLine("OpenGL vendor: " + _gl.GetStringS(StringName.Vendor));
+            string? fragmentSource;
+            string? vertexSource;
 
-            var vertexSource = ""; 
-            var fragmentSource = "";
-
-            while(true)
+            while (true)
             {
                 try
                 {
@@ -32,49 +27,41 @@ namespace WoWViewer.NET
             }
 
             var vertexShader = _gl.CreateShader(ShaderType.VertexShader);
-
             _gl.ShaderSource(vertexShader, vertexSource);
-
             _gl.CompileShader(vertexShader);
-
             _gl.GetShader(vertexShader, ShaderParameterName.CompileStatus, out int vertexShaderStatus);
-            Console.WriteLine("[" + type + "] [VERTEX] Shader compile status: " + vertexShaderStatus);
 
-            _gl.GetShaderInfoLog(vertexShader, out string vertexShaderLog);
-            Console.Write(vertexShaderLog);
-
-            // Fragment shader
             var fragmentShader = _gl.CreateShader(ShaderType.FragmentShader);
-
             _gl.ShaderSource(fragmentShader, fragmentSource);
-
             _gl.CompileShader(fragmentShader);
-
             _gl.GetShader(fragmentShader, ShaderParameterName.CompileStatus, out int fragmentShaderStatus);
-            Console.WriteLine("[" + type + "] [FRAGMENT] Shader compile status: " + fragmentShaderStatus);
 
-            _gl.GetShaderInfoLog(fragmentShader, out string fragmentShaderLog);
-            Console.Write(fragmentShaderLog);
-
-            // Shader program
             var shaderProgram = _gl.CreateProgram();
             _gl.AttachShader(shaderProgram, vertexShader);
             _gl.AttachShader(shaderProgram, fragmentShader);
-
             _gl.BindFragDataLocation(shaderProgram, 0, "outColor");
-
             _gl.LinkProgram(shaderProgram);
-            var programInfoLog = _gl.GetProgramInfoLog(shaderProgram);
-            Console.Write(programInfoLog);
 
             _gl.GetProgram(shaderProgram, ProgramPropertyARB.LinkStatus, out int programStatus);
-            Console.WriteLine("[" + type + "] [PROGRAM] Program link status: " + programStatus);
             _gl.UseProgram(shaderProgram);
 
-            if(programStatus == 0)
+            if (programStatus == 0)
             {
                 Console.WriteLine("Shader program failed to link.");
+
+                Console.WriteLine("[" + type + "] [VERTEX] Shader compile status: " + vertexShaderStatus);
+                _gl.GetShaderInfoLog(vertexShader, out string vertexShaderLog);
+                Console.Write(vertexShaderLog);
+
+                Console.WriteLine("[" + type + "] [FRAGMENT] Shader compile status: " + fragmentShaderStatus);
+                _gl.GetShaderInfoLog(fragmentShader, out string fragmentShaderLog);
+                Console.Write(fragmentShaderLog);
+
+                Console.WriteLine("[" + type + "] [PROGRAM] Program link status: " + programStatus);
+                var programInfoLog = _gl.GetProgramInfoLog(shaderProgram);
+                Console.Write(programInfoLog);
             }
+
             _gl.ValidateProgram(shaderProgram);
 
             _gl.DetachShader(shaderProgram, vertexShader);
