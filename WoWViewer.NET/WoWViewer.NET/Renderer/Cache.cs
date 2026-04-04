@@ -94,7 +94,7 @@ namespace WoWViewer.NET.Renderer
         #endregion
 
         #region ADT
-        public static Terrain GetOrLoadADT(GL gl, MapTile mapTile, uint shaderProgram, uint parent, bool loadModels = false)
+        public static Terrain GetOrLoadADT(GL gl, MapTile mapTile, uint shaderProgram, uint parent)
         {
             var key = (mapTile.wdtFileDataID, mapTile.tileX, mapTile.tileY).ToString();
 
@@ -106,7 +106,7 @@ namespace WoWViewer.NET.Renderer
             if (ADTCache.TryGetValue(key, out Terrain value))
                 return value;
 
-            ADTCache.Add(key, ADTLoader.LoadADT(gl, mapTile, shaderProgram, loadModels));
+            ADTCache.Add(key, ADTLoader.LoadADT(gl, mapTile, shaderProgram));
 
             return ADTCache[key];
         }

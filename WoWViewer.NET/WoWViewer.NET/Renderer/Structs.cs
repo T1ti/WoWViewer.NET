@@ -154,10 +154,10 @@ namespace WoWViewer.NET.Renderer
 
         public struct RenderBatch
         {
-            public uint firstFace;
-            public uint numFaces;
             public int[] materialID;
             /* WMO ONLY */
+            public uint firstFace;
+            public uint numFaces;
             public uint groupID;
             public uint blendType;
             public uint shader;

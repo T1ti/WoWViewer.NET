@@ -253,7 +253,7 @@ namespace WoWViewer.NET
                     var tilesLoaded = totalTilesToLoad - tilesToLoad.Count;
                     statusMessage = $"Loading tile {mapTile.tileX},{mapTile.tileY} ({tilesLoaded}/{totalTilesToLoad})...";
 
-                    var adt = Cache.GetOrLoadADT(gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID, true);
+                    var adt = Cache.GetOrLoadADT(gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID);
                     var adtContainer = new ADTContainer(gl, adt, mapTile, adtShaderProgram);
                     sceneObjects.Add(adtContainer);
 
@@ -671,31 +671,32 @@ namespace WoWViewer.NET
                     gl.BindVertexArray(adt.Terrain.vao);
                     gl.Disable(EnableCap.Blend);
 
-                    for (int i = 0; i < adt.Terrain.renderBatches.Length; i++)
+                    for (int c = 0; c < 256; c++)
                     {
+                        var batch = adt.Terrain.renderBatches[c];
+
                         for (int j = 0; j < 2; j++)
                         {
                             gl.Uniform1(alphaLayerUniforms[j], j);
                             gl.ActiveTexture(TextureUnit.Texture0 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].alphaMaterialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].alphaMaterialID[j]);
+                            gl.BindTexture(TextureTarget.Texture2D, (batch.alphaMaterialID[j]) == -1 ? defaultTextureID : (uint)batch.alphaMaterialID[j]);
                         }
 
                         for (int j = 0; j < 8; j++)
                         {
-                            gl.Uniform1(heightScaleUniforms[j], adt.Terrain.renderBatches[i].heightScales[j]);
-                            gl.Uniform1(heightOffsetUniforms[j], adt.Terrain.renderBatches[i].heightOffsets[j]);
-                            gl.Uniform1(layerScaleUniforms[j], adt.Terrain.renderBatches[i].scales[j]);
+                            gl.Uniform1(heightScaleUniforms[j], batch.heightScales[j]);
+                            gl.Uniform1(heightOffsetUniforms[j], batch.heightOffsets[j]);
+                            gl.Uniform1(layerScaleUniforms[j], batch.scales[j]);
 
                             gl.Uniform1(diffuseLayerUniforms[j], j + 7);
                             gl.ActiveTexture(TextureUnit.Texture7 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].materialID[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].materialID[j]);
-
+                            gl.BindTexture(TextureTarget.Texture2D, (batch.materialID[j]) == -1 ? defaultTextureID : (uint)batch.materialID[j]);
                             gl.Uniform1(heightLayerUniforms[j], j + 15);
                             gl.ActiveTexture(TextureUnit.Texture15 + j);
-                            gl.BindTexture(TextureTarget.Texture2D, (adt.Terrain.renderBatches[i].heightMaterialIDs[j]) == -1 ? defaultTextureID : (uint)adt.Terrain.renderBatches[i].heightMaterialIDs[j]);
+                            gl.BindTexture(TextureTarget.Texture2D, (batch.heightMaterialIDs[j]) == -1 ? defaultTextureID : (uint)batch.heightMaterialIDs[j]);
                         }
 
-                        gl.DrawElements(PrimitiveType.Triangles, adt.Terrain.renderBatches[i].numFaces, DrawElementsType.UnsignedInt, (void*)(adt.Terrain.renderBatches[i].firstFace * 4));
+                        gl.DrawElements(PrimitiveType.Triangles, (uint)((c + 1) * 768) - (uint)c * 768, DrawElementsType.UnsignedInt, (void*)((c * 768) * 4));
 
                         for (int j = 0; j < 8; j++)
                         {
