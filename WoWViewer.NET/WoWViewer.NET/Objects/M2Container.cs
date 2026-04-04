@@ -12,10 +12,8 @@ namespace WoWViewer.NET.Objects
         {
             var m2 = Cache.GetOrLoadM2(gl, fileDataID, shaderProgram, parentFileDataId);
             EnabledGeosets = new bool[m2.submeshes.Length];
+            Array.Fill(EnabledGeosets, true);
 
-            // Is there no way to initialize an array of true bools?
-            for (int i = 0; i < EnabledGeosets.Length; i++)
-                EnabledGeosets[i] = true;
         }
     }
 }
