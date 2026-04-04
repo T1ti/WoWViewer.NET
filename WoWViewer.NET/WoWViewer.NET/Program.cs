@@ -30,7 +30,7 @@ namespace WoWViewer.NET
         private static uint m2ShaderProgram;
 
         private static float movementSpeed = 150f;
-        private static bool isMouseDragging = false;
+        private static readonly bool isMouseDragging = false;
         private static bool hasFocus = true;
 
         public static GL gl;
@@ -38,7 +38,7 @@ namespace WoWViewer.NET
         private static Camera activeCamera;
         private static IInputContext inputContext;
 
-        public static List<Container3D> sceneObjects = new();
+        public static List<Container3D> sceneObjects = [];
         public static Lock sceneObjectLock = new();
 
         private static IWindow window;
@@ -56,11 +56,12 @@ namespace WoWViewer.NET
 
         private static Queue<MapTile> tilesToLoad = new();
         private static int totalTilesToLoad = 0;
-        private static Dictionary<uint, uint> uuidUsers = new();
-        private static HashSet<MapTile> loadedTiles = new();
+        private static Dictionary<uint, uint> uuidUsers = [];
+        private static HashSet<MapTile> loadedTiles = [];
 
         private static WDT? CurrentWDT;
         private static uint CurrentWDTFileDataID = 775971;
+        private static string WDTFDIDInput = CurrentWDTFileDataID.ToString();
 
         static void Main(string[] args)
         {
@@ -78,7 +79,7 @@ namespace WoWViewer.NET
 
             ImGuiController imGuiController = null;
 
-            foreach (var file in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Shaders"), "*.shader"))
+            foreach (var file in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Shaders"), "*.shader"))
             {
                 shaderMTimes.Add(file, File.GetLastWriteTime(file));
             }
@@ -336,7 +337,32 @@ namespace WoWViewer.NET
                     ImGui.End();
                 }
 
-                if (sceneObjects.Count > 0)
+                ImGui.Begin("Map selection");
+
+                var currentWDTBuffer = new byte[100];
+                var currentWDTBytes = Encoding.ASCII.GetBytes(WDTFDIDInput);
+                Array.Copy(currentWDTBytes, currentWDTBuffer, currentWDTBytes.Length);
+                ImGui.InputText("WDT FDID", currentWDTBuffer, 100);
+                WDTFDIDInput = Encoding.ASCII.GetString(currentWDTBuffer).TrimEnd('\0');
+
+                if (ImGui.Button("Load WDT"))
+                {
+                    if (uint.TryParse(WDTFDIDInput, out var newWDT) && CurrentWDTFileDataID != newWDT && Services.CASC.FileExists(newWDT))
+                    {
+                        CurrentWDTFileDataID = newWDT;
+
+                        loadedTiles.Clear();
+
+                        lock (sceneObjectLock)
+                            sceneObjects.Clear();
+
+                        CurrentWDTFileDataID = newWDT;
+                        CurrentWDT = Cache.GetOrLoadWDT(CurrentWDTFileDataID);
+                    }
+                }
+                ImGui.End();
+
+                if (sceneLoaded)
                 {
                     ImGui.Begin("3D debug");
 

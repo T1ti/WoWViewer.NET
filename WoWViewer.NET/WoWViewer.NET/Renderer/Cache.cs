@@ -9,16 +9,16 @@ namespace WoWViewer.NET.Renderer
 {
     public static class Cache
     {
-        private static Dictionary<uint, WDT> WDTCache = new();
-        private static Dictionary<string, Terrain> ADTCache = new();
-        private static Dictionary<uint, WorldModel> WMOCache = new();
-        private static Dictionary<uint, DoodadBatch> M2Cache = new();
-        private static Dictionary<uint, uint> BLPCache = new();
+        private static readonly Dictionary<uint, WDT> WDTCache = [];
+        private static readonly Dictionary<string, Terrain> ADTCache = [];
+        private static readonly Dictionary<uint, WorldModel> WMOCache = [];
+        private static readonly Dictionary<uint, DoodadBatch> M2Cache = [];
+        private static readonly Dictionary<uint, uint> BLPCache = [];
 
-        private static Dictionary<string, List<uint>> ADTUsers = [];
-        private static Dictionary<uint, List<uint>> WMOUsers = [];
-        private static Dictionary<uint, List<uint>> M2Users = [];
-        private static Dictionary<uint, List<uint>> BLPUsers = [];
+        private static readonly Dictionary<string, List<uint>> ADTUsers = [];
+        private static readonly Dictionary<uint, List<uint>> WMOUsers = [];
+        private static readonly Dictionary<uint, List<uint>> M2Users = [];
+        private static readonly Dictionary<uint, List<uint>> BLPUsers = [];
 
         #region M2
         public static DoodadBatch GetOrLoadM2(GL gl, uint fileDataId, uint shaderProgram, uint parent)
