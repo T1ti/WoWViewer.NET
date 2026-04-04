@@ -9,7 +9,9 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using WoWFormatLib.FileProviders;
+using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Renderer;
 using static WoWViewer.NET.Structs;
@@ -57,6 +59,7 @@ namespace WoWViewer.NET
         private static Dictionary<uint, uint> uuidUsers = new();
         private static HashSet<MapTile> loadedTiles = new();
 
+        private static WDT? CurrentWDT;
         private static uint CurrentWDTFileDataID = 775971;
 
         static void Main(string[] args)
@@ -248,6 +251,9 @@ namespace WoWViewer.NET
                 gl.ClearColor(0f, 0f, 0f, 0.5f);
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
+                if (cascLoaded && CurrentWDT == null)
+                    CurrentWDT = Cache.GetOrLoadWDT(CurrentWDTFileDataID);
+
                 if (tilesToLoad.Count > 0)
                 {
                     var mapTile = tilesToLoad.Dequeue();
@@ -291,7 +297,7 @@ namespace WoWViewer.NET
 
                         sceneObjects.Add(worldModelContainer);
 
-                        if(uuidUsers.TryGetValue(worldModel.uniqueID, out var count))
+                        if (uuidUsers.TryGetValue(worldModel.uniqueID, out var count))
                             uuidUsers[worldModel.uniqueID] = count + 1;
                         else
                             uuidUsers[worldModel.uniqueID] = 1;
@@ -767,6 +773,9 @@ namespace WoWViewer.NET
             if (!cascLoaded)
                 return;
 
+            if (CurrentWDT == null)
+                return;
+
             var (x, y) = GetTileFromPosition(activeCamera.Position);
 
             var usedTiles = new List<MapTile>();
@@ -775,17 +784,21 @@ namespace WoWViewer.NET
             {
                 for (int yOffset = -1; yOffset <= 1; yOffset++)
                 {
-                    int tileX = x + xOffset;
-                    int tileY = y + yOffset;
+                    byte tileX = (byte)(x + xOffset);
+                    byte tileY = (byte)(y + yOffset);
 
                     // oob check
                     if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63)
                         continue;
 
+                    // tile exists in wdt check
+                    if (!CurrentWDT.Value.tiles.Contains((tileX, tileY)))
+                        continue;
+
                     var mapTile = new MapTile
                     {
-                        tileX = (byte)tileX,
-                        tileY = (byte)tileY,
+                        tileX = tileX,
+                        tileY = tileY,
                         wdtFileDataID = CurrentWDTFileDataID
                     };
 

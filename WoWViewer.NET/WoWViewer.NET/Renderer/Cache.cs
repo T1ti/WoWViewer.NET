@@ -1,4 +1,6 @@
 ﻿using Silk.NET.OpenGL;
+using WoWFormatLib.FileReaders;
+using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Loaders;
 using static WoWViewer.NET.Renderer.Structs;
 using static WoWViewer.NET.Structs;
@@ -7,15 +9,16 @@ namespace WoWViewer.NET.Renderer
 {
     public static class Cache
     {
-        private static Dictionary<uint, uint> BLPCache = new();
+        private static Dictionary<uint, WDT> WDTCache = new();
         private static Dictionary<string, Terrain> ADTCache = new();
         private static Dictionary<uint, WorldModel> WMOCache = new();
         private static Dictionary<uint, DoodadBatch> M2Cache = new();
+        private static Dictionary<uint, uint> BLPCache = new();
 
-        private static Dictionary<uint, List<uint>> BLPUsers = [];
         private static Dictionary<string, List<uint>> ADTUsers = [];
         private static Dictionary<uint, List<uint>> WMOUsers = [];
         private static Dictionary<uint, List<uint>> M2Users = [];
+        private static Dictionary<uint, List<uint>> BLPUsers = [];
 
         #region M2
         public static DoodadBatch GetOrLoadM2(GL gl, uint fileDataId, uint shaderProgram, uint parent)
@@ -171,6 +174,26 @@ namespace WoWViewer.NET.Renderer
                     BLPUsers[fileDataId] = users;
                 }
             }
+        }
+        #endregion
+
+        #region WDT
+        public static WDT GetOrLoadWDT(uint fileDataID)
+        {
+            if (WDTCache.TryGetValue(fileDataID, out WDT value))
+                return value;
+
+            var wdtReader = new WDTReader();
+            wdtReader.LoadWDT(fileDataID);
+            WDTCache.Add(fileDataID, wdtReader.wdtfile);
+
+            return WDTCache[fileDataID];
+        }
+
+        public static void ReleaseWDT(uint fileDataID)
+        {
+            // TODO: Do we also want to automatically remove ADTs?
+            WDTCache.Remove(fileDataID);
         }
         #endregion
     }

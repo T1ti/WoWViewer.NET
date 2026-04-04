@@ -40,6 +40,12 @@ namespace WoWViewer.NET.Services
 
             IsInitialized = true;
         }
+
+        public static bool FileExists(uint fileDataID)
+        {
+            return buildInstance!.Root!.FileExists(fileDataID);
+        }
+
         public static bool LoadKeys(bool forceRedownload = false)
         {
             var download = forceRedownload;

@@ -11,20 +11,13 @@ namespace WoWViewer.NET.Loaders
 {
     class ADTLoader
     {
-        public static Dictionary<uint, WDT> wdtCache = [];
         public static unsafe Terrain LoadADT(GL gl, Structs.MapTile mapTile, uint shaderProgram)
         {
             ADT adt = new();
             Terrain result = new();
             ADTReader adtReader = new();
 
-            if (!wdtCache.TryGetValue(mapTile.wdtFileDataID, out WDT wdt))
-            {
-                var wdtReader = new WDTReader();
-                wdtReader.LoadWDT(mapTile.wdtFileDataID);
-                wdt = wdtReader.wdtfile;
-                wdtCache[mapTile.wdtFileDataID] = wdt;
-            }
+            var wdt = Cache.GetOrLoadWDT(mapTile.wdtFileDataID);
 
             var rootADTFileDataID = adtReader.LoadADT(wdt, mapTile.tileX, mapTile.tileY, true, "");
             adt = adtReader.adtfile;
