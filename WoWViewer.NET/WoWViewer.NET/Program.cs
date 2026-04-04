@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.Structs.WDT;
+using WoWViewer.NET.Managers;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
@@ -77,6 +78,8 @@ namespace WoWViewer.NET
         private static ImGuizmoOperation currentGizmoOperation = ImGuizmoOperation.Translate;
         private static bool wasSpacePressed = false;
 
+        private static ShaderManager shaderManager;
+
         static void Main(string[] args)
         {
             var windowOptions = WindowOptions.Default;
@@ -93,14 +96,11 @@ namespace WoWViewer.NET
 
             ImGuiController imGuiController = null;
 
-            foreach (var file in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Shaders"), "*.shader"))
-            {
-                shaderMTimes.Add(file, File.GetLastWriteTime(file));
-            }
-
             window.Load += () =>
             {
                 gl = window.CreateOpenGL();
+
+                shaderManager = new ShaderManager(gl, Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Shaders"));
 
                 imGuiController = new ImGuiController(
                     gl,
@@ -121,10 +121,10 @@ namespace WoWViewer.NET
                     Console.WriteLine("Render GL Error: " + err);
                 }
 
-                adtShaderProgram = ShaderCompiler.CompileShader("adt");
-                wmoShaderProgram = ShaderCompiler.CompileShader("wmo");
-                m2ShaderProgram = ShaderCompiler.CompileShader("m2");
-                debugShaderProgram = ShaderCompiler.CompileShader("debug");
+                adtShaderProgram = shaderManager.GetOrCompileShader("adt");
+                wmoShaderProgram = shaderManager.GetOrCompileShader("wmo");
+                m2ShaderProgram = shaderManager.GetOrCompileShader("m2");
+                debugShaderProgram = shaderManager.GetOrCompileShader("debug");
                 debugRenderer = new DebugRenderer(gl, debugShaderProgram);
                 shadersReady = true;
 
@@ -277,37 +277,7 @@ namespace WoWViewer.NET
 
 #if DEBUG
                 // Note -- this is extremely slow but allows for shader hot-reloading
-                foreach (var file in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Shaders"), "*.shader"))
-                {
-                    if (shaderMTimes[file] < File.GetLastWriteTime(file))
-                    {
-                        shadersReady = false;
-                        Console.WriteLine("Reloading shader " + file);
-
-                        if (Path.GetFileNameWithoutExtension(file).StartsWith("adt"))
-                        {
-                            adtShaderProgram = ShaderCompiler.CompileShader("adt");
-                        }
-                        else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
-                        {
-                            wmoShaderProgram = ShaderCompiler.CompileShader("wmo");
-                        }
-                        else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
-                        {
-                            m2ShaderProgram = ShaderCompiler.CompileShader("m2");
-                        }
-                        else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
-                        {
-                            debugShaderProgram = ShaderCompiler.CompileShader("debug");
-                            debugRenderer?.Dispose();
-                            debugRenderer = new DebugRenderer(gl, debugShaderProgram);
-                        }
-
-                        shadersReady = true;
-
-                        shaderMTimes[file] = File.GetLastWriteTime(file);
-                    }
-                }
+                shaderManager.CheckForChanges();
 #endif
             };
 
@@ -545,6 +515,7 @@ namespace WoWViewer.NET
 
             window.Closing += () =>
             {
+                shaderManager.Dispose();
                 debugRenderer?.Dispose();
                 imGuiController?.Dispose();
                 inputContext?.Dispose();

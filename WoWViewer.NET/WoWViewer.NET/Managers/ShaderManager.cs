@@ -1,12 +1,79 @@
 ﻿using Silk.NET.OpenGL;
 
-namespace WoWViewer.NET
+namespace WoWViewer.NET.Managers
 {
-    public static class ShaderCompiler
+    public class ShaderManager : IDisposable
     {
-        public static uint CompileShader(string type)
+        private readonly GL _gl;
+        private readonly Dictionary<string, uint> _compiledShaders = [];
+        private readonly Lock shaderLock = new();
+        private static readonly Dictionary<string, DateTime> shaderMTimes = [];
+        public bool shadersReady = false;
+        private string shaderFolder;
+
+        public ShaderManager(GL gl, string shaderFolder)
         {
-            var _gl = Program.gl;
+            _gl = gl ?? throw new ArgumentNullException(nameof(gl));
+            this.shaderFolder = shaderFolder;
+
+            foreach (var file in Directory.GetFiles(shaderFolder, "*.shader"))
+                shaderMTimes.Add(file, File.GetLastWriteTime(file));
+        }
+
+        public uint GetOrCompileShader(string type, bool forceRecompile = false)
+        {
+            if (_compiledShaders.TryGetValue(type, out var shaderProgram) && !forceRecompile)
+                return shaderProgram;
+
+            shaderProgram = CompileShader(type);
+            _compiledShaders[type] = shaderProgram;
+            return shaderProgram;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (var shader in _compiledShaders.Values)
+                    _gl.DeleteProgram(shader);
+
+                _compiledShaders.Clear();
+            }
+        }
+
+        public void CheckForChanges()
+        {
+            foreach (var file in Directory.GetFiles(shaderFolder, "*.shader"))
+            {
+                if (shaderMTimes[file] < File.GetLastWriteTime(file))
+                {
+                    shadersReady = false;
+                    Console.WriteLine("Reloading shader " + file);
+
+                    if (Path.GetFileNameWithoutExtension(file).StartsWith("adt"))
+                        GetOrCompileShader("adt", true);
+                    else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
+                        GetOrCompileShader("wmo", true);
+                    else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
+                        GetOrCompileShader("m2", true);
+                    else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
+                        GetOrCompileShader("debug", true);
+
+                    shadersReady = true;
+
+                    shaderMTimes[file] = File.GetLastWriteTime(file);
+                }
+            }
+        }
+
+        private uint CompileShader(string type)
+        {
             string? fragmentSource;
             string? vertexSource;
 
