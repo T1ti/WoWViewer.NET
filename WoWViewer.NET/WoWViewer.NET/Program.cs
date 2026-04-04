@@ -346,8 +346,6 @@ namespace WoWViewer.NET
 
                 UpdateTilesByCameraPos();
 
-                ImGUIDockSpace();
-
                 if (!string.IsNullOrEmpty(statusMessage))
                 {
                     ImGui.Begin("Loading");
@@ -501,92 +499,6 @@ namespace WoWViewer.NET
             window.Run();
 
             window.Dispose();
-        }
-
-        private static void ImGUIDockSpace()
-        {
-            var opt_fullscreen = true;
-            var opt_padding = false;
-            var dockspace_flags = ImGuiDockNodeFlags.None | ImGuiDockNodeFlags.PassthruCentralNode | ImGuiDockNodeFlags.NoDockingOverCentralNode;
-
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags.NoDocking | ImGuiWindowFlags.NoBackground;
-
-            if (opt_fullscreen)
-            {
-                var viewport = ImGui.GetMainViewport();
-                ImGui.SetNextWindowPos(viewport.WorkPos);
-                ImGui.SetNextWindowSize(viewport.WorkSize);
-                ImGui.SetNextWindowViewport(viewport.ID);
-                ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
-                ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
-                window_flags |= ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove;
-                window_flags |= ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus;
-            }
-
-            dockspace_flags |= ImGuiDockNodeFlags.PassthruCentralNode;
-
-            ImGui.Begin("DockSpace Demo", window_flags);
-
-            if (!opt_padding)
-                ImGui.PopStyleVar();
-            if (opt_fullscreen)
-                ImGui.PopStyleVar(2);
-
-            // Submit the DockSpace
-            if (ImGui.GetIO().ConfigFlags.HasFlag(ImGuiConfigFlags.DockingEnable))
-            {
-                var dockspace_id = ImGui.GetID("MyDockSpace");
-                ImGui.DockSpace(dockspace_id, new Vector2(0.0f, 0.0f), dockspace_flags);
-            }
-        }
-
-        private static void OnMouseMove(IMouse mouse, Vector2 position)
-        {
-
-            if (!mouse.IsButtonPressed(MouseButton.Left) || ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow) || ImGui.IsAnyItemActive())
-            {
-                LastMousePosition = default;
-                return;
-            }
-
-            var lookSensitivity = 0.1f;
-            if (LastMousePosition == default) { LastMousePosition = position; }
-            else
-            {
-                var xOffset = (position.X - LastMousePosition.X) * lookSensitivity;
-                var yOffset = (LastMousePosition.Y - position.Y) * lookSensitivity;
-                LastMousePosition = position;
-
-                activeCamera.ModifyDirection(xOffset, yOffset);
-            }
-        }
-        private static void OnMouseWheel(IMouse mouse, ScrollWheel scrollWheel)
-        {
-            if (ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow) || ImGui.IsAnyItemActive())
-                return;
-
-            activeCamera.ModifyZoom(scrollWheel.Y);
-        }
-
-        private static void OnMouseDown(IMouse mouse, MouseButton button)
-        {
-            if (button == MouseButton.Left && !ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow) && !ImGui.IsAnyItemActive())
-            {
-                MouseDownPosition = mouse.Position;
-            }
-        }
-
-        private static void OnMouseUp(IMouse mouse, MouseButton button)
-        {
-            if (button == MouseButton.Left && MouseDownPosition.HasValue && !ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow) && !ImGui.IsAnyItemActive())
-            {
-                var dragDistance = Vector2.Distance(MouseDownPosition.Value, mouse.Position);
-
-                if (dragDistance < 5.0f)
-                    PerformRaycast(mouse.Position.X, mouse.Position.Y);
-
-                MouseDownPosition = null;
-            }
         }
 
         private static void PerformRaycast(float mouseX, float mouseY)
