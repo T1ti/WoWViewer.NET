@@ -262,7 +262,7 @@ namespace WoWViewer.NET
                     activeCamera.Position = Vector3.One;
 
                 bool spacePressed = primaryKeyboard.IsKeyPressed(Key.Space);
-                if (spacePressed && !wasSpacePressed && selectedObject != null && !gizmoInUse)
+                if (spacePressed && !wasSpacePressed && selectedObject != null && !gizmoWasUsing)
                 {
                     currentGizmoOperation = currentGizmoOperation switch
                     {
