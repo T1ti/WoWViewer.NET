@@ -256,7 +256,19 @@ namespace WoWViewer.NET
 
                     var timer = new Stopwatch();
                     timer.Start();
-                    var adt = Cache.GetOrLoadADT(gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID);
+
+                    Renderer.Structs.Terrain adt;
+
+                    try
+                    {
+                        adt = Cache.GetOrLoadADT(gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Error loading ADT: " + ex.ToString());
+                        return;
+                    }
+
                     timer.Stop();
 
                     Console.WriteLine($"Loaded ADT {mapTile.tileX},{mapTile.tileY} in {timer.ElapsedMilliseconds} ms");
