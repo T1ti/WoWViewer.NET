@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWViewer.NET.Raycasting;
 
 namespace WoWViewer.NET.Objects
 {
@@ -15,6 +16,16 @@ namespace WoWViewer.NET.Objects
         {
             FileDataId = fileDataId;
             ParentFileDataId = parentFileDataId;
+        }
+
+        public virtual BoundingSphere? GetBoundingSphere()
+        {
+            return null;
+        }
+
+        public virtual BoundingBox? GetBoundingBox()
+        {
+            return null;
         }
     }
 }

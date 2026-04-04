@@ -13,6 +13,7 @@ using System.Text;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Objects;
+using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
 using static WoWViewer.NET.Structs;
 
@@ -28,6 +29,10 @@ namespace WoWViewer.NET
         private static uint adtShaderProgram;
         private static uint wmoShaderProgram;
         private static uint m2ShaderProgram;
+        private static uint debugShaderProgram;
+        private static DebugRenderer debugRenderer;
+        private static bool showBoundingBoxes = false;
+        private static bool showBoundingSpheres = false;
 
         private static float movementSpeed = 150f;
         private static readonly bool isMouseDragging = false;
@@ -118,6 +123,8 @@ namespace WoWViewer.NET
                 adtShaderProgram = ShaderCompiler.CompileShader("adt");
                 wmoShaderProgram = ShaderCompiler.CompileShader("wmo");
                 m2ShaderProgram = ShaderCompiler.CompileShader("m2");
+                debugShaderProgram = ShaderCompiler.CompileShader("debug");
+                debugRenderer = new DebugRenderer(gl, debugShaderProgram);
                 shadersReady = true;
 
                 // Start CASC initialization in background
@@ -224,6 +231,12 @@ namespace WoWViewer.NET
                         else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
                         {
                             m2ShaderProgram = ShaderCompiler.CompileShader("m2");
+                        }
+                        else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
+                        {
+                            debugShaderProgram = ShaderCompiler.CompileShader("debug");
+                            debugRenderer?.Dispose();
+                            debugRenderer = new DebugRenderer(gl, debugShaderProgram);
                         }
 
                         shadersReady = true;
@@ -369,6 +382,10 @@ namespace WoWViewer.NET
                     ImGui.Checkbox("Render ADT", ref renderADT);
                     ImGui.Checkbox("Render WMO", ref renderWMO);
                     ImGui.Checkbox("Render M2", ref renderM2);
+
+                    ImGui.Checkbox("Show Bounding Boxes", ref showBoundingBoxes);
+                    ImGui.Checkbox("Show Bounding Spheres", ref showBoundingSpheres);
+
                     var newPos = activeCamera.Position;
                     ImGui.DragFloat3("Camera position", ref newPos);
                     activeCamera.Position = newPos;
@@ -459,6 +476,7 @@ namespace WoWViewer.NET
 
             window.Closing += () =>
             {
+                debugRenderer?.Dispose();
                 imGuiController?.Dispose();
                 inputContext?.Dispose();
                 gl?.Dispose();
@@ -777,6 +795,42 @@ namespace WoWViewer.NET
             }
 
             gl.BindVertexArray(0);
+
+            // bounding debug
+            debugRenderer.Clear();
+
+            lock (sceneObjectLock)
+            {
+                foreach (var sceneObject in sceneObjects)
+                {
+                    // dont render debug render adt 
+                    if (sceneObject is ADTContainer)
+                        continue;
+                    var color = new Vector4(1, 1, 0, 1); // yellow
+
+                    if (showBoundingBoxes)
+                    {
+                        var box = sceneObject.GetBoundingBox();
+                        if (box.HasValue)
+                        {
+                            debugRenderer.DrawBox(box.Value.Min, box.Value.Max, color);
+                        }
+                    }
+
+                    if (showBoundingSpheres)
+                    {
+                        var sphere = sceneObject.GetBoundingSphere();
+                        if (sphere.HasValue)
+                        {
+                            debugRenderer.DrawSphere(sphere.Value.Center, sphere.Value.Radius, color);
+                        }
+                    }
+                }
+            }
+
+            var debugViewMatrix = activeCamera.GetViewMatrix();
+            debugViewMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * 180f);
+            debugRenderer.Render(projectionMatrix, debugViewMatrix);
         }
 
         private static (byte x, byte y) GetTileFromPosition(Vector3 position)
