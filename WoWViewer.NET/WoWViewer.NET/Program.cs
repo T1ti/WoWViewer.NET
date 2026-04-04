@@ -915,7 +915,7 @@ namespace WoWViewer.NET
 
                     var color = sceneObject.IsSelected ? new Vector4(0, 1, 0, 1) : new Vector4(1, 1, 0, 1); // geen if selected, yellow if not
 
-                    if (showBoundingBoxes)
+                    if (showBoundingBoxes || sceneObject.IsSelected)
                     {
                         var box = sceneObject.GetBoundingBox();
                         if (box.HasValue)
