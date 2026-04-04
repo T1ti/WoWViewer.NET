@@ -268,12 +268,15 @@ namespace WoWViewer.NET
                     {
                         if (usedUUIDs.Contains(worldModel.uniqueID))
                             continue;
+
                         var worldModelContainer = new WMOContainer(gl, worldModel.fileDataID, wmoShaderProgram, adt.rootADTFileDataID)
                         {
                             Position = worldModel.position,
                             Rotation = worldModel.rotation,
-                            Scale = worldModel.scale
+                            Scale = worldModel.scale,
+                            UniqueID = worldModel.uniqueID
                         };
+
                         sceneObjects.Add(worldModelContainer);
                         usedUUIDs.Add(worldModel.uniqueID);
                     }
@@ -286,6 +289,7 @@ namespace WoWViewer.NET
                             Rotation = doodad.rotation,
                             Scale = doodad.scale
                         };
+
                         sceneObjects.Add(doodadContainer);
                     }
 
@@ -801,6 +805,7 @@ namespace WoWViewer.NET
                             foreach (var wmo in wmosToRemove)
                             {
                                 sceneObjects.Remove(wmo);
+                                usedUUIDs.Remove(wmo.UniqueID);
                                 Cache.ReleaseWMO(gl, wmo.FileDataId, wmo.ParentFileDataId);
                             }
 
