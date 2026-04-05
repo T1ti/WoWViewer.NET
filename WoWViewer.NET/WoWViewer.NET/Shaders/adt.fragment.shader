@@ -2,6 +2,7 @@
 
 in vec2 TexCoord;
 in vec4 VColor;
+in vec3 Normal;
 out vec4 out_col0;
 
 uniform int layerCount;
@@ -13,6 +14,8 @@ uniform float layerScales[8];
 uniform sampler2D diffuseLayers[8];
 uniform sampler2D heightLayers[8];
 uniform sampler2D alphaLayers[2];
+
+uniform vec3 lightDirection;
 
 // Based on https://github.com/Kruithne/wow.export/blob/main/src/shaders/adt.fragment.shader but without the sampler2darrays because I'm stoopid
 void main()
@@ -70,5 +73,10 @@ void main()
 		final_color += layer_sample.rgb * layer_pcts[i];
 	}
 
-	out_col0 = vec4(final_color * in_vertexColor.rgb * 2.0, 1.0);
+	float diffuse = max(dot(normalize(Normal), normalize(lightDirection)), 0.0);
+	float ambientStrength = 0.3;
+	vec3 ambient = ambientStrength * vec3(1.0);
+	vec3 lighting = ambient + diffuse;
+	vec4 result_color = vec4(final_color * in_vertexColor.rgb * 2.0 * lighting, 1.0);
+	out_col0 =  result_color;
 }

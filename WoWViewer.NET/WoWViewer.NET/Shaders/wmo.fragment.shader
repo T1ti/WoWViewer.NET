@@ -12,6 +12,7 @@ out vec4 outputColor;
 
 uniform float pixelShader;
 uniform float alphaRef;
+uniform vec3 lightDirection;
 
 layout(binding=0) uniform sampler2D texture1;
 layout(binding=1) uniform sampler2D texture2;
@@ -232,5 +233,10 @@ void main()
         
     }
 
-    outputColor = vec4(matDiffuse, finalOpacity);
+    float diffuse = max(dot(normalize(Normal), normalize(lightDirection)), 0.0);
+    float ambientStrength = 0.3;
+    vec3 ambient = ambientStrength * vec3(1.0);
+    vec3 lighting = ambient + diffuse;
+
+    outputColor = vec4(matDiffuse * lighting + emissive, finalOpacity);
 }

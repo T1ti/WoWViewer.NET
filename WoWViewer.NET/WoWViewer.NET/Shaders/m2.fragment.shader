@@ -1,10 +1,12 @@
 ﻿#version 330
 
 in vec2 TexCoord;
+in vec3 Normal;
 out vec4 outColor;
 
 uniform float alphaRef;
 uniform sampler2D colorTexture;
+uniform vec3 lightDirection;
 
 void main()
 {
@@ -12,5 +14,10 @@ void main()
 
 	if (colTexture.a < alphaRef) { discard; }
 
-	outColor = colTexture;
+	float diffuse = max(dot(normalize(Normal), normalize(lightDirection)), 0.0);
+	float ambientStrength = 0.3;
+	vec3 ambient = ambientStrength * vec3(1.0);
+	vec3 lighting = ambient + diffuse;
+
+	outColor = vec4(colTexture.rgb * lighting, colTexture.a);
 }

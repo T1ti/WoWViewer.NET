@@ -80,6 +80,7 @@ namespace WoWViewer.NET
 
         private static ShaderManager shaderManager;
 
+        private static Vector3 lightDirection = new Vector3(0.5f, 1f, 0.5f);
         static void Main(string[] args)
         {
             var windowOptions = WindowOptions.Default;
@@ -446,6 +447,10 @@ namespace WoWViewer.NET
                     var roll = activeCamera.Roll;
                     ImGui.DragFloat("Camera roll", ref roll);
                     activeCamera.Roll = roll;
+                   
+                    var lightDir = lightDirection;
+                    ImGui.DragFloat3("Light direction", ref lightDir);
+                    lightDirection = lightDir;
 
                     ImGui.Text(sceneObjects.Count.ToString() + " loaded objects (" + sceneObjects.Count(x => x is M2Container).ToString() + " M2, " + sceneObjects.Count(x => x is WMOContainer).ToString() + " WMO, " + sceneObjects.Count(x => x is ADTContainer).ToString() + " ADT)");
 
@@ -606,6 +611,11 @@ namespace WoWViewer.NET
             var adtRotLocation = gl.GetUniformLocation(adtShaderProgram, "rotation_matrix");
             var adtModelLocation = gl.GetUniformLocation(adtShaderProgram, "model_matrix");
 
+
+            var adtLightDirectionLocation = gl.GetUniformLocation(adtShaderProgram, "lightDirection");
+            var m2LightDirectionLocation = gl.GetUniformLocation(m2ShaderProgram, "lightDirection");
+            var wmoLightDirectionLocation = gl.GetUniformLocation(wmoShaderProgram, "lightDirection");
+
             var heightScaleUniforms = new int[8];
             for (int i = 0; i < 8; i++)
                 heightScaleUniforms[i] = gl.GetUniformLocation(adtShaderProgram, $"heightScales[{i}]");
@@ -675,6 +685,8 @@ namespace WoWViewer.NET
 
                     gl.UniformMatrix4(m2ModelLocation, 1, false, (float*)&modelMatrix);
 
+                    gl.Uniform3(m2LightDirectionLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
+
                     gl.ActiveTexture(TextureUnit.Texture0);
 
                     gl.BindVertexArray(m2.vao);
@@ -729,6 +741,8 @@ namespace WoWViewer.NET
 
                     gl.UniformMatrix4(wmoModelLocation, 1, false, (float*)&modelMatrix);
 
+                    gl.Uniform3(wmoLightDirectionLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
+
                     for (var j = 0; j < wmo.wmoRenderBatch.Length; j++)
                     {
                         if (wmo.groupBatches[wmo.wmoRenderBatch[j].groupID].vao == 0)
@@ -780,6 +794,8 @@ namespace WoWViewer.NET
                     var rotationMatrix = activeCamera.GetViewMatrix();
                     gl.UniformMatrix4(adtRotLocation, 1, false, (float*)&rotationMatrix);
                     gl.UniformMatrix4(adtProjLocation, 1, false, (float*)&projectionMatrix);
+
+                    gl.Uniform3(adtLightDirectionLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
 
                     gl.BindVertexArray(adt.Terrain.vao);
                     gl.Disable(EnableCap.Blend);

@@ -42,12 +42,13 @@ void main()
 {
 	gl_Position = projection_matrix * view_matrix * model_matrix * vec4(position, 1);
 
-    mat4 viewModelMatForNormal = transpose(inverse(view_matrix));
-    Normal = normalize(viewModelMatForNormal * vec4(normal, 0.0)).xyz;
+	mat4 modelViewMatrix = view_matrix * model_matrix;
+	mat3 normalMatrix = transpose(inverse(mat3(modelViewMatrix)));
+	Normal = normalize(normalMatrix * normal);
 
-    vColor1 = color1;
-    vColor2 = color2;
-    vColor3 = color3;
+	vColor1 = color1;
+	vColor2 = color2;
+	vColor3 = color3;
 
 	int VertexShader = int(vertexShader);
 
