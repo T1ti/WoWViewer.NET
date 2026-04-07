@@ -489,10 +489,6 @@ namespace WoWViewer.NET
             transform *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (sceneObject.Rotation.Y - 270f));
             transform *= Matrix4x4.CreateTranslation(sceneObject.Position.X, sceneObject.Position.Z * -1, sceneObject.Position.Y);
             transform *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
-
-            ImGuizmo.DrawGrid(ref view, ref proj, ref transform, 10);
-            ImGuizmo.DrawCubes(ref view, ref proj, ref transform, 1);
-
             ImGuizmo.PushID(0);
 
             if (ImGuizmo.Manipulate(ref view, ref proj, currentGizmoOperation, ImGuizmoMode.Local, ref transform))
