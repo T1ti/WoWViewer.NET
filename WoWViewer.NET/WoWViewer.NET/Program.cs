@@ -9,7 +9,6 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
-using WoWFormatLib.Structs.M2;
 using WoWViewer.NET.Managers;
 using WoWViewer.NET.Objects;
 
@@ -53,7 +52,8 @@ namespace WoWViewer.NET
         {
             var wowDir = "";
 
-            if(args.Length != 1) {
+            if (args.Length != 1)
+            {
                 Console.WriteLine("Please provide a WoW directory as startup argument.");
                 return;
             }
@@ -370,7 +370,7 @@ namespace WoWViewer.NET
                     ImGui.DragFloat3("Light direction", ref lightDir);
                     sceneManager.LightDirection = lightDir;
 
-                    ImGui.Text(sceneManager.SceneObjects.Count.ToString() + " loaded objects (" + sceneManager.SceneObjects.Count(x => x is M2Container).ToString() + " M2, " + sceneManager.SceneObjects.Count(x => x is WMOContainer).ToString() + " WMO, " + sceneManager.SceneObjects.Count(x => x is ADTContainer).ToString() + " ADT)");
+                    ImGui.Text(sceneManager.SceneObjects.Count.ToString() + " objects (" + sceneManager.m2Instances.Count.ToString() + " unique M2, " + sceneManager.wmoInstances.Count.ToString() + " unique WMO, " + sceneManager.SceneObjects.Count(x => x is ADTContainer).ToString() + " ADT)");
 
                     var (x, y) = SceneManager.GetTileFromPosition(activeCamera.Position);
 

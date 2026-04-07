@@ -1,4 +1,4 @@
-﻿#version 330
+﻿#version 430
 
 in vec2 TexCoord;
 in vec4 VColor;
@@ -15,7 +15,7 @@ uniform sampler2D diffuseLayers[8];
 uniform sampler2D heightLayers[8];
 uniform sampler2D alphaLayers[2];
 
-uniform vec3 lightDirection;
+layout(location = 5) uniform vec3 lightDirection;
 
 // Based on https://github.com/Kruithne/wow.export/blob/main/src/shaders/adt.fragment.shader but without the sampler2darrays because I'm stoopid
 void main()

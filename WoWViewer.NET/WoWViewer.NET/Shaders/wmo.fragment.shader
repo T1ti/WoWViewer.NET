@@ -10,9 +10,10 @@ in vec4 vColor2;
 in vec4 vColor3;
 out vec4 outputColor;
 
-uniform float pixelShader;
+layout(location = 4) uniform float pixelShader;
+layout(location = 5) uniform vec3 lightDirection;
+
 uniform float alphaRef;
-uniform vec3 lightDirection;
 
 layout(binding=0) uniform sampler2D texture1;
 layout(binding=1) uniform sampler2D texture2;

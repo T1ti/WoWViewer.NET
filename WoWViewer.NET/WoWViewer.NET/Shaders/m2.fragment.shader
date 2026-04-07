@@ -1,4 +1,4 @@
-﻿#version 330
+﻿#version 430
 
 in vec2 TexCoord;
 in vec3 Normal;
@@ -6,7 +6,7 @@ out vec4 outColor;
 
 uniform float alphaRef;
 uniform sampler2D colorTexture;
-uniform vec3 lightDirection;
+layout(location = 5) uniform vec3 lightDirection;
 
 void main()
 {

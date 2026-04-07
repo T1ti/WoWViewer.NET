@@ -1,8 +1,8 @@
-﻿#version 330
+﻿#version 430
 
-uniform mat4 model_matrix;
-uniform mat4 projection_matrix;
-uniform mat4 rotation_matrix;
+layout(location = 0) uniform mat4 model_matrix;
+layout(location = 1) uniform mat4 projection_matrix;
+layout(location = 2) uniform mat4 rotation_matrix;
 
 uniform vec3 firstPos;
 
