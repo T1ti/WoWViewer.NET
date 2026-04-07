@@ -365,6 +365,9 @@ namespace WoWViewer.NET
                             var wmoContainer = (WMOContainer)sceneObject;
                             var wmoString = "WMO #" + i + " FDID " + wmoContainer.FileDataId.ToString();
 
+                            if (sceneObject.IsSelected)
+                                wmoString += " (Selected)";
+
                             if (ImGui.CollapsingHeader(wmoString))
                             {
                                 var curPos = wmoContainer.Position;
@@ -390,7 +393,12 @@ namespace WoWViewer.NET
                         foreach (var sceneObject in sceneManager.SceneObjects.Where(x => x is M2Container))
                         {
                             var m2Container = (M2Container)sceneObject;
-                            if (ImGui.CollapsingHeader("M2 #" + i + " FDID " + m2Container.FileDataId.ToString()))
+                            var m2String = "M2 #" + i + " FDID " + m2Container.FileDataId.ToString();
+
+                            if (sceneObject.IsSelected)
+                                m2String += " (Selected)";
+
+                            if (ImGui.CollapsingHeader(m2String))
                             {
                                 var curPos = m2Container.Position;
                                 ImGui.DragFloat3("M2 Pos " + i, ref curPos);
