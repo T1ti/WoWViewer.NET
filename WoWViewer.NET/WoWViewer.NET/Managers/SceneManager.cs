@@ -386,7 +386,9 @@ namespace WoWViewer.NET.Managers
                     _gl.UniformMatrix4(m2ViewLocation, 1, false, (float*)&viewMatrix);
 
                     var modelMatrix = Matrix4x4.CreateScale(sceneObject.Scale);
-                    modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (sceneObject.Rotation.Y - 270f));
+                    modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * sceneObject.Rotation.Z);
+                    modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * sceneObject.Rotation.X);
+                    modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (90f + sceneObject.Rotation.Y));
                     modelMatrix *= Matrix4x4.CreateTranslation(sceneObject.Position.X, sceneObject.Position.Z * -1, sceneObject.Position.Y);
                     modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
 
@@ -428,9 +430,11 @@ namespace WoWViewer.NET.Managers
                     _gl.UniformMatrix4(wmoViewLocation, 1, false, (float*)&viewMatrix);
 
                     var modelMatrix = Matrix4x4.CreateScale(sceneObject.Scale);
-                    modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * wmoContainer.Rotation.X);
-                    modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * -wmoContainer.Rotation.Z);
-                    modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (wmoContainer.Rotation.Y - 270f));
+
+                    modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * wmoContainer.Rotation.Z); 
+                    modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * wmoContainer.Rotation.X);
+                    modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (wmoContainer.Rotation.Y + 90f));
+
                     modelMatrix *= Matrix4x4.CreateTranslation(wmoContainer.Position.X, wmoContainer.Position.Z * -1, wmoContainer.Position.Y);
                     modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
 
