@@ -154,7 +154,7 @@ namespace WoWViewer.NET.Managers
 
             var usedTiles = new List<MapTile>();
 
-            var viewDistance = 1; 
+            var viewDistance = 2; 
             for (int xOffset = -viewDistance; xOffset <= viewDistance; xOffset++)
             {
                 for (int yOffset = -viewDistance; yOffset <= viewDistance; yOffset++)
@@ -271,7 +271,7 @@ namespace WoWViewer.NET.Managers
                 {
                     Position = worldModel.position,
                     Rotation = worldModel.rotation,
-                    Scale = worldModel.scale,
+                    Scale = worldModel.scale == 0 ? 1 : worldModel.scale,
                     UniqueID = worldModel.uniqueID
                 };
 

@@ -7,10 +7,10 @@ namespace WoWViewer.NET.Services
         public static BuildInstance buildInstance;
         public static bool IsInitialized { get; private set; } = false;
 
-        public static async Task Initialize()
+        public static async Task Initialize(string basedir)
         {
             buildInstance = new BuildInstance();
-            buildInstance.Settings.Product = "wowt";
+            buildInstance.Settings.Product = "wow";
 
             buildInstance.Settings.Locale = RootInstance.LocaleFlags.enUS;
             buildInstance.Settings.Region = "us";
@@ -19,13 +19,13 @@ namespace WoWViewer.NET.Services
             var buildConfig = "f8891ed6ab01b319b43b9aa0ceeb5f58";
             var cdnConfig = "99cd3ee53f0b63144232eef9ff25fc06";
 
-            var basedir = @"C:\World of Warcraft";
-            if (Directory.Exists(basedir))
+            if (!string.IsNullOrEmpty(basedir) && Directory.Exists(basedir))
             {
                 buildInstance.Settings.BaseDir = basedir;
                 buildInstance.Settings.BuildConfig = buildConfig;
                 buildInstance.Settings.CDNConfig = cdnConfig;
             }
+
             buildInstance.Settings.AdditionalCDNs = ["casc.wago.tools", "cdn.arctium.tools"];
             buildInstance.LoadConfigs(buildConfig, cdnConfig);
             if (buildInstance.BuildConfig == null || buildInstance.CDNConfig == null)

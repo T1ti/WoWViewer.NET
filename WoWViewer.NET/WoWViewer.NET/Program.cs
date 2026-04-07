@@ -48,8 +48,20 @@ namespace WoWViewer.NET
 
         private static ShaderManager shaderManager;
         private static SceneManager sceneManager;
+
         static void Main(string[] args)
         {
+            var wowDir = "";
+
+            if(args.Length != 1) {
+                Console.WriteLine("Please provide a WoW directory as startup argument.");
+                return;
+            }
+            else
+            {
+                wowDir = args[0];
+            }
+
             var windowOptions = WindowOptions.Default;
             windowOptions.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible | ContextFlags.Debug, new APIVersion(4, 3));
             windowOptions.ShouldSwapAutomatically = false;
@@ -102,7 +114,7 @@ namespace WoWViewer.NET
                 // Start CASC initialization in background
                 Task.Run(async () =>
                 {
-                    await Services.CASC.Initialize();
+                    await Services.CASC.Initialize(wowDir);
 
                     var tactFileProvider = new TACTSharpFileProvider();
                     tactFileProvider.InitTACT(Services.CASC.buildInstance);
