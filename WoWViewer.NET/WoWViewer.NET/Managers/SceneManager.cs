@@ -154,9 +154,10 @@ namespace WoWViewer.NET.Managers
 
             var usedTiles = new List<MapTile>();
 
-            for (int xOffset = -1; xOffset <= 1; xOffset++)
+            var viewDistance = 1; 
+            for (int xOffset = -viewDistance; xOffset <= viewDistance; xOffset++)
             {
-                for (int yOffset = -1; yOffset <= 1; yOffset++)
+                for (int yOffset = -viewDistance; yOffset <= viewDistance; yOffset++)
                 {
                     byte tileX = (byte)(x + xOffset);
                     byte tileY = (byte)(y + yOffset);
@@ -366,13 +367,6 @@ namespace WoWViewer.NET.Managers
                 {
                     if (!RenderM2 && !activeM2.forceRender)
                         continue;
-
-                    if (activeM2.FileDataId == 2061670)
-                    {
-                        activeM2.FileDataId = 2061670;
-                        activeM2.Rotation = new Vector3(activeM2.Rotation.X, activeM2.Rotation.Y * -1, activeM2.Rotation.Z);
-                        activeM2.Scale = 1f;
-                    }
 
                     var m2 = Cache.GetOrLoadM2(_gl, activeM2.FileDataId, m2ShaderProgram, activeM2.ParentFileDataId);
 
@@ -598,13 +592,16 @@ namespace WoWViewer.NET.Managers
             debugRenderer.Render(projectionMatrix, debugViewMatrix);
         }
 
-        private static (byte x, byte y) GetTileFromPosition(Vector3 position)
+        public static (byte x, byte y) GetTileFromPosition(Vector3 position)
         {
             const float tileSize = 533.33333f;
             const int mapCenter = 32;
 
-            int tileX = mapCenter - (int)Math.Floor(position.Y / tileSize);
-            int tileY = mapCenter - (int)Math.Floor(position.X / tileSize);
+            var posX = position.Y / tileSize;
+            var posY = position.X / tileSize;
+
+            int tileX = mapCenter - (int)Math.Ceiling(posX);
+            int tileY = mapCenter - (int)Math.Ceiling(posY);
 
             tileX = Math.Clamp(tileX, 0, 63);
             tileY = Math.Clamp(tileY, 0, 63);

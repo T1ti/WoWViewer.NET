@@ -9,6 +9,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
+using WoWFormatLib.Structs.M2;
 using WoWViewer.NET.Managers;
 using WoWViewer.NET.Objects;
 
@@ -111,7 +112,10 @@ namespace WoWViewer.NET
                     cascLoaded = true;
                 });
 
-                activeCamera = new Camera(new Vector3(0f, -0f, 200f), Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
+                var startPos = new Vector3(5305f, -4122f, 92f);
+                activeCamera = new Camera(startPos, Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
+                activeCamera.Yaw = 168f;
+                activeCamera.Pitch = 13f;
                 gl.Viewport(window.FramebufferSize);
                 gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 
@@ -269,9 +273,9 @@ namespace WoWViewer.NET
                 if (cascLoaded)
                     sceneManager.GetCurrentWDT();
 
-                sceneManager.ProcessNextTile();
-
                 sceneManager.UpdateTilesByCameraPos(activeCamera.Position);
+
+                sceneManager.ProcessNextTile();
 
                 if (!string.IsNullOrEmpty(sceneManager.StatusMessage))
                 {
@@ -282,7 +286,7 @@ namespace WoWViewer.NET
 
                 ImGui.Begin("Map selection");
 
-                ImGui.InputText("WDT label", ref WDTFDIDInput, 100);
+                ImGui.InputText("WDT", ref WDTFDIDInput, 100);
 
                 if (ImGui.Button("Load WDT"))
                 {
@@ -355,6 +359,10 @@ namespace WoWViewer.NET
                     sceneManager.LightDirection = lightDir;
 
                     ImGui.Text(sceneManager.SceneObjects.Count.ToString() + " loaded objects (" + sceneManager.SceneObjects.Count(x => x is M2Container).ToString() + " M2, " + sceneManager.SceneObjects.Count(x => x is WMOContainer).ToString() + " WMO, " + sceneManager.SceneObjects.Count(x => x is ADTContainer).ToString() + " ADT)");
+
+                    var (x, y) = SceneManager.GetTileFromPosition(activeCamera.Position);
+
+                    ImGui.Text("Current ADT: " + x + ", " + y);
                     ImGui.Text("RAM usage: " + (GC.GetTotalMemory(false) / 1024 / 1024).ToString() + " MB");
 
                     var i = 0;
