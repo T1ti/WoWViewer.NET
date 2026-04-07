@@ -69,7 +69,6 @@ namespace WoWViewer.NET.Managers
             public uint lastShaderProgramID;
         }
 
-
         private int m2AlphaRefLoc;
         private int wmoAlphaRefLoc;
 
@@ -695,22 +694,10 @@ namespace WoWViewer.NET.Managers
         private Matrix4x4 BuildModelMatrix(Container3D container)
         {
             var modelMatrix = Matrix4x4.CreateScale(container.Scale);
-
-            if (container is WMOContainer wmo)
-            {
-                modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * wmo.Rotation.Z);
-                modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * wmo.Rotation.X);
-                modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (wmo.Rotation.Y + 90f));
-                modelMatrix *= Matrix4x4.CreateTranslation(wmo.Position.X, wmo.Position.Z * -1, wmo.Position.Y);
-            }
-            else if (container is M2Container m2)
-            {
-                modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * m2.Rotation.Z);
-                modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * m2.Rotation.X);
-                modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (90f + m2.Rotation.Y));
-                modelMatrix *= Matrix4x4.CreateTranslation(m2.Position.X, m2.Position.Z * -1, m2.Position.Y);
-            }
-
+            modelMatrix *= Matrix4x4.CreateRotationX(MathF.PI / 180f * container.Rotation.Z);
+            modelMatrix *= Matrix4x4.CreateRotationY(MathF.PI / 180f * container.Rotation.X);
+            modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (container.Rotation.Y + 90f));
+            modelMatrix *= Matrix4x4.CreateTranslation(container.Position.X, container.Position.Z * -1, container.Position.Y);
             modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
             return modelMatrix;
         }
