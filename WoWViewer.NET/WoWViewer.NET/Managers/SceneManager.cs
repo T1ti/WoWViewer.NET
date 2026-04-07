@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.Numerics;
 using WoWFormatLib.Structs.WDT;
-using WoWFormatLib.Structs.WMO;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
@@ -136,7 +135,7 @@ namespace WoWViewer.NET.Managers
 
             var usedTiles = new List<MapTile>();
 
-            var viewDistance = 2; 
+            var viewDistance = 2;
             for (int xOffset = -viewDistance; xOffset <= viewDistance; xOffset++)
             {
                 for (int yOffset = -viewDistance; yOffset <= viewDistance; yOffset++)
@@ -374,9 +373,12 @@ namespace WoWViewer.NET.Managers
             var viewMatrix = camera.GetViewMatrix();
             viewMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * 180f);
 
+            camera.UpdateFrustum();
+            var frustum = camera.GetFrustum();
+
             foreach (var instance in m2Instances)
             {
-                if(!RenderM2)
+                if (!RenderM2)
                     break;
 
                 var instances = instance.Value;
@@ -473,13 +475,26 @@ namespace WoWViewer.NET.Managers
                     }
                 }
 
-                for (int batchStart = 0; batchStart < instances.Count; batchStart += MaxInstancesPerBatch)
+                var visibleIndices = new List<int>();
+                for (int i = 0; i < instances.Count; i++)
                 {
-                    int batchSize = Math.Min(MaxInstancesPerBatch, instances.Count - batchStart);
+                    var sphere = instances[i].GetBoundingSphere();
+                    if (sphere.HasValue && frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    {
+                        visibleIndices.Add(i);
+                    }
+                }
+
+                if (visibleIndices.Count == 0)
+                    continue;
+
+                for (int batchStart = 0; batchStart < visibleIndices.Count; batchStart += MaxInstancesPerBatch)
+                {
+                    int batchSize = Math.Min(MaxInstancesPerBatch, visibleIndices.Count - batchStart);
 
                     for (int i = 0; i < batchSize; i++)
                     {
-                        matrices[i] = BuildModelMatrix(instances[batchStart + i]);
+                        matrices[i] = BuildModelMatrix(instances[visibleIndices[batchStart + i]]);
                     }
 
                     _gl.BindBuffer(BufferTargetARB.ArrayBuffer, instanceMatrixVBO);
@@ -544,7 +559,7 @@ namespace WoWViewer.NET.Managers
                     if (!RenderADT)
                         continue;
 
-                    if(lastRenderState.lastShaderProgramID != adtShaderProgram)
+                    if (lastRenderState.lastShaderProgramID != adtShaderProgram)
                     {
                         _gl.UseProgram(adtShaderProgram);
                         lastRenderState.lastShaderProgramID = adtShaderProgram;
@@ -564,6 +579,10 @@ namespace WoWViewer.NET.Managers
 
                     for (int c = 0; c < 256; c++)
                     {
+                        var bounds = adt.Terrain.chunkBounds[c];
+                        if (!frustum.IsBoxVisible(bounds.Min, bounds.Max))
+                            continue;
+
                         var batch = adt.Terrain.renderBatches[c];
 
                         for (int j = 0; j < 2; j++)

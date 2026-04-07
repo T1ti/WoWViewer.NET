@@ -87,6 +87,13 @@ namespace WoWViewer.NET.Renderer
             public uint[] blpFileDataIDs;
             public Vector4 heights;
             public Vector4 weights;
+            public ChunkBounds[] chunkBounds;
+        }
+
+        public struct ChunkBounds
+        {
+            public Vector3 Min;
+            public Vector3 Max;
         }
 
         public struct Vertex

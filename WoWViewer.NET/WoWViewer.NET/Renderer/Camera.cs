@@ -16,6 +16,8 @@ public class Camera
 
     private float Zoom = 45f;
 
+    private readonly WoWViewer.NET.Renderer.Frustum _frustum = new();
+
     public Camera(Vector3 position, Vector3 front, Vector3 up, float aspectRatio)
     {
         Position = position;
@@ -97,5 +99,16 @@ public class Camera
     public static float DegreesToRadians(float degrees)
     {
         return MathF.PI / 180f * degrees;
+    }
+
+    public void UpdateFrustum()
+    {
+        var viewProjection = GetViewMatrix() * GetProjectionMatrix();
+        _frustum.ExtractFromMatrix(viewProjection);
+    }
+
+    public WoWViewer.NET.Renderer.Frustum GetFrustum()
+    {
+        return _frustum;
     }
 }

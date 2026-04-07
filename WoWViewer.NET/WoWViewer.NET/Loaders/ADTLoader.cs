@@ -3,7 +3,6 @@ using System.Numerics;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.ADT;
-using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Renderer;
 using static WoWViewer.NET.Renderer.Structs;
 
@@ -104,6 +103,8 @@ namespace WoWViewer.NET.Loaders
             var verticesOffset = 0;
             var indicesOffset = 0;
 
+            var chunkBounds = new ChunkBounds[256];
+
             for (int c = 0; c < adt.chunks.Length; c++)
             {
                 var batch = new RenderBatch
@@ -112,6 +113,9 @@ namespace WoWViewer.NET.Loaders
                 };
 
                 var chunk = adt.chunks[c];
+
+                var chunkMinBounds = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+                var chunkMaxBounds = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
                 for (int i = 0, idx = 0; i < 17; i++)
                 {
@@ -129,6 +133,9 @@ namespace WoWViewer.NET.Loaders
 
                         if (isInnerVertice)
                             v.Position.Y -= 0.5f * UnitSize;
+
+                        chunkMinBounds = Vector3.Min(chunkMinBounds, v.Position);
+                        chunkMaxBounds = Vector3.Max(chunkMaxBounds, v.Position);
 
                         vertices[verticesOffset++] = v;
                     }
@@ -246,6 +253,12 @@ namespace WoWViewer.NET.Loaders
                 batch.scales = layerScales;
                 batch.heightMaterialIDs = layerHeights;
                 renderBatches.Add(batch);
+
+                chunkBounds[c] = new ChunkBounds
+                {
+                    Min = chunkMinBounds,
+                    Max = chunkMaxBounds
+                };
             }
 
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, result.vertexBuffer);
@@ -303,6 +316,7 @@ namespace WoWViewer.NET.Loaders
             result.doodads = [.. doodads];
             result.worldModelBatches = [.. worldModelBatches];
             result.rootADTFileDataID = rootADTFileDataID;
+            result.chunkBounds = chunkBounds;
 
             return result;
         }
