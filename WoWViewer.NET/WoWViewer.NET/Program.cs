@@ -280,8 +280,6 @@ namespace WoWViewer.NET
                 gl.ClearColor(0f, 0f, 0f, 0.5f);
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-                ImGuizmo.BeginFrame();
-
                 if (cascLoaded)
                     sceneManager.GetCurrentWDT();
 
@@ -469,6 +467,8 @@ namespace WoWViewer.NET
         {
             if (sceneManager.SelectedObject == null)
                 return;
+
+            ImGuizmo.BeginFrame();
 
             var windowPos = new Vector2(0, 0);
             var windowSize = new Vector2(window.Size.X, window.Size.Y);

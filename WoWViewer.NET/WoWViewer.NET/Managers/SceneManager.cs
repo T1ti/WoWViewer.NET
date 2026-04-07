@@ -65,7 +65,6 @@ namespace WoWViewer.NET.Managers
         {
             public byte lastWMOVertexShaderID;
             public byte lastWMOPixelShaderID;
-            public uint lastShaderProgramID;
         }
 
         private int m2AlphaRefLoc;
@@ -388,13 +387,8 @@ namespace WoWViewer.NET.Managers
 
                 var firstInstance = instances[0];
                 var m2 = Cache.GetOrLoadM2(_gl, fileDataId, m2ShaderProgram, firstInstance.ParentFileDataId);
-
-                if (lastRenderState.lastShaderProgramID != m2ShaderProgram)
-                {
-                    _gl.UseProgram(m2ShaderProgram);
-                    lastRenderState.lastShaderProgramID = m2ShaderProgram;
-                    _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
-                }
+                _gl.UseProgram(m2ShaderProgram);
+                _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
 
                 _gl.UniformMatrix4(0, 1, false, (float*)&projectionMatrix);
                 _gl.UniformMatrix4(1, 1, false, (float*)&viewMatrix);
@@ -451,12 +445,8 @@ namespace WoWViewer.NET.Managers
                 var firstInstance = instances[0];
                 var wmo = Cache.GetOrLoadWMO(_gl, fileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
 
-                if (lastRenderState.lastShaderProgramID != wmoShaderProgram)
-                {
-                    lastRenderState.lastShaderProgramID = wmoShaderProgram;
-                    _gl.UseProgram(wmoShaderProgram);
-                    _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
-                }
+                _gl.UseProgram(wmoShaderProgram);
+                _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
 
                 _gl.UniformMatrix4(0, 1, false, (float*)&projectionMatrix);
                 _gl.UniformMatrix4(1, 1, false, (float*)&viewMatrix);
@@ -539,8 +529,7 @@ namespace WoWViewer.NET.Managers
                                 _gl.BindTexture(TextureTarget.Texture2D, (uint)batch.materialID[m]);
                         }
 
-                        _gl.DrawElementsInstanced(PrimitiveType.Triangles, batch.numFaces, DrawElementsType.UnsignedShort,
-                                                 (void*)(batch.firstFace * 2), (uint)batchSize);
+                        _gl.DrawElementsInstanced(PrimitiveType.Triangles, batch.numFaces, DrawElementsType.UnsignedShort, (void*)(batch.firstFace * 2), (uint)batchSize);
 
                         for (var m = 0; m < batch.materialID.Length; m++)
                         {
@@ -559,15 +548,11 @@ namespace WoWViewer.NET.Managers
                     if (!RenderADT)
                         continue;
 
-                    if (lastRenderState.lastShaderProgramID != adtShaderProgram)
-                    {
-                        _gl.UseProgram(adtShaderProgram);
-                        lastRenderState.lastShaderProgramID = adtShaderProgram;
-                        _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
+                    _gl.UseProgram(adtShaderProgram);
+                    _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
 
-                        var adtModelviewMatrix = Matrix4x4.CreateRotationZ(MathF.PI / 180f * 180f);
-                        _gl.UniformMatrix4(0, 1, false, (float*)&adtModelviewMatrix);
-                    }
+                    var adtModelviewMatrix = Matrix4x4.CreateRotationZ(MathF.PI / 180f * 180f);
+                    _gl.UniformMatrix4(0, 1, false, (float*)&adtModelviewMatrix);
 
                     _gl.UniformMatrix4(1, 1, false, (float*)&projectionMatrix);
 
@@ -607,19 +592,6 @@ namespace WoWViewer.NET.Managers
                         }
 
                         _gl.DrawElements(PrimitiveType.Triangles, (uint)((c + 1) * 768) - (uint)c * 768, DrawElementsType.UnsignedInt, (void*)((c * 768) * 4));
-
-                        // Apparently we can get away not doing this now? TBD
-                        /*
-                        for (int j = 0; j < 8; j++)
-                        {
-                            _gl.ActiveTexture(TextureUnit.Texture0 + j);
-                            _gl.BindTexture(TextureTarget.Texture2D, 0);
-                            _gl.ActiveTexture(TextureUnit.Texture7 + j);
-                            _gl.BindTexture(TextureTarget.Texture2D, 0);
-                            _gl.ActiveTexture(TextureUnit.Texture15 + j);
-                            _gl.BindTexture(TextureTarget.Texture2D, 0);
-                        }
-                        */
                     }
                 }
             }
