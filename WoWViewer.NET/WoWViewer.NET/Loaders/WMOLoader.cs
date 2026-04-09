@@ -171,6 +171,10 @@ namespace WoWViewer.NET.Loaders
                 wmoBatch.mats[i].textureID9 = -1;
 
                 var (VertexShader, PixelShader) = ShaderEnums.WMOShaders[(int)wmo.materials[i].shader];
+
+                if (PixelShader == ShaderEnums.WMOPixelShader.MapObjLod)
+                    continue;
+
                 if (PixelShader == ShaderEnums.WMOPixelShader.MapObjParallax)
                 {
                     if ((int)wmo.materials[i].color3 != 0)
@@ -331,70 +335,6 @@ namespace WoWViewer.NET.Loaders
 
                     renderBatches.Add(renderBatch);
                 }
-
-                //var definingRenderBatch = false;
-                //var currentRenderBatch = new RenderBatch()
-                //{
-                //    firstFace = 0,
-                //    numFaces = 1,
-                //    shader = 99,
-                //    materialID = [1, 1, 1],
-                //    blendType = 1,
-                //    groupID = (uint)g
-                //};
-
-                //for (var i = 0; i < group.mogp.materialInfo.Length; i++)
-                //{
-                //    var materialInfo = group.mogp.materialInfo[i];
-                //    if(materialInfo.materialID == 0xFF)
-                //    {
-                //        if (!definingRenderBatch)
-                //        {
-                //            currentRenderBatch.firstFace = (uint)i;
-                //            currentRenderBatch.numFaces = 1;
-                //            definingRenderBatch = true;
-                //        }
-                //        else
-                //        {
-                //            currentRenderBatch.numFaces++;
-                //        }
-                //    }
-                //    else
-                //    {
-                //        if (definingRenderBatch)
-                //        {
-                //            definingRenderBatch = false;
-                //            renderBatches.Add(currentRenderBatch);
-                //            currentRenderBatch = new RenderBatch()
-                //            {
-                //                firstFace = 0,
-                //                numFaces = 1,
-                //                shader = 99,
-                //                materialID = [1, 1, 1],
-                //                blendType = 1,
-                //                groupID = (uint)g
-                //            };
-                //        }
-                //    }
-                //}
-
-                //if (definingRenderBatch)
-                //    renderBatches.Add(currentRenderBatch);
-
-                //for(var i = 0; i < group.mogp.bspNodes.Length; i++)
-                //{
-                //    var renderBatch = new RenderBatch()
-                //    {
-                //        firstFace = group.mogp.bspNodes[i].faceStart,
-                //        numFaces = group.mogp.bspNodes[i].nFaces,
-                //        shader = 99,
-                //        materialID = [1, 1, 1],
-                //        blendType = 1,
-                //        groupID = (uint)g
-                //    };
-
-                //    renderBatches.Add(renderBatch);
-                //}
             }
 
             wmoBatch.wmoRenderBatch = [.. renderBatches];
