@@ -11,19 +11,13 @@ namespace WoWViewer.NET
             public uint vertexBuffer;
             public uint indiceBuffer;
             public Vector3 startPos;
-            public RenderBatch[] renderBatches;
+            public ADTRenderBatch[] renderBatches;
             public Doodad[] doodads;
             public WorldModelBatch[] worldModelBatches;
             public uint[] blpFileDataIDs;
             public Vector4 heights;
             public Vector4 weights;
-            public ChunkBounds[] chunkBounds;
-        }
-
-        public struct ChunkBounds
-        {
-            public Vector3 Min;
-            public Vector3 Max;
+            public BoundingBox[] chunkBounds;
         }
 
         public struct ADTVertex
@@ -54,12 +48,17 @@ namespace WoWViewer.NET
             public Vector4 Color3;
         }
 
-        public struct Material
+        public struct ADTMaterial
         {
-            // M2/ADT
             public uint textureID;
+            public uint heightTextureID;
+            public float scale;
+            public float heightScale;
+            public float heightOffset;
+        }
 
-            // WMO
+        public struct WMOMaterial
+        {
             public int textureID1;
             public int textureID2;
             public int textureID3;
@@ -78,27 +77,28 @@ namespace WoWViewer.NET
             internal int texture7;
             internal int texture8;
             internal int texture9;
+        }
 
-            // ADT
-            public float scale;
-            public float heightScale;
-            public float heightOffset;
-            public uint heightTexture;
-
+        public struct M2Material
+        {
+            public uint textureID;
             public uint blendMode;
             internal WoWFormatLib.Structs.M2.TextureFlags flags;
         }
 
-        public struct RenderBatch
+        public struct WMORenderBatch
         {
             public int[] materialID;
-            /* WMO ONLY */
             public uint firstFace;
             public uint numFaces;
             public uint groupID;
             public uint blendType;
             public uint shader;
-            /* ADT ONLY */
+        }
+
+        public struct ADTRenderBatch
+        {
+            public int[] materialID;
             public int[] alphaMaterialID;
             public float[] scales;
             public int[] heightMaterialIDs;
@@ -124,16 +124,16 @@ namespace WoWViewer.NET
             public BoundingBox boundingBox;
             public float boundingRadius;
             public Submesh[] submeshes;
-            public Material[] mats;
+            public M2Material[] mats;
         }
 
-        public struct WorldModelBatch
+        public readonly struct WorldModelBatch
         {
-            public Vector3 position;
-            public Vector3 rotation;
-            public float scale;
-            public uint fileDataID;
-            public uint uniqueID;
+            public readonly Vector3 position { get; init; }
+            public readonly Vector3 rotation { get; init; }
+            public readonly float scale { get; init; }
+            public readonly uint fileDataID { get; init; }
+            public readonly uint uniqueID { get; init; }
         }
 
         public struct WMODoodad
@@ -148,47 +148,47 @@ namespace WoWViewer.NET
             public uint doodadSet;
         }
 
-        public struct BoundingBox
+        public readonly struct BoundingBox
         {
-            public Vector3 min;
-            public Vector3 max;
+            public readonly Vector3 min { get; init; }
+            public readonly Vector3 max { get; init; }
         }
 
-        public struct Submesh
+        public readonly struct Submesh
         {
-            public uint firstFace;
-            public uint numFaces;
-            public uint material;
-            public uint blendType;
-            public uint groupID;
+            public readonly uint firstFace { get; init; }
+            public readonly uint numFaces { get; init; }
+            public readonly uint material { get; init; }
+            public readonly uint blendType { get; init; }
+            public readonly int index { get; init; }
         }
 
         public struct WorldModel
         {
-            public uint RootWMOFileDataID;
+            public uint rootWMOFileDataID;
             public WorldModelGroupBatches[] groupBatches;
-            public Material[] mats;
-            public RenderBatch[] wmoRenderBatch;
+            public WMOMaterial[] mats;
+            public WMORenderBatch[] wmoRenderBatch;
             public WMODoodad[] doodads;
             public string[] doodadSets;
             public Vector3[] boundingBox;
             public float boundingRadius;
         }
 
-        public struct WorldModelGroupBatches
+        public readonly struct WorldModelGroupBatches
         {
-            public uint vao;
-            public uint vertexBuffer;
-            public uint indiceBuffer;
-            public uint verticeCount;
-            public string groupName;
+            public readonly uint vao { get; init; }
+            public readonly uint vertexBuffer { get; init; }
+            public readonly uint indiceBuffer { get; init; }
+            public readonly uint verticeCount { get; init; }
+            public readonly string groupName { get; init; }
         }
 
-        public struct MapTile
+        public readonly struct MapTile
         {
-            public uint wdtFileDataID;
-            public byte tileX;
-            public byte tileY;
+            public readonly uint wdtFileDataID { get; init; }
+            public readonly byte tileX { get; init; }
+            public readonly byte tileY { get; init; }
         }
 
         public struct WMOGroup
@@ -197,7 +197,7 @@ namespace WoWViewer.NET
             public uint verticeOffset;
             public WMOVertex[] vertices;
             public uint[] indices;
-            public RenderBatch[] renderBatches;
+            public WMORenderBatch[] renderBatches;
         }
     }
 }

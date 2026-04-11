@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using System.Runtime.InteropServices.Marshalling;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.M2;
@@ -11,7 +12,6 @@ namespace WoWViewer.NET.Loaders
     class M2Loader
     {
         private static uint DEFAULT_TEXTURE_ID = 528732; // dungeons/textures/testing/color_01.blp
-        private static uint MISSING_TEXTURE_ID = 186184; // textures/shanecube.blp
 
         public static unsafe DoodadBatch LoadM2(GL gl, uint fileDataID, uint shaderProgram)
         {
@@ -72,7 +72,7 @@ namespace WoWViewer.NET.Loaders
                 throw new Exception("Model does not contain skins: " + fileDataID);
 
             // Textures
-            doodadBatch.mats = new Material[model.textures.Length];
+            doodadBatch.mats = new M2Material[model.textures.Length];
             for (var i = 0; i < model.textures.Length; i++)
             {
                 uint textureFileDataID = DEFAULT_TEXTURE_ID;
@@ -93,9 +93,6 @@ namespace WoWViewer.NET.Loaders
                 if (textureFileDataID == 0)
                     textureFileDataID = DEFAULT_TEXTURE_ID;
 
-                if (!FileProvider.FileExists(textureFileDataID))
-                    textureFileDataID = MISSING_TEXTURE_ID;
-
                 doodadBatch.mats[i].textureID = Cache.GetOrLoadBLP(gl, textureFileDataID, fileDataID);
             }
 
@@ -103,35 +100,40 @@ namespace WoWViewer.NET.Loaders
             doodadBatch.submeshes = new Submesh[model.skins[0].submeshes.Length];
             for (var i = 0; i < model.skins[0].submeshes.Length; i++)
             {
-                doodadBatch.submeshes[i].firstFace = model.skins[0].submeshes[i].startTriangle;
-                doodadBatch.submeshes[i].numFaces = model.skins[0].submeshes[i].nTriangles;
+                uint material = 0;
+                uint blendType = 0;
+                var firstFace = model.skins[0].submeshes[i].startTriangle;
+                var numFaces = model.skins[0].submeshes[i].nTriangles;
+
                 for (var tu = 0; tu < model.skins[0].textureunit.Length; tu++)
                 {
-                    if (model.skins[0].textureunit[tu].submeshIndex == i)
-                    {
-                        doodadBatch.submeshes[i].blendType = model.renderflags[model.skins[0].textureunit[tu].renderFlags].blendingMode;
+                    if (model.skins[0].textureunit[tu].submeshIndex != i)
+                        continue;
 
-                        uint textureFileDataID = DEFAULT_TEXTURE_ID;
-                        if (!FileProvider.FileExists(textureFileDataID))
-                            textureFileDataID = MISSING_TEXTURE_ID;
+                    var textureUnit = model.skins[0].textureunit[tu];
 
-                        if (model.textureFileDataIDs != null && model.textureFileDataIDs.Length > 0 && model.textureFileDataIDs[model.texlookup[model.skins[0].textureunit[tu].texture].textureID] != 0)
-                        {
-                            textureFileDataID = model.textureFileDataIDs[model.texlookup[model.skins[0].textureunit[tu].texture].textureID];
-                        }
-                        else
-                        {
-                            textureFileDataID = DEFAULT_TEXTURE_ID;
-                            if (!FileProvider.FileExists(textureFileDataID))
-                                textureFileDataID = MISSING_TEXTURE_ID;
-                        }
+                    blendType = model.renderflags[textureUnit.renderFlags].blendingMode;
 
-                        if (!FileProvider.FileExists(textureFileDataID))
-                            textureFileDataID = MISSING_TEXTURE_ID;
+                    var textureID = model.texlookup[textureUnit.texture].textureID;
 
-                        doodadBatch.submeshes[i].material = (uint)Cache.GetOrLoadBLP(gl, textureFileDataID, fileDataID);
-                    }
+                    uint textureFileDataID = DEFAULT_TEXTURE_ID;
+
+                    if (model.textureFileDataIDs != null && model.textureFileDataIDs.Length > 0 && model.textureFileDataIDs[textureID] != 0)
+                        textureFileDataID = model.textureFileDataIDs[textureID];
+
+                    material = Cache.GetOrLoadBLP(gl, textureFileDataID, fileDataID);
+
+                    break;
                 }
+
+                doodadBatch.submeshes[i] = new Submesh()
+                {
+                    firstFace = firstFace,
+                    numFaces = numFaces,
+                    material = material,
+                    blendType = blendType,
+                    index = i
+                };
             }
 
             doodadBatch.vao = gl.GenVertexArray();

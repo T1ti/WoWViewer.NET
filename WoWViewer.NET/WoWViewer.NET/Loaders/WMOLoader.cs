@@ -31,7 +31,7 @@ namespace WoWViewer.NET.Loaders
             var wmoBatch = new WorldModel()
             {
                 groupBatches = new WorldModelGroupBatches[wmo.group.Length],
-                RootWMOFileDataID = fileDataID,
+                rootWMOFileDataID = fileDataID,
                 boundingBox = [wmo.header.boundingBox1, wmo.header.boundingBox2],
                 boundingRadius = CalculateBoundingRadius(wmo.header.boundingBox1, wmo.header.boundingBox2)
             };
@@ -49,11 +49,14 @@ namespace WoWViewer.NET.Loaders
                 if (wmo.group[g].mogp.vertices == null)
                     continue;
 
-                wmoBatch.groupBatches[g].groupName = groupName;
-                wmoBatch.groupBatches[g].vao = gl.GenVertexArray();
-                wmoBatch.groupBatches[g].vertexBuffer = gl.GenBuffer();
-                wmoBatch.groupBatches[g].indiceBuffer = gl.GenBuffer();
-                wmoBatch.groupBatches[g].verticeCount = (uint)wmo.group[g].mogp.vertices.Length;
+                wmoBatch.groupBatches[g] = new WorldModelGroupBatches()
+                {
+                    groupName = groupName,
+                    vao = gl.GenVertexArray(),
+                    vertexBuffer = gl.GenBuffer(),
+                    indiceBuffer = gl.GenBuffer(),
+                    verticeCount = (uint)wmo.group[g].mogp.vertices.Length
+                };
 
                 gl.BindVertexArray(wmoBatch.groupBatches[g].vao);
                 gl.BindBuffer(BufferTargetARB.ArrayBuffer, wmoBatch.groupBatches[g].vertexBuffer);
@@ -147,7 +150,7 @@ namespace WoWViewer.NET.Loaders
                     gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(wmo.group[g].mogp.indices.Length * sizeof(ushort)), buf, BufferUsageARB.StaticDraw);
             }
 
-            wmoBatch.mats = new Material[wmo.materials.Length];
+            wmoBatch.mats = new WMOMaterial[wmo.materials.Length];
             for (var i = 0; i < wmo.materials.Length; i++)
             {
                 wmoBatch.mats[i].texture1 = (int)wmo.materials[i].texture1;
@@ -275,7 +278,7 @@ namespace WoWViewer.NET.Loaders
                 }
             }
 
-            var renderBatches = new List<RenderBatch>();
+            var renderBatches = new List<WMORenderBatch>();
 
             for (var g = 0; g < wmo.group.Length; g++)
             {
@@ -290,7 +293,7 @@ namespace WoWViewer.NET.Loaders
                     else
                         matID = group.mogp.renderBatches[i].materialID;
 
-                    var renderBatch = new RenderBatch()
+                    var renderBatch = new WMORenderBatch()
                     {
                         firstFace = group.mogp.renderBatches[i].firstFace,
                         numFaces = group.mogp.renderBatches[i].numFaces,
@@ -303,31 +306,31 @@ namespace WoWViewer.NET.Loaders
                     for (var ti = 0; ti < wmoBatch.mats.Length; ti++)
                     {
                         if (wmo.materials[matID].texture1 == wmoBatch.mats[ti].texture1)
-                            renderBatch.materialID[0] = (int)wmoBatch.mats[ti].textureID1;
+                            renderBatch.materialID[0] = wmoBatch.mats[ti].textureID1;
 
                         if (wmo.materials[matID].texture2 == wmoBatch.mats[ti].texture2)
-                            renderBatch.materialID[1] = (int)wmoBatch.mats[ti].textureID2;
+                            renderBatch.materialID[1] = wmoBatch.mats[ti].textureID2;
 
                         if (wmo.materials[matID].texture3 == wmoBatch.mats[ti].texture3)
-                            renderBatch.materialID[2] = (int)wmoBatch.mats[ti].textureID3;
+                            renderBatch.materialID[2] = wmoBatch.mats[ti].textureID3;
 
                         if (wmo.materials[matID].color3 == wmoBatch.mats[ti].texture4)
-                            renderBatch.materialID[3] = (int)wmoBatch.mats[ti].textureID4;
+                            renderBatch.materialID[3] = wmoBatch.mats[ti].textureID4;
 
                         if (wmo.materials[matID].flags3 == wmoBatch.mats[ti].texture5)
-                            renderBatch.materialID[4] = (int)wmoBatch.mats[ti].textureID5;
+                            renderBatch.materialID[4] = wmoBatch.mats[ti].textureID5;
 
                         if (wmo.materials[matID].runtimeData0 == wmoBatch.mats[ti].texture6)
-                            renderBatch.materialID[5] = (int)wmoBatch.mats[ti].textureID6;
+                            renderBatch.materialID[5] = wmoBatch.mats[ti].textureID6;
 
                         if (wmo.materials[matID].runtimeData1 == wmoBatch.mats[ti].texture7)
-                            renderBatch.materialID[6] = (int)wmoBatch.mats[ti].textureID7;
+                            renderBatch.materialID[6] = wmoBatch.mats[ti].textureID7;
 
                         if (wmo.materials[matID].runtimeData2 == wmoBatch.mats[ti].texture8)
-                            renderBatch.materialID[7] = (int)wmoBatch.mats[ti].textureID8;
+                            renderBatch.materialID[7] = wmoBatch.mats[ti].textureID8;
 
                         if (wmo.materials[matID].runtimeData3 == wmoBatch.mats[ti].texture9)
-                            renderBatch.materialID[8] = (int)wmoBatch.mats[ti].textureID9;
+                            renderBatch.materialID[8] = wmoBatch.mats[ti].textureID9;
                     }
 
                     renderBatch.blendType = wmo.materials[matID].blendMode;
@@ -359,28 +362,28 @@ namespace WoWViewer.NET.Loaders
             foreach(var mat in wmo.mats)
             {
                 if (mat.texture1 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture1, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture1, wmo.rootWMOFileDataID);
                 if (mat.texture2 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture2, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture2, wmo.rootWMOFileDataID);
                 if (mat.texture3 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture3, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture3, wmo.rootWMOFileDataID);
                 if (mat.texture4 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture4, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture4, wmo.rootWMOFileDataID);
                 if (mat.texture5 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture5, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture5, wmo.rootWMOFileDataID);
                 if (mat.texture6 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture6, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture6, wmo.rootWMOFileDataID);
                 if (mat.texture7 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture7, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture7, wmo.rootWMOFileDataID);
                 if (mat.texture8 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture8, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture8, wmo.rootWMOFileDataID);
                 if (mat.texture9 != -1)
-                    Cache.ReleaseBLP(gl, (uint)mat.texture9, wmo.RootWMOFileDataID);
+                    Cache.ReleaseBLP(gl, (uint)mat.texture9, wmo.rootWMOFileDataID);
             }
 
             foreach(var model in wmo.doodads)
                 if (model.filename != null)
-                    Cache.ReleaseM2(gl, model.filedataid, wmo.RootWMOFileDataID);
+                    Cache.ReleaseM2(gl, model.filedataid, wmo.rootWMOFileDataID);
         }
     }
 }

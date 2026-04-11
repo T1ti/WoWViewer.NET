@@ -585,7 +585,7 @@ namespace WoWViewer.NET.Managers
                     for (int c = 0; c < 256; c++)
                     {
                         var bounds = adt.Terrain.chunkBounds[c];
-                        if (!frustum.IsBoxVisible(bounds.Min, bounds.Max))
+                        if (!frustum.IsBoxVisible(bounds.min, bounds.max))
                             continue;
 
                         var batch = adt.Terrain.renderBatches[c];

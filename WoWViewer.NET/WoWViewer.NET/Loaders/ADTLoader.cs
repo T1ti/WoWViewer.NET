@@ -34,13 +34,13 @@ namespace WoWViewer.NET.Loaders
             result.vertexBuffer = gl.GenBuffer();
             result.indiceBuffer = gl.GenBuffer();
 
-            var materials = new Dictionary<uint, Material>();
+            var materials = new Dictionary<uint, ADTMaterial>();
 
             if (adt.textures.filenames == null)
             {
                 for (var ti = 0; ti < adt.diffuseTextureFileDataIDs.Length; ti++)
                 {
-                    var material = new Material
+                    var material = new ADTMaterial
                     {
                         textureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti], mapTile.wdtFileDataID)
                     };
@@ -57,12 +57,12 @@ namespace WoWViewer.NET.Loaders
 
                             if (!FileProvider.FileExists(adt.heightTextureFileDataIDs[ti]))
                             {
-                                material.heightTexture = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti], rootADTFileDataID);
+                                material.heightTextureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti], rootADTFileDataID);
                                 usedBLPFileDataIDs.Add(adt.diffuseTextureFileDataIDs[ti]);
                             }
                             else
                             {
-                                material.heightTexture = Cache.GetOrLoadBLP(gl, adt.heightTextureFileDataIDs[ti], rootADTFileDataID);
+                                material.heightTextureID = Cache.GetOrLoadBLP(gl, adt.heightTextureFileDataIDs[ti], rootADTFileDataID);
                                 usedBLPFileDataIDs.Add(adt.heightTextureFileDataIDs[ti]);
                             }
                         }
@@ -91,7 +91,7 @@ namespace WoWViewer.NET.Loaders
             var initialChunkY = adt.chunks[0].header.position.Y;
             var initialChunkX = adt.chunks[0].header.position.X;
 
-            var renderBatches = new List<RenderBatch>(256);
+            var renderBatches = new List<ADTRenderBatch>(256);
 
             var normalAttrib = gl.GetAttribLocation(shaderProgram, "normal");
             var colorAttrib = gl.GetAttribLocation(shaderProgram, "color");
@@ -103,14 +103,11 @@ namespace WoWViewer.NET.Loaders
             var verticesOffset = 0;
             var indicesOffset = 0;
 
-            var chunkBounds = new ChunkBounds[256];
+            var chunkBounds = new BoundingBox[256];
 
             for (int c = 0; c < adt.chunks.Length; c++)
             {
-                var batch = new RenderBatch
-                {
-                    groupID = (uint)c
-                };
+                var batch = new ADTRenderBatch();
 
                 var chunk = adt.chunks[c];
 
@@ -190,11 +187,11 @@ namespace WoWViewer.NET.Loaders
                     if (chunk.alphaLayer != null)
                         alphaLayers.Add(li, chunk.alphaLayer[li].layer);
 
-                    Material curMat = materials[diffuseTextureID];
+                    ADTMaterial curMat = materials[diffuseTextureID];
                     usedBLPFileDataIDs.Add(diffuseTextureID);
 
                     layerMaterials[li] = (int)Cache.GetOrLoadBLP(gl, diffuseTextureID, rootADTFileDataID);
-                    layerHeights[li] = (int)curMat.heightTexture;
+                    layerHeights[li] = (int)curMat.heightTextureID;
                     layerScales[li] = curMat.scale;
                     heightScales[li] = curMat.heightScale;
                     heightOffsets[li] = curMat.heightOffset;
@@ -254,10 +251,10 @@ namespace WoWViewer.NET.Loaders
                 batch.heightMaterialIDs = layerHeights;
                 renderBatches.Add(batch);
 
-                chunkBounds[c] = new ChunkBounds
+                chunkBounds[c] = new BoundingBox
                 {
-                    Min = chunkMinBounds,
-                    Max = chunkMaxBounds
+                    min = chunkMinBounds,
+                    max = chunkMaxBounds
                 };
             }
 
