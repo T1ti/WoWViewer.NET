@@ -5,7 +5,8 @@
 - Basic skyboxes
 
 ### Performance
-- TEX for placeholder textures (fallback to pink)
+- Model LODs
+- Load WMO/M2 on separate thread, only upload GPU stuff on GL thread
 
 ### Switches
 - Terrain textures
