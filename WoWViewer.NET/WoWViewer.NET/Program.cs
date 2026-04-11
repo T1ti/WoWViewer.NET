@@ -281,7 +281,10 @@ namespace WoWViewer.NET
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
                 if (cascLoaded)
+                {
                     sceneManager.GetCurrentWDT();
+                    sceneManager.PreloadTEX();
+                }
 
                 sceneManager.UpdateTilesByCameraPos(activeCamera.Position);
 
@@ -303,6 +306,7 @@ namespace WoWViewer.NET
                     if (uint.TryParse(WDTFDIDInput, out var newWDTI) && sceneManager.CurrentWDTFileDataID != newWDTI && Services.CASC.FileExists(newWDTI))
                     {
                         sceneManager.LoadWDT(newWDTI);
+                        sceneManager.PreloadTEX();
                     }
                 }
                 ImGui.End();

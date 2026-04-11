@@ -1,6 +1,7 @@
 ﻿using BLPSharp;
 using Silk.NET.OpenGL;
 using WoWFormatLib.FileProviders;
+using WoWFormatLib.Structs.TEX;
 
 namespace WoWViewer.NET.Loaders
 {
@@ -106,6 +107,44 @@ namespace WoWViewer.NET.Loaders
             gl.ActiveTexture(TextureUnit.Texture0);
 
             return textureId;
+        }
+
+        public unsafe static uint CreateTextureFromBlob(GL gl, BlobTexture blobTex, byte[] bytes)
+        {
+            var pixelFormat = blobTex.dxtFormat switch
+            {
+                0 => InternalFormat.CompressedRgbaS3TCDxt1Ext,// todo: alpha or not?
+                1 => InternalFormat.CompressedRgbaS3TCDxt3Ext,
+                2 => InternalFormat.CompressedRgbaS3TCDxt5Ext,
+                _ => throw new NotImplementedException(),
+            };
+
+            gl.ActiveTexture(TextureUnit.Texture0);
+
+            var textureID = gl.GenTexture();
+            gl.BindTexture(TextureTarget.Texture2D, textureID);
+
+            var sizePerBlock = blobTex.dxtFormat switch
+            {
+                0 => 8,
+                1 => 16,
+                2 => 16,
+                _ => throw new NotImplementedException(),
+            };
+
+            // block is 4x4
+            var expectedBytes = (blobTex.sizeX / 4) * (blobTex.sizeY / 4) * sizePerBlock;
+            bytes = [.. bytes.Take(expectedBytes)];
+
+            fixed (byte* buf = bytes)
+                gl.CompressedTexImage2D(TextureTarget.Texture2D, 0, pixelFormat, blobTex.sizeX, blobTex.sizeY, 0, (uint)bytes.Length, buf);
+
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+            return textureID;
         }
     }
 }

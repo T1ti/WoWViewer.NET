@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using WoWFormatLib.FileReaders;
+using WoWFormatLib.Structs.TEX;
 using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Loaders;
 using static WoWViewer.NET.Structs;
@@ -20,6 +21,7 @@ namespace WoWViewer.NET.Renderer
         private static readonly Dictionary<uint, List<uint>> BLPUsers = [];
 
         private static GL? cachedGL = null;
+        private static TEXFile? cachedTEX = null;
 
         private static readonly HashSet<uint> blpsInFlight = [];
 
@@ -200,7 +202,23 @@ namespace WoWViewer.NET.Renderer
             if (BLPCache.TryGetValue(fileDataId, out var value))
                 return value;
 
-            var placeholderTextureID = BLPLoader.CreatePlaceholderTexture(gl);
+            uint placeholderTextureID = uint.MaxValue;
+
+            if (cachedTEX != null && cachedTEX.Value.blobTextures.TryGetValue((int)fileDataId, out var blobTex))
+            {
+                try
+                {
+                    placeholderTextureID = BLPLoader.CreateTextureFromBlob(gl, blobTex, cachedTEX.Value.mipMapData[cachedTEX.Value.txmdOffsetsToIndex[(int)blobTex.txmdOffset]]);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Failed to create texture from BLP blob {fileDataId}: {e.Message}");
+                }
+            }
+
+            if (placeholderTextureID == uint.MaxValue)
+                placeholderTextureID = BLPLoader.CreatePlaceholderTexture(gl);
+
             BLPCache.Add(fileDataId, placeholderTextureID);
 
             lock (blpQueueLock)
@@ -423,6 +441,14 @@ namespace WoWViewer.NET.Renderer
         {
             // TODO: Do we also want to automatically remove ADTs?
             WDTCache.Remove(fileDataID);
+        }
+        #endregion
+
+        #region TEX
+        public static void PreloadTEX(uint fileDataID)
+        {
+            var texReader = new TEXReader();
+            cachedTEX = texReader.LoadTEX(fileDataID);
         }
         #endregion
     }

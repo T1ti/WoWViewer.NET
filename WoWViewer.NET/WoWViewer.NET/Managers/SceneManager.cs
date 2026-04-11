@@ -119,6 +119,16 @@ namespace WoWViewer.NET.Managers
             }
         }
 
+        public void PreloadTEX()
+        {
+            if(currentWDT == null)
+                return;
+
+            var texFileDataID = currentWDT.Value.mphd.texFDID;
+            if (texFileDataID != 0)
+                Cache.PreloadTEX(texFileDataID);
+        }
+
         public WDT? GetCurrentWDT()
         {
             currentWDT ??= Cache.GetOrLoadWDT(CurrentWDTFileDataID);
