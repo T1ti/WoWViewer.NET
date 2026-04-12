@@ -122,6 +122,9 @@ namespace WoWViewer.NET
                     FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
 
                     cascLoaded = true;
+
+                    sceneManager.GetCurrentWDT();
+                    sceneManager.PreloadTEX();
                 });
 
                 var startPos = new Vector3(5305f, -4122f, 92f);
@@ -279,12 +282,6 @@ namespace WoWViewer.NET
 
                 gl.ClearColor(0f, 0f, 0f, 0.5f);
                 gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
-                if (cascLoaded)
-                {
-                    sceneManager.GetCurrentWDT();
-                    sceneManager.PreloadTEX();
-                }
 
                 sceneManager.UpdateTilesByCameraPos(activeCamera.Position);
 
