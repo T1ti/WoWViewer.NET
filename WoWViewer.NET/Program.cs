@@ -9,6 +9,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Managers;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Providers;
@@ -393,6 +394,11 @@ namespace WoWViewer.NET
                             {
                                 if (sceneManager.CurrentWDTFileDataID != wdtFileDataID && Services.CASC.FileExists((uint)wdtFileDataID))
                                 {
+                                    ADTCache.ReleaseAll(gl);
+                                    WMOCache.ReleaseAll(gl);
+                                    M2Cache.ReleaseAll(gl);
+                                    BLPCache.ReleaseAll(gl);
+
                                     sceneManager.LoadWDT((uint)wdtFileDataID);
                                     sceneManager.PreloadTEX();
                                     var firstTile = sceneManager.GetFirstMapTile();

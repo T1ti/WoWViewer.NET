@@ -1,4 +1,5 @@
 ﻿using Silk.NET.OpenGL;
+using System.Diagnostics;
 using WoWViewer.NET.Loaders;
 using WoWViewer.NET.Structs;
 
@@ -86,10 +87,7 @@ namespace WoWViewer.NET.Cache
                 }
 
                 if (!hasWork)
-                {
-                    await Task.Delay(10, cancellationToken);
                     continue;
-                }
 
                 try
                 {
@@ -186,6 +184,18 @@ namespace WoWViewer.NET.Cache
                     Users[fileDataId] = users;
                 }
             }
+        }
+
+        public static void ReleaseAll(GL gl)
+        {
+            Debug.WriteLine("Releasing " + Cache.Count + " cached WMOs.");
+
+            foreach (var key in Cache.Keys)
+                if (Cache.TryGetValue(key, out var wmo))
+                    WMOLoader.UnloadWMO(gl, wmo);
+
+            Cache.Clear();
+            Users.Clear();
         }
     }
 }

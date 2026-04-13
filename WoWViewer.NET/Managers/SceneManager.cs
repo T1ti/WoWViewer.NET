@@ -888,6 +888,11 @@ namespace WoWViewer.NET.Managers
                 WMOCache.StopWorker();
                 BLPCache.StopWorker();
 
+                ADTCache.ReleaseAll(_gl);
+                WMOCache.ReleaseAll(_gl);
+                M2Cache.ReleaseAll(_gl);
+                BLPCache.ReleaseAll(_gl);
+
                 debugRenderer?.Dispose();
 
                 if (instanceMatrixVBO != 0)

@@ -1,4 +1,5 @@
 ﻿using Silk.NET.OpenGL;
+using System.Diagnostics;
 using WoWViewer.NET.Loaders;
 using WoWViewer.NET.Structs;
 
@@ -46,6 +47,18 @@ namespace WoWViewer.NET.Cache
                     Users[key] = users;
                 }
             }
+        }
+
+        public static void ReleaseAll(GL gl)
+        {
+            Debug.WriteLine("Releasing " + Cache.Count + " cached ADTs.");
+
+            foreach (var key in Cache.Keys)
+                if (Cache.TryGetValue(key, out var terrain))
+                    ADTLoader.UnloadTerrain(terrain, gl);
+
+            Users.Clear();
+            Cache.Clear();
         }
     }
 }
