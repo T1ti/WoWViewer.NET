@@ -87,7 +87,10 @@ namespace WoWViewer.NET.Cache
                 }
 
                 if (!hasWork)
+                {
+                    await Task.Delay(10, cancellationToken);
                     continue;
+                }
 
                 try
                 {
