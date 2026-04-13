@@ -28,20 +28,17 @@ namespace WoWViewer.NET.Renderer
 
         private static readonly Lock wmoQueueLock = new();
         private static readonly Queue<uint> wmoParseQueue = [];
-        private static readonly Queue<PreppedWMO> wmoUploadQueue = [];
+        private static readonly Queue<(uint originalFileDataId, PreppedWMO preppedWMO)> wmoUploadQueue = [];
 
         private static readonly Lock blpQueueLock = new();
         private static readonly Queue<uint> blpDecodeQueue = [];
         private static readonly Queue<DecodedBLP> blpUploadQueue = [];
 
+        private static CancellationTokenSource? wmoLoaderCancellation;
+        private static Task? wmoLoaderTask;
+
         private static CancellationTokenSource? blpLoaderCancellation;
         private static Task? blpLoaderTask;
-
-        private struct PreppedWMO
-        {
-            public uint FileDataId;
-
-        }
 
         #region M2
         public static DoodadBatch GetOrLoadM2(GL gl, uint fileDataId, uint shaderProgram, uint parent)
@@ -92,6 +89,11 @@ namespace WoWViewer.NET.Renderer
         #region WMO
         public static WorldModel GetOrLoadWMO(GL gl, uint fileDataId, uint shaderProgram, uint parent)
         {
+            if (cachedGL == null)
+                cachedGL = gl;
+
+            StartWMOLoader();
+
             if (WMOUsers.TryGetValue(fileDataId, out var users))
                 users.Add(parent);
             else
@@ -100,18 +102,138 @@ namespace WoWViewer.NET.Renderer
             if (WMOCache.TryGetValue(fileDataId, out WorldModel value))
                 return value;
 
+            WorldModel placeholderWMO;
+
             try
             {
-                WMOCache.Add(fileDataId, WMOLoader.LoadWMO(gl, fileDataId, shaderProgram));
-
+                var preppedWMO = WMOLoader.ParseWMO(112521);
+                placeholderWMO = WMOLoader.LoadWMO(preppedWMO, gl, shaderProgram); // missingwmo.wmo
             }
             catch (Exception e)
             {
-                Console.WriteLine("!!! Error loading WMO " + fileDataId + ": " + e.Message);
-                WMOCache.Add(fileDataId, WMOLoader.LoadWMO(gl, 112521, shaderProgram)); // missingwmo.wmo
+                Console.WriteLine("!!! Error loading placeholder WMO: " + e.Message);
+                placeholderWMO = new WorldModel();
             }
 
-            return WMOCache[fileDataId];
+            WMOCache.Add(fileDataId, placeholderWMO);
+
+            lock (wmoQueueLock)
+            {
+                if (wmosInFlight.Contains(fileDataId))
+                    return placeholderWMO;
+
+                wmosInFlight.Add(fileDataId);
+                wmoParseQueue.Enqueue(fileDataId);
+
+                return placeholderWMO;
+            }
+        }
+
+        private static void StartWMOLoader()
+        {
+            if (wmoLoaderTask != null)
+                return;
+
+            wmoLoaderCancellation = new CancellationTokenSource();
+            wmoLoaderTask = Task.Run(() => WMOParserWorker(wmoLoaderCancellation.Token), wmoLoaderCancellation.Token);
+        }
+
+        private static async Task WMOParserWorker(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                uint fileDataId = 0;
+                bool hasWork = false;
+
+                lock (wmoQueueLock)
+                {
+                    if (wmoParseQueue.Count > 0)
+                    {
+                        fileDataId = wmoParseQueue.Dequeue();
+                        hasWork = true;
+                    }
+                }
+
+                if (!hasWork)
+                {
+                    await Task.Delay(10, cancellationToken);
+                    continue;
+                }
+
+                try
+                {
+                    var preppedWMO = WMOLoader.ParseWMO(fileDataId);
+
+                    lock (wmoQueueLock)
+                        wmoUploadQueue.Enqueue((fileDataId, preppedWMO));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"!!! Error parsing WMO {fileDataId}: {e.Message}");
+
+                    // Remove from in-flight set so it's not stuck in limbo
+                    lock (wmoQueueLock)
+                        wmosInFlight.Remove(fileDataId);
+                }
+            }
+        }
+
+        public static void UploadParsedWMOs(uint shaderProgram)
+        {
+            if (cachedGL == null)
+                return;
+
+            const int maxUploadsPerFrame = 5;
+            int uploaded = 0;
+
+            while (uploaded < maxUploadsPerFrame)
+            {
+                uint originalFileDataId;
+                PreppedWMO preppedWMO;
+
+                lock (wmoQueueLock)
+                {
+                    if (wmoUploadQueue.Count == 0)
+                        break;
+
+                    (originalFileDataId, preppedWMO) = wmoUploadQueue.Dequeue();
+                }
+
+                if (!WMOCache.TryGetValue(originalFileDataId, out var oldWMO))
+                    continue;
+
+                try
+                {
+                    var newWMO = WMOLoader.LoadWMO(preppedWMO, cachedGL, shaderProgram);
+                    WMOCache[originalFileDataId] = newWMO;
+
+                    if (oldWMO.groupBatches != null && oldWMO.groupBatches.Length > 0)
+                        WMOLoader.UnloadWMO(cachedGL, oldWMO);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"!!! Error uploading WMO {originalFileDataId}: {e.Message}");
+                }
+
+                lock (wmoQueueLock)
+                    wmosInFlight.Remove(originalFileDataId);
+
+                uploaded++;
+            }
+        }
+
+        public static void StopWMOLoader()
+        {
+            wmoLoaderCancellation?.Cancel();
+            wmoLoaderCancellation?.Dispose();
+            wmoLoaderCancellation = null;
+            wmoLoaderTask = null;
+        }
+
+        public static int GetWMOLoadQueueCount()
+        {
+            lock (wmoQueueLock)
+                return wmoParseQueue.Count + wmoUploadQueue.Count;
         }
 
         public static void ReleaseWMO(GL gl, uint fileDataId, uint parent)
@@ -257,23 +379,22 @@ namespace WoWViewer.NET.Renderer
                 {
                     using var blp = new BLPSharp.BLPFile(WoWFormatLib.FileProviders.FileProvider.OpenFile(fileDataId));
 
-                    var decoded = new DecodedBLP { FileDataId = fileDataId };
+                    DecodedBLP decoded;
 
-                    if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1 ||
-                        blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt3 ||
-                        blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt5)
+                    if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1 || blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt3 || blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt5)
                     {
-                        decoded.IsCompressed = true;
-                        decoded.MipLevels = [];
+                        InternalFormat compressedFormat;
 
                         if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1 && blp.alphaSize > 0)
-                            decoded.CompressedFormat = InternalFormat.CompressedRgbaS3TCDxt1Ext;
+                            compressedFormat = InternalFormat.CompressedRgbaS3TCDxt1Ext;
                         else if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1 && blp.alphaSize == 0)
-                            decoded.CompressedFormat = InternalFormat.CompressedRgbS3TCDxt1Ext;
+                            compressedFormat = InternalFormat.CompressedRgbS3TCDxt1Ext;
                         else if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt3)
-                            decoded.CompressedFormat = InternalFormat.CompressedRgbaS3TCDxt3Ext;
+                            compressedFormat = InternalFormat.CompressedRgbaS3TCDxt3Ext;
                         else
-                            decoded.CompressedFormat = InternalFormat.CompressedRgbaS3TCDxt5Ext;
+                            compressedFormat = InternalFormat.CompressedRgbaS3TCDxt5Ext;
+
+                        var mipmaps = new List<MipLevel>(blp.MipMapCount);
 
                         for (int i = 0; i < blp.MipMapCount; i++)
                         {
@@ -285,7 +406,7 @@ namespace WoWViewer.NET.Renderer
                                 break;
 
                             var bytes = blp.GetPictureData(i, width, height);
-                            decoded.MipLevels.Add(new MipLevel
+                            mipmaps.Add(new MipLevel
                             {
                                 Data = bytes,
                                 Width = width,
@@ -293,15 +414,27 @@ namespace WoWViewer.NET.Renderer
                                 Level = i
                             });
                         }
+
+                        decoded = new DecodedBLP
+                        {
+                            FileDataId = fileDataId,
+                            IsCompressed = true,
+                            CompressedFormat = compressedFormat,
+                            MipLevels = [.. mipmaps]
+                        };
                     }
                     else
                     {
-                        decoded.IsCompressed = false;
-                        decoded.PixelData = blp.GetPixels(0, out int width, out int height) ?? throw new Exception("BLP pixel data is null!");
-                        decoded.Width = width;
-                        decoded.Height = height;
+                        var pixels = blp.GetPixels(0, out int width, out int height) ?? throw new Exception("BLP pixel data is null!");
+                        decoded = new DecodedBLP
+                        {
+                            FileDataId = fileDataId,
+                            PixelData = pixels,
+                            Width = width,
+                            Height = height,
+                            IsCompressed = false
+                        };
                     }
-
                     lock (blpQueueLock)
                         blpUploadQueue.Enqueue(decoded);
                 }
@@ -341,7 +474,7 @@ namespace WoWViewer.NET.Renderer
                     {
                         cachedGL.BindTexture(TextureTarget.Texture2D, textureId);
 
-                        if (decoded.IsCompressed && decoded.MipLevels != null)
+                        if (decoded.IsCompressed)
                         {
                             foreach (var mip in decoded.MipLevels)
                             {
@@ -350,7 +483,7 @@ namespace WoWViewer.NET.Renderer
                                         (uint)mip.Width, (uint)mip.Height, 0, (uint)mip.Data.Length, ptr);
                             }
 
-                            cachedGL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, decoded.MipLevels.Count - 1);
+                            cachedGL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, decoded.MipLevels.Length - 1);
                             cachedGL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
                         }
                         else

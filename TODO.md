@@ -3,6 +3,7 @@
 - WMO doodads
 - Water rendering
 - Basic skyboxes
+- ADT holes
 
 ### Performance
 - Model LODs

@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using WoWViewer.NET.Renderer;
 
 namespace WoWViewer.NET.Structs
 {
@@ -15,7 +16,7 @@ namespace WoWViewer.NET.Structs
         public Vector4 Color3;
     }
 
-    public struct WMOMaterial
+    public  struct WMOMaterial
     {
         public int textureID1;
         public int textureID2;
@@ -26,15 +27,23 @@ namespace WoWViewer.NET.Structs
         public int textureID7;
         public int textureID8;
         public int textureID9;
-        internal int texture1;
-        internal int texture2;
-        internal int texture3;
-        internal int texture4;
-        internal int texture5;
-        internal int texture6;
-        internal int texture7;
-        internal int texture8;
-        internal int texture9;
+    }
+
+    public readonly struct PreppedWMOMaterial
+    {
+        public readonly int Shader { get; init; }
+        public readonly ShaderEnums.WMOVertexShader VertexShader { get; init; }
+        public readonly ShaderEnums.WMOPixelShader PixelShader { get; init; }
+        public readonly uint BlendMode { get; init; }
+        public readonly uint TexFileDataID0 { get; init; }
+        public readonly uint TexFileDataID1 { get; init; }
+        public readonly uint TexFileDataID2 { get; init; }
+        public readonly uint TexFileDataID3 { get; init; }
+        public readonly uint TexFileDataID4 { get; init; }
+        public readonly uint TexFileDataID5 { get; init; }
+        public readonly uint TexFileDataID6 { get; init; }
+        public readonly uint TexFileDataID7 { get; init; }
+        public readonly uint TexFileDataID8 { get; init; }
     }
 
     public struct WMORenderBatch
@@ -69,7 +78,6 @@ namespace WoWViewer.NET.Structs
         public uint doodadSet;
     }
 
-
     public struct WorldModel
     {
         public uint rootWMOFileDataID;
@@ -78,8 +86,37 @@ namespace WoWViewer.NET.Structs
         public WMORenderBatch[] wmoRenderBatch;
         public WMODoodad[] doodads;
         public string[] doodadSets;
-        public Vector3[] boundingBox;
+        public BoundingBox boundingBox;
         public float boundingRadius;
+    }
+
+    public readonly struct PreppedWMO
+    {
+        public readonly uint FileDataID { get; init; }
+        public readonly BoundingBox BoundingBox { get; init; }
+        public readonly WMODoodad[] Doodads { get; init; }
+        public readonly string[] DoodadSets { get; init; }
+        public readonly PreppedWMOMaterial[] Materials { get; init; }
+        public readonly PreppedWMOGroup[] PreppedWMOGroups { get; init; }
+    }
+
+    public readonly struct PreppedWMOGroup
+    {
+        public readonly string groupName { get; init; }
+        public readonly BoundingBox boundingBox { get; init; }
+        public readonly float boundingRadius { get; init; }
+        public readonly byte[] vertexBuffer { get; init; }
+        public readonly byte[] indiceBuffer { get; init; }
+        public readonly PreppedWMOGroupBatch[] groupBatches { get; init; }
+
+    }
+
+    public readonly struct PreppedWMOGroupBatch
+    {
+        public readonly int MaterialID { get; init; }
+        public readonly uint FirstFace { get; init;  }
+        public readonly int NumFaces { get; init; }
+
     }
 
     public readonly struct WorldModelGroupBatches

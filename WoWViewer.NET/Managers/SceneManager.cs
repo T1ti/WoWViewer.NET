@@ -121,7 +121,7 @@ namespace WoWViewer.NET.Managers
 
         public void PreloadTEX()
         {
-            if(currentWDT == null)
+            if (currentWDT == null)
                 return;
 
             var texFileDataID = currentWDT.Value.mphd.texFDID;
@@ -259,13 +259,23 @@ namespace WoWViewer.NET.Managers
         {
             // If no ADTs are queued, but other files still are, we return true (and not dequeue tiles) to keep calling this function over and over to handle the various uploads, because these need to be called from this thread, but this does block new ADTs from loading until these are done which isn't ideal.
 
+            // WMO
+            Cache.UploadParsedWMOs(wmoShaderProgram);
+
             // BLP
             Cache.UploadDecodedBLPs();
 
             if (tilesToLoad.Count == 0)
             {
+                var wmoRemaining = Cache.GetWMOLoadQueueCount();
                 var blpRemaining = Cache.GetBLPLoadQueueCount();
-                if (blpRemaining > 0)
+
+                if (wmoRemaining > 0)
+                {
+                    StatusMessage = $"Loading WMOs ({wmoRemaining} queued)...";
+                    return true;
+                }
+                else if (blpRemaining > 0)
                 {
                     StatusMessage = $"Loading textures ({blpRemaining} queued)...";
                     return true;
@@ -278,13 +288,16 @@ namespace WoWViewer.NET.Managers
                 }
             }
 
-            // TODO: WMO
             // TODO: M2
 
             var mapTile = tilesToLoad.Dequeue();
             var tilesLoaded = totalTilesToLoad - tilesToLoad.Count;
+            var wmoQueueCount = Cache.GetWMOLoadQueueCount();
             var blpQueueCount = Cache.GetBLPLoadQueueCount();
             StatusMessage = $"Loading tile {mapTile.tileX},{mapTile.tileY} ({tilesLoaded}/{totalTilesToLoad})";
+
+            if (wmoQueueCount > 0)
+                StatusMessage += $" | (busy loading WMOs ({wmoQueueCount} queued)";
 
             if (blpQueueCount > 0)
                 StatusMessage += $" | (busy loading textures ({blpQueueCount} queued)";
@@ -372,7 +385,7 @@ namespace WoWViewer.NET.Managers
                     if (!RenderM2 && sceneObject is M2Container)
                         continue;
 
-                    if(sceneObject.IsSelected)
+                    if (sceneObject.IsSelected)
                         continue;
 
                     var sphere = sceneObject.GetBoundingSphere();
@@ -484,6 +497,10 @@ namespace WoWViewer.NET.Managers
                 var fileDataId = instance.Key;
 
                 var firstInstance = instances[0];
+
+                if (!firstInstance.IsLoaded)
+                    continue;
+
                 var wmo = Cache.GetOrLoadWMO(_gl, fileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
 
                 _gl.UseProgram(wmoShaderProgram);
@@ -863,6 +880,7 @@ namespace WoWViewer.NET.Managers
         {
             if (disposing)
             {
+                Cache.StopWMOLoader();
                 Cache.StopBLPLoader();
 
                 debugRenderer?.Dispose();
