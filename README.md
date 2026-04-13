@@ -3,6 +3,9 @@ This exists purely as an educational project for me to learn more 3D programming
 
 No support is given or to be expected when using building or using this project.
 
+### Contributing
+This project is still in early stages with many things still missing and is not yet ready for external contributions.
+
 ### Building
 This requires the [.NET 10](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) SDK to build.
 
