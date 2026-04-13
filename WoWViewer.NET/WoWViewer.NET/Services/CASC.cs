@@ -8,21 +8,29 @@ namespace WoWViewer.NET.Services
         public static bool IsInitialized { get; private set; } = false;
         public static string BuildName { get; private set; } = "";
 
-        public static async Task Initialize(string basedir)
+        public static async Task Initialize(string wowDir, string wowProduct, string buildConfig, string cdnConfig)
         {
+            if(string.IsNullOrEmpty(wowDir) || !Directory.Exists(wowDir))
+                throw new Exception("Invalid WoW directory");
+
+            if(string.IsNullOrEmpty(wowProduct) || !wowProduct.StartsWith("wow"))
+                throw new Exception("Invalid WoW product");
+
             buildInstance = new BuildInstance();
-            buildInstance.Settings.Product = "wow";
+            buildInstance.Settings.Product = wowProduct;
 
             buildInstance.Settings.Locale = RootInstance.LocaleFlags.enUS;
             buildInstance.Settings.Region = "us";
             buildInstance.Settings.RootMode = RootInstance.LoadMode.Normal;
 
-            var buildConfig = "f8891ed6ab01b319b43b9aa0ceeb5f58";
-            var cdnConfig = "99cd3ee53f0b63144232eef9ff25fc06";
-
-            if (!string.IsNullOrEmpty(basedir) && Directory.Exists(basedir))
+            if(string.IsNullOrEmpty(buildConfig) || string.IsNullOrEmpty(cdnConfig))
             {
-                buildInstance.Settings.BaseDir = basedir;
+                // TODO: Retrieve from Ribbit
+            }
+
+            if (!string.IsNullOrEmpty(wowDir) && Directory.Exists(wowDir))
+            {
+                buildInstance.Settings.BaseDir = wowDir;
                 buildInstance.Settings.BuildConfig = buildConfig;
                 buildInstance.Settings.CDNConfig = cdnConfig;
             }

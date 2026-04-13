@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\SceneScriptLib\SceneScriptLib.csproj" />
     <ProjectReference Include="..\BLPSharp\BLPSharp\BLPSharp.csproj" />
+    <ProjectReference Include="..\DBCD\DBCD\DBCD.csproj" />
     <ProjectReference Include="..\WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj" />
   </ItemGroup>
 

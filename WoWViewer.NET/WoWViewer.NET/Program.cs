@@ -52,18 +52,37 @@ namespace WoWViewer.NET
         private static SceneManager sceneManager;
         private static DBCManager dbcManager;
 
+        private static string wowDir = "";
+        private static string wowProduct = "";
+
+        private static string buildConfig = "";
+        private static string cdnConfig = "";
+
         static void Main(string[] args)
         {
-            var wowDir = "";
-
-            if (args.Length != 1)
-            {
-                Console.WriteLine("Please provide a WoW directory as startup argument.");
-                return;
-            }
-            else
-            {
+            if(args.Length > 0)
                 wowDir = args[0];
+
+            if(args.Length > 1)
+                wowProduct = args[1];
+
+            if(args.Length > 2)
+                buildConfig = args[2];
+
+            if(args.Length > 3)
+                cdnConfig = args[3];
+
+            if(string.IsNullOrEmpty(wowDir))
+            {
+                var installPath = Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Blizzard Entertainment\World of Warcraft", "InstallPath", null) as string;
+                if(!string.IsNullOrEmpty(installPath))
+                {
+                    var lastDir = new DirectoryInfo(installPath).Name;
+                    if(lastDir.StartsWith('_'))
+                        installPath = Directory.GetParent(installPath.TrimEnd('\\'))?.FullName;
+
+                    wowDir = installPath;
+                }
             }
 
             var windowOptions = WindowOptions.Default;
@@ -112,29 +131,9 @@ namespace WoWViewer.NET
                 debugShaderProgram = shaderManager.GetOrCompileShader("debug");
 
                 sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, debugShaderProgram);
-                WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
                 shadersReady = true;
 
-                // Start CASC initialization in background
-                Task.Run(async () =>
-                {
-                    await Services.CASC.Initialize(wowDir);
-
-                    var tactFileProvider = new TACTSharpFileProvider();
-                    tactFileProvider.InitTACT(Services.CASC.buildInstance);
-                    FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
-                    FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
-
-                    cascLoaded = true;
-
-                    sceneManager.GetCurrentWDT();
-                    sceneManager.PreloadTEX();
-
-                    var dbcProvider = new DBCProvider();
-                    var dbdProvider = new DBDProvider();
-
-                    dbcManager = new DBCManager(dbdProvider, dbcProvider);
-                });
+                WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
 
                 var startPos = new Vector3(5305f, -4122f, 92f);
                 activeCamera = new Camera(startPos, Vector3.UnitX, Vector3.UnitZ * -1, (float)window.FramebufferSize.X / (float)window.FramebufferSize.Y);
@@ -303,8 +302,64 @@ namespace WoWViewer.NET
                     ImGui.End();
                 }
 
+                if (!cascLoaded)
+                {
+                    ImGui.Begin("CASC setup");
+                    var wowDirInput = wowDir;   
+                    ImGui.InputText("Path to WoW directory", ref wowDirInput, 512);
+
+                    if (!string.IsNullOrEmpty(wowDirInput))
+                    {
+                        var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
+                        var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
+                        if(Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
+                        {
+                            wowDir = wowDirInput;
+                            var buildInfo = File.ReadAllLines(buildInfoPath);
+                            var readFirstLine = false;
+                            foreach(var line in buildInfo)
+                            {
+                                if (!readFirstLine)
+                                {
+                                    readFirstLine = true;
+                                    continue;
+                                }
+                                var splitLine = line.Split('|');
+
+                                // TODO: Copy proper .build.info header parsing from WTL
+                                productList[splitLine[14]] = (splitLine[2], splitLine[3]);
+                            }
+
+                            var products = productList.Keys.ToArray();
+                            var currentProduct = Array.IndexOf(products, wowProduct);
+
+                            ImGui.Combo("WoW Product", ref currentProduct, products, products.Length);
+
+                            if(currentProduct != -1)
+                            {
+                                var selectedProduct = productList.ElementAt(currentProduct);
+                                wowProduct = selectedProduct.Key;
+                                buildConfig = selectedProduct.Value.buildConfig;
+                                cdnConfig = selectedProduct.Value.cdnConfig;
+
+                                if (ImGui.Button("Load (and wait a few seconds)"))
+                                    StartCASCInitialization();
+                            }
+                        }
+                        else
+                        {
+                            ImGui.Text("Invalid WoW directory");
+                        }
+                    }
+                    ImGui.End();
+
+                    imGuiController.Render();
+                    window.SwapBuffers();
+                    return;
+                }
+
                 ImGui.Begin("Menu");
-                if(ImGui.Button("Toggle map selection"))
+                if (ImGui.Button("Toggle map selection"))
                     showMapSelection = !showMapSelection;
                 ImGui.End();
 
@@ -591,6 +646,29 @@ namespace WoWViewer.NET
             euler.Z = MathF.Atan2(siny_cosp, cosy_cosp);
 
             return euler;
+        }
+
+        private static void StartCASCInitialization()
+        {
+            Task.Run(async () =>
+            {
+                await Services.CASC.Initialize(wowDir, wowProduct, buildConfig, cdnConfig);
+
+                var tactFileProvider = new TACTSharpFileProvider();
+                tactFileProvider.InitTACT(Services.CASC.buildInstance);
+                FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
+                FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
+
+                cascLoaded = true;
+
+                sceneManager.GetCurrentWDT();
+                sceneManager.PreloadTEX();
+
+                var dbcProvider = new DBCProvider();
+                var dbdProvider = new DBDProvider();
+
+                dbcManager = new DBCManager(dbdProvider, dbcProvider);
+            });
         }
     }
 }

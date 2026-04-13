@@ -2,7 +2,7 @@
   "profiles": {
     "WoWViewer.NET": {
       "commandName": "Project",
-      "commandLineArgs": "\"C:/World of Warcraft\""
+      "commandLineArgs": "\"C:\\World of Warcraft\" wowt"
     }
   }
 }

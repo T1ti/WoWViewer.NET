@@ -10,7 +10,7 @@
 
 ### Switches
 - Terrain textures
-- Terrain ertex colors
+- Terrain vertex colors
 - WMO doodads
 
 ## Editor 
