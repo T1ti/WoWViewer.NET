@@ -61,25 +61,25 @@ namespace WoWViewer.NET
 
         static void Main(string[] args)
         {
-            if(args.Length > 0)
+            if (args.Length > 0)
                 wowDir = args[0];
 
-            if(args.Length > 1)
+            if (args.Length > 1)
                 wowProduct = args[1];
 
-            if(args.Length > 2)
+            if (args.Length > 2)
                 buildConfig = args[2];
 
-            if(args.Length > 3)
+            if (args.Length > 3)
                 cdnConfig = args[3];
 
-            if(string.IsNullOrEmpty(wowDir))
+            if (string.IsNullOrEmpty(wowDir))
             {
                 var installPath = Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Blizzard Entertainment\World of Warcraft", "InstallPath", null) as string;
-                if(!string.IsNullOrEmpty(installPath))
+                if (!string.IsNullOrEmpty(installPath))
                 {
                     var lastDir = new DirectoryInfo(installPath).Name;
-                    if(lastDir.StartsWith('_'))
+                    if (lastDir.StartsWith('_'))
                         installPath = Directory.GetParent(installPath.TrimEnd('\\'))?.FullName;
 
                     wowDir = installPath;
@@ -306,19 +306,19 @@ namespace WoWViewer.NET
                 if (!cascLoaded)
                 {
                     ImGui.Begin("CASC setup");
-                    var wowDirInput = wowDir;   
+                    var wowDirInput = wowDir;
                     ImGui.InputText("Path to WoW directory", ref wowDirInput, 512);
 
                     if (!string.IsNullOrEmpty(wowDirInput))
                     {
                         var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
                         var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
-                        if(Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
+                        if (Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
                         {
                             wowDir = wowDirInput;
                             var buildInfo = File.ReadAllLines(buildInfoPath);
                             var readFirstLine = false;
-                            foreach(var line in buildInfo)
+                            foreach (var line in buildInfo)
                             {
                                 if (!readFirstLine)
                                 {
@@ -336,7 +336,7 @@ namespace WoWViewer.NET
 
                             ImGui.Combo("WoW Product", ref currentProduct, products, products.Length);
 
-                            if(currentProduct != -1)
+                            if (currentProduct != -1)
                             {
                                 var selectedProduct = productList.ElementAt(currentProduct);
                                 wowProduct = selectedProduct.Key;
@@ -370,7 +370,7 @@ namespace WoWViewer.NET
 
                     var mapDB = dbcManager.GetOrLoad("Map", CASC.BuildName).Result;
 
-                    if(ImGui.BeginTable("MapTable",3 , ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders))
+                    if (ImGui.BeginTable("MapTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders))
                     {
                         ImGui.TableSetupColumn("ID");
                         ImGui.TableSetupColumn("Name");
@@ -381,7 +381,7 @@ namespace WoWViewer.NET
                             var mapName = (string)mapRow["MapName_lang"];
                             var wdtFileDataID = (int)mapRow["WdtFileDataID"];
 
-                            if(wdtFileDataID == 0 || !CASC.FileExists((uint)wdtFileDataID))
+                            if (wdtFileDataID == 0 || !CASC.FileExists((uint)wdtFileDataID))
                                 continue;
 
                             ImGui.TableNextRow();
@@ -427,17 +427,6 @@ namespace WoWViewer.NET
                     var renderM2 = sceneManager.RenderM2;
                     ImGui.Checkbox("Render M2", ref renderM2);
                     sceneManager.RenderM2 = renderM2;
-
-                    if (sceneManager.SelectedObject != null)
-                    {
-                        ImGui.Text("Selected Object: " + sceneManager.SelectedObject.FileDataId);
-
-                        if (ImGui.Button("Deselect"))
-                        {
-                            sceneManager.SelectedObject.IsSelected = false;
-                            sceneManager.SelectedObject = null;
-                        }
-                    }
 
                     var showBoundingBoxes = sceneManager.ShowBoundingBoxes;
                     ImGui.Checkbox("Show Bounding Boxes", ref showBoundingBoxes);
@@ -539,6 +528,71 @@ namespace WoWViewer.NET
                             i++;
                         }
                     }
+                    ImGui.End();
+                }
+
+
+                if (sceneManager.SelectedObject != null)
+                {
+                    ImGui.Begin("Selected Object");
+                    ImGui.Text("Selected Object: " + sceneManager.SelectedObject.FileDataId);
+
+                    if (ImGui.Button("Deselect"))
+                    {
+                        sceneManager.SelectedObject.IsSelected = false;
+                        sceneManager.SelectedObject = null;
+                    }
+
+                    if (sceneManager.SelectedObject is WMOContainer selectedWMO)
+                    {
+                        ImGui.Text("Type: WMO");
+                        var curPos = selectedWMO.Position;
+                        ImGui.DragFloat3("Position", ref curPos);
+                        selectedWMO.Position = curPos;
+                        var curRot = selectedWMO.Rotation;
+                        ImGui.DragFloat3("Rotation", ref curRot);
+                        selectedWMO.Rotation = curRot;
+                        var curScale = selectedWMO.Scale;
+                        ImGui.DragFloat("Scale", ref curScale, 0.01f);
+                        selectedWMO.Scale = curScale;
+
+                        ImGui.Text("Doodad sets:");
+                        var doodadSets = selectedWMO.DoodadSets;
+                        for (var i = 0; i < doodadSets.Length; i++)
+                        {
+                            var doodadSet = doodadSets[i];
+                            if (ImGui.Checkbox("#" + i + ": " + doodadSet, ref selectedWMO.EnabledDoodadSets[i]))
+                            {
+                                //Console.WriteLine("Toggling WMO doodad set " + i + " (" + selectedWMO.DoodadSets[i] + ") in WMO " + selectedWMO.FileDataId + " from " + !selectedWMO.EnabledDoodadSets[i] + " to " + selectedWMO.EnabledDoodadSets[i]);
+                            }
+                        }
+
+                        ImGui.Text("Groups:");
+                        var groups = selectedWMO.Groups;
+                        for(var i = 0; i < groups.Length; i++)
+                        {
+                            var group = groups[i];
+                            if (ImGui.Checkbox("#" + i + ": " + group, ref selectedWMO.EnabledGroups[i]))
+                            {
+                                //Console.WriteLine("Toggling WMO group " + i + " (" + selectedWMO.Groups[i] + ") in WMO " + selectedWMO.FileDataId + " from " + !selectedWMO.EnabledGroups[i] + " to " + selectedWMO.EnabledGroups[i]);
+                                sceneManager.UpdateWMOInstanceList();
+                            }
+                        }
+                    }
+                    else if (sceneManager.SelectedObject is M2Container selectedM2)
+                    {
+                        ImGui.Text("Type: M2");
+                        var curPos = selectedM2.Position;
+                        ImGui.DragFloat3("Position", ref curPos);
+                        selectedM2.Position = curPos;
+                        var curRot = selectedM2.Rotation;
+                        ImGui.DragFloat3("Rotation", ref curRot);
+                        selectedM2.Rotation = curRot;
+                        var curScale = selectedM2.Scale;
+                        ImGui.DragFloat("Scale", ref curScale, 0.01f);
+                        selectedM2.Scale = curScale;
+                    }
+
                     ImGui.End();
                 }
 

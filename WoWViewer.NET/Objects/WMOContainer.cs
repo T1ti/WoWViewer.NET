@@ -2,7 +2,6 @@
 using System.Numerics;
 using WoWViewer.NET.Cache;
 using WoWViewer.NET.Raycasting;
-using WoWViewer.NET.Renderer;
 
 namespace WoWViewer.NET.Objects
 {
@@ -12,6 +11,25 @@ namespace WoWViewer.NET.Objects
         private readonly uint _shaderProgram;
         private bool[]? enabledGroups;
         private bool[]? enabledDoodadSets;
+
+        public string[] DoodadSets
+        {
+            get
+            {
+                var wmo = GetWMO();
+                return wmo.doodadSets;
+            }
+        }
+
+        public string[] Groups
+        {
+            get
+            {
+                var wmo = GetWMO();
+                return [.. wmo.groupBatches.Select(x => x.groupName)];
+            }
+        }
+
 
         public bool[] EnabledGroups
         {
@@ -35,8 +53,16 @@ namespace WoWViewer.NET.Objects
                 if (enabledDoodadSets == null || enabledDoodadSets.Length != wmo.doodadSets.Length)
                 {
                     enabledDoodadSets = new bool[wmo.doodadSets.Length];
-                    Array.Fill(enabledDoodadSets, true);
+                    for (int i = 0; i < wmo.doodadSets.Length; i++)
+                    {
+                        if(i == 0) // todo: check if this is a string check like below or not
+                        //if (wmo.doodadSets[i].Equals("Set_$DefaultGlobal", StringComparison.OrdinalIgnoreCase))
+                            enabledDoodadSets[i] = true;
+                        else
+                            enabledDoodadSets[i] = false;
+                    }
                 }
+
                 return enabledDoodadSets;
             }
         }
@@ -65,6 +91,38 @@ namespace WoWViewer.NET.Objects
         private Structs.WorldModel GetWMO()
         {
             return WMOCache.GetOrLoad(_gl, FileDataId, _shaderProgram, ParentFileDataId);
+        }
+
+        public void ToggleGroup(string name)
+        {
+            var wmo = GetWMO();
+            var index = Array.FindIndex(wmo.groupBatches, x => x.groupName.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            if (index == -1)
+                return;
+
+            ToggleGroup(index);
+        }
+
+        public void ToggleDoodadSet(string name)
+        {
+            var wmo = GetWMO();
+            var index = Array.FindIndex(wmo.doodadSets, x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            if (index == -1)
+                return;
+
+            ToggleDoodadSet(index);
+        }
+
+        public void ToggleGroup(int index)
+        {
+            EnabledGroups[index] = !EnabledGroups[index];
+        }
+
+        public void ToggleDoodadSet(int index)
+        {
+            EnabledDoodadSets[index] = !EnabledDoodadSets[index];
         }
 
         public override BoundingSphere? GetBoundingSphere()

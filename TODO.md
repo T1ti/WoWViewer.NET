@@ -3,13 +3,13 @@
 - WMO doodads
 - Water rendering
 - Basic skyboxes
-- ADT holes
 
 ### Performance
 - Model LODs
-- Load WMO/M2 on separate thread, only upload GPU stuff on GL thread
+- Load M2 on separate thread, only upload GPU stuff on GL thread
 
 ### Switches
+- ADT holes (required ADT reload?)
 - Terrain textures
 - Terrain vertex colors
 - WMO doodads

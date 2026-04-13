@@ -61,7 +61,7 @@ namespace WoWViewer.NET.Managers
         private readonly int[] diffuseLayerUniforms = new int[8];
         private readonly int[] heightLayerUniforms = new int[8];
 
-        public readonly Dictionary<uint, List<WMOContainer>> wmoInstances = [];
+        public readonly Dictionary<(uint FileDataID, int EnabledGroupHash), List<WMOContainer>> wmoInstances = [];
         public readonly Dictionary<uint, List<M2Container>> m2Instances = [];
 
         private static RenderState lastRenderState;
@@ -235,7 +235,36 @@ namespace WoWViewer.NET.Managers
             }
         }
 
-        private void UpdateInstanceList()
+        public void UpdateM2InstanceList()
+        {
+            m2Instances.Clear();
+            foreach (var sceneObject in SceneObjects)
+            {
+                if (sceneObject is M2Container m2)
+                {
+                    if (!m2Instances.ContainsKey(m2.FileDataId))
+                        m2Instances[m2.FileDataId] = [];
+                    m2Instances[m2.FileDataId].Add(m2);
+                }
+            }
+        }
+
+        public void UpdateWMOInstanceList()
+        {
+            wmoInstances.Clear();
+            foreach (var sceneObject in SceneObjects)
+            {
+                if (sceneObject is WMOContainer wmo)
+                {
+                    var key = (wmo.FileDataId, wmo.EnabledGroups.GetHashCode());
+                    if (!wmoInstances.ContainsKey(key))
+                        wmoInstances[key] = [];
+                    wmoInstances[key].Add(wmo);
+                }
+            }
+        }
+
+        public void UpdateInstanceList()
         {
             wmoInstances.Clear();
             m2Instances.Clear();
@@ -244,10 +273,11 @@ namespace WoWViewer.NET.Managers
             {
                 if (sceneObject is WMOContainer wmo)
                 {
-                    if (!wmoInstances.ContainsKey(wmo.FileDataId))
-                        wmoInstances[wmo.FileDataId] = [];
+                    var key = (wmo.FileDataId, wmo.EnabledGroups.GetHashCode());
+                    if (!wmoInstances.ContainsKey(key))
+                        wmoInstances[key] = [];
 
-                    wmoInstances[wmo.FileDataId].Add(wmo);
+                    wmoInstances[key].Add(wmo);
                 }
                 else if (sceneObject is M2Container m2)
                 {
@@ -499,14 +529,16 @@ namespace WoWViewer.NET.Managers
                 var instances = instance.Value;
                 if (instances.Count == 0) continue;
 
-                var fileDataId = instance.Key;
+                var wmoKey = instance.Key;
 
                 var firstInstance = instances[0];
 
                 if (!firstInstance.IsLoaded)
                     continue;
 
-                var wmo = WMOCache.GetOrLoad(_gl, fileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
+                var wmo = WMOCache.GetOrLoad(_gl, wmoKey.FileDataID, wmoShaderProgram, firstInstance.ParentFileDataId);
+
+                var enabledGroups = firstInstance.EnabledGroups;
 
                 _gl.UseProgram(wmoShaderProgram);
                 _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
@@ -557,6 +589,9 @@ namespace WoWViewer.NET.Managers
                     for (var j = 0; j < wmo.wmoRenderBatch.Length; j++)
                     {
                         var batch = wmo.wmoRenderBatch[j];
+
+                        if (enabledGroups[batch.groupID] == false)
+                            continue;
 
                         if (wmo.groupBatches[batch.groupID].vao == 0)
                             continue;

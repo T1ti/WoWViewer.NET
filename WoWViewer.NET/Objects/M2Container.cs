@@ -9,8 +9,6 @@ namespace WoWViewer.NET.Objects
     {
         public bool[] EnabledGeosets { get; }
 
-        public bool forceRender { get; set; } = false;
-
         private Structs.DoodadBatch m2;
 
         public M2Container(GL gl, uint fileDataID, uint shaderProgram, uint parentFileDataId) : base(gl, fileDataID, shaderProgram, parentFileDataId)
