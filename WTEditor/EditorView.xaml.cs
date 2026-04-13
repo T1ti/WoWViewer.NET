@@ -5,7 +5,6 @@ using Silk.NET.Windowing;
 using System.Diagnostics;
 using System.IO;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -58,7 +57,7 @@ public partial class EditorView : UserControl
     private Vector3 _movementDirection = Vector3.Zero;
     private float _speedMultiplier = 1.0f;
 
-    private DirectKeyboardState directKeyboard = new DirectKeyboardState();
+    private readonly DirectKeyboardState directKeyboard = new();
     private DirectMouseState directMouse;
 
     public EditorView()
@@ -148,8 +147,6 @@ public partial class EditorView : UserControl
     {
         if (!_hasFocus)
             return;
-
-        Debug.WriteLine($"Mouse Button: {button}, IsDown: {isDown}");
 
         // Update ImGui mouse button state
         if (imguiController != null)
@@ -360,9 +357,7 @@ public partial class EditorView : UserControl
             direction += activeCamera.Up;
 
         if (_pressedKeys.Contains(Key.R))
-        {
             activeCamera.Position = Vector3.One;
-        }
 
         _movementDirection = direction.LengthSquared() > 0 ? Vector3.Normalize(direction) : Vector3.Zero;
         _speedMultiplier = _pressedKeys.Contains(Key.LeftShift) ? 2.0f : 1.0f;
@@ -397,7 +392,10 @@ public partial class EditorView : UserControl
         ImGuizmo.BeginFrame();
 
         if (cascLoaded)
+        {
             sceneManager.GetCurrentWDT();
+            sceneManager.PreloadTEX();
+        }
 
         sceneManager.ProcessQueue();
 
@@ -495,7 +493,7 @@ public partial class EditorView : UserControl
                     var wmoContainer = (WMOContainer)sceneObject;
                     var wmoString = "WMO #" + i + " FDID " + wmoContainer.FileDataId.ToString();
 
-                    if(sceneObject.IsSelected)
+                    if (sceneObject.IsSelected)
                         wmoString += " (Selected)";
 
                     if (ImGui.CollapsingHeader(wmoString))
@@ -525,7 +523,7 @@ public partial class EditorView : UserControl
                     var m2Container = (M2Container)sceneObject;
                     var m2String = "M2 #" + i + " FDID " + m2Container.FileDataId.ToString();
 
-                    if(sceneObject.IsSelected)
+                    if (sceneObject.IsSelected)
                         m2String += " (Selected)";
 
                     if (ImGui.CollapsingHeader(m2String))
@@ -628,7 +626,7 @@ public partial class EditorView : UserControl
         }
     }
 
-    private unsafe void RenderGizmo()
+    private void RenderGizmo()
     {
         if (sceneManager.SelectedObject == null)
             return;
@@ -652,9 +650,6 @@ public partial class EditorView : UserControl
         transform *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * (sceneObject.Rotation.Y - 270f));
         transform *= Matrix4x4.CreateTranslation(sceneObject.Position.X, sceneObject.Position.Z * -1, sceneObject.Position.Y);
         transform *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
-
-        ImGuizmo.DrawGrid(ref view, ref proj, ref transform, 10);
-        ImGuizmo.DrawCubes(ref view, ref proj, ref transform, 1);
 
         ImGuizmo.PushID(0);
 

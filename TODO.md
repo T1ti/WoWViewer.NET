@@ -30,6 +30,9 @@
 
 ### UI
 - Model picking
+- Undo/redo
+- Showing changed tiles
+- Checking out map parts
 
 ### Saving
 - WDT saving
