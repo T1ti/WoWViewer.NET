@@ -104,7 +104,14 @@ namespace WoWViewer.NET
             {
                 gl = window.CreateOpenGL();
 
-                shaderManager = new ShaderManager(gl, Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Shaders"));
+                var exeLocation = Path.GetDirectoryName(AppContext.BaseDirectory);
+                if(exeLocation == null)
+                {
+                    Console.WriteLine("Could not determine executable location for shader loading");
+                    return;
+                }
+
+                shaderManager = new ShaderManager(gl, Path.Combine(exeLocation, "Shaders"));
                 sceneManager = new SceneManager(gl, shaderManager);
 
                 imGuiController = new ImGuiController(
