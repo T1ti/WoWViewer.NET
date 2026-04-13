@@ -3,7 +3,7 @@ using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.TEX;
 using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Loaders;
-using static WoWViewer.NET.Structs;
+using WoWViewer.NET.Structs;
 
 namespace WoWViewer.NET.Renderer
 {
@@ -36,25 +36,6 @@ namespace WoWViewer.NET.Renderer
 
         private static CancellationTokenSource? blpLoaderCancellation;
         private static Task? blpLoaderTask;
-
-        private struct DecodedBLP
-        {
-            public uint FileDataId;
-            public byte[] PixelData;
-            public int Width;
-            public int Height;
-            public bool IsCompressed;
-            public InternalFormat CompressedFormat;
-            public List<MipLevel>? MipLevels;
-        }
-
-        private struct MipLevel
-        {
-            public byte[] Data;
-            public int Width;
-            public int Height;
-            public int Level;
-        }
 
         private struct PreppedWMO
         {

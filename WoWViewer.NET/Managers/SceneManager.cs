@@ -5,7 +5,7 @@ using WoWFormatLib.Structs.WDT;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
-using static WoWViewer.NET.Structs;
+using WoWViewer.NET.Structs;
 
 namespace WoWViewer.NET.Managers
 {

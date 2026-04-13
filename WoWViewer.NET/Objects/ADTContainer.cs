@@ -1,5 +1,5 @@
 ﻿using Silk.NET.OpenGL;
-using static WoWViewer.NET.Structs;
+using WoWViewer.NET.Structs;
 
 namespace WoWViewer.NET.Objects
 {
