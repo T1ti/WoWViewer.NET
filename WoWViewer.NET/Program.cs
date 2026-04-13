@@ -197,7 +197,7 @@ namespace WoWViewer.NET
 
                 bool gizmoInUse = gizmoWasUsing || gizmoWasOver;
 
-                if (primaryMouse.IsButtonPressed(MouseButton.Left) && !io.WantCaptureMouse && !gizmoInUse)
+                if (primaryMouse.IsButtonPressed(MouseButton.Right) && !io.WantCaptureMouse && !gizmoInUse)
                 {
                     var currentMousePos = primaryMouse.Position;
 
@@ -253,10 +253,10 @@ namespace WoWViewer.NET
                 if (primaryKeyboard.IsKeyPressed(Key.D))
                     activeCamera.Position -= Vector3.Normalize(Vector3.Cross(activeCamera.Front, activeCamera.Up)) * moveSpeed;
 
-                if (primaryKeyboard.IsKeyPressed(Key.Up))
+                if (primaryKeyboard.IsKeyPressed(Key.Up) || primaryKeyboard.IsKeyPressed(Key.Q))
                     activeCamera.Position -= moveSpeed * activeCamera.Up;
 
-                if (primaryKeyboard.IsKeyPressed(Key.Down))
+                if (primaryKeyboard.IsKeyPressed(Key.Down) || primaryKeyboard.IsKeyPressed(Key.E))
                     activeCamera.Position += moveSpeed * activeCamera.Up;
 
                 if (primaryKeyboard.IsKeyPressed(Key.R))
