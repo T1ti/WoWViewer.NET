@@ -496,7 +496,9 @@ namespace WoWViewer.NET
 
                     ImGui.Text("Current ADT: " + x + ", " + y);
                     ImGui.Text("RAM usage: " + (GC.GetTotalMemory(false) / 1024 / 1024).ToString() + " MB");
-                    ImGui.Text("Frame time: " + frameDelta.ToString() + " ms (FPS: " + (1000 / frameDelta).ToString() + ")");
+
+                    if(frameDelta != 0)
+                        ImGui.Text("Frame time: " + frameDelta.ToString().PadLeft(3, ' ') + " ms (FPS: " + (1000 / frameDelta).ToString().PadLeft(3, ' ') + ")");
 
                     var i = 0;
                     if (ImGui.CollapsingHeader("Loaded WMOs"))
