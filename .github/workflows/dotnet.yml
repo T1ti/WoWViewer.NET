@@ -51,7 +51,7 @@ jobs:
     - name: Build
       run: dotnet publish -c Release -r ${{ matrix.target }} --self-contained -f net10.0 ${{ matrix.what }}
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --no-build --verbosity normal ${{ matrix.what }}
     - name: Archive Release
       uses: thedoctor0/zip-release@main
       with:
