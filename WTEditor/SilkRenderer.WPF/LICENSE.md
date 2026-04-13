@@ -1,0 +1,1 @@
+SilkRenderer is based on the work of qian-o here: https://github.com/qian-o/SilkRenderer which in turn is based on https://github.com/opentk/GLWpfControl. While some things were modified, all rights belong to the original authors who I got permission from for using this code (or are using an MIT license).
