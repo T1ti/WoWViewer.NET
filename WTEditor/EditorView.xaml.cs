@@ -258,7 +258,7 @@ public partial class EditorView : UserControl
 
     private void Game_Ready()
     {
-        shaderManager = new ShaderManager(RenderContext.GL, Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Shaders"));
+        shaderManager = new ShaderManager(RenderContext.GL, Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory)!, "Shaders"));
         sceneManager = new SceneManager(RenderContext.GL, shaderManager);
 
         adtShaderProgram = shaderManager.GetOrCompileShader("adt");

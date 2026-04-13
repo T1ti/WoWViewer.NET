@@ -14,6 +14,9 @@
 - Terrain vertex colors
 - WMO doodads
 
+### UI
+- Copy pasting
+
 ## Editor 
 ### Terrain
 - Texture painting

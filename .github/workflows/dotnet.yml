@@ -62,3 +62,24 @@ jobs:
       uses: softprops/action-gh-release@v0.1.13
       with:
         files: ${{ github.workspace }}/Release-${{ matrix.target }}.zip
+  build_editor:
+    name: Build Editor Release
+    needs: create_release
+    runs-on: win-x64
+    steps:
+    - name: Restore dependencies
+      run: dotnet restore WTEditor/WTEditor.csproj
+    - name: Build
+      run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true --self-contained false -f net10.0 WTEditor/WTEditor.csproj
+    - name: Test
+      run: dotnet test --no-build --verbosity normal WTEditor/WTEditor.csproj
+    - name: Archive Release
+      uses: thedoctor0/zip-release@main
+      with:
+        directory: ${{ github.workspace }}/WTEditor/bin/Release/net10.0-windows/win-x64/publish
+        type: 'zip'
+        filename: ${{ github.workspace }}/Editor-Release-win-x64.zip
+    - name: Release
+      uses: softprops/action-gh-release@v0.1.13
+      with:
+        files: ${{ github.workspace }}/Editor-Release-win-x64.zip
