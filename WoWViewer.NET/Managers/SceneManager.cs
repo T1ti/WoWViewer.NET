@@ -790,7 +790,6 @@ namespace WoWViewer.NET.Managers
             const int mapCenter = 32;
             var posX = (mapCenter - tileX) * tileSize - (tileSize / 2);
             var posY = (mapCenter - tileY) * tileSize - (tileSize / 2);
-            Console.WriteLine("Calculated position for tile {0},{1} is {2},{3}", tileX, tileY, posX, posY);
             return new Vector3(posY, posX, 0);
         }
 

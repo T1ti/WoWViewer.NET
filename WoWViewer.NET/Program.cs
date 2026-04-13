@@ -1,4 +1,3 @@
-using CASCLib;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImGuizmo;
 using Silk.NET.Input;
@@ -7,7 +6,6 @@ using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.Hexa.ImGui;
 using Silk.NET.Windowing;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
 using WoWViewer.NET.Cache;
@@ -405,7 +403,7 @@ namespace WoWViewer.NET
                                 var filename = "World\\Maps\\" + mapDir + "\\" + mapDir + ".wdt";
                                 var hash = jenkins.ComputeHash(filename);
                                 var entries = CASC.buildInstance.Root!.GetEntriesByLookup(hash);
-                                if(entries.Count > 0)
+                                if (entries.Count > 0)
                                     wdtFileDataID = (int)entries[0].fileDataID;
                             }
 
@@ -499,7 +497,7 @@ namespace WoWViewer.NET
 
                     ImGui.Text("Visible M2s: " + sceneManager.visibleM2s + ", Visible WMOs: " + sceneManager.visibleWMOs + ", Visible ADT chunks: " + sceneManager.visibleChunks);
 
-                    if(frameDelta != 0)
+                    if (frameDelta != 0)
                         ImGui.Text("Frame time: " + frameDelta.ToString().PadLeft(3, ' ') + " ms (FPS: " + (1000 / frameDelta).ToString().PadLeft(3, ' ') + ")");
 
                     var i = 0;

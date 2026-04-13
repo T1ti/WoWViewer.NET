@@ -360,9 +360,21 @@ namespace WoWViewer.NET.Loaders
 
                 var doodadSets = new List<uint>();
 
-                if(!wmodelentry.flags.HasFlag(MODFFlags.modf_use_sets_from_mwds))
+                if (!wmodelentry.flags.HasFlag(MODFFlags.modf_use_sets_from_mwds))
+                {
                     doodadSets.Add(wmodelentry.doodadSet);
-                // else: MWDR 
+                }
+                else
+                {
+                    var mwdrEntry = adt.objects.worldModelDoodadRefs[wmodelentry.doodadSet];
+                    for(var i = 0; i < mwdrEntry.begin; i++)
+                    {
+                        if(mwdrEntry.end <= i)
+                            break;
+
+                        doodadSets.Add(adt.objects.worldModelDoodadSets[i]);
+                    }
+                }
 
                 worldModelBatches.Add(new WorldModelBatch
                 {
