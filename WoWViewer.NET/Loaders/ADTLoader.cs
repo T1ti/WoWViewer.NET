@@ -3,6 +3,7 @@ using System.Numerics;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.ADT;
+using WoWFormatLib.Structs.WMO;
 using WoWViewer.NET.Cache;
 using WoWViewer.NET.Renderer;
 using WoWViewer.NET.Structs;
@@ -357,13 +358,20 @@ namespace WoWViewer.NET.Loaders
                 var wmodelentry = adt.objects.worldModels.entries[wmi];
                 var wmoFDID = wmodelentry.mwidEntry;
 
+                var doodadSets = new List<uint>();
+
+                if(!wmodelentry.flags.HasFlag(MODFFlags.modf_use_sets_from_mwds))
+                    doodadSets.Add(wmodelentry.doodadSet);
+                // else: MWDR 
+
                 worldModelBatches.Add(new WorldModelBatch
                 {
                     position = new Vector3(-(wmodelentry.position.X - 17066.666f), wmodelentry.position.Y, -(wmodelentry.position.Z - 17066.666f)),
                     rotation = new Vector3(wmodelentry.rotation.X, wmodelentry.rotation.Y, wmodelentry.rotation.Z),
                     fileDataID = wmoFDID,
                     uniqueID = wmodelentry.uniqueId,
-                    scale = wmodelentry.scale / 1024.0f
+                    scale = wmodelentry.scale / 1024.0f,
+                    doodadSetIDs = [.. doodadSets]
                 });
             }
 

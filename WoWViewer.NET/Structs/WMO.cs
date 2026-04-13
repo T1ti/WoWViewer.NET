@@ -64,6 +64,7 @@ namespace WoWViewer.NET.Structs
         public readonly float scale { get; init; }
         public readonly uint fileDataID { get; init; }
         public readonly uint uniqueID { get; init; }
+        public readonly uint[] doodadSetIDs { get; init; }
     }
 
     public struct WMODoodad

@@ -59,7 +59,10 @@ namespace WoWViewer.NET.Objects
                         //if (wmo.doodadSets[i].Equals("Set_$DefaultGlobal", StringComparison.OrdinalIgnoreCase))
                             enabledDoodadSets[i] = true;
                         else
-                            enabledDoodadSets[i] = false;
+                            if(DoodadSetsToEnable.Count > 0 && DoodadSetsToEnable.Contains((uint)i))
+                                enabledDoodadSets[i] = true;
+                            else
+                                enabledDoodadSets[i] = false;
                     }
                 }
 
@@ -77,6 +80,9 @@ namespace WoWViewer.NET.Objects
         }
 
         public uint UniqueID;
+
+        // TODO: This is a bit of a hack -- this is what sets should be enabled AFTER the WMO is actually loaded, so we use it above to ensure things are always loaded correctly. Keep in mind when doing async rework.
+        public List<uint> DoodadSetsToEnable = [];
 
         public WMOContainer(GL gl, uint fileDataID, uint shaderProgram, uint parentFileDataId) : base(gl, fileDataID, shaderProgram, parentFileDataId)
         {

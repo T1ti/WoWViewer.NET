@@ -372,6 +372,8 @@ namespace WoWViewer.NET.Managers
                         UniqueID = worldModel.uniqueID
                     };
 
+                    worldModelContainer.DoodadSetsToEnable.AddRange(worldModel.doodadSetIDs);
+
                     SceneObjects.Add(worldModelContainer);
 
                     if (uuidUsers.TryGetValue(worldModel.uniqueID, out var count))
