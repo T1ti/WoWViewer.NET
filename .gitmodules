@@ -13,3 +13,6 @@
 [submodule "WoWViewer.NET/DBCD"]
 	path = WoWViewer.NET/DBCD
 	url = https://github.com/wowdev/DBCD
+[submodule "SceneScriptLib"]
+	path = SceneScriptLib
+	url = https://github.com/Marlamin/SceneScriptLib
