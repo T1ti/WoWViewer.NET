@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using WoWFormatLib.Structs.WDT;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Objects;
 using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
@@ -24,6 +25,9 @@ namespace WoWViewer.NET.Managers
 
         private WDT? currentWDT;
         public uint CurrentWDTFileDataID { get; private set; } = 775971;
+
+        private uint OpsPerFrame = 5;
+        private uint CurrentOps = 0;
 
         public Container3D? SelectedObject { get; set; } = null;
 
@@ -115,7 +119,7 @@ namespace WoWViewer.NET.Managers
                     SceneObjects.Clear();
 
                 CurrentWDTFileDataID = wdtFileDataID;
-                currentWDT = Cache.GetOrLoadWDT(CurrentWDTFileDataID);
+                currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
             }
         }
 
@@ -126,12 +130,12 @@ namespace WoWViewer.NET.Managers
 
             var texFileDataID = currentWDT.Value.mphd.texFDID;
             if (texFileDataID != 0)
-                Cache.PreloadTEX(texFileDataID);
+                TEXCache.Preload(texFileDataID);
         }
 
         public WDT? GetCurrentWDT()
         {
-            currentWDT ??= Cache.GetOrLoadWDT(CurrentWDTFileDataID);
+            currentWDT ??= WDTCache.GetOrLoad(CurrentWDTFileDataID);
             return currentWDT;
         }
 
@@ -199,7 +203,7 @@ namespace WoWViewer.NET.Managers
                         if (adtToRemove != null)
                         {
                             SceneObjects.Remove(adtToRemove);
-                            Cache.ReleaseADT(_gl, adtToRemove.mapTile, adtToRemove.mapTile.wdtFileDataID);
+                            ADTCache.Release(_gl, adtToRemove.mapTile, adtToRemove.mapTile.wdtFileDataID);
 
                             List<WMOContainer> wmosToRemove = [.. SceneObjects.Where(x => x is WMOContainer wmo && wmo.ParentFileDataId == adtToRemove.Terrain.rootADTFileDataID).Select(x => (WMOContainer)x)];
                             foreach (var wmo in wmosToRemove)
@@ -213,7 +217,7 @@ namespace WoWViewer.NET.Managers
                                     else
                                     {
                                         SceneObjects.Remove(wmo);
-                                        Cache.ReleaseWMO(_gl, wmo.FileDataId, wmo.ParentFileDataId);
+                                        WMOCache.Release(_gl, wmo.FileDataId, wmo.ParentFileDataId);
                                         uuidUsers.Remove(wmo.UniqueID);
                                     }
                                 }
@@ -223,7 +227,7 @@ namespace WoWViewer.NET.Managers
                             foreach (var m2 in m2sToRemove)
                             {
                                 SceneObjects.Remove(m2);
-                                Cache.ReleaseM2(_gl, m2.FileDataId, m2.ParentFileDataId);
+                                M2Cache.Release(_gl, m2.FileDataId, m2.ParentFileDataId);
                             }
                         }
                     }
@@ -260,15 +264,15 @@ namespace WoWViewer.NET.Managers
             // If no ADTs are queued, but other files still are, we return true (and not dequeue tiles) to keep calling this function over and over to handle the various uploads, because these need to be called from this thread, but this does block new ADTs from loading until these are done which isn't ideal.
 
             // WMO
-            Cache.UploadParsedWMOs(wmoShaderProgram);
+            WMOCache.Upload(wmoShaderProgram);
 
             // BLP
-            Cache.UploadDecodedBLPs();
+            BLPCache.Upload();
 
             if (tilesToLoad.Count == 0)
             {
-                var wmoRemaining = Cache.GetWMOLoadQueueCount();
-                var blpRemaining = Cache.GetBLPLoadQueueCount();
+                var wmoRemaining = WMOCache.GetLoadQueueCount();
+                var blpRemaining = BLPCache.GetQueueCount();
 
                 if (wmoRemaining > 0)
                 {
@@ -292,8 +296,8 @@ namespace WoWViewer.NET.Managers
 
             var mapTile = tilesToLoad.Dequeue();
             var tilesLoaded = totalTilesToLoad - tilesToLoad.Count;
-            var wmoQueueCount = Cache.GetWMOLoadQueueCount();
-            var blpQueueCount = Cache.GetBLPLoadQueueCount();
+            var wmoQueueCount = WMOCache.GetLoadQueueCount();
+            var blpQueueCount = BLPCache.GetQueueCount();
             StatusMessage = $"Loading tile {mapTile.tileX},{mapTile.tileY} ({tilesLoaded}/{totalTilesToLoad})";
 
             if (wmoQueueCount > 0)
@@ -309,7 +313,8 @@ namespace WoWViewer.NET.Managers
 
             try
             {
-                adt = Cache.GetOrLoadADT(_gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID);
+                adt = ADTCache.GetOrLoad(_gl, mapTile, adtShaderProgram, mapTile.wdtFileDataID);
+                CurrentOps++;
             }
             catch (Exception ex)
             {
@@ -440,7 +445,7 @@ namespace WoWViewer.NET.Managers
                 var fileDataId = instance.Key;
 
                 var firstInstance = instances[0];
-                var m2 = Cache.GetOrLoadM2(_gl, fileDataId, m2ShaderProgram, firstInstance.ParentFileDataId);
+                var m2 = M2Cache.GetOrLoad(_gl, fileDataId, m2ShaderProgram, firstInstance.ParentFileDataId);
                 _gl.UseProgram(m2ShaderProgram);
                 _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
 
@@ -501,7 +506,7 @@ namespace WoWViewer.NET.Managers
                 if (!firstInstance.IsLoaded)
                     continue;
 
-                var wmo = Cache.GetOrLoadWMO(_gl, fileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
+                var wmo = WMOCache.GetOrLoad(_gl, fileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
 
                 _gl.UseProgram(wmoShaderProgram);
                 _gl.Uniform3(5, LightDirection.X, LightDirection.Y, LightDirection.Z);
@@ -880,8 +885,8 @@ namespace WoWViewer.NET.Managers
         {
             if (disposing)
             {
-                Cache.StopWMOLoader();
-                Cache.StopBLPLoader();
+                WMOCache.StopWorker();
+                BLPCache.StopWorker();
 
                 debugRenderer?.Dispose();
 

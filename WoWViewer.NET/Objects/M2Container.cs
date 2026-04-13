@@ -1,7 +1,7 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Raycasting;
-using WoWViewer.NET.Renderer;
 
 namespace WoWViewer.NET.Objects
 {
@@ -15,7 +15,7 @@ namespace WoWViewer.NET.Objects
 
         public M2Container(GL gl, uint fileDataID, uint shaderProgram, uint parentFileDataId) : base(gl, fileDataID, shaderProgram, parentFileDataId)
         {
-            m2 = Cache.GetOrLoadM2(gl, fileDataID, shaderProgram, parentFileDataId);
+            m2 = M2Cache.GetOrLoad(gl, fileDataID, shaderProgram, parentFileDataId);
             EnabledGeosets = new bool[m2.submeshes.Length];
             Array.Fill(EnabledGeosets, true);
         }

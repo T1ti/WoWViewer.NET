@@ -2,6 +2,7 @@
 using System.Numerics;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.WMO;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Renderer;
 using WoWViewer.NET.Services;
 using WoWViewer.NET.Structs;
@@ -330,33 +331,33 @@ namespace WoWViewer.NET.Loaders
                 var preppedMat = preppedWMO.Materials[i];
 
                 if (CASC.FileExists(preppedMat.TexFileDataID0))
-                    mats[i].textureID1 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID0, preppedWMO.FileDataID);
+                    mats[i].textureID1 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID0, preppedWMO.FileDataID);
 
                 if (CASC.FileExists(preppedMat.TexFileDataID1))
-                    mats[i].textureID2 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID1, preppedWMO.FileDataID);
+                    mats[i].textureID2 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID1, preppedWMO.FileDataID);
 
                 if (CASC.FileExists(preppedMat.TexFileDataID2))
-                    mats[i].textureID3 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID2, preppedWMO.FileDataID);
+                    mats[i].textureID3 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID2, preppedWMO.FileDataID);
 
                 if (preppedMat.PixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
                 {
                     if (CASC.FileExists(preppedMat.TexFileDataID3))
-                        mats[i].textureID4 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID3, preppedWMO.FileDataID);
+                        mats[i].textureID4 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID3, preppedWMO.FileDataID);
 
                     if (CASC.FileExists(preppedMat.TexFileDataID4))
-                        mats[i].textureID5 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID4, preppedWMO.FileDataID);
+                        mats[i].textureID5 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID4, preppedWMO.FileDataID);
 
                     if (CASC.FileExists(preppedMat.TexFileDataID5))
-                        mats[i].textureID6 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID5, preppedWMO.FileDataID);
+                        mats[i].textureID6 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID5, preppedWMO.FileDataID);
 
                     if (CASC.FileExists(preppedMat.TexFileDataID6))
-                        mats[i].textureID7 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID6, preppedWMO.FileDataID);
+                        mats[i].textureID7 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID6, preppedWMO.FileDataID);
 
                     if (CASC.FileExists(preppedMat.TexFileDataID7))
-                        mats[i].textureID8 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID7, preppedWMO.FileDataID);
+                        mats[i].textureID8 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID7, preppedWMO.FileDataID);
 
                     if (CASC.FileExists(preppedMat.TexFileDataID8))
-                        mats[i].textureID9 = (int)Cache.GetOrLoadBLP(gl, preppedMat.TexFileDataID8, preppedWMO.FileDataID);
+                        mats[i].textureID9 = (int)BLPCache.GetOrLoad(gl, preppedMat.TexFileDataID8, preppedWMO.FileDataID);
                 }
             }
 
@@ -421,23 +422,23 @@ namespace WoWViewer.NET.Loaders
                 foreach (var mat in wmo.mats)
                 {
                     if (mat.textureID1 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID1, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID1, wmo.rootWMOFileDataID);
                     if (mat.textureID2 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID2, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID2, wmo.rootWMOFileDataID);
                     if (mat.textureID3 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID3, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID3, wmo.rootWMOFileDataID);
                     if (mat.textureID4 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID4, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID4, wmo.rootWMOFileDataID);
                     if (mat.textureID5 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID5, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID5, wmo.rootWMOFileDataID);
                     if (mat.textureID6 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID6, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID6, wmo.rootWMOFileDataID);
                     if (mat.textureID7 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID7, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID7, wmo.rootWMOFileDataID);
                     if (mat.textureID8 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID8, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID8, wmo.rootWMOFileDataID);
                     if (mat.textureID9 != -1)
-                        Cache.ReleaseBLP(gl, (uint)mat.textureID9, wmo.rootWMOFileDataID);
+                        BLPCache.GetOrLoad(gl, (uint)mat.textureID9, wmo.rootWMOFileDataID);
                 }
             }
 
@@ -445,7 +446,7 @@ namespace WoWViewer.NET.Loaders
             {
                 foreach (var model in wmo.doodads)
                     if (model.filename != null)
-                        Cache.ReleaseM2(gl, model.filedataid, wmo.rootWMOFileDataID);
+                        M2Cache.Release(gl, model.filedataid, wmo.rootWMOFileDataID);
             }
         }
     }

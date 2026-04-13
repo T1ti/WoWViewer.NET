@@ -1,5 +1,6 @@
 ﻿using Silk.NET.OpenGL;
 using System.Numerics;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Raycasting;
 using WoWViewer.NET.Renderer;
 
@@ -63,7 +64,7 @@ namespace WoWViewer.NET.Objects
 
         private Structs.WorldModel GetWMO()
         {
-            return Cache.GetOrLoadWMO(_gl, FileDataId, _shaderProgram, ParentFileDataId);
+            return WMOCache.GetOrLoad(_gl, FileDataId, _shaderProgram, ParentFileDataId);
         }
 
         public override BoundingSphere? GetBoundingSphere()

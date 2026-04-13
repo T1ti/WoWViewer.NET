@@ -3,6 +3,7 @@ using System.Numerics;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.ADT;
+using WoWViewer.NET.Cache;
 using WoWViewer.NET.Renderer;
 using WoWViewer.NET.Structs;
 
@@ -16,7 +17,7 @@ namespace WoWViewer.NET.Loaders
             Terrain result = new();
             ADTReader adtReader = new();
 
-            var wdt = Cache.GetOrLoadWDT(mapTile.wdtFileDataID);
+            var wdt = WDTCache.GetOrLoad(mapTile.wdtFileDataID);
 
             var rootADTFileDataID = adtReader.LoadADT(wdt, mapTile.tileX, mapTile.tileY, true, "");
             adt = adtReader.adtfile;
@@ -42,7 +43,7 @@ namespace WoWViewer.NET.Loaders
                 {
                     var material = new ADTMaterial
                     {
-                        textureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti], mapTile.wdtFileDataID)
+                        textureID = BLPCache.GetOrLoad(gl, adt.diffuseTextureFileDataIDs[ti], mapTile.wdtFileDataID)
                     };
 
                     usedBLPFileDataIDs.Add(material.textureID);
@@ -57,12 +58,12 @@ namespace WoWViewer.NET.Loaders
 
                             if (!FileProvider.FileExists(adt.heightTextureFileDataIDs[ti]))
                             {
-                                material.heightTextureID = Cache.GetOrLoadBLP(gl, adt.diffuseTextureFileDataIDs[ti], rootADTFileDataID);
+                                material.heightTextureID = BLPCache.GetOrLoad(gl, adt.diffuseTextureFileDataIDs[ti], rootADTFileDataID);
                                 usedBLPFileDataIDs.Add(adt.diffuseTextureFileDataIDs[ti]);
                             }
                             else
                             {
-                                material.heightTextureID = Cache.GetOrLoadBLP(gl, adt.heightTextureFileDataIDs[ti], rootADTFileDataID);
+                                material.heightTextureID = BLPCache.GetOrLoad(gl, adt.heightTextureFileDataIDs[ti], rootADTFileDataID);
                                 usedBLPFileDataIDs.Add(adt.heightTextureFileDataIDs[ti]);
                             }
                         }
@@ -190,7 +191,7 @@ namespace WoWViewer.NET.Loaders
                     ADTMaterial curMat = materials[diffuseTextureID];
                     usedBLPFileDataIDs.Add(diffuseTextureID);
 
-                    layerMaterials[li] = (int)Cache.GetOrLoadBLP(gl, diffuseTextureID, rootADTFileDataID);
+                    layerMaterials[li] = (int)BLPCache.GetOrLoad(gl, diffuseTextureID, rootADTFileDataID);
                     layerHeights[li] = (int)curMat.heightTextureID;
                     layerScales[li] = curMat.scale;
                     heightScales[li] = curMat.heightScale;
@@ -325,13 +326,13 @@ namespace WoWViewer.NET.Loaders
             gl.DeleteBuffer(terrain.indiceBuffer);
 
             foreach (var usedWMO in terrain.worldModelBatches)
-                Cache.ReleaseWMO(gl, usedWMO.fileDataID, terrain.rootADTFileDataID);
+                WMOCache.Release(gl, usedWMO.fileDataID, terrain.rootADTFileDataID);
 
             foreach (var usedM2 in terrain.doodads)
-                Cache.ReleaseM2(gl, usedM2.fileDataID, terrain.rootADTFileDataID);
+                M2Cache.Release(gl, usedM2.fileDataID, terrain.rootADTFileDataID);
 
             foreach (var usedBLP in terrain.blpFileDataIDs)
-                Cache.ReleaseBLP(gl, usedBLP, terrain.rootADTFileDataID);
+                BLPCache.Release(gl, usedBLP, terrain.rootADTFileDataID);
 
             foreach (var batch in terrain.renderBatches)
                 foreach (var alphaMatID in batch.alphaMaterialID)
