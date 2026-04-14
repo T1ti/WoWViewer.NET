@@ -5,6 +5,7 @@ using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.M2;
 using WoWRenderLib.Cache;
 using WoWRenderLib.Structs;
+using static WoWRenderLib.Renderer.ShaderEnums;
 
 namespace WoWRenderLib.Loaders
 {
@@ -107,6 +108,8 @@ namespace WoWRenderLib.Loaders
                 uint blendType = 0;
                 var firstFace = model.skins[0].submeshes[i].startTriangle;
                 var numFaces = model.skins[0].submeshes[i].nTriangles;
+                uint vertexShaderID = 0;
+                uint pixelShaderID = 0;
 
                 for (var tu = 0; tu < model.skins[0].textureunit.Length; tu++)
                 {
@@ -115,7 +118,9 @@ namespace WoWRenderLib.Loaders
 
                     var textureUnit = model.skins[0].textureunit[tu];
 
-                    blendType = model.renderflags[textureUnit.renderFlags].blendingMode;
+                    blendType = model.renderflags[textureUnit.renderFlagsIndex].blendingMode;
+                    vertexShaderID = (uint)GetVertexShaderID(textureUnit.mode, textureUnit.shaderID);
+                    pixelShaderID = (uint)GetPixelShaderID(textureUnit.mode, textureUnit.shaderID);
 
                     var textureID = model.texlookup[textureUnit.texture].textureID;
 
@@ -135,7 +140,9 @@ namespace WoWRenderLib.Loaders
                     numFaces = numFaces,
                     material = material,
                     blendType = blendType,
-                    index = i
+                    index = i,
+                    vertexShaderID = vertexShaderID,
+                    pixelShaderID = pixelShaderID
                 };
             }
 
@@ -170,26 +177,116 @@ namespace WoWRenderLib.Loaders
             {
                 modelvertices[i].Position = new Vector3(model.vertices[i].position.X, model.vertices[i].position.Y, model.vertices[i].position.Z);
                 modelvertices[i].Normal = new Vector3(model.vertices[i].normal.X, model.vertices[i].normal.Y, model.vertices[i].normal.Z);
-                modelvertices[i].TexCoord = new Vector2(model.vertices[i].textureCoordX, model.vertices[i].textureCoordY);
+                modelvertices[i].TexCoord1 = new Vector2(model.vertices[i].textureCoordX, model.vertices[i].textureCoordY);
+                modelvertices[i].TexCoord2 = new Vector2(model.vertices[i].textureCoordX2, model.vertices[i].textureCoordY2);
             }
             gl.BindBuffer(BufferTargetARB.ArrayBuffer, doodadBatch.vertexBuffer);
             fixed (M2Vertex* buf = modelvertices)
-                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(modelvertices.Length * 8 * sizeof(float)), buf, GLEnum.StaticDraw);
+                gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(modelvertices.Length * 10 * sizeof(float)), buf, GLEnum.StaticDraw);
 
             //Set pointers in buffer
             var normalAttrib = gl.GetAttribLocation(shaderProgram, "normal");
             gl.EnableVertexAttribArray((uint)normalAttrib);
-            gl.VertexAttribPointer((uint)normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 8, (void*)(sizeof(float) * 0));
+            gl.VertexAttribPointer((uint)normalAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 10, (void*)(sizeof(float) * 0));
 
-            var texCoordAttrib = gl.GetAttribLocation(shaderProgram, "texCoord");
-            gl.EnableVertexAttribArray((uint)texCoordAttrib);
-            gl.VertexAttribPointer((uint)texCoordAttrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 8, (void*)(sizeof(float) * 3));
+            var texCoord1Attrib = gl.GetAttribLocation(shaderProgram, "texCoord1");
+            gl.EnableVertexAttribArray((uint)texCoord1Attrib);
+            gl.VertexAttribPointer((uint)texCoord1Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 10, (void*)(sizeof(float) * 3));
+
+            var texCoord2Attrib = gl.GetAttribLocation(shaderProgram, "texCoord2");
+            gl.EnableVertexAttribArray((uint)texCoord2Attrib);
+            gl.VertexAttribPointer((uint)texCoord2Attrib, 2, VertexAttribPointerType.Float, false, sizeof(float) * 10, (void*)(sizeof(float) * 5));
 
             var posAttrib = gl.GetAttribLocation(shaderProgram, "position");
             gl.EnableVertexAttribArray((uint)posAttrib);
-            gl.VertexAttribPointer((uint)posAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 8, (void*)(sizeof(float) * 5));
+            gl.VertexAttribPointer((uint)posAttrib, 3, VertexAttribPointerType.Float, false, sizeof(float) * 10, (void*)(sizeof(float) * 7));
 
             return doodadBatch;
+        }
+
+        // Based on previously reverse engineerd logic by Deamon: https://github.com/Deamon87/WebWowViewerCpp/blob/master/wowViewerLib/src/engine/objects/m2/m2Object.cpp#L146
+        private static int GetVertexShaderID(int textureCount, ushort shaderID)
+        {
+            int result = 0;
+            if (shaderID >= 0)
+            {
+                if (textureCount == 1)
+                {
+                    if ((shaderID & 0x80u) == 0)
+                        return ((shaderID & 0x4000) != 0 ? 10 : 0);
+                    else
+                        result = 1;
+                }
+                else if ((shaderID & 0x80u) == 0)
+                {
+                    if ((shaderID & 8) != 0)
+                        return 3;
+                    else
+                        result = 7;
+                    if ((shaderID & 0x4000) != 0)
+                        return 2;
+                }
+                else if ((shaderID & 8) != 0)
+                    return 5;
+                else
+                    return 4;
+            }
+            else if (shaderID < 0)
+            {
+                int vertexShaderId = shaderID & 0x7FFF;
+                if (vertexShaderId >= M2Shaders.Count)
+                    throw new Exception("Shader ID " + vertexShaderId + " is out of bounds for M2 shader list (" + M2Shaders.Count + ")");
+
+                result = (int)M2Shaders[vertexShaderId].VertexShader;
+            }
+
+            return result;
+        }
+
+        private static int GetPixelShaderID(int textureCount, ushort shaderID)
+        {
+            int result;
+            if ((shaderID & 0x8000) > 0)
+            {
+                int pixelShaderId = shaderID & 0x7FFF;
+                if (pixelShaderId >= M2Shaders.Count)
+                    throw new Exception("Shader ID " + pixelShaderId + " is out of bounds for M2 shader list (" + M2Shaders.Count + ")");
+
+                result = (int)M2Shaders[shaderID & 0x7FFF].PixelShader;
+            }
+            else if (textureCount == 1)
+            {
+                result = (shaderID & 0x70) != 0 ? (int)M2PixelShader.Combiners_Mod : (int)M2PixelShader.Combiners_Opaque;
+            }
+            else
+            {
+                if ((shaderID & 0x70) != 0)
+                {
+                    result = (shaderID & 7) switch
+                    {
+                        0 => (int)M2PixelShader.Combiners_Mod_Opaque,
+                        1 or 2 or 5 => (int)M2PixelShader.Combiners_Mod_Mod,
+                        3 => (int)M2PixelShader.Combiners_Mod_Add,
+                        4 => (int)M2PixelShader.Combiners_Mod_Mod2x,
+                        6 => (int)M2PixelShader.Combiners_Mod_Mod2xNA,
+                        7 => (int)M2PixelShader.Combiners_Mod_AddNA,
+                        _ => (int)M2PixelShader.Combiners_Mod_Mod,
+                    };
+                }
+                else
+                {
+                    result = (shaderID & 7) switch
+                    {
+                        0 => (int)M2PixelShader.Combiners_Opaque_Opaque,
+                        1 or 2 or 5 => (int)M2PixelShader.Combiners_Opaque_Mod,
+                        3 or 7 => (int)M2PixelShader.Combiners_Opaque_AddAlpha,
+                        4 => (int)M2PixelShader.Combiners_Opaque_Mod2x,
+                        6 => (int)M2PixelShader.Combiners_Opaque_Mod2xNA,
+                        _ => (int)M2PixelShader.Combiners_Opaque_Mod,
+                    };
+                }
+            }
+            return result;
         }
     }
 }

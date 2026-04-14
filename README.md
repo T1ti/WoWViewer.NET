@@ -11,3 +11,6 @@ This requires the [.NET 10](https://dotnet.microsoft.com/en-us/download/dotnet/1
 
 ### Running
 This requires the [.NET 10](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) Runtime to run.
+
+### Credits
+Many thanks go to [Kruithne for wow.export](https://github.com/Kruithne/wow.export), [Deamon for WebWoWViewer](https://github.com/Deamon87/WebWowViewerCpp), [T1ti for NoggIt](https://github.com/T1ti) as well as all wiki editors this work is based on/has contributed to.

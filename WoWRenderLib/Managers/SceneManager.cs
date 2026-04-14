@@ -560,9 +560,6 @@ namespace WoWRenderLib.Managers
 
                 var matrices = new Matrix4x4[Math.Min(instances.Count, MaxInstancesPerBatch)];
 
-                var identityMatrix = Matrix4x4.Identity;
-                _gl.UniformMatrix4(2, 1, false, (float*)&identityMatrix);
-
                 SetupInstanceAttributes(m2.vao);
                 _gl.BindVertexArray(m2.vao);
 
@@ -589,10 +586,17 @@ namespace WoWRenderLib.Managers
                         var submesh = m2.submeshes[i];
                         // i am ignoring that geosets can be enabled/disabled in theory here, hopefully not relevant for doodads...
 
+                        _gl.Uniform1(3, (float)submesh.vertexShaderID);
+                        _gl.Uniform1(4, (float)submesh.pixelShaderID);
+                        _gl.Uniform1(6, (float)submesh.blendType);
+
                         SwitchBlendMode((int)submesh.blendType, _gl, m2AlphaRefLoc);
 
                         _gl.ActiveTexture(TextureUnit.Texture0);
                         _gl.BindTexture(TextureTarget.Texture2D, submesh.material);
+
+                        // TODO: Texture2/Texture3
+
                         _gl.DrawElementsInstanced(PrimitiveType.Triangles, submesh.numFaces, DrawElementsType.UnsignedInt, (void*)(submesh.firstFace * 4), (uint)batchSize);
                         _gl.BindTexture(TextureTarget.Texture2D, 0);
                     }

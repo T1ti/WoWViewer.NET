@@ -17,7 +17,8 @@ namespace WoWRenderLib.Structs
     public struct M2Vertex
     {
         public Vector3 Normal;
-        public Vector2 TexCoord;
+        public Vector2 TexCoord1;
+        public Vector2 TexCoord2;
         public Vector3 Position;
     }
 
@@ -35,5 +36,7 @@ namespace WoWRenderLib.Structs
         public readonly uint material { get; init; }
         public readonly uint blendType { get; init; }
         public readonly int index { get; init; }
+        public readonly uint vertexShaderID { get; init; }
+        public readonly uint pixelShaderID { get; init; }
     }
 }
