@@ -122,6 +122,9 @@ namespace WoWViewer.NET
 
         private void OnRender(double deltaTime)
         {
+            if (!window.IsVisible || window.WindowState == WindowState.Minimized)
+                return; // can cap fps instead
+
             wowViewerEngine.Render(deltaTime);
 
             window.SwapBuffers();

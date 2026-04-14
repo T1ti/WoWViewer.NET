@@ -213,7 +213,7 @@ namespace WoWViewer.NET
 
         public void Resize(uint width, uint height)
         {
-            Debug.Assert(width > 0 && height > 0);
+            // Debug.Assert(width > 0 && height > 0);
 
             if (viewportWidth == width && viewportHeight == height)
                 return;
