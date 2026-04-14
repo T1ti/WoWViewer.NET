@@ -169,6 +169,7 @@ namespace WoWViewer.NET
             activeCamera = new Camera(startPos, Vector3.UnitX, Vector3.UnitZ * -1, (float)frameBufferSize.X / (float)frameBufferSize.Y);
             activeCamera.Yaw = 168f;
             activeCamera.Pitch = 13f;
+            activeCamera.ModifyDirection(0, 0); // hackfix: properly initializes camera
 
             gl.Viewport(frameBufferSize);
             gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);

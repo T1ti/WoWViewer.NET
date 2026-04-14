@@ -24,9 +24,6 @@ namespace WoWViewer.NET
         private IInputContext inputContext;
 
         private IWindow window;
-        private Vector2 LastMousePosition;
-        private Vector2? MouseDownPosition;
-        private bool wasMouseDown = false;
 
         private bool hasFocus = true;
 
@@ -35,7 +32,6 @@ namespace WoWViewer.NET
         public SilkWindowHost(WowClientConfig wowConfig)
         {
             _wowConfig = wowConfig;
-            // this.wowViewerEngine = engine;
         }
 
         public void Run()
@@ -83,6 +79,8 @@ namespace WoWViewer.NET
             wowViewerEngine = new WowViewerEngine(_wowConfig, silkImGuiBackend);
 
             wowViewerEngine.Initialize(gl, window.FramebufferSize);
+
+            wowViewerEngine.Resize((uint)window.FramebufferSize.X, (uint)window.FramebufferSize.Y);
         }
 
         private void OnResize(Vector2D<int> frameBufferSize)
