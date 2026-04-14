@@ -74,7 +74,7 @@ namespace WoWRenderLib.Cache
             foreach(var item in Users)
             {
                 var fileDataId = item.Key;
-                var parents = item.Value;
+                var parents = new List<uint>(item.Value);
                 foreach(var parent in parents)
                     Release(gl, fileDataId, parent);
             }
