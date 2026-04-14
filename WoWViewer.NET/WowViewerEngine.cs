@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
@@ -50,9 +51,20 @@ namespace WoWViewer.NET
         public HashSet<Key> KeysDown;
     }
 
+    public class RendererStats
+    {
+        public double FrameTimeMs { get; internal set; }
+        public double FPS { get; internal set; }
+
+        public int DrawCalls { get; internal set; }
+        public int VertexCount { get; internal set; }
+    }
+
     public class WowViewerEngine : IDisposable
     {
         private WowClientConfig _wowConfig;
+
+        public RendererStats Stats { get; } = new();
 
         private bool disposed = false;
 
@@ -96,6 +108,12 @@ namespace WoWViewer.NET
         // private ImGuiController imGuiController = null;
 
         private uint frameDelta = 0;
+
+        // calcualte average fps
+        private readonly Stopwatch _fpsWatch = Stopwatch.StartNew();
+        private double _lastFpsTime;
+        private uint _frameCount;
+        private uint _maxDeltaMS = 500; // update fps every x ms
 
 
         public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend imguiBackend)
@@ -301,6 +319,20 @@ namespace WoWViewer.NET
             // the host must swap buffers after render
             // window.SwapBuffers();
 
+            _frameCount++;
+
+            // calculate average FPS over the last _maxDeltaMS milliseconds
+            double now = _fpsWatch.Elapsed.TotalSeconds;
+            double delta = now - _lastFpsTime;
+
+            if (delta >= _maxDeltaMS / 1000.0)
+            {
+                Stats.FPS = _frameCount / (delta);
+                Stats.FrameTimeMs = 1000.0 / Stats.FPS;
+
+                _lastFpsTime = now;
+                _frameCount = 0;
+            }
         }
 
         public void Dispose()
@@ -493,8 +525,14 @@ namespace WoWViewer.NET
 
             ImGui.Text("Visible M2s: " + sceneManager.visibleM2s + ", Visible WMOs: " + sceneManager.visibleWMOs + ", Visible ADT chunks: " + sceneManager.visibleChunks);
 
-            if (frameDelta != 0)
-                ImGui.Text("Frame time: " + frameDelta.ToString().PadLeft(3, ' ') + " ms (FPS: " + (1000 / frameDelta).ToString().PadLeft(3, ' ') + ")");
+            // if (frameDelta != 0)
+            //     ImGui.Text("Frame time: " + frameDelta.ToString().PadLeft(3, ' ') + " ms (FPS: " + (1000 / frameDelta).ToString().PadLeft(3, ' ') + ")");
+
+            // average fps/frame time
+            if (Stats.FPS != 0)
+            {
+                ImGui.Text("Average FPS: " + Stats.FPS.ToString("F0") + ", Average Frame Time: " + Stats.FrameTimeMs.ToString("F2") + " ms");
+            }
 
             var i = 0;
             if (ImGui.CollapsingHeader("Loaded WMOs"))
