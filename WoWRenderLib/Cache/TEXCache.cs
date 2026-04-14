@@ -12,5 +12,10 @@ namespace WoWRenderLib.Cache
             var texReader = new TEXReader();
             cachedTEX = texReader.LoadTEX(fileDataID);
         }
+
+        public static void ReleaseAll()
+        {
+            cachedTEX = null;
+        }
     }
 }

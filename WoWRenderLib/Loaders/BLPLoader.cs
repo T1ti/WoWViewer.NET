@@ -1,5 +1,6 @@
 ﻿using BLPSharp;
 using Silk.NET.OpenGL;
+using System.Diagnostics;
 using WoWFormatLib.FileProviders;
 using WoWFormatLib.Structs.TEX;
 
@@ -90,9 +91,8 @@ namespace WoWRenderLib.Loaders
         {
             gl.ActiveTexture(TextureUnit.Texture1);
 
-            var textureId = gl.GenTexture();
-
-            gl.BindTexture(TextureTarget.Texture2D, textureId);
+            var textureID = gl.GenTexture();
+            gl.BindTexture(TextureTarget.Texture2D, textureID);
 
             fixed (byte* buf = values)
                 gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba, 64, 64, 0, PixelFormat.Rgba, PixelType.UnsignedByte, buf);
@@ -106,7 +106,7 @@ namespace WoWRenderLib.Loaders
 
             gl.ActiveTexture(TextureUnit.Texture0);
 
-            return textureId;
+            return textureID;
         }
 
         public unsafe static uint CreateTextureFromBlob(GL gl, BlobTexture blobTex, byte[] bytes)

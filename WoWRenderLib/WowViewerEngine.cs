@@ -508,10 +508,11 @@ namespace WoWRenderLib
 
             ImGui.Text(sceneManager.SceneObjects.Count.ToString() + " objects (" + sceneManager.m2Instances.Count.ToString() + " unique M2, " + sceneManager.wmoInstances.Count.ToString() + " unique WMO, " + sceneManager.SceneObjects.Count(x => x is ADTContainer).ToString() + " ADT)");
 
+            ImGui.Text("Cached: " + ADTCache.GetCacheCount() + " ADTs, " + WMOCache.GetCacheCount() + " WMOs, " + M2Cache.GetCacheCount() + " M2s, " + BLPCache.GetCacheCount() + " BLPs");
+
             var (x, y) = SceneManager.GetTileFromPosition(activeCamera.Position);
 
             ImGui.Text("Current ADT: " + x + ", " + y);
-            ImGui.Text("RAM usage: " + (GC.GetTotalMemory(false) / 1024 / 1024).ToString() + " MB");
 
             ImGui.Text("Visible M2s: " + sceneManager.visibleM2s + ", Visible WMOs: " + sceneManager.visibleWMOs + ", Visible ADT chunks: " + sceneManager.visibleChunks);
 

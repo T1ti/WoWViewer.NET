@@ -24,5 +24,10 @@ namespace WoWRenderLib.Cache
             // TODO: Do we also want to automatically remove ADTs?
             Cache.Remove(fileDataID);
         }
+
+        public static void ReleaseAll()
+        {
+            Cache.Clear();
+        }
     }
 }

@@ -189,6 +189,11 @@ namespace WoWRenderLib.Cache
             }
         }
 
+        public static int GetCacheCount()
+        {
+            return Cache.Count;
+        }
+
         public static void ReleaseAll(GL gl)
         {
             Debug.WriteLine("Releasing " + Cache.Count + " cached WMOs.");

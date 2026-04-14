@@ -43,7 +43,10 @@ namespace WoWRenderLib.Cache
                     Users.Remove(fileDataId);
                     if (Cache.TryGetValue(fileDataId, out var model))
                     {
-                        // TODO: Dispose model GPU resources (VAO, VBOs) and release BLP textures
+                        gl.DeleteVertexArray(model.vao);
+                        gl.DeleteBuffer(model.vertexBuffer);
+                        gl.DeleteBuffer(model.indiceBuffer);
+
                         Cache.Remove(fileDataId);
                     }
                 }
@@ -54,11 +57,19 @@ namespace WoWRenderLib.Cache
             }
         }
 
+        public static int GetCacheCount()
+        {
+            return Cache.Count;
+        }
+
         public static void ReleaseAll(GL gl)
         {
             Debug.WriteLine("Releasing " + Cache.Count + " cached M2s.");
 
             // TODO
+
+            Cache.Clear();
+            Users.Clear();
         }
     }
 }
