@@ -210,12 +210,12 @@ namespace WoWRenderLib.Loaders
                 if (wmo.doodadNames != null)
                 {
                     for (var j = 0; j < wmo.doodadNames.Length; j++)
-                        if (wmo.doodadDefinitions[i].offset == wmo.doodadNames[j].startOffset)
+                        if (wmo.doodadDefinitions[i].offsetOrIndex == wmo.doodadNames[j].startOffset)
                             doodads[i].filename = wmo.doodadNames[j].filename;
                 }
                 else
                 {
-                    doodads[i].filedataid = wmo.doodadDefinitions[i].offset;
+                    doodads[i].filedataid = wmo.doodadIds[wmo.doodadDefinitions[i].offsetOrIndex];
                 }
 
                 doodads[i].flags = wmo.doodadDefinitions[i].flags;
@@ -399,6 +399,7 @@ namespace WoWRenderLib.Loaders
             }
 
             wmoBatch.wmoRenderBatch = [.. renderBatches];
+            wmoBatch.doodads = preppedWMO.Doodads;
             return wmoBatch;
         }
 
