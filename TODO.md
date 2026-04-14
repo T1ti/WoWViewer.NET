@@ -1,6 +1,5 @@
 ## Viewing 
 ### Completion
-- WMO doodads
 - Water rendering
 - Basic skyboxes
 
