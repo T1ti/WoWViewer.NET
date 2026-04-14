@@ -615,8 +615,10 @@ namespace WoWRenderLib
                 for (var i = 0; i < doodadSets.Length; i++)
                 {
                     var doodadSet = doodadSets[i];
-                    if (ImGui.Checkbox("#" + i + ": " + doodadSet, ref selectedWMO.EnabledDoodadSets[i]))
+                    var isEnabled = selectedWMO.EnabledDoodadSets[i];
+                    if (ImGui.Checkbox("#" + i + ": " + doodadSet, ref isEnabled))
                     {
+                        selectedWMO.ToggleDoodadSet(i);
                         //Console.WriteLine("Toggling WMO doodad set " + i + " (" + selectedWMO.DoodadSets[i] + ") in WMO " + selectedWMO.FileDataId + " from " + !selectedWMO.EnabledDoodadSets[i] + " to " + selectedWMO.EnabledDoodadSets[i]);
                     }
                 }
