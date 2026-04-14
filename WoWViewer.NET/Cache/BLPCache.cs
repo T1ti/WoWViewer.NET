@@ -87,8 +87,6 @@ namespace WoWViewer.NET.Cache
                 {
                     if (decodeQueue.TryDequeue(out fileDataId))
                         hasWork = true;
-                    else
-                        continue;
                 }
 
                 if (!hasWork)
