@@ -26,7 +26,7 @@ namespace WoWRenderLib.Loaders
             var UnitSize = ChunkSize / 8.0f; //4.166666
             var MapMidPoint = 32.0f / ChunkSize;
 
-            HashSet<uint> usedBLPFileDataIDs = [];
+            List<uint> usedBLPFileDataIDs = [];
 
             result.vao = gl.GenVertexArray();
             gl.BindVertexArray(result.vao);
@@ -45,7 +45,7 @@ namespace WoWRenderLib.Loaders
                         textureID = BLPCache.GetOrLoad(gl, adt.diffuseTextureFileDataIDs[ti], mapTile.wdtFileDataID)
                     };
 
-                    usedBLPFileDataIDs.Add(material.textureID);
+                    usedBLPFileDataIDs.Add(adt.diffuseTextureFileDataIDs[ti]);
 
                     if (adt.texParams != null && adt.texParams.Length >= ti)
                     {
