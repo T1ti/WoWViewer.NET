@@ -2,6 +2,7 @@
 using System.Numerics;
 using WoWRenderLib.Cache;
 using WoWRenderLib.Raycasting;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Objects
 {

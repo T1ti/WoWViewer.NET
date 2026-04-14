@@ -1,4 +1,5 @@
 using System.Numerics;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Raycasting
 {
