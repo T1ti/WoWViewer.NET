@@ -98,6 +98,7 @@ namespace WoWRenderLib.Loaders
                 if (textureFileDataID == 0)
                     textureFileDataID = DEFAULT_TEXTURE_ID;
 
+                doodadBatch.mats[i].fileDataID = textureFileDataID;
                 doodadBatch.mats[i].textureID = BLPCache.GetOrLoad(gl, textureFileDataID, fileDataID);
             }
 

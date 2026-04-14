@@ -24,6 +24,7 @@ namespace WoWRenderLib.Structs
 
     public struct M2Material
     {
+        public uint fileDataID;
         public uint textureID;
         public uint blendMode;
         internal WoWFormatLib.Structs.M2.TextureFlags flags;

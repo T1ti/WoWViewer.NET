@@ -84,6 +84,7 @@ namespace WoWRenderLib.Structs
         public uint rootWMOFileDataID;
         public WorldModelGroupBatches[] groupBatches;
         public WMOMaterial[] mats;
+        public PreppedWMOMaterial[] preppedMats;
         public WMORenderBatch[] wmoRenderBatch;
         public WMODoodad[] doodads;
         public string[] doodadSets;

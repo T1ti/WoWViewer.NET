@@ -47,6 +47,11 @@ namespace WoWRenderLib.Cache
                         gl.DeleteBuffer(model.vertexBuffer);
                         gl.DeleteBuffer(model.indiceBuffer);
 
+                        foreach(var material in model.mats)
+                        {
+                            BLPCache.Release(gl, material.fileDataID, fileDataId);
+                        }
+
                         Cache.Remove(fileDataId);
                     }
                 }
@@ -66,7 +71,13 @@ namespace WoWRenderLib.Cache
         {
             Debug.WriteLine("Releasing " + Cache.Count + " cached M2s.");
 
-            // TODO
+            foreach(var item in Users)
+            {
+                var fileDataId = item.Key;
+                var parents = item.Value;
+                foreach(var parent in parents)
+                    Release(gl, fileDataId, parent);
+            }
 
             Cache.Clear();
             Users.Clear();

@@ -40,12 +40,14 @@ namespace WoWRenderLib.Loaders
             {
                 for (var ti = 0; ti < adt.diffuseTextureFileDataIDs.Length; ti++)
                 {
+                    var diffuseTextureFDID = adt.diffuseTextureFileDataIDs[ti];
+
                     var material = new ADTMaterial
                     {
-                        textureID = BLPCache.GetOrLoad(gl, adt.diffuseTextureFileDataIDs[ti], mapTile.wdtFileDataID)
+                        textureID = BLPCache.GetOrLoad(gl, diffuseTextureFDID, rootADTFileDataID)
                     };
 
-                    usedBLPFileDataIDs.Add(adt.diffuseTextureFileDataIDs[ti]);
+                    usedBLPFileDataIDs.Add(diffuseTextureFDID);
 
                     if (adt.texParams != null && adt.texParams.Length >= ti)
                     {
@@ -57,13 +59,14 @@ namespace WoWRenderLib.Loaders
 
                             if (!FileProvider.FileExists(adt.heightTextureFileDataIDs[ti]))
                             {
-                                material.heightTextureID = BLPCache.GetOrLoad(gl, adt.diffuseTextureFileDataIDs[ti], rootADTFileDataID);
-                                usedBLPFileDataIDs.Add(adt.diffuseTextureFileDataIDs[ti]);
+                                material.heightTextureID = BLPCache.GetOrLoad(gl, diffuseTextureFDID, rootADTFileDataID);
+                                usedBLPFileDataIDs.Add(diffuseTextureFDID);
                             }
                             else
                             {
-                                material.heightTextureID = BLPCache.GetOrLoad(gl, adt.heightTextureFileDataIDs[ti], rootADTFileDataID);
-                                usedBLPFileDataIDs.Add(adt.heightTextureFileDataIDs[ti]);
+                                var heightTextureFDID = adt.heightTextureFileDataIDs[ti];
+                                material.heightTextureID = BLPCache.GetOrLoad(gl, heightTextureFDID, rootADTFileDataID);
+                                usedBLPFileDataIDs.Add(heightTextureFDID);
                             }
                         }
                         else
@@ -78,15 +81,13 @@ namespace WoWRenderLib.Loaders
                         material.heightOffset = 1.0f;
                         material.scale = 1.0f;
                     }
-                    materials.Add(adt.diffuseTextureFileDataIDs[ti], material);
+                    materials.Add(diffuseTextureFDID, material);
                 }
             }
             else
             {
                 throw new Exception("Filename-based loading yeeted");
             }
-
-            result.blpFileDataIDs = [.. usedBLPFileDataIDs];
 
             var initialChunkY = adt.chunks[0].header.position.Y;
             var initialChunkX = adt.chunks[0].header.position.X;
@@ -245,9 +246,9 @@ namespace WoWRenderLib.Loaders
                         alphaLayers.Add(li, chunk.alphaLayer[li].layer);
 
                     ADTMaterial curMat = materials[diffuseTextureID];
+                    layerMaterials[li] = (int)BLPCache.GetOrLoad(gl, diffuseTextureID, rootADTFileDataID);
                     usedBLPFileDataIDs.Add(diffuseTextureID);
 
-                    layerMaterials[li] = (int)BLPCache.GetOrLoad(gl, diffuseTextureID, rootADTFileDataID);
                     layerHeights[li] = (int)curMat.heightTextureID;
                     layerScales[li] = curMat.scale;
                     heightScales[li] = curMat.heightScale;
@@ -390,6 +391,7 @@ namespace WoWRenderLib.Loaders
             result.worldModelBatches = [.. worldModelBatches];
             result.rootADTFileDataID = rootADTFileDataID;
             result.chunkBounds = chunkBounds;
+            result.blpFileDataIDs = [.. usedBLPFileDataIDs];
 
             return result;
         }

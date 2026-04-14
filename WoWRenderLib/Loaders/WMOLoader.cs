@@ -1,4 +1,5 @@
 ﻿using Silk.NET.OpenGL;
+using Silk.NET.Vulkan;
 using System.Numerics;
 using WoWFormatLib.FileReaders;
 using WoWFormatLib.Structs.WMO;
@@ -326,6 +327,7 @@ namespace WoWRenderLib.Loaders
             }
 
             var mats = new WMOMaterial[preppedWMO.Materials.Length];
+
             for (var i = 0; i < preppedWMO.Materials.Length; i++)
             {
                 var preppedMat = preppedWMO.Materials[i];
@@ -398,6 +400,8 @@ namespace WoWRenderLib.Loaders
                 }
             }
 
+            wmoBatch.preppedMats = preppedWMO.Materials;
+            wmoBatch.mats = mats;
             wmoBatch.wmoRenderBatch = [.. renderBatches];
             wmoBatch.doodads = preppedWMO.Doodads;
             return wmoBatch;
@@ -418,36 +422,36 @@ namespace WoWRenderLib.Loaders
                 gl.DeleteVertexArray(wmo.groupBatches[g].vao);
             }
 
-            if (wmo.mats != null)
-            {
-                foreach (var mat in wmo.mats)
-                {
-                    if (mat.textureID1 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID1, wmo.rootWMOFileDataID);
-                    if (mat.textureID2 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID2, wmo.rootWMOFileDataID);
-                    if (mat.textureID3 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID3, wmo.rootWMOFileDataID);
-                    if (mat.textureID4 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID4, wmo.rootWMOFileDataID);
-                    if (mat.textureID5 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID5, wmo.rootWMOFileDataID);
-                    if (mat.textureID6 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID6, wmo.rootWMOFileDataID);
-                    if (mat.textureID7 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID7, wmo.rootWMOFileDataID);
-                    if (mat.textureID8 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID8, wmo.rootWMOFileDataID);
-                    if (mat.textureID9 != -1)
-                        BLPCache.Release(gl, (uint)mat.textureID9, wmo.rootWMOFileDataID);
-                }
-            }
-
             if (wmo.doodads != null)
             {
                 foreach (var model in wmo.doodads)
                     if (model.filename != null)
                         M2Cache.Release(gl, model.filedataid, wmo.rootWMOFileDataID);
+            }
+
+            if (wmo.preppedMats != null)
+            {
+                foreach (var mat in wmo.preppedMats)
+                {
+                    if (CASC.FileExists(mat.TexFileDataID0))
+                        BLPCache.Release(gl, mat.TexFileDataID0, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID1))
+                        BLPCache.Release(gl, mat.TexFileDataID1, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID2))
+                        BLPCache.Release(gl, mat.TexFileDataID2, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID3))
+                        BLPCache.Release(gl, mat.TexFileDataID3, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID4))
+                        BLPCache.Release(gl, mat.TexFileDataID4, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID5))
+                        BLPCache.Release(gl, mat.TexFileDataID5, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID6))
+                        BLPCache.Release(gl, mat.TexFileDataID6, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID7))
+                        BLPCache.Release(gl, mat.TexFileDataID7, wmo.rootWMOFileDataID);
+                    if (CASC.FileExists(mat.TexFileDataID8))
+                        BLPCache.Release(gl, mat.TexFileDataID8, wmo.rootWMOFileDataID);
+                }
             }
         }
     }
