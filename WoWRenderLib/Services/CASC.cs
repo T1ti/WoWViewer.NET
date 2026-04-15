@@ -8,11 +8,8 @@ namespace WoWRenderLib.Services
         public static bool IsInitialized { get; private set; } = false;
         public static string BuildName { get; private set; } = "";
 
-        public static async Task Initialize(string wowDir, string wowProduct, string buildConfig, string cdnConfig)
+        public static async Task Initialize(string wowProduct, string wowDir = "", string buildConfig = "", string cdnConfig = "")
         {
-            if (string.IsNullOrEmpty(wowDir) || !Directory.Exists(wowDir))
-                throw new Exception("Invalid WoW directory");
-
             if (string.IsNullOrEmpty(wowProduct) || !wowProduct.StartsWith("wow"))
                 throw new Exception("Invalid WoW product");
 
@@ -25,15 +22,47 @@ namespace WoWRenderLib.Services
 
             if (string.IsNullOrEmpty(buildConfig) || string.IsNullOrEmpty(cdnConfig))
             {
-                // TODO: Retrieve from Ribbit
+                var versions = await buildInstance.cdn.GetPatchServiceFile(wowProduct, "versions");
+                foreach(var line in versions.Split("\n"))
+                {
+                    var splitLine = line.Split('|');
+
+                    if (splitLine[0].StartsWith("Region") || splitLine[0].StartsWith("##"))
+                        continue;
+
+                    if (splitLine[0] != buildInstance.Settings.Region)
+                        continue;
+
+                    buildConfig = splitLine[1];
+                    cdnConfig = splitLine[2];
+                }
+
+                if(string.IsNullOrEmpty(buildConfig) || string.IsNullOrEmpty(cdnConfig))
+                {
+                    foreach (var line in versions.Split("\n"))
+                    {
+                        if (string.IsNullOrWhiteSpace(line))
+                            continue;
+
+                        var splitLine = line.Split('|');
+
+                        if (splitLine[0].StartsWith("Region") || splitLine[0].StartsWith("##"))
+                            continue;
+
+                        buildConfig = splitLine[1];
+                        cdnConfig = splitLine[2];
+                    }
+                }
             }
 
+            if(string.IsNullOrEmpty(buildConfig) || string.IsNullOrEmpty(cdnConfig))
+                throw new Exception("No configs specified and was unable to retrieve version information from Ribbit");
+
             if (!string.IsNullOrEmpty(wowDir) && Directory.Exists(wowDir))
-            {
                 buildInstance.Settings.BaseDir = wowDir;
-                buildInstance.Settings.BuildConfig = buildConfig;
-                buildInstance.Settings.CDNConfig = cdnConfig;
-            }
+
+            buildInstance.Settings.BuildConfig = buildConfig;
+            buildInstance.Settings.CDNConfig = cdnConfig;
 
             buildInstance.Settings.AdditionalCDNs = ["archive.wow.tools", "casc.wago.tools", "cdn.arctium.tools"];
             buildInstance.Settings.BlockedCDNs = ["level3.blizzard.com", "us.cdn.blizzard.com"];

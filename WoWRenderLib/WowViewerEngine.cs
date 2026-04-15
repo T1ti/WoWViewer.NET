@@ -111,6 +111,7 @@ namespace WoWRenderLib
         private uint _frameCount;
         private uint _maxDeltaMS = 500; // update fps every x ms
 
+        private string[] wowProductList = [];
 
         public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend imguiBackend)
         {
@@ -343,51 +344,98 @@ namespace WoWRenderLib
         private void BuildImGuiClientConfig()
         {
             ImGui.Begin("CASC setup");
-            var wowDirInput = _wowConfig.wowDir;
-            ImGui.InputText("Path to WoW directory", ref wowDirInput, 512);
 
-            if (!string.IsNullOrEmpty(wowDirInput))
+            if (ImGui.BeginTabBar("Storage Type"))
             {
-                var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
-                var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
-                if (Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
+                if (ImGui.BeginTabItem("Local (fast, stable)"))
                 {
-                    _wowConfig.wowDir = wowDirInput;
-                    var buildInfo = File.ReadAllLines(buildInfoPath);
-                    var readFirstLine = false;
-                    foreach (var line in buildInfo)
-                    {
-                        if (!readFirstLine)
-                        {
-                            readFirstLine = true;
-                            continue;
-                        }
-                        var splitLine = line.Split('|');
+                    var wowDirInput = _wowConfig.wowDir;
+                    ImGui.InputText("Path to WoW directory", ref wowDirInput, 512);
 
-                        // TODO: Copy proper .build.info header parsing from WTL
-                        productList[splitLine[14]] = (splitLine[2], splitLine[3]);
+                    if (!string.IsNullOrEmpty(wowDirInput))
+                    {
+                        var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
+                        var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
+                        if (Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
+                        {
+                            _wowConfig.wowDir = wowDirInput;
+                            var buildInfo = File.ReadAllLines(buildInfoPath);
+                            var readFirstLine = false;
+                            foreach (var line in buildInfo)
+                            {
+                                if (!readFirstLine)
+                                {
+                                    readFirstLine = true;
+                                    continue;
+                                }
+                                var splitLine = line.Split('|');
+
+                                // TODO: Copy proper .build.info header parsing from WTL
+                                productList[splitLine[14]] = (splitLine[2], splitLine[3]);
+                            }
+
+                            var products = productList.Keys.ToArray();
+                            var currentProduct = Array.IndexOf(products, _wowConfig.wowProduct);
+
+                            ImGui.Combo("WoW Product", ref currentProduct, products, products.Length);
+
+                            if (currentProduct != -1)
+                            {
+                                var selectedProduct = productList.ElementAt(currentProduct);
+                                _wowConfig.wowProduct = selectedProduct.Key;
+                                _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
+                                _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
+
+                                if (ImGui.Button("Load (and wait a few seconds)"))
+                                    StartCASCInitialization();
+                            }
+                        }
+                        else
+                        {
+                            ImGui.Text("Invalid WoW directory");
+                        }
                     }
 
-                    var products = productList.Keys.ToArray();
+                    ImGui.EndTabItem();
+                }
+                if (ImGui.BeginTabItem("Online (slow, unstable)"))
+                {
+                    if(wowProductList.Length == 0)
+                    {
+                        using(var httpClient = new HttpClient())
+                        {
+                            var summaryResponse = httpClient.GetStringAsync("https://us.version.battle.net/v2/summary").Result;
+                            if (summaryResponse != null)
+                            {
+                                var tempProds = new List<string>();
+                                foreach(var line in summaryResponse.Split("\n"))
+                                {
+                                    var splitLine = line.Split('|');
+                                    if (splitLine[0].StartsWith("wow") && !splitLine[0].StartsWith("wowv") && !splitLine[0].StartsWith("wowdev") && string.IsNullOrEmpty(splitLine[2]))
+                                        tempProds.Add(splitLine[0]);
+                                }
+                                wowProductList = [.. tempProds];
+                            }
+                        }
+                    }
+
+                    var products = wowProductList.ToArray();
                     var currentProduct = Array.IndexOf(products, _wowConfig.wowProduct);
 
                     ImGui.Combo("WoW Product", ref currentProduct, products, products.Length);
 
                     if (currentProduct != -1)
                     {
-                        var selectedProduct = productList.ElementAt(currentProduct);
-                        _wowConfig.wowProduct = selectedProduct.Key;
-                        _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
-                        _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
+                        var selectedProduct = wowProductList.ElementAt(currentProduct);
+                        _wowConfig.wowProduct = selectedProduct;
 
                         if (ImGui.Button("Load (and wait a few seconds)"))
                             StartCASCInitialization();
                     }
+
+                    ImGui.EndTabItem();
                 }
-                else
-                {
-                    ImGui.Text("Invalid WoW directory");
-                }
+                ImGui.EndTabBar();
             }
             ImGui.End();
         }
@@ -728,7 +776,7 @@ namespace WoWRenderLib
         {
             Task.Run(async () =>
             {
-                await Services.CASC.Initialize(_wowConfig.wowDir, _wowConfig.wowProduct, _wowConfig.buildConfig, _wowConfig.cdnConfig);
+                await Services.CASC.Initialize(_wowConfig.wowProduct, _wowConfig.wowDir, _wowConfig.buildConfig, _wowConfig.cdnConfig);
 
                 var tactFileProvider = new TACTSharpFileProvider();
                 tactFileProvider.InitTACT(Services.CASC.buildInstance);
