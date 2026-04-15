@@ -26,11 +26,11 @@ public class DirectMouseState
         public int Y;
     }
 
-    private Point? _lastPosition;
+    public Point? _lastPosition { get; private set; }
     private readonly IntPtr _hwnd;
-    private bool _wasRightButtonDown;
-    private bool _wasLeftButtonDown;
-    private bool _wasMiddleButtonDown;
+    public bool _wasRightButtonDown { get; private set; }
+    public bool _wasLeftButtonDown { get; private set; }
+    public bool _wasMiddleButtonDown { get; private set; }
 
     private Point _controlOffset;
     private double _dpiScaleX = 1.0;

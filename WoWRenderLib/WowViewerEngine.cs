@@ -218,7 +218,7 @@ namespace WoWRenderLib
 
         public void Update(double deltaTime, InputFrame input)
         {
-            // imgui.Update((float)deltaTime);
+            imgui.Update((float)deltaTime);
 
             var io = ImGui.GetIO();
             bool gizmoInUse = gizmoWasUsing || gizmoWasOver;

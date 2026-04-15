@@ -31,8 +31,9 @@ namespace WoWViewer.NET
         public void Run()
         {
             var windowOptions = WindowOptions.Default;
-            windowOptions.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible | ContextFlags.Debug, new APIVersion(4, 3));
+            windowOptions.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible | ContextFlags.Debug, new APIVersion(4, 5));
             windowOptions.ShouldSwapAutomatically = false;
+            windowOptions.VSync = false;
             windowOptions.Size = new Vector2D<int>(1920, 1080);
             windowOptions.Title = "WoWRenderLib";
             window = Window.Create(windowOptions);
@@ -91,7 +92,7 @@ namespace WoWViewer.NET
 
         private void OnUpdate(double deltaTime)
         {
-            silkImGuiBackend.Update((float)deltaTime);
+            // silkImGuiBackend.Update((float)deltaTime);
 
             // Build inputs
             var primaryKeyboard = inputContext.Keyboards[0];

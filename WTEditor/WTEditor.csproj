@@ -25,6 +25,7 @@
     <ProjectReference Include="..\TACTSharp\TACTSharp\TACTSharp.csproj" />
     <ProjectReference Include="..\WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj" />
     <ProjectReference Include="..\WoWRenderLib\WoWRenderLib.csproj" />
+    <ProjectReference Include="..\WoWViewer.NET\WoWViewer.NET.csproj" />
   </ItemGroup>
 
 </Project>

@@ -71,6 +71,8 @@ public abstract class GameBase<TFrame> : Control where TFrame : FramebufferBase
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
+        base.OnRenderSizeChanged(sizeInfo); // required for SizeChanged event
+
         if (!DesignerProperties.GetIsInDesignMode(this))
         {
             OnSizeChanged(sizeInfo);

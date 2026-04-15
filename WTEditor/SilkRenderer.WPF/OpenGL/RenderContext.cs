@@ -64,6 +64,7 @@ public unsafe class RenderContext
 
             options.API = new GraphicsAPI(ContextAPI.OpenGL, settings.GraphicsProfile, settings.GraphicsContextFlags, new APIVersion(settings.MajorVersion, settings.MinorVersion));
             options.IsVisible = false;
+            // options.VSync = false;
 
             IWindow window = Window.Create(options);
 
