@@ -75,7 +75,7 @@ namespace WoWViewer.NET
             silkImGuiBackend = new SilkImGuiBackend(gl, window, inputContext);
 
             // var engine = new WowViewerEngine(_wowConfig, imgui);
-            wowViewerEngine = new WowViewerEngine(_wowConfig, silkImGuiBackend);
+            wowViewerEngine = new WowViewerEngine(_wowConfig, silkImGuiBackend, true);
 
             wowViewerEngine.Initialize(gl, window.FramebufferSize);
 

@@ -19,7 +19,9 @@ public partial class EditorView : UserControl
 
     private WowViewerEngine wowViewerEngine;
 
-    private WPFImGuiBackend wpfImGuiBackend;
+    private WPFImGuiBackend? wpfImGuiBackend;
+
+    bool renderImGUI = false;
 
     private bool _controlLoaded = false;
 
@@ -101,7 +103,8 @@ public partial class EditorView : UserControl
 
 
         wowViewerEngine.Resize((uint)ActualWidth, (uint)ActualHeight);
-        wpfImGuiBackend?.Resize((int)ActualWidth, (int)ActualHeight);
+        if (renderImGUI)
+            wpfImGuiBackend?.Resize((int)ActualWidth, (int)ActualHeight);
 
         _controlLoaded = true;
     }
@@ -109,7 +112,8 @@ public partial class EditorView : UserControl
     // TODO bug : this is never called
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        wpfImGuiBackend?.Resize((int)e.NewSize.Width, (int)e.NewSize.Height);
+        if (renderImGUI)
+            wpfImGuiBackend?.Resize((int)e.NewSize.Width, (int)e.NewSize.Height);
         UpdateControlOffset();
 
         wowViewerEngine.Resize((uint)e.NewSize.Width, (uint)e.NewSize.Height);
@@ -129,7 +133,7 @@ public partial class EditorView : UserControl
             return;
 
         // Update ImGui mouse button state
-        if (wpfImGuiBackend._controller != null)
+        if (renderImGUI && wpfImGuiBackend?._controller != null)
         {
             if (button == DirectMouseState.MouseButton.Left)
                 wpfImGuiBackend._controller.SetMouseButton(0, isDown);
@@ -157,7 +161,7 @@ public partial class EditorView : UserControl
         if (!_hasFocus)
             return;
 
-        if (wpfImGuiBackend._controller != null)
+        if (renderImGUI && wpfImGuiBackend?._controller != null)
         {
             var imguiKey = ImGuiController.ConvertWpfKeyToImGui(key);
             if (imguiKey != ImGuiKey.None)
@@ -189,9 +193,10 @@ public partial class EditorView : UserControl
     {
         // gl = window.CreateOpenGL(); // Unlike silk window, gl is already ready here
 
-        wpfImGuiBackend = new WPFImGuiBackend(Preview);
+        if (renderImGUI)
+            wpfImGuiBackend = new WPFImGuiBackend(Preview);
 
-        wowViewerEngine = new WowViewerEngine(_wowConfig, wpfImGuiBackend);
+        wowViewerEngine = new WowViewerEngine(_wowConfig, wpfImGuiBackend, renderImGUI);
 
         var size = new Silk.NET.Maths.Vector2D<int>((int)ActualWidth, (int)ActualHeight);
         wowViewerEngine.Initialize(RenderContext.GL, size);
@@ -241,7 +246,7 @@ public partial class EditorView : UserControl
             directMouse?.Update();
 
             // Update ImGui mouse position
-            if (wpfImGuiBackend._controller != null && directMouse != null)
+            if (renderImGUI && wpfImGuiBackend?._controller != null && directMouse != null)
             {
                 var mousePos = directMouse.CurrentPosition;
                 wpfImGuiBackend._controller.SetMousePosition((float)mousePos.X, (float)mousePos.Y);
@@ -312,18 +317,18 @@ public partial class EditorView : UserControl
                 // Get DPI scale factors
                 var dpiScaleX = source.CompositionTarget.TransformToDevice.M11;
                 var dpiScaleY = source.CompositionTarget.TransformToDevice.M22;
-                Debug.WriteLine($"DPI Scale: {dpiScaleX}x, {dpiScaleY}y");
+                // Debug.WriteLine($"DPI Scale: {dpiScaleX}x, {dpiScaleY}y");
 
                 // Set DPI scale in DirectMouseState
                 directMouse.SetDpiScale(dpiScaleX, dpiScaleY);
 
                 // Get the Preview control's screen position
                 var previewScreenPos = Preview.PointToScreen(new Point(0, 0));
-                Debug.WriteLine($"Preview screen position: {previewScreenPos.X}, {previewScreenPos.Y}");
+                // Debug.WriteLine($"Preview screen position: {previewScreenPos.X}, {previewScreenPos.Y}");
 
                 // Get the window's screen position (client area)
                 var windowScreenPos = source.RootVisual.PointToScreen(new Point(0, 0));
-                Debug.WriteLine($"Window screen position: {windowScreenPos.X}, {windowScreenPos.Y}");
+                // Debug.WriteLine($"Window screen position: {windowScreenPos.X}, {windowScreenPos.Y}");
 
                 // Calculate offset in physical pixels (difference between control and window in screen coordinates)
                 var controlTopLeft = new Point(
@@ -332,7 +337,7 @@ public partial class EditorView : UserControl
                 );
 
                 directMouse.SetControlOffset(controlTopLeft);
-                Debug.WriteLine($"Control offset set to: {controlTopLeft.X}, {controlTopLeft.Y} (physical pixels)");
+                // Debug.WriteLine($"Control offset set to: {controlTopLeft.X}, {controlTopLeft.Y} (physical pixels)");
             }
         }
         catch (Exception ex)

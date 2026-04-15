@@ -17,6 +17,6 @@
                    Margin="10,5,0,0"
                    FontSize="30"
                    Foreground="Green"
-                   Text="{Binding ElementName=Game, Path=Fps}" />
+                   Text="{Binding ElementName=Preview, Path=Fps}" />
     </Grid>
 </UserControl>

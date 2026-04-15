@@ -60,12 +60,22 @@ namespace WoWRenderLib
     {
         private WowClientConfig _wowConfig;
 
+        private Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
+
+        private string[] _products = Array.Empty<string>(); // simple string list for IMGUI
+        private int _currentProduct = -1; // list index for IMGUI
+
+        // if both are true, it will autoload first product. just temporary convenience
+        // hardcoded for now, will be depprecated when saving current product config
+        private bool _SetDefaultProduct = true; // whether to auto set a default product (first one from build info list) or not, if none is set in config
+        private bool _AutoLoadProduct = true; // whether to auto load the product or not. 
+
         public RendererStats Stats { get; } = new();
 
         private bool disposed = false;
 
-        private IImGuiBackend imgui;
-
+        private IImGuiBackend? imgui;
+        private readonly bool renderImGUI;
         private GL gl;
 
         private bool cascLoaded = false;
@@ -113,7 +123,7 @@ namespace WoWRenderLib
 
         private string[] wowProductList = [];
 
-        public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend imguiBackend)
+        public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend? imguiBackend, bool renderImGUI)
         {
             _wowConfig = wowConfig;
 
@@ -135,7 +145,10 @@ namespace WoWRenderLib
                 }
             }
 
+            LoadBuildInfo(_wowConfig.wowDir);
+
             this.imgui = imguiBackend;
+            this.renderImGUI = renderImGUI;
         }
 
         // Load
@@ -154,7 +167,7 @@ namespace WoWRenderLib
             shaderManager = new ShaderManager(gl, Path.Combine(exeLocation, "Shaders"));
             sceneManager = new SceneManager(gl, shaderManager);
 
-            imgui.Initialize();
+            imgui?.Initialize();
 
             var err = gl.GetError();
             if (err != GLEnum.NoError)
@@ -179,6 +192,11 @@ namespace WoWRenderLib
             activeCamera.Yaw = 168f;
             activeCamera.Pitch = 13f;
             activeCamera.ModifyDirection(0, 0); // hackfix: properly initializes camera
+
+
+            // load product set in 
+            LoadCurrentProduct();
+
 
             gl.Viewport(frameBufferSize);
             gl.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
@@ -219,7 +237,7 @@ namespace WoWRenderLib
 
         public void Update(double deltaTime, InputFrame input)
         {
-            imgui.Update((float)deltaTime);
+            imgui?.Update((float)deltaTime);
 
             var io = ImGui.GetIO();
             bool gizmoInUse = gizmoWasUsing || gizmoWasOver;
@@ -232,14 +250,6 @@ namespace WoWRenderLib
         public void Render(double deltaTime)
         {
             frameDelta = (uint)(deltaTime * 1000);
-
-            // Important : can't early return without rendering or SwapBuffers() will cause flickering
-
-            // if (/*!hasFocus ||*/ !shadersReady)
-            // {
-            //     imgui.Render();
-            //     return;
-            // }
 
 #if DEBUG
             var err = gl.GetError();
@@ -258,41 +268,43 @@ namespace WoWRenderLib
 
             sceneManager.ProcessQueue();
 
-            if (!string.IsNullOrEmpty(sceneManager.StatusMessage))
+            if (imgui != null && renderImGUI)
             {
-                ImGui.Begin("Loading");
-                ImGui.Text(sceneManager.StatusMessage);
+                if (!string.IsNullOrEmpty(sceneManager.StatusMessage))
+                {
+                    ImGui.Begin("Loading");
+                    ImGui.Text(sceneManager.StatusMessage);
+                    ImGui.End();
+                }
+
+                // always allow switching product if there are multiple
+                if (!cascLoaded /*|| _products.Length > 0*/)
+                {
+                    BuildImGuiClientConfig();
+
+                    imgui.Render();
+                    return;
+                }
+
+                ImGui.Begin("Menu");
+                if (ImGui.Button("Toggle map selection"))
+                    showMapSelection = !showMapSelection;
                 ImGui.End();
-            }
 
-            if (!cascLoaded)
-            {
-                BuildImGuiClientConfig();
+                if (showMapSelection)
+                {
+                    BuildImGuiMapSelection();
+                }
 
-                imgui.Render();
-                // imGuiController.Render();
-                // window.SwapBuffers();
-                return;
-            }
+                if (sceneManager.SceneLoaded)
+                {
+                    BuildImGuiSceneInfo();
+                }
 
-            ImGui.Begin("Menu");
-            if (ImGui.Button("Toggle map selection"))
-                showMapSelection = !showMapSelection;
-            ImGui.End();
-
-            if (showMapSelection)
-            {
-                BuildImGuiMapSelection();
-            }
-
-            if (sceneManager.SceneLoaded)
-            {
-                BuildImGuiSceneInfo();
-            }
-
-            if (sceneManager.SelectedObject != null)
-            {
-                BuildImGuiSelectionInfo();
+                if (sceneManager.SelectedObject != null)
+                {
+                    BuildImGuiSelectionInfo();
+                }
             }
 
             if (shadersReady)
@@ -305,7 +317,8 @@ namespace WoWRenderLib
                 gizmoWasOver = renderGizmoWasOver || debugGizmoWasOver;
             }
 
-            imgui.Render();
+            if (renderImGUI)
+                imgui?.Render();
 
             // the host must swap buffers after render
             // window.SwapBuffers();
@@ -333,12 +346,72 @@ namespace WoWRenderLib
 
             shaderManager.Dispose();
             sceneManager?.Dispose();
-            imgui.Dispose();
+            imgui?.Dispose();
             // inputContext?.Dispose();
             // gl?.Dispose();
 
             disposed = true;
         }
+
+        private void LoadBuildInfo(string wowDirInput)
+        {
+            var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
+
+            var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
+
+            if (!Directory.Exists(wowDirInput) || !File.Exists(buildInfoPath))
+            {
+                Console.WriteLine("Invalid WoW directory or .build.info not found at " + buildInfoPath);
+                return;
+            }
+
+            var buildInfo = File.ReadAllLines(buildInfoPath);
+
+            var readFirstLine = false;
+            foreach (var line in buildInfo)
+            {
+                if (!readFirstLine)
+                {
+                    readFirstLine = true;
+                    continue;
+                }
+                var splitLine = line.Split('|');
+
+                // TODO: Copy proper .build.info header parsing from WTL
+                _productList[splitLine[14]] = (splitLine[2], splitLine[3]);
+            }
+
+            _products = _productList.Keys.ToArray();
+
+            // optional, set first product as current if none is current yet
+            // only if there's exactly one product for now to avoid not being able to switch
+            if (_SetDefaultProduct && string.IsNullOrEmpty(_wowConfig.wowProduct) && _products.Length == 1)
+            {
+                _wowConfig.wowProduct = _products.First();
+            }
+
+            _currentProduct = Array.IndexOf(_products, _wowConfig.wowProduct);
+
+            if (string.IsNullOrEmpty(_wowConfig.wowProduct) && _currentProduct == -1)
+            {
+                Console.WriteLine("Error : The WoW product (" + _wowConfig.wowProduct + ") set in config could not be found in .build.info.");
+            }
+
+        }
+
+        void LoadCurrentProduct()
+        {
+            if (_currentProduct != -1)
+            {
+                var selectedProduct = _productList.ElementAt(_currentProduct);
+                _wowConfig.wowProduct = selectedProduct.Key;
+                _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
+                _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
+
+                StartCASCInitialization();
+            }
+        }
+
 
         #region ImGui builders
         private void BuildImGuiClientConfig()
@@ -354,48 +427,19 @@ namespace WoWRenderLib
 
                     if (!string.IsNullOrEmpty(wowDirInput))
                     {
-                        var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
-                        var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
-                        if (Directory.Exists(wowDirInput) && File.Exists(buildInfoPath))
+
+                        if (_wowConfig.wowDir != wowDirInput)
                         {
                             _wowConfig.wowDir = wowDirInput;
-                            var buildInfo = File.ReadAllLines(buildInfoPath);
-                            var readFirstLine = false;
-                            foreach (var line in buildInfo)
-                            {
-                                if (!readFirstLine)
-                                {
-                                    readFirstLine = true;
-                                    continue;
-                                }
-                                var splitLine = line.Split('|');
-
-                                // TODO: Copy proper .build.info header parsing from WTL
-                                productList[splitLine[14]] = (splitLine[2], splitLine[3]);
-                            }
-
-                            var products = productList.Keys.ToArray();
-                            var currentProduct = Array.IndexOf(products, _wowConfig.wowProduct);
-
-                            ImGui.Combo("WoW Product", ref currentProduct, products, products.Length);
-
-                            if (currentProduct != -1)
-                            {
-                                var selectedProduct = productList.ElementAt(currentProduct);
-                                _wowConfig.wowProduct = selectedProduct.Key;
-                                _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
-                                _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
-
-                                if (ImGui.Button("Load (and wait a few seconds)"))
-                                    StartCASCInitialization();
-                            }
+                            LoadBuildInfo(wowDirInput);
                         }
-                        else
-                        {
-                            ImGui.Text("Invalid WoW directory");
-                        }
+
+                        ImGui.Combo("WoW Product", ref _currentProduct, _products, _products.Length);
+
+                        if (ImGui.Button("Load (and wait a few seconds)"))
+                            StartCASCInitialization();
+
                     }
-
                     ImGui.EndTabItem();
                 }
                 if (ImGui.BeginTabItem("Online (slow, unstable)"))
