@@ -37,7 +37,7 @@ namespace WoWRenderLib.Managers
 
         public bool RenderADT { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
-        public bool RenderM2 { get; set; } = false;
+        public bool RenderM2 { get; set; } = true;
 
         public Vector3 LightDirection { get; set; } = new Vector3(0.5f, 1f, 0.5f);
 

@@ -92,7 +92,7 @@ namespace WoWRenderLib
         private Vector2? MouseDownPosition;
         private bool wasMouseDown = false;
 
-        private Camera activeCamera;
+        public Camera activeCamera { get; private set; }
 
         private int viewportWidth = 1;
         private int viewportHeight = 1;
@@ -253,6 +253,9 @@ namespace WoWRenderLib
                 HandleClickSelection(input, new ImGuiIOPtr(), false);
                 HandleKeyboardMovement(input, (float)deltaTime);
             }
+
+            // TODO : we may need a special update function for controls/camera triggered by events if refresh rate isn't enough
+            // eg a key could be pressed and released between two frame
 
         }
 

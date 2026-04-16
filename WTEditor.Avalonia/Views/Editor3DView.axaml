@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="WTEditor.Avalonia.Views.Editor3DView"
+             x:DataType="vm:Editor3DViewModel">
+  <Grid Background="Transparent">
+    <!-- Render surface -->
+    <controls:GlView/>
+
+    <!-- Overlay UI -->
+    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
+            IsHitTestVisible="False">
+
+        <TextBlock Text="{Binding Fps, StringFormat='FPS: {0:F1}'}" />
+        <TextBlock Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
+
+        <TextBlock Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
+        <TextBlock Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>
+
+        <TextBlock Text="{Binding CameraPosition}"/>
+
+    </StackPanel>
+
+    <StackPanel
+        HorizontalAlignment="Right"
+        Margin="10"
+        IsHitTestVisible="True"
+        Background="Transparent">
+      <TextBlock Text="Speed"/>
+      <Slider Value="{Binding MoveSpeed}" Minimum="1" Maximum="50" />
+      
+      <TextBlock Text="Sensitivity"/>
+      <Slider Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="0.005" />
+    </StackPanel>
+  </Grid>
+</UserControl>
