@@ -21,7 +21,7 @@ public partial class EditorView : UserControl
 
     private WPFImGuiBackend? wpfImGuiBackend;
 
-    bool renderImGUI = false;
+    bool renderImGUI = true;
 
     private bool _controlLoaded = false;
 
