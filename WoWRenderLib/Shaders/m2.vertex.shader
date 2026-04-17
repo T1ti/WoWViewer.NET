@@ -54,6 +54,8 @@ void main()
 	TexCoord2 = vec2(0.0);
 	TexCoord3 = vec2(0.0);
 
+	EdgeFade = 1.0;
+
 	int iVertexShader = int(vertexShader);
 	switch (iVertexShader) {
 		case 0: // Diffuse_T1
