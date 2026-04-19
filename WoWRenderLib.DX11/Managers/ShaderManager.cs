@@ -526,6 +526,37 @@ namespace WoWRenderLib.DX11.Managers
                     );
                 }
             }
+            else if (type == "boundingbox")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                {
+                    var inputElements = new InputElementDesc[]
+                    {
+                        new()
+                        {
+                            SemanticName = posName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 0,
+                            InputSlotClass = InputClassification.PerVertexData,
+                            InstanceDataStepRate = 0
+                        },
+                    };
+
+                    SilkMarshal.ThrowHResult
+                    (
+                        device.CreateInputLayout
+                        (
+                            in inputElements[0],
+                            (uint)inputElements.Length,
+                            vertexCode.GetBufferPointer(),
+                            vertexCode.GetBufferSize(),
+                            ref inputLayout
+                        )
+                    );
+                }
+            }
             else
             {
                 throw new NotImplementedException("No input layout defined for unknown shader type: " + type);

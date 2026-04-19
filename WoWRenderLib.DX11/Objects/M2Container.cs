@@ -36,5 +36,10 @@ namespace WoWRenderLib.DX11.Objects
             var box = new BoundingBox(m2.boundingBox.Min, m2.boundingBox.Max);
             return BoundingBox.Transform(box, GetModelMatrix());
         }
+
+        public BoundingBox GetLocalBoundingBox()
+        {
+            return new BoundingBox(m2.boundingBox.Min, m2.boundingBox.Max);
+        }
     }
 }

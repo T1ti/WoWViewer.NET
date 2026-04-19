@@ -34,7 +34,6 @@ namespace WoWRenderLib.DX11.Managers
 
         public Container3D? SelectedObject { get; set; } = null;
 
-        private DebugRenderer? debugRenderer;
         public bool ShowBoundingBoxes { get; set; } = false;
         public bool ShowBoundingSpheres { get; set; } = false;
 
@@ -50,6 +49,7 @@ namespace WoWRenderLib.DX11.Managers
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private CompiledShader debugShaderProgram;
+        private CompiledShader bboxShaderProgram;
 
         public readonly Dictionary<(uint FileDataID, int EnabledGroupHash), List<WMOContainer>> wmoInstances = [];
         public readonly Dictionary<uint, List<M2Container>> m2Instances = [];
@@ -64,7 +64,6 @@ namespace WoWRenderLib.DX11.Managers
         private int m2AlphaRefLoc;
         private int wmoAlphaRefLoc;
 
-        private readonly ComPtr<ID3D11Device> _device = device;
         private readonly ComPtr<IDXGISwapChain1> _swapChain = swapchain;
         private ComPtr<ID3D11Buffer> adtPerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> layerDataConstantBuffer = default;
@@ -72,14 +71,18 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> instanceMatrixBuffer = default;
         private ComPtr<ID3D11DepthStencilView> depthStencilView = default;
+        private ComPtr<ID3D11DepthStencilState> bboxDepthStencilState = default;
         private ComPtr<ID3D11Texture2D> depthTexture = default;
         private ComPtr<ID3D11SamplerState> textureSampler = default;
         private ComPtr<ID3D11SamplerState> clampSampler = default;
         private ComPtr<ID3D11RenderTargetView> renderTargetView = default;
         private ComPtr<ID3D11RasterizerState> rasterizerState = default;
         private ComPtr<ID3D11RasterizerState> wmoRasterizerState = default;
+        private ComPtr<ID3D11RasterizerState> wireframeRasterizerState = default;
         private ComPtr<ID3D11ClassInstance> nullClassInstance = default;
         private ComPtr<ID3D11ShaderResourceView> defaultTexture;
+        private ComPtr<ID3D11Buffer> bboxConstantBuffer = default;
+        private ComPtr<ID3D11Buffer> bboxVertexBuffer = default;
 
         private uint _renderWidth = 1920;
         private uint _renderHeight = 1080;
@@ -91,12 +94,12 @@ namespace WoWRenderLib.DX11.Managers
         public bool SceneLoaded => loadedTiles.Count > 0; // this won't work for WMO only maps
         public string StatusMessage { get; private set; } = "";
 
-        public void Initialize(ShaderManager shaderManager, CompiledShader adtShader, CompiledShader wmoShader, CompiledShader m2Shader, CompiledShader debugShader)
+        public void Initialize(ShaderManager shaderManager, CompiledShader adtShader, CompiledShader wmoShader, CompiledShader m2Shader, CompiledShader bboxShader)
         {
             adtShaderProgram = adtShader;
             wmoShaderProgram = wmoShader;
             m2ShaderProgram = m2Shader;
-            debugShaderProgram = debugShader;
+            bboxShaderProgram = bboxShader;
 
             // debugRenderer = new DebugRenderer(_gl, debugShaderProgram);
             defaultTexture = BLPLoader.CreatePlaceholderTexture(device);
@@ -149,7 +152,7 @@ namespace WoWRenderLib.DX11.Managers
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
 
-                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref adtPerObjectConstantBuffer));
+                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref adtPerObjectConstantBuffer));
 
                 bufferDesc = new BufferDesc
                 {
@@ -190,6 +193,16 @@ namespace WoWRenderLib.DX11.Managers
 
                 SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref layerDataConstantBuffer));
 
+                // Bounding box 
+                bufferDesc = new BufferDesc
+                {
+                    ByteWidth = (uint)sizeof(BBoxCB),
+                    Usage = Usage.Dynamic,
+                    BindFlags = (uint)BindFlag.ConstantBuffer,
+                    CPUAccessFlags = (uint)CpuAccessFlag.Write
+                };
+                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref bboxConstantBuffer));
+
                 // Rasterizers, need to be merged once ADTs are fixed
                 var rastDesc = new RasterizerDesc
                 {
@@ -211,18 +224,58 @@ namespace WoWRenderLib.DX11.Managers
                 };
                 SilkMarshal.ThrowHResult(device.CreateRasterizerState(in wmoRastDesc, ref wmoRasterizerState));
 
+                var wireframeDesc = new RasterizerDesc
+                {
+                    FillMode = FillMode.Wireframe,
+                    CullMode = CullMode.None,
+                    FrontCounterClockwise = false,
+                    DepthClipEnable = true
+                };
+                SilkMarshal.ThrowHResult(device.CreateRasterizerState(in wireframeDesc, ref wireframeRasterizerState));
+
+                var bboxStencilDesc = new DepthStencilDesc
+                {
+                    DepthEnable = false,
+                    DepthWriteMask = DepthWriteMask.Zero,
+                    DepthFunc = ComparisonFunc.Always,
+                    StencilEnable = false
+                };
+                SilkMarshal.ThrowHResult(device.CreateDepthStencilState(in bboxStencilDesc, ref bboxDepthStencilState));
+
                 ComPtr<ID3D11RasterizerState> rastState = default;
                 device.CreateRasterizerState(in rastDesc, ref rastState);
                 deviceContext.RSSetState(rastState);
 
+                CreateBBoxBuffers();
                 CreateSizeDependentResources(1920, 1080);
             }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BBoxCB
+        {
+            public Matrix4x4 projection_matrix;
+            public Matrix4x4 view_matrix;
+            public Matrix4x4 model_matrix;
+            public Vector4 color;
+        }
+
+        private unsafe void CreateBBoxBuffers()
+        {
+            var vbDesc = new BufferDesc
+            {
+                ByteWidth = (uint)(24 * sizeof(Vector3)),
+                Usage = Usage.Dynamic,
+                BindFlags = (uint)BindFlag.VertexBuffer,
+                CPUAccessFlags = (uint)CpuAccessFlag.Write
+            };
+            SilkMarshal.ThrowHResult(device.CreateBuffer(in vbDesc, null, ref bboxVertexBuffer));
         }
 
         private unsafe void CreateSizeDependentResources(uint width, uint height)
         {
             using var framebuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
-            SilkMarshal.ThrowHResult(_device.CreateRenderTargetView(framebuffer, null, ref renderTargetView));
+            SilkMarshal.ThrowHResult(device.CreateRenderTargetView(framebuffer, null, ref renderTargetView));
 
             Texture2DDesc backbufferDesc = default;
             framebuffer.GetDesc(ref backbufferDesc);
@@ -240,8 +293,8 @@ namespace WoWRenderLib.DX11.Managers
                 Usage = Usage.Default,
                 BindFlags = (uint)BindFlag.DepthStencil,
             };
-            SilkMarshal.ThrowHResult(_device.CreateTexture2D(in depthDesc, null, ref depthTexture));
-            SilkMarshal.ThrowHResult(_device.CreateDepthStencilView(depthTexture, null, ref depthStencilView));
+            SilkMarshal.ThrowHResult(device.CreateTexture2D(in depthDesc, null, ref depthTexture));
+            SilkMarshal.ThrowHResult(device.CreateDepthStencilView(depthTexture, null, ref depthStencilView));
 
             var viewport = new Viewport
             {
@@ -960,65 +1013,117 @@ namespace WoWRenderLib.DX11.Managers
                 }
             }
 
+            // Bounding box rendering
+            if (ShowBoundingBoxes || SelectedObject != null)
+            {
+                // enable wireframe resterizer 
+                deviceContext.RSSetState(wireframeRasterizerState);
+                deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
+                deviceContext.IASetInputLayout(bboxShaderProgram.InputLayout);
+                deviceContext.VSSetShader(bboxShaderProgram.VertexShader, ref nullClassInstance, 0);
+                deviceContext.PSSetShader(bboxShaderProgram.PixelShader, ref nullClassInstance, 0);
+                deviceContext.OMSetDepthStencilState(bboxDepthStencilState, 0);
+
+                lock (SceneObjectLock)
+                {
+                    foreach (var sceneObject in SceneObjects)
+                    {
+                        if (sceneObject is ADTContainer) continue;
+                        if (!ShowBoundingBoxes && !sceneObject.IsSelected) continue;
+
+                        var color = sceneObject.IsSelected ? new Vector4(0, 1, 0, 1) : new Vector4(1, 1, 0, 1);
+                        var box = sceneObject.GetBoundingBox();
+
+                        if (box.HasValue && float.IsFinite(box.Value.Min.X) && float.IsFinite(box.Value.Max.X))
+                        {
+                            BoundingBox localBox;
+                            Matrix4x4 modelMatrix;
+
+                            if (sceneObject is WMOContainer wmo)
+                            {
+                                localBox = wmo.GetLocalBoundingBox();
+                                modelMatrix = wmo.GetModelMatrix();
+                            }
+                            else if (sceneObject is M2Container m2)
+                            {
+                                localBox = m2.GetLocalBoundingBox();
+                                modelMatrix = m2.GetModelMatrix();
+                            }
+                            else
+                            {
+                                throw new NotImplementedException("Tried to draw bounding box for non m2/wmo");
+                            }
+
+                            DrawBoundingBox(localBox, modelMatrix, color, projectionMatrix, cameraMatrix);
+                        }
+                    }
+                }
+
+                // restore normal rasterizer
+                deviceContext.RSSetState(rasterizerState);
+                deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+
+                ComPtr<ID3D11DepthStencilState> nullDSS = default;
+                deviceContext.OMSetDepthStencilState(nullDSS, 0);
+            }
+
             swapchain.Present(1, 0);
 
             gizmoWasUsing = false;
             gizmoWasOver = false;
         }
 
-        public void RenderDebug(Camera camera, out bool gizmoWasUsing, out bool gizmoWasOver)
+        private unsafe void DrawBoundingBox(BoundingBox localBox, Matrix4x4 modelMatrix, Vector4 color, Matrix4x4 projection, Matrix4x4 view)
         {
-            if (debugRenderer == null)
+            var min = localBox.Min;
+            var max = localBox.Max;
+
+            var verts = new Vector3[24];
+            int i = 0;
+
+            verts[i++] = new(min.X, min.Y, min.Z); verts[i++] = new(max.X, min.Y, min.Z);
+            verts[i++] = new(max.X, min.Y, min.Z); verts[i++] = new(max.X, min.Y, max.Z);
+            verts[i++] = new(max.X, min.Y, max.Z); verts[i++] = new(min.X, min.Y, max.Z);
+            verts[i++] = new(min.X, min.Y, max.Z); verts[i++] = new(min.X, min.Y, min.Z);
+            verts[i++] = new(min.X, max.Y, min.Z); verts[i++] = new(max.X, max.Y, min.Z);
+            verts[i++] = new(max.X, max.Y, min.Z); verts[i++] = new(max.X, max.Y, max.Z);
+            verts[i++] = new(max.X, max.Y, max.Z); verts[i++] = new(min.X, max.Y, max.Z);
+            verts[i++] = new(min.X, max.Y, max.Z); verts[i++] = new(min.X, max.Y, min.Z);
+            verts[i++] = new(min.X, min.Y, min.Z); verts[i++] = new(min.X, max.Y, min.Z);
+            verts[i++] = new(max.X, min.Y, min.Z); verts[i++] = new(max.X, max.Y, min.Z);
+            verts[i++] = new(max.X, min.Y, max.Z); verts[i++] = new(max.X, max.Y, max.Z);
+            verts[i++] = new(min.X, min.Y, max.Z); verts[i++] = new(min.X, max.Y, max.Z);
+
+            MappedSubresource mappedVB = default;
+            SilkMarshal.ThrowHResult(deviceContext.Map(bboxVertexBuffer, 0, Map.WriteDiscard, 0, ref mappedVB));
+            var dest = new Span<Vector3>(mappedVB.PData, 24);
+            verts.CopyTo(dest);
+            deviceContext.Unmap(bboxVertexBuffer, 0);
+
+            var cb = new BBoxCB
             {
-                gizmoWasUsing = false;
-                gizmoWasOver = false;
-                return;
-            }
+                projection_matrix = projection,
+                view_matrix = view,
+                model_matrix = modelMatrix,
+                color = color
+            };
 
-            debugRenderer.Clear();
+            MappedSubresource mappedCB = default;
+            SilkMarshal.ThrowHResult(deviceContext.Map(bboxConstantBuffer, 0, Map.WriteDiscard, 0, ref mappedCB));
+            *(BBoxCB*)mappedCB.PData = cb;
+            deviceContext.Unmap(bboxConstantBuffer, 0);
 
-            gizmoWasUsing = false;
-            gizmoWasOver = false;
+            uint stride = (uint)sizeof(Vector3);
+            uint offset = 0;
+            deviceContext.IASetVertexBuffers(0, 1, ref bboxVertexBuffer, in stride, in offset);
+            deviceContext.VSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
+            deviceContext.PSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
 
-            lock (SceneObjectLock)
-            {
-                foreach (var sceneObject in SceneObjects)
-                {
-                    if (sceneObject is ADTContainer)
-                        continue;
+            ComPtr<ID3D11Buffer> nullBuffer = default;
+            uint nullStride = 0, nullOffset = 0;
+            deviceContext.IASetVertexBuffers(1, 1, ref nullBuffer, in nullStride, in nullOffset);
 
-                    if (!RenderWMO && sceneObject is WMOContainer && !sceneObject.IsSelected)
-                        continue;
-
-                    if (!RenderM2 && sceneObject is M2Container && !sceneObject.IsSelected)
-                        continue;
-
-                    var color = sceneObject.IsSelected ? new Vector4(0, 1, 0, 1) : new Vector4(1, 1, 0, 1);
-
-                    if (ShowBoundingBoxes || sceneObject.IsSelected)
-                    {
-                        var box = sceneObject.GetBoundingBox();
-                        if (box.HasValue)
-                        {
-                            debugRenderer.DrawBox(box.Value.Min, box.Value.Max, color);
-                        }
-                    }
-
-                    if (ShowBoundingSpheres)
-                    {
-                        var sphere = sceneObject.GetBoundingSphere();
-                        if (sphere.HasValue)
-                        {
-                            debugRenderer.DrawSphere(sphere.Value.Center, sphere.Value.Radius, color);
-                        }
-                    }
-                }
-            }
-
-            var debugViewMatrix = camera.GetViewMatrix();
-            debugViewMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * 180f);
-            var projectionMatrix = camera.GetProjectionMatrix();
-            debugRenderer.Render(projectionMatrix, debugViewMatrix);
+            deviceContext.Draw(24, 0);
         }
 
         public static (byte x, byte y) GetTileFromPosition(Vector3 position)
@@ -1169,7 +1274,7 @@ namespace WoWRenderLib.DX11.Managers
                 wmoPerObjectConstantBuffer.Dispose();
                 instanceMatrixBuffer.Dispose();
                 defaultTexture.Dispose();
-                debugRenderer?.Dispose();
+                bboxDepthStencilState.Dispose();
             }
         }
     }

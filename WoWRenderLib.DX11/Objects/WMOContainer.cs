@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using System.Numerics;
+using WoWFormatLib.Structs.WMO;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Raycasting;
@@ -163,6 +164,12 @@ namespace WoWRenderLib.DX11.Objects
             var wmo = GetWMO();
             var box = new BoundingBox(wmo.boundingBox.Min, wmo.boundingBox.Max);
             return BoundingBox.Transform(box, GetModelMatrix());
+        }
+
+        public BoundingBox GetLocalBoundingBox()
+        {
+            var wmo = GetWMO();
+            return new BoundingBox(wmo.boundingBox.Min, wmo.boundingBox.Max);
         }
     }
 }

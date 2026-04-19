@@ -85,7 +85,7 @@ namespace WoWRenderLib.DX11
         private CompiledShader adtShaderProgram;
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
-        private CompiledShader debugShaderProgram;
+        private CompiledShader bboxShaderProgram;
 
         private float movementSpeed = 150f;
         private bool hasFocus = true;
@@ -176,9 +176,9 @@ namespace WoWRenderLib.DX11
             adtShaderProgram = shaderManager.GetOrCompileShader("adt");
             wmoShaderProgram = shaderManager.GetOrCompileShader("wmo");
             m2ShaderProgram = shaderManager.GetOrCompileShader("m2");
-            //debugShaderProgram = shaderManager.GetOrCompileShader("debug");
+            bboxShaderProgram = shaderManager.GetOrCompileShader("boundingbox");
 
-            sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, debugShaderProgram);
+            sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, bboxShaderProgram);
 
             shadersReady = true;
 
@@ -258,10 +258,9 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderScene(activeCamera, out bool renderGizmoWasUsing, out bool renderGizmoWasOver);
                 //if (renderImGUI)
                 //    RenderGizmo();
-                sceneManager.RenderDebug(activeCamera, out bool debugGizmoWasUsing, out bool debugGizmoWasOver);
 
-                gizmoWasUsing = renderGizmoWasUsing || debugGizmoWasUsing;
-                gizmoWasOver = renderGizmoWasOver || debugGizmoWasOver;
+                gizmoWasUsing = renderGizmoWasUsing;
+                gizmoWasOver = renderGizmoWasOver;
             }
 
             //if (renderImGUI)
