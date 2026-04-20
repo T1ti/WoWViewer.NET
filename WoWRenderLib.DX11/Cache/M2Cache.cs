@@ -12,12 +12,15 @@ namespace WoWRenderLib.DX11.Cache
         private static readonly Dictionary<uint, DoodadBatch> Cache = [];
         private static readonly Dictionary<uint, List<uint>> Users = [];
 
-        public static DoodadBatch GetOrLoad(ComPtr<ID3D11Device> device, uint fileDataId, CompiledShader shaderProgram, uint parent)
+        public static DoodadBatch GetOrLoad(ComPtr<ID3D11Device> device, uint fileDataId, CompiledShader shaderProgram, uint parent, bool keepTrack = true)
         {
-            if (Users.TryGetValue(fileDataId, out var users))
-                users.Add(parent);
-            else
-                Users.Add(fileDataId, [parent]);
+            if (keepTrack)
+            {
+                if (Users.TryGetValue(fileDataId, out var users))
+                    users.Add(parent);
+                else
+                    Users.Add(fileDataId, [parent]);
+            }
 
             if (Cache.TryGetValue(fileDataId, out DoodadBatch value))
                 return value;
@@ -45,10 +48,7 @@ namespace WoWRenderLib.DX11.Cache
                     Users.Remove(fileDataId);
                     if (Cache.TryGetValue(fileDataId, out var model))
                     {
-                        foreach (var material in model.mats)
-                        {
-                            BLPCache.Release(material.fileDataID, fileDataId);
-                        }
+                        M2Loader.UnloadM2(model);
 
                         Cache.Remove(fileDataId);
                     }

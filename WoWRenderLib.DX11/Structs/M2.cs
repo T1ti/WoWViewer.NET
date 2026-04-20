@@ -27,6 +27,7 @@ namespace WoWRenderLib.DX11.Structs
 
     public struct DoodadBatch
     {
+        public uint fileDataID;
         public ComPtr<ID3D11Buffer> vertexBuffer;
         public ComPtr<ID3D11Buffer> indiceBuffer;
         public uint[] indices;

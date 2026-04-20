@@ -813,7 +813,7 @@ namespace WoWRenderLib.DX11.Managers
                 if (!firstInstance.IsLoaded)
                     continue;
 
-                var wmo = WMOCache.GetOrLoad(device, firstInstance.FileDataId, wmoShaderProgram, firstInstance.ParentFileDataId);
+                var wmo = WMOCache.GetOrLoad(device, firstInstance.FileDataId, wmoShaderProgram, firstInstance.ParentFileDataId, false);
                 var enabledGroups = firstInstance.EnabledGroups;
 
                 for (int batchStart = 0; batchStart < instances.Count; batchStart += MaxInstancesPerBatch)
@@ -885,7 +885,7 @@ namespace WoWRenderLib.DX11.Managers
                 if (!RenderM2 || instances.Count == 0)
                     continue;
 
-                var m2 = M2Cache.GetOrLoad(device, fileDataId, m2ShaderProgram, instances[0].ParentFileDataId);
+                var m2 = M2Cache.GetOrLoad(device, fileDataId, m2ShaderProgram, instances[0].ParentFileDataId, false);
 
                 var vertexBuffer = m2.vertexBuffer;
                 var indiceBuffer = m2.indiceBuffer;

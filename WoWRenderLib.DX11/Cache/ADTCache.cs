@@ -40,7 +40,7 @@ namespace WoWRenderLib.DX11.Cache
                     Users.Remove(key);
                     if (Cache.TryGetValue(key, out var terrain))
                     {
-                        ADTLoader.UnloadTerrain(terrain, device);
+                        ADTLoader.UnloadTerrain(terrain);
                         Cache.Remove(key);
                     }
                 }
@@ -56,13 +56,13 @@ namespace WoWRenderLib.DX11.Cache
             return Cache.Count;
         }
 
-        public static void ReleaseAll(ComPtr<ID3D11Device> device)
+        public static void ReleaseAll()
         {
             Debug.WriteLine("Releasing " + Cache.Count + " cached ADTs.");
 
             foreach (var key in Cache.Keys)
                 if (Cache.TryGetValue(key, out var terrain))
-                    ADTLoader.UnloadTerrain(terrain, device);
+                    ADTLoader.UnloadTerrain(terrain);
 
             Users.Clear();
             Cache.Clear();

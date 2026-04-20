@@ -66,7 +66,8 @@ namespace WoWRenderLib.DX11.Loaders
                     Min = bbMin,
                     Max = bbMax
                 },
-                boundingRadius = bbRadius
+                boundingRadius = bbRadius,
+                fileDataID = fileDataID
             };
 
             if (model.textures == null)
@@ -299,6 +300,21 @@ namespace WoWRenderLib.DX11.Loaders
                 }
             }
             return result;
+        }
+
+        public static void UnloadM2(DoodadBatch model)
+        {
+            model.vertexBuffer.Dispose();
+            model.indiceBuffer.Dispose();
+
+            foreach (var submesh in model.submeshes)
+            {
+                foreach(var material in submesh.material)
+                {
+                    BLPCache.Release(material, model.fileDataID);
+                }
+            }
+
         }
     }
 }

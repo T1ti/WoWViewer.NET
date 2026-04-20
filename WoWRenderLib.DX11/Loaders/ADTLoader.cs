@@ -406,7 +406,7 @@ namespace WoWRenderLib.DX11.Loaders
             return result;
         }
 
-        public static void UnloadTerrain(Terrain terrain, ComPtr<ID3D11Device> device)
+        public static void UnloadTerrain(Terrain terrain)
         {
             terrain.vertexBuffer.Dispose();
             terrain.indiceBuffer.Dispose();
