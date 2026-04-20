@@ -38,7 +38,7 @@ void main()
     vec3 emissive = vec3(0.0);
     float distFade = 1.0;
 
-	float finalOpacity = 0.0;
+	float finalOpacity = 1.0;
 
     if ( uPixelShader == -1 ) {
         matDiffuse = tex.rgb * tex2.rgb;
@@ -238,6 +238,12 @@ void main()
     float ambientStrength = 0.3;
     vec3 ambient = ambientStrength * vec3(1.0);
     vec3 lighting = ambient + diffuse;
+
+    // need to properly set finalOpacity to 1.0 instead of text alpha when we do opaque (no blending)
+    // or it becomes white with Angle
+    if (alphaRef == -1.0) {
+        finalOpacity = 1.0;
+    }
 
     outputColor = vec4(matDiffuse * lighting + emissive, finalOpacity);
 }

@@ -64,19 +64,15 @@ void main()
 		TexCoord = texCoord;
 		TexCoord2 = texCoord2;
 		TexCoord3 = texCoord3;
-	} else if(VertexShader == 0){
+	} else if(VertexShader == 0){ //MapObjDiffuse_T1
 		TexCoord = texCoord;
 		TexCoord2 = texCoord2;
 		TexCoord3 = texCoord3;
-	} else if(VertexShader == 1){
+	} else if(VertexShader == 1){ //MapObjDiffuse_T1_Refl
 		TexCoord = texCoord;
 		TexCoord2 = reflect(normalize(vec3(1.0)), normal).xy; // TODO: 1.0 => cameraPoint
 		TexCoord3 = texCoord3;
-	} else if(VertexShader == 2){
-		TexCoord = texCoord;
-		TexCoord2 = texCoord2;
-		TexCoord3 = texCoord3;
-    } else if (VertexShader == 2) { //MapObjDiffuse_T1_Env_T2
+	} else if (VertexShader == 2) { //MapObjDiffuse_T1_Env_T2
         TexCoord = texCoord;
         TexCoord2 = posToTexCoord(position.xyz, normal);;
         TexCoord3 = texCoord3;
