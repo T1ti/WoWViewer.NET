@@ -768,6 +768,8 @@ namespace WoWRenderLib.DX11.Managers
 
             camera.UpdateFrustum();
 
+            var frustum = camera.GetFrustum();
+
             visibleM2s = 0;
             visibleWMOs = 0;
             visibleChunks = 0;
@@ -813,12 +815,26 @@ namespace WoWRenderLib.DX11.Managers
                 if (!firstInstance.IsLoaded)
                     continue;
 
+                var visibleIndices = new List<int>();
+                for (int i = 0; i < instances.Count; i++)
+                {
+                    var sphere = instances[i].GetBoundingSphere();
+                    if (sphere.HasValue && frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    {
+                        visibleWMOs++;
+                        visibleIndices.Add(i);
+                    }
+                }
+
+                if (visibleIndices.Count == 0)
+                    continue;
+
                 var wmo = WMOCache.GetOrLoad(device, firstInstance.FileDataId, wmoShaderProgram, firstInstance.ParentFileDataId, false);
                 var enabledGroups = firstInstance.EnabledGroups;
 
-                for (int batchStart = 0; batchStart < instances.Count; batchStart += MaxInstancesPerBatch)
+                for (int batchStart = 0; batchStart < visibleIndices.Count; batchStart += MaxInstancesPerBatch)
                 {
-                    int batchCount = Math.Min(MaxInstancesPerBatch, instances.Count - batchStart);
+                    int batchSize = Math.Min(MaxInstancesPerBatch, visibleIndices.Count - batchStart);
 
                     // the normal approach to do updatesubresource doesn't work for dynamic buffers, so we have to do the below block instead
                     unsafe
@@ -826,9 +842,9 @@ namespace WoWRenderLib.DX11.Managers
                         MappedSubresource mapped = default;
                         SilkMarshal.ThrowHResult(deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
 
-                        var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
-                        for (int i = 0; i < batchCount; i++)
-                            dest[i] = instances[batchStart + i].GetModelMatrix();
+                        var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
+                        for (int i = 0; i < batchSize; i++)
+                            dest[i] = instances[visibleIndices[batchStart + i]].GetModelMatrix();
 
                         deviceContext.Unmap(instanceMatrixBuffer, 0);
                     }
@@ -866,7 +882,7 @@ namespace WoWRenderLib.DX11.Managers
                         if (srvs.Length > 0)
                             deviceContext.PSSetShaderResources(0, (uint)srvs.Length, ref srvs[0]);
 
-                        deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
+                        deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
                     }
                 }
             }
@@ -885,6 +901,20 @@ namespace WoWRenderLib.DX11.Managers
                 if (!RenderM2 || instances.Count == 0)
                     continue;
 
+                var visibleIndices = new List<int>();
+                for (int i = 0; i < instances.Count; i++)
+                {
+                    var sphere = instances[i].GetBoundingSphere();
+                    if (sphere.HasValue && frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    {
+                        visibleWMOs++;
+                        visibleIndices.Add(i);
+                    }
+                }
+
+                if (visibleIndices.Count == 0)
+                    continue;
+
                 var m2 = M2Cache.GetOrLoad(device, fileDataId, m2ShaderProgram, instances[0].ParentFileDataId, false);
 
                 var vertexBuffer = m2.vertexBuffer;
@@ -893,9 +923,10 @@ namespace WoWRenderLib.DX11.Managers
                 deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
                 deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
 
-                for (int batchStart = 0; batchStart < instances.Count; batchStart += MaxInstancesPerBatch)
+                visibleM2s++;
+                for (int batchStart = 0; batchStart < visibleIndices.Count; batchStart += MaxInstancesPerBatch)
                 {
-                    int batchCount = Math.Min(MaxInstancesPerBatch, instances.Count - batchStart);
+                    int batchCount = Math.Min(MaxInstancesPerBatch, visibleIndices.Count - batchStart);
 
                     unsafe
                     {
@@ -904,7 +935,7 @@ namespace WoWRenderLib.DX11.Managers
 
                         var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
                         for (int i = 0; i < batchCount; i++)
-                            dest[i] = instances[batchStart + i].GetModelMatrix();
+                            dest[i] = instances[visibleIndices[batchStart + i]].GetModelMatrix();
 
                         deviceContext.Unmap(instanceMatrixBuffer, 0);
                     }
@@ -992,6 +1023,12 @@ namespace WoWRenderLib.DX11.Managers
 
                     for (uint c = 0; c < 256; c++)
                     {
+                        var bounds = adt.Terrain.chunkBounds[c];
+                        if (!frustum.IsBoxVisible(bounds.Min, bounds.Max))
+                            continue;
+                        else
+                            visibleChunks++;
+
                         var batch = adt.Terrain.renderBatches[c];
 
                         layerCB.layerCount = batch.materialFDIDs.Length;
