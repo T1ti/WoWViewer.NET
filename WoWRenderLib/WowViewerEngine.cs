@@ -185,7 +185,11 @@ namespace WoWRenderLib
 
             WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
 
-            var startPos = new Vector3(5305f, -4122f, 92f);
+            Vector3 plaguelands_pos = new Vector3(5305f, -4122f, 92f);
+            Vector3 elwynn = new Vector3(-9743f, -207f, 355f); // native:88fps,  wpf : 55-60fps, avaloniaGlGpuInterop: 50fps(88extr)
+            Vector3 searing_gorge = new Vector3(-6658f, -1185f, 265f); // native : 145fps, avaloniaGlGpuInterop : 80fps(131 extrapolated), WPF: 75-82fps
+
+            var startPos = elwynn;
 
             // Init camera
             activeCamera = new Camera(startPos, Vector3.UnitX, Vector3.UnitZ * -1, (float)frameBufferSize.X / (float)frameBufferSize.Y);
@@ -237,7 +241,7 @@ namespace WoWRenderLib
 
         public void Update(double deltaTime, InputFrame input)
         {
-            if (renderImGUI)
+            if (renderImGUI && imgui != null)
             {
                 imgui?.Update((float)deltaTime);
 
@@ -319,7 +323,7 @@ namespace WoWRenderLib
                 }
             }
 
-            if (shadersReady)
+            if (shadersReady && cascLoaded)
             {
                 sceneManager.RenderScene(activeCamera, out bool renderGizmoWasUsing, out bool renderGizmoWasOver);
                 if (renderImGUI)
