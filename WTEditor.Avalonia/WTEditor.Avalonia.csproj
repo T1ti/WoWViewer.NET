@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +25,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.6" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
+    <PackageReference Include="SharpDX.Direct3D11" Version="4.2.0" />
+    <PackageReference Include="Silk.NET.Direct3D11" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.WGL.Extensions.NV" Version="2.23.0" />
   </ItemGroup>
 
   <ItemGroup>

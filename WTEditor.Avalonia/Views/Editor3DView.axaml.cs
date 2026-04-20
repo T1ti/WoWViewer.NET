@@ -31,6 +31,8 @@ public partial class Editor3DView : UserControl
         InitializeComponent();
 
         SetKeyboardMode(_AzertyInput);
+
+        // look into RoutingStrategies.Tunnel to make events fire from parents if needed
     }
 
     public void SetKeyboardMode(bool Azerty)

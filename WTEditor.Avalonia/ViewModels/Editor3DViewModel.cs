@@ -10,9 +10,18 @@ namespace WTEditor.Avalonia.ViewModels
     {
         // overlay display data for the control
         [ObservableProperty]
-        private double _fps;
+        private double _fps; // real FPS rate. includes framerate cap
         [ObservableProperty]
-        private double _frameTime;
+        private double _totalFrameTime; // interop + render time. uncapped
+        [ObservableProperty]
+        private double _renderFrameTime; // just engine render time. uncapped
+        [ObservableProperty]
+        private double _interopFrameTime;
+        [ObservableProperty]
+        private double _uncappedFPS;
+        [ObservableProperty]
+        private float _interopPctCost;
+
         [ObservableProperty]
         private Vector3 _cameraPosition;
         [ObservableProperty]

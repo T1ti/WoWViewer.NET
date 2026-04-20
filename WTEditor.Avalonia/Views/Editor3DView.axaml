@@ -13,10 +13,22 @@
 
     <!-- Overlay UI -->
     <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
-            IsHitTestVisible="False">
+            IsHitTestVisible="False" Background="Transparent">
+
+        <StackPanel.Styles>
+            <Style Selector="TextBlock">
+                <Setter Property="Foreground" Value="Red"/>
+            </Style>
+        </StackPanel.Styles>
 
         <TextBlock Text="{Binding Fps, StringFormat='FPS: {0:F1}'}" />
-        <TextBlock Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
+        <TextBlock Text="{Binding UncappedFPS, StringFormat='Extrapolated(total) FPS: {0:F1}'}"/>
+
+        <TextBlock Text="{Binding RenderFrameTime, StringFormat='Render Frame: {0:F1} ms'}"/>
+        <TextBlock Text="{Binding TotalFrameTime, StringFormat='Total Frame(interop): {0:F1} ms'}"/>
+        <TextBlock Text="{Binding InteropFrameTime, StringFormat='Interop time: {0:F1} ms'}"/>
+        <TextBlock Text="{Binding InteropPctCost, StringFormat='Interop cost: {0:F1}%'}"/>
+
 
         <TextBlock Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
         <TextBlock Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>

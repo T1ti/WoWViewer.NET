@@ -1,30 +1,32 @@
 ﻿// Copied and adapted from https://github.com/AvaloniaUI/Avalonia/blob/release/11.3.0/samples/GpuInterop
 
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Rendering.Composition;
-
-using fin.ui.rendering.gl;
-
-using OpenTK.Graphics.Wgl;
-using OpenTK.Windowing.Desktop;
-using OpenTK.Windowing.GraphicsLibraryFramework;
-
 using SharpDX;
 using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
+using Silk.NET.OpenGL;
+using Silk.NET.WGL;
+using Silk.NET.WGL.Extensions.NV;
 
-using GL = OpenTK.Graphics.OpenGL.GL;
+using Silk.NET.Windowing;
+using WTEditor.Avalonia.Util;
 
+// using GL = Silk.NET.OpenGL.GL;
+using D3DDevice = SharpDX.Direct3D11.Device;
+
+
+// Based on : https://github.com/MeltyPlayer/MeltyTool/tree/main/FinModelUtility/Fin/Fin.Ui.Avalonia/gl
 
 namespace WTEditor.Avalonia.Rendering
 {
@@ -38,33 +40,47 @@ namespace WTEditor.Avalonia.Rendering
         private Compositor? compositor_;
         private string info_ = string.Empty;
         private bool updateQueued_;
-        private bool initialized_;
+        private bool initialized_ = false;
+        private bool _isRendering = false;
+        private int _framePendingOrRunning; // 0 or 1 (Interlocked)
+
+        private IWindow? silkWindow_;
+        private GL? gl_;
+        private WGL? wgl_;
+        private NVDXInterop? nvInterop_;
 
         private IntPtr hDevice_;
 
         public event Action? OnInit;
 
-        private IDisposable currentImageDisposable_;
+        // private IDisposable currentImageDisposable_;
         private D3D11SwapchainImage currentImage_;
 
-        private Action initGl_;
-        private Action renderGl_;
-        private Action teardownGl_;
+        private Action<GL> initGl_;
+        private Action<GL> renderGl_;
+        private Action<GL> teardownGl_;
+
+        private readonly Action<double>? frameTimeCallback_;
+        private Stopwatch _sw = new Stopwatch();
+        private double _last;
+
+        // public nint ContextProcAdress = 0;
 
         protected CompositionDrawingSurface? Surface { get; private set; }
 
         public static async Task<bool> TryToAddTo(
-            Panel parent,
-            Action initGl,
-            Action renderGl,
-            Action teardownGl)
+        Panel parent,
+        Action<GL> initGl,
+        Action<GL> renderGl,
+        Action<GL> teardownGl,
+        Action<double>? frameTimeCallback = null)
         {
             bool success = false;
 
             SharpDxInteropControl? control = null;
             try
             {
-                control = new SharpDxInteropControl(initGl, renderGl, teardownGl);
+                control = new SharpDxInteropControl(initGl, renderGl, teardownGl, frameTimeCallback);
                 parent.Children.Add(control);
                 success = control.initialized_;
             }
@@ -84,25 +100,25 @@ namespace WTEditor.Avalonia.Rendering
             return true;
         }
 
-        public SharpDxInteropControl(Action initGl,
-                                     Action renderGl,
-                                     Action teardownGl)
+        public SharpDxInteropControl(Action<GL> initGl, Action<GL> renderGl, Action<GL> teardownGl, Action<double>? frameTimeCallback = null)
         {
             this.initGl_ = initGl;
             this.renderGl_ = renderGl;
             this.teardownGl_ = teardownGl;
             this.SizeChanged += (sender, e) => { this.QueueNextFrame_(); };
+
+            frameTimeCallback_ = frameTimeCallback;
+            _sw.Start();
+            _last = _sw.Elapsed.TotalSeconds;
         }
 
-        protected override void OnAttachedToVisualTree(
-            VisualTreeAttachmentEventArgs e)
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
             this.Initialize_().Wait();
         }
 
-        protected override void OnDetachedFromLogicalTree(
-            LogicalTreeAttachmentEventArgs e)
+        protected override void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
         {
             if (this.initialized_)
             {
@@ -125,46 +141,59 @@ namespace WTEditor.Avalonia.Rendering
             this.visual_.Surface = this.Surface;
             ElementComposition.SetElementChildVisual(this, this.visual_);
             var interop = await this.compositor_.TryGetCompositionGpuInterop();
+
+            // Create invisible window to host the contextual GL + WGL state
+            var options = WindowOptions.Default;
+            options.IsVisible = false;
+            options.Size = new Silk.NET.Maths.Vector2D<int>(100, 100);
+            options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible /*| ContextFlags.Debug*/, new APIVersion(4, 5));
+            options.VSync = false;
+            // options.ShouldSwapAutomatically = true;
+
+            // TODO : check if we need to swap buffers and vsync
+
+            this.silkWindow_ = Silk.NET.Windowing.Window.Create(options);
+            this.silkWindow_.Initialize();
+
+            
+
+            this.gl_ = this.silkWindow_.CreateOpenGL();
+            this.wgl_ = WGL.GetApi(/*this.silkWindow_.GLContext*/);
+            // this.silkWindow_.GLContext!.MakeCurrent(); // switch context
+            GlUtil.SwitchContext(this.silkWindow_!.GLContext);
+
+            if (!this.wgl_.TryGetExtension<NVDXInterop>(out this.nvInterop_))
+            {
+                throw new PlatformNotSupportedException("NV_DX_interop not available on this device.");
+            }
+
             bool res;
             string info;
             if (interop == null)
-                (res, info) = (
-                    false, "Compositor doesn't support interop for the current backend");
+                (res, info) = (false, "Compositor doesn't support interop for the current backend");
             else
                 (res, info) = this.InitializeGraphicsResources(this.Surface, interop);
+
             this.info_ = info;
             this.initialized_ = res;
 
-            var bindingsContext = new GLFWBindingsContext();
-            Wgl.LoadBindings(bindingsContext);
-            GL.LoadBindings(bindingsContext);
+            if (!res)
+                return;
 
-            GlUtil.SwitchContext(this.openTkWindow_!.Context);
-
-            IntPtr hDc = wglGetCurrentDC();
-            if (hDc == IntPtr.Zero)
-                throw new InvalidOperationException(
-                    "No current hDC. Make sure OpenGL context is current."
-                );
-            string[] extensions = Wgl
-                                  .Arb.GetExtensionsString(hDc)
-                                  .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            bool hasInterop = extensions.Contains("WGL_NV_DX_interop");
-            if (!hasInterop)
-            {
-                throw new PlatformNotSupportedException(
-                    "NV_DX_interop not available on this device."
-                );
-            }
-
-            this.initGl_();
+            this.initGl_(this.gl_);
             this.OnInit?.Invoke();
 
-            this.hDevice_ = Wgl.DXOpenDeviceNV(this.device_.NativePointer);
-            if (this.hDevice_ == IntPtr.Zero)
+            unsafe
             {
-                throw new Exception("DXOpenDeviceNV failed");
+                this.hDevice_ = this.nvInterop_.DxopenDevice((void*)(nint)this.device_!.NativePointer);
+                if (this.hDevice_ == IntPtr.Zero)
+                {
+                    throw new Exception("DXOpenDeviceNV failed");
+                }
             }
+
+            _sw.Start();
+            _last = _sw.Elapsed.TotalSeconds;
 
             this.QueueNextFrame_();
         }
@@ -181,35 +210,64 @@ namespace WTEditor.Avalonia.Rendering
         private void UpdateFrame_()
         {
             this.updateQueued_ = false;
-            var root = this as IRenderRoot ?? this.VisualRoot;
+            var root = /*this as IRenderRoot ??*/ this.VisualRoot;
             if (root == null)
                 return;
 
+            bool test_early_queuing = false;
+            if (test_early_queuing)
+            {
+                if (_isRendering)
+                {
+                    QueueNextFrame_();
+                    return;
+                }
+
+                _isRendering = true;
+
+                // schedule next frame early
+                QueueNextFrame_();
+            }
+
             this.visual_!.Size = new(this.Bounds.Width, this.Bounds.Height);
-            var size = PixelSize.FromSize(this.Bounds.Size, root.RenderScaling);
+
+            var scaling = 1f;
+            // if (TopLevel.GetTopLevel(this) is Avalonia.Controls.Window window)
+            // {
+            //     scaling = (float)window.RenderScaling;
+            // }
+
+            var size = PixelSize.FromSize(this.Bounds.Size, scaling);
+
+            // mMeasure internal frame time, don't include time between frames (refresh rate limits)
+            double frameStart = _sw.Elapsed.TotalSeconds;
+            double frameDelta = frameStart - _last;
+            _last = frameStart;
+            //
             this.RenderFrame(size);
 
-            this.QueueNextFrame_();
+            // timing end
+            var end = _sw.Elapsed.TotalSeconds;
+            var frameTime = end - frameStart;
+            frameTimeCallback_?.Invoke(frameTime * 1000.0); // ms
+
+            if (test_early_queuing)
+                _isRendering = false;
+            else
+                this.QueueNextFrame_();
         }
 
-        private Device? device_;
+        private D3DDevice? device_;
         private D3d11Swapchain? swapchain_;
         private DeviceContext? context_;
         private PixelSize lastSize_;
-
-        private NativeWindow? openTkWindow_;
 
         protected (bool success, string info) InitializeGraphicsResources(
             CompositionDrawingSurface surface,
             ICompositionGpuInterop interop
         )
         {
-            if (
-                !interop.SupportedImageHandleTypes.Contains(
-                    KnownPlatformGraphicsExternalImageHandleTypes
-                        .D3D11TextureGlobalSharedHandle
-                )
-            )
+            if (!interop.SupportedImageHandleTypes.Contains(KnownPlatformGraphicsExternalImageHandleTypes.D3D11TextureGlobalSharedHandle))
                 return (
                     false,
                     "DXGI shared handle import is not supported by the current graphics backend"
@@ -217,7 +275,7 @@ namespace WTEditor.Avalonia.Rendering
 
             var factory = new SharpDX.DXGI.Factory1();
             using var adapter = factory.GetAdapter1(0);
-            this.device_ = new Device(
+            this.device_ = new D3DDevice(
                 adapter,
                 GlConstants.Debug ? DeviceCreationFlags.Debug : DeviceCreationFlags.None,
                 new[] {
@@ -231,13 +289,8 @@ namespace WTEditor.Avalonia.Rendering
             FeatureLevel.Level_9_1,
                 }
             );
-            this.swapchain_ = new D3d11Swapchain(this.device_, interop, surface);
+            this.swapchain_ = new D3d11Swapchain(this.device_, interop, surface, this.gl_!, this.nvInterop_!);
             this.context_ = this.device_.ImmediateContext;
-
-            var nativeWindowSettings = GlfwConstants.CreateNewNativeWindowSettings();
-            nativeWindowSettings.ClientSize = new(100, 100);
-
-            this.openTkWindow_ = new NativeWindow(nativeWindowSettings);
 
             return (
                 true,
@@ -252,29 +305,32 @@ namespace WTEditor.Avalonia.Rendering
                 this.swapchain_ = null;
             }
 
-            if (this.hDevice_ != IntPtr.Zero)
+            if (this.hDevice_ != IntPtr.Zero && this.nvInterop_ != null)
             {
-                Wgl.DXCloseDeviceNV(this.hDevice_);
+                this.nvInterop_.DxcloseDevice(this.hDevice_);
             }
 
             Utilities.Dispose(ref this.context_);
             Utilities.Dispose(ref this.device_);
 
-            this.openTkWindow_?.Dispose();
-            this.openTkWindow_ = null;
+            this.silkWindow_?.Dispose();
+            this.silkWindow_ = null;
 
-            this.teardownGl_();
+            if (this.gl_ != null)
+            {
+                this.teardownGl_(this.gl_);
+            }
         }
-
-        [DllImport("opengl32.dll")]
-        private static extern IntPtr wglGetCurrentDC();
 
         protected void RenderFrame(PixelSize pixelSize)
         {
             if (pixelSize == default)
                 return;
 
-            GlUtil.SwitchContext(this.openTkWindow_!.Context);
+            // this.silkWindow_!.GLContext!.MakeCurrent();
+            GlUtil.SwitchContext(this.silkWindow_!.GLContext);
+
+            // silkWindow_.SwapBuffers();
 
             if (pixelSize != this.lastSize_)
             {
@@ -286,7 +342,8 @@ namespace WTEditor.Avalonia.Rendering
                                               pixelSize,
                                               out this.currentImage_))
             {
-                this.renderGl_();
+                // call render event on the control
+                this.renderGl_(this.gl_!);
             }
         }
 
@@ -302,8 +359,10 @@ namespace WTEditor.Avalonia.Rendering
                 size.Width,
                 size.Height);
 
-            this.openTkWindow_!.ClientSize = (size.Width, size.Height);
-            GlUtil.SetViewport(new Rectangle(0, 0, size.Width, size.Height));
+            this.silkWindow_!.Size = new Silk.NET.Maths.Vector2D<int>(size.Width, size.Height);
+
+            this.gl_!.Viewport(0, 0, (uint)size.Width, (uint)size.Height);
+            // GlUtil.SetViewport(new Rectangle(0, 0, size.Width, size.Height));
         }
     }
 }

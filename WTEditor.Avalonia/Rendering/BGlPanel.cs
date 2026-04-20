@@ -1,48 +1,66 @@
 ﻿using System;
-
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Rendering;
 using Avalonia.Threading;
 
-using fin.config;
-using fin.ui.rendering.gl;
+// using fin.config;
+using Silk.NET.OpenGL;
+using WTEditor.Avalonia.Util;
 
 
 namespace WTEditor.Avalonia.Rendering
 {
+    // base class for opengl interop control
+    // uses SharpDxInteropControl or OpenTkControl
     public abstract class BGlPanel : Panel, ICustomHitTest
     {
         public event Action? OnInit;
 
+        public bool PreferGlNativeInterop = true;
+
+        // frame times
+        public double TotalFrameTime = 0;
+
         protected BGlPanel()
         {
-            Dispatcher.UIThread.InvokeAsync(async () => {
-                var initGl = () => {
-                    this.InitGl();
+            //openTK  gl context is set either by SharpDxInteropControl or OpenTkControl with GL.LoadBindings
+
+            Dispatcher.UIThread.InvokeAsync(async () => 
+            {
+                var initGl = (GL gl) => {
+                    this.InitGl(gl);
                     this.OnInit?.Invoke();
                 };
-                var renderGl = this.RenderGl;
-                var teardownGl = this.TeardownGl;
+                var renderGl = (GL gl) => this.RenderGl(gl);
+                var teardownGl = (GL gl) => this.TeardownGl(gl);
 
-                if (FinConfig.PreferGlNativeInterop)
+                Action<double> frameTime = (ms) =>
                 {
-                    OpenGlVersionService.Init(false);
-                    if (await SharpDxInteropControl.TryToAddTo(this, initGl, renderGl, teardownGl))
+                    // _vm.RenderFrameTime = ms;
+                    TotalFrameTime = ms;
+                };
+
+                if (PreferGlNativeInterop)
+                {
+                    OpenGlVersionService.Init(false); // Uses opengl ES for rendering
+
+                    if (await SharpDxInteropControl.TryToAddTo(this, initGl, renderGl, teardownGl, frameTime))
                     {
+                        // SharpDxInteropControl dxControl = (SharpDxInteropControl)this.Children[0];
                         return;
                     }
                 }
-
-                OpenGlVersionService.Init(true);
-                this.Children.Add(new OpenTkControl(initGl, renderGl, teardownGl));
+                // fallback to non native using avalonia's opengl context
+                OpenGlVersionService.Init(true); // Uses
+                this.Children.Add(new AvaloniaSilkGlControl(initGl, renderGl, teardownGl));
             });
-
         }
+        protected abstract void InitGl(GL gl);
+        protected abstract void RenderGl(GL gl);
+        protected abstract void TeardownGl(GL gl);
 
-        protected abstract void InitGl();
-        protected abstract void RenderGl();
-        protected abstract void TeardownGl();
 
         public bool HitTest(Point point) => this.Bounds.Contains(point);
 
