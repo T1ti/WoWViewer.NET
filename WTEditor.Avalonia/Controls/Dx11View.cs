@@ -92,6 +92,15 @@ namespace WTEditor.Avalonia.Controls
 
             CreateD3DDevice();
 
+            // PLACEHOLDER until config menu is added
+            _wowConfig = new WowClientConfig
+            {
+                wowDir = "C:\\Program Files (x86)\\World of Warcraft",
+                wowProduct = "wow_classic_era",
+                // buildConfig = buildConfig,
+                // cdnConfig = cdnConfig
+            };
+
             _engine = new WowViewerEngine(_wowConfig, null, false);
             _engine.UseKeyedMutex = true;
             _engine.Initialize(_dxgi!, _device, _deviceContext, new Vector2D<int>(1, 1));

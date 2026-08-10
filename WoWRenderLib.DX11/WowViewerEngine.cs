@@ -201,8 +201,12 @@ namespace WoWRenderLib.DX11
             shadersReady = true;
 
             WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
-            // var startPos = new Vector3(3875f, -2050f, 616f);
-            var startPos = new Vector3(0, 0, 200);
+            var startPos = new Vector3(3875f, -2050f, 616f); // quel'thalas, retail.
+            if (_wowConfig.wowProduct == "wow_classic_era")
+            {
+                startPos = new Vector3(0, 0, 200); // alterac, wow classic.
+            }
+
             // Init camera
             activeCamera = new Camera(
                 startPos,
@@ -419,7 +423,7 @@ namespace WoWRenderLib.DX11
             }
 
             _products = _productList.Keys.ToArray();
-            _wowConfig.wowProduct = "wow";
+            // _wowConfig.wowProduct = "wow";
             // optional, set first product as current if none is current yet
             // only if there's exactly one product for now to avoid not being able to switch
             if (_SetDefaultProduct && string.IsNullOrEmpty(_wowConfig.wowProduct) && _products.Length > 0)
