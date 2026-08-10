@@ -2,7 +2,7 @@
   "profiles": {
     "WoWRenderLib.DX11": {
       "commandName": "Project",
-      "commandLineArgs": "\"C:\\World of Warcraft\" wowt"
+      "commandLineArgs": "\"C:\\Program Files (x86)\\World of Warcraft\" wow_classic_era"
     }
   }
 }

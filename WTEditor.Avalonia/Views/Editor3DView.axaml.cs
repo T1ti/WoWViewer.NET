@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia;
@@ -17,6 +18,7 @@ public partial class Editor3DView : UserControl
     private static extern long GetKeyboardLayoutName(StringBuilder pwszKLID);
 
     private bool _AzertyInput = true; // AZERTY keyboard support
+    private bool _DetectedAzertyInput;
     private Key _MoveForwardKey = Key.W; // rebindable hotkeys for azerty support
     private Key _MoveLeftKey = Key.A;
     private Key _MoveRightKey = Key.D;
@@ -50,7 +52,29 @@ public partial class Editor3DView : UserControl
                 break;
         }
 
+        _DetectedAzertyInput = _AzertyInput;
         SetKeyboardMode(_AzertyInput);
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        if (DataContext is Editor3DViewModel oldViewModel)
+            oldViewModel.KeyboardLayoutChanged -= OnKeyboardLayoutChanged;
+
+        base.OnDataContextChanged(e);
+
+        if (DataContext is Editor3DViewModel viewModel)
+        {
+            viewModel.KeyboardLayoutChanged += OnKeyboardLayoutChanged;
+            ApplyKeyboardLayout(viewModel.KeyboardLayout);
+        }
+    }
+
+    private void OnKeyboardLayoutChanged(object? sender, string layout) => ApplyKeyboardLayout(layout);
+
+    private void ApplyKeyboardLayout(string layout)
+    {
+        SetKeyboardMode(layout == "AZERTY" || layout == "Auto" && _DetectedAzertyInput);
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)

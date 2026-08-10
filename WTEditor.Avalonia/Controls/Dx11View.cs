@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -43,6 +44,14 @@ namespace WTEditor.Avalonia.Controls
         private double _last;
 
         private ViewModels.Editor3DViewModel? _vm;
+        private RendererSettings _rendererSettings = new();
+        private bool _renderFrameInProgress;
+        private bool _restartPending;
+        private WowClientConfig _clientConfig = new()
+        {
+            wowDir = @"C:\Program Files (x86)\World of Warcraft",
+            wowProduct = "wow_classic_era"
+        };
 
         public Dx11View()
         {
@@ -51,8 +60,22 @@ namespace WTEditor.Avalonia.Controls
 
         protected override void OnDataContextChanged(EventArgs e)
         {
+            if (_vm != null)
+            {
+                _vm.ClientConfigChanged -= OnClientConfigChanged;
+                _vm.RendererSettingsChanged -= OnRendererSettingsChanged;
+            }
+
             base.OnDataContextChanged(e);
             _vm = DataContext as ViewModels.Editor3DViewModel;
+
+            if (_vm != null)
+            {
+                _clientConfig = _vm.ClientConfig;
+                _rendererSettings = _vm.RendererSettings.Clone();
+                _vm.ClientConfigChanged += OnClientConfigChanged;
+                _vm.RendererSettingsChanged += OnRendererSettingsChanged;
+            }
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -92,18 +115,7 @@ namespace WTEditor.Avalonia.Controls
 
             CreateD3DDevice();
 
-            // PLACEHOLDER until config menu is added
-            _wowConfig = new WowClientConfig
-            {
-                wowDir = "C:\\Program Files (x86)\\World of Warcraft",
-                wowProduct = "wow_classic_era",
-                // buildConfig = buildConfig,
-                // cdnConfig = cdnConfig
-            };
-
-            _engine = new WowViewerEngine(_wowConfig, null, false);
-            _engine.UseKeyedMutex = true;
-            _engine.Initialize(_dxgi!, _device, _deviceContext, new Vector2D<int>(1, 1));
+            CreateEngine(_clientConfig);
 
             _surface = _compositor.CreateDrawingSurface();
             _surfaceVisual = _compositor.CreateSurfaceVisual();
@@ -116,6 +128,53 @@ namespace WTEditor.Avalonia.Controls
 
             _initialized = true;
             RequestRenderFrame();
+        }
+
+        private void OnClientConfigChanged(object? sender, WowClientConfig config)
+        {
+            _clientConfig = config;
+            Dispatcher.UIThread.Post(RestartEngine, DispatcherPriority.Render);
+        }
+
+        private void RestartEngine()
+        {
+            if (!_initialized || _dxgi == null)
+                return;
+
+            if (_renderFrameInProgress)
+            {
+                _restartPending = true;
+                return;
+            }
+
+            _initialized = false;
+            _importedImage = null;
+            _lastSharedHandle = IntPtr.Zero;
+            _engine?.Dispose();
+            CreateEngine(_clientConfig);
+            _initialized = true;
+            RequestRenderFrame();
+        }
+
+        private void OnRendererSettingsChanged(object? sender, RendererSettings settings)
+        {
+            _rendererSettings = settings.Clone();
+            if (_engine == null)
+                return;
+
+            Dispatcher.UIThread.Post(() => _engine?.ApplySettings(_rendererSettings), DispatcherPriority.Render);
+        }
+
+        private void CreateEngine(WowClientConfig config)
+        {
+            _wowConfig = config;
+            _engine = new WowViewerEngine(_wowConfig, null, false)
+            {
+                UseKeyedMutex = true
+            };
+            _engine.Initialize(_dxgi!, _device, _deviceContext,
+                new Vector2D<int>(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)));
+            _engine.ApplySettings(_rendererSettings);
         }
 
         private unsafe void CreateD3DDevice()
@@ -153,6 +212,37 @@ namespace WTEditor.Avalonia.Controls
             if (!_initialized || _engine == null || _interop == null || _surface == null || _surfaceVisual == null)
                 return;
 
+            if (_renderFrameInProgress)
+                return;
+
+            _renderFrameInProgress = true;
+            var engine = _engine;
+
+            try
+            {
+                await RenderFrameCore(engine);
+            }
+            finally
+            {
+                _renderFrameInProgress = false;
+
+                if (_restartPending)
+                {
+                    _restartPending = false;
+                    RestartEngine();
+                }
+                else if (_initialized)
+                {
+                    RequestRenderFrame();
+                }
+            }
+        }
+
+        private async Task RenderFrameCore(WowViewerEngine engine)
+        {
+            if (_interop == null || _surface == null || _surfaceVisual == null)
+                return;
+
             double now = _sw.Elapsed.TotalSeconds;
             double delta = now - _last;
             _last = now;
@@ -166,16 +256,21 @@ namespace WTEditor.Avalonia.Controls
                 _lastHeight = height;
                 _surfaceVisual.Size = new Vector2(width, height);
                 _surfaceVisual.CenterPoint = new Vector3(0, height / 2f, 0);
-                _engine.Resize((uint)width, (uint)height);
+                engine.Resize((uint)width, (uint)height);
                 _lastSharedHandle = IntPtr.Zero;
                 _importedImage = null;
             }
 
             var inputFrame = BuildInputFrame();
-            _engine.Update(delta, inputFrame);
-            _engine.Render(delta);
+            if (_vm != null)
+            {
+                engine.SetMovementSpeed(_vm.MoveSpeed);
+                engine.SetMouseSensitivity(_vm.MouseSensitivity);
+            }
+            engine.Update(delta, inputFrame);
+            engine.Render(delta);
 
-            var handle = _engine.GetSharedTextureHandle();
+            var handle = engine.GetSharedTextureHandle();
             if (handle != IntPtr.Zero && handle != _lastSharedHandle)
             {
                 _lastSharedHandle = handle;
@@ -194,14 +289,12 @@ namespace WTEditor.Avalonia.Controls
 
             if (_vm != null)
             {
-                _vm.Fps = _engine.Stats.FPS;
-                _vm.FrameTime = _engine.Stats.FrameTimeMs;
-                _vm.CameraPosition = _engine.activeCamera?.Position ?? Vector3.Zero;
-                _vm.DrawCalls = (int)_engine.Stats.DrawCalls;
-                _vm.VertexCount = (int)_engine.Stats.VertexCount;
+                _vm.Fps = engine.Stats.FPS;
+                _vm.FrameTime = engine.Stats.FrameTimeMs;
+                _vm.CameraPosition = engine.activeCamera?.Position ?? Vector3.Zero;
+                _vm.DrawCalls = (int)engine.Stats.DrawCalls;
+                _vm.VertexCount = (int)engine.Stats.VertexCount;
             }
-
-            RequestRenderFrame();
         }
 
         private InputFrame BuildInputFrame()
@@ -233,6 +326,12 @@ namespace WTEditor.Avalonia.Controls
 
         private void Cleanup()
         {
+            if (_vm != null)
+            {
+                _vm.ClientConfigChanged -= OnClientConfigChanged;
+                _vm.RendererSettingsChanged -= OnRendererSettingsChanged;
+            }
+
             _initialized = false;
             _importedImage = null;
             _surface = null;

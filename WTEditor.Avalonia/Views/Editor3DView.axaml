@@ -32,11 +32,11 @@
         IsHitTestVisible="True"
         Background="Transparent"
         Focusable="False">
-      <TextBlock Text="Speed"/>
-      <Slider Value="{Binding MoveSpeed}" Minimum="1" Maximum="50" />
+      <TextBlock Foreground="White" Text="Speed"/>
+      <Slider Value="{Binding MoveSpeed}" Minimum="1" Maximum="500" />
       
-      <TextBlock Text="Sensitivity"/>
-      <Slider Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="0.005" />
+      <TextBlock Foreground="White" Text="Sensitivity"/>
+      <Slider Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="0.5" />
     </StackPanel>
   </Grid>
 </UserControl>

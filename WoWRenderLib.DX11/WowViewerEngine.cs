@@ -70,6 +70,7 @@ namespace WoWRenderLib.DX11
         private bool _AutoLoadProduct = true; // whether to auto load the product or not. 
 
         public RendererStats Stats { get; } = new();
+        public RendererSettings Settings { get; private set; } = new();
 
         private bool disposed = false;
 
@@ -213,7 +214,10 @@ namespace WoWRenderLib.DX11
                 yaw: 168f, pitch: 13f,
                 aspectRatio: frameBufferSize.X / frameBufferSize.Y
             );
+            activeCamera.FarPlane = Settings.RenderDistance;
             activeCamera.ModifyDirection(0, 0);
+
+            ApplySettings(Settings);
 
             Resize((uint)frameBufferSize.X, (uint)frameBufferSize.Y);
 
@@ -268,7 +272,6 @@ namespace WoWRenderLib.DX11
             if (UseKeyedMutex)
             {
                 _keyedMutex = sharedTexture.QueryInterface<IDXGIKeyedMutex>();
-                _keyedMutex.AcquireSync(0, unchecked((uint)-1));
             }
 
             sceneManager?.Resize(width, height, _sharedRTV);
@@ -503,7 +506,32 @@ namespace WoWRenderLib.DX11
 
         public void SetMovementSpeed(float speed)
         {
-            movementSpeed = speed;
+            movementSpeed = Math.Clamp(speed, 1f, 10_000f);
+        }
+
+        public void SetMouseSensitivity(float sensitivity)
+        {
+            Settings.MouseSensitivity = Math.Clamp(sensitivity, 0.001f, 2f);
+        }
+
+        public void ApplySettings(RendererSettings settings)
+        {
+            Settings = settings.Clone();
+            SetMovementSpeed(Settings.MovementSpeed);
+            SetMouseSensitivity(Settings.MouseSensitivity);
+
+            if (activeCamera != null)
+                activeCamera.FarPlane = Settings.RenderDistance;
+
+            if (sceneManager != null)
+            {
+                sceneManager.TileLoadingDistance = Math.Clamp(Settings.TileLoadingDistance, 0, 32);
+                sceneManager.RenderADT = Settings.RenderADT;
+                sceneManager.RenderWMO = Settings.RenderWMO;
+                sceneManager.RenderM2 = Settings.RenderM2;
+                sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;
+                sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
+            }
         }
 
         public void SetHasFocus(bool focus)
@@ -525,7 +553,7 @@ namespace WoWRenderLib.DX11
                 }
                 else
                 {
-                    var lookSensitivity = 0.1f;
+                    var lookSensitivity = Settings.MouseSensitivity;
                     var xOffset = (currentMousePos.X - LastMousePosition.X) * lookSensitivity;
                     var yOffset = (currentMousePos.Y - LastMousePosition.Y) * lookSensitivity;
                     LastMousePosition = currentMousePos;

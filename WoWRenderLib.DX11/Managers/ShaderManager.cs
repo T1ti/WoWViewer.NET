@@ -22,7 +22,10 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<string, CompiledShader> _compiledShaders = [];
         private readonly Lock shaderLock = new();
 
-        private static readonly Dictionary<string, DateTime> shaderMTimes = [];
+        // File timestamps belong to this manager instance. Keeping them static makes
+        // recreating a renderer (for example after applying settings) try to add the
+        // same shader paths to an already-populated dictionary.
+        private readonly Dictionary<string, DateTime> shaderMTimes = [];
         public bool shadersReady = false;
         private readonly string shaderFolder;
 

@@ -40,6 +40,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderADT { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+        public int TileLoadingDistance { get; set; } = 4;
 
         public Vector3 LightDirection { get; set; } = new Vector3(0.5f, 1f, 0.5f);
 
@@ -416,24 +417,24 @@ namespace WoWRenderLib.DX11.Managers
 
             var usedTiles = new List<MapTile>();
 
-            var viewDistance = 4;
+            var viewDistance = Math.Clamp(TileLoadingDistance, 0, 32);
             for (int xOffset = -viewDistance; xOffset <= viewDistance; xOffset++)
             {
                 for (int yOffset = -viewDistance; yOffset <= viewDistance; yOffset++)
                 {
-                    byte tileX = (byte)(x + xOffset);
-                    byte tileY = (byte)(y + yOffset);
+                    int tileX = x + xOffset;
+                    int tileY = y + yOffset;
 
                     if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63)
                         continue;
 
-                    if (!currentWDT.Value.tiles.Contains((tileX, tileY)))
+                    if (!currentWDT.Value.tiles.Contains(((byte)tileX, (byte)tileY)))
                         continue;
 
                     var mapTile = new MapTile
                     {
-                        tileX = tileX,
-                        tileY = tileY,
+                        tileX = (byte)tileX,
+                        tileY = (byte)tileY,
                         wdtFileDataID = CurrentWDTFileDataID
                     };
 
@@ -452,9 +453,11 @@ namespace WoWRenderLib.DX11.Managers
                 bool inRange = false;
 
                 // same logic as above
-                for (int xOffset = -viewDistance; xOffset <= viewDistance && !inRange; xOffset++)
+                    for (int xOffset = -viewDistance; xOffset <= viewDistance && !inRange; xOffset++)
                     for (int yOffset = -viewDistance; yOffset <= viewDistance && !inRange; yOffset++)
-                        if (tile.tileX == (byte)(x + xOffset) && tile.tileY == (byte)(y + yOffset))
+                        if (x + xOffset >= 0 && x + xOffset <= 63 &&
+                            y + yOffset >= 0 && y + yOffset <= 63 &&
+                            tile.tileX == x + xOffset && tile.tileY == y + yOffset)
                             inRange = true;
 
                 if (!inRange && !tilesToUnload.Contains(tile))

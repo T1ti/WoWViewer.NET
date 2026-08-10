@@ -27,7 +27,7 @@
             <MenuItem Header="Copy"/>
             <MenuItem Header="Paste"/>
           </MenuItem>
-          <MenuItem Header="_Settings"/>
+          <MenuItem Header="_Settings" Click="Settings_OnClick"/>
         </Menu>
 
     <!-- Main content goes here -->

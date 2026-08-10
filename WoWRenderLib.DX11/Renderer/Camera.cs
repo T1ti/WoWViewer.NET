@@ -8,6 +8,7 @@ public class Camera
     public Vector3 Up { get; private set; }
     public Vector3 Right { get; private set; }
     public float AspectRatio { get; set; }
+    public float FarPlane { get; set; } = 20_000f;
 
     public float Yaw { get; set; } = 0f;
     public float Pitch { get; set; } = 0f;
@@ -67,7 +68,8 @@ public class Camera
 
     public Matrix4x4 GetProjectionMatrix()
     {
-        return Matrix4x4.CreatePerspectiveFieldOfViewLeftHanded(DegreesToRadians(Zoom), AspectRatio, 1.0f, 20000);
+        return Matrix4x4.CreatePerspectiveFieldOfViewLeftHanded(
+            DegreesToRadians(Zoom), AspectRatio, 1.0f, Math.Clamp(FarPlane, 100f, 1_000_000f));
     }
 
     public Ray GetRayFromScreen(float screenX, float screenY, int screenWidth, int screenHeight)
