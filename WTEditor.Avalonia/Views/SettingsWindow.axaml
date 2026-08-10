@@ -29,14 +29,16 @@
           <TextBlock TextWrapping="Wrap" Opacity="0.75"
                      Text="Tile loading distance is used for both loading and unloading. Larger values increase memory use and streaming work." />
           <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
-            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Render distance" />
-            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding RenderDistance}" />
+            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Terrain render distance" />
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TerrainRenderDistance}" />
             <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Tile loading distance" />
             <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TileLoadingDistance}" />
-            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Movement speed" />
-            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MovementSpeed}" />
-            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Mouse sensitivity" />
-            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MouseSensitivity}" />
+            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Model render distance" />
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ModelRenderDistance}" />
+            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Movement speed" />
+            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MovementSpeed}" />
+            <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Mouse sensitivity" />
+            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding MouseSensitivity}" />
           </Grid>
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
             <CheckBox Content="Render terrain (ADT)" IsChecked="{Binding RenderAdt}" />

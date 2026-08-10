@@ -2,7 +2,8 @@ namespace WoWRenderLib.DX11;
 
 public sealed class RendererSettings
 {
-    public float RenderDistance { get; set; } = 20_000f;
+    public float TerrainRenderDistance { get; set; } = 20_000f;
+    public float ModelRenderDistance { get; set; } = 20_000f;
     public int TileLoadingDistance { get; set; } = 4;
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
@@ -15,7 +16,8 @@ public sealed class RendererSettings
 
     public RendererSettings Clone() => new()
     {
-        RenderDistance = RenderDistance,
+        TerrainRenderDistance = TerrainRenderDistance,
+        ModelRenderDistance = ModelRenderDistance,
         TileLoadingDistance = TileLoadingDistance,
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,

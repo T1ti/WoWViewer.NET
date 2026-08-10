@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using WTEditor.Avalonia.Services;
 using WoWRenderLib.DX11;
 
 namespace WTEditor.Avalonia.ViewModels
@@ -19,12 +20,23 @@ namespace WTEditor.Avalonia.ViewModels
 
         public MainViewModel()
         {
+            var persisted = EditorSettingsStore.Load();
+            ClientConfig = persisted.ToClientConfig();
+            RendererSettings = persisted.Renderer ?? new RendererSettings();
+            KeyboardLayout = persisted.KeyboardLayout is "QWERTY" or "AZERTY"
+                ? persisted.KeyboardLayout
+                : "Auto";
+
+            ViewportVM.SetRendererSettings(RendererSettings);
+            ViewportVM.SetKeyboardLayout(KeyboardLayout);
+            ViewportVM.SetClientConfig(ClientConfig);
         }
 
         public void ApplyClientConfig(WowClientConfig config)
         {
             ClientConfig = config;
             ViewportVM.SetClientConfig(config);
+            EditorSettingsStore.Save(ClientConfig, RendererSettings, KeyboardLayout);
         }
 
         public void ApplyEditorSettings(WowClientConfig config, RendererSettings rendererSettings, string keyboardLayout)
@@ -35,6 +47,7 @@ namespace WTEditor.Avalonia.ViewModels
             ViewportVM.SetRendererSettings(RendererSettings);
             ViewportVM.SetKeyboardLayout(KeyboardLayout);
             ViewportVM.SetClientConfig(ClientConfig);
+            EditorSettingsStore.Save(ClientConfig, RendererSettings, KeyboardLayout);
         }
     }
 }

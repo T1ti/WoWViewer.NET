@@ -41,6 +41,8 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
         public int TileLoadingDistance { get; set; } = 4;
+        public float TerrainRenderDistance { get; set; } = 20_000f;
+        public float ModelRenderDistance { get; set; } = 20_000f;
 
         public Vector3 LightDirection { get; set; } = new Vector3(0.5f, 1f, 0.5f);
 
@@ -908,7 +910,9 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var sphere = instances[i].GetBoundingSphere();
-                    if (sphere.HasValue && frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    if (sphere.HasValue &&
+                        IsWithinRenderDistance(camera.Position, sphere.Value.Center, sphere.Value.Radius, ModelRenderDistance) &&
+                        frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
                     {
                         visibleWMOs++;
                         _visibleIndices.Add(i);
@@ -1006,7 +1010,9 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var sphere = instances[i].GetBoundingSphere();
-                    if (sphere.HasValue && frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    if (sphere.HasValue &&
+                        IsWithinRenderDistance(camera.Position, sphere.Value.Center, sphere.Value.Radius, ModelRenderDistance) &&
+                        frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
                     {
                         visibleWMOs++;
                         _visibleIndices.Add(i);
@@ -1118,7 +1124,10 @@ namespace WoWRenderLib.DX11.Managers
                     for (uint c = 0; c < 256; c++)
                     {
                         var bounds = adt.Terrain.chunkBounds[c];
-                        if (!frustum.IsBoxVisible(bounds.Min, bounds.Max))
+                        var boundsCenter = (bounds.Min + bounds.Max) * 0.5f;
+                        var boundsRadius = Vector3.Distance(boundsCenter, bounds.Max);
+                        if (!IsWithinRenderDistance(camera.Position, boundsCenter, boundsRadius, TerrainRenderDistance) ||
+                            !frustum.IsBoxVisible(bounds.Min, bounds.Max))
                             continue;
                         else
                             visibleChunks++;
@@ -1224,6 +1233,12 @@ namespace WoWRenderLib.DX11.Managers
             gizmoWasOver = false;
 
             return (drawCalls, verticeCount);
+        }
+
+        private static bool IsWithinRenderDistance(Vector3 cameraPosition, Vector3 center, float radius, float distance)
+        {
+            var maxDistance = Math.Max(0f, distance) + Math.Max(0f, radius);
+            return Vector3.DistanceSquared(cameraPosition, center) <= maxDistance * maxDistance;
         }
 
         private unsafe (uint drawCalls, uint verticeCount) DrawBoundingSphere(BoundingSphere sphere, Vector4 color, Matrix4x4 projection, Matrix4x4 view)

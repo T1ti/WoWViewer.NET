@@ -214,7 +214,7 @@ namespace WoWRenderLib.DX11
                 yaw: 168f, pitch: 13f,
                 aspectRatio: frameBufferSize.X / frameBufferSize.Y
             );
-            activeCamera.FarPlane = Settings.RenderDistance;
+            activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
             activeCamera.ModifyDirection(0, 0);
 
             ApplySettings(Settings);
@@ -521,11 +521,13 @@ namespace WoWRenderLib.DX11
             SetMouseSensitivity(Settings.MouseSensitivity);
 
             if (activeCamera != null)
-                activeCamera.FarPlane = Settings.RenderDistance;
+                activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
 
             if (sceneManager != null)
             {
                 sceneManager.TileLoadingDistance = Math.Clamp(Settings.TileLoadingDistance, 0, 32);
+                sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
+                sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;

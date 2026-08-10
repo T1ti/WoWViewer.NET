@@ -14,7 +14,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _buildConfig;
     [ObservableProperty] private string _cdnConfig;
     [ObservableProperty] private string _keyboardLayout;
-    [ObservableProperty] private float _renderDistance;
+    [ObservableProperty] private float _terrainRenderDistance;
+    [ObservableProperty] private float _modelRenderDistance;
     [ObservableProperty] private int _tileLoadingDistance;
     [ObservableProperty] private float _movementSpeed;
     [ObservableProperty] private float _mouseSensitivity;
@@ -31,7 +32,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _buildConfig = config.buildConfig;
         _cdnConfig = config.cdnConfig;
         _keyboardLayout = keyboardLayout;
-        _renderDistance = rendererSettings.RenderDistance;
+        _terrainRenderDistance = rendererSettings.TerrainRenderDistance;
+        _modelRenderDistance = rendererSettings.ModelRenderDistance;
         _tileLoadingDistance = rendererSettings.TileLoadingDistance;
         _movementSpeed = rendererSettings.MovementSpeed;
         _mouseSensitivity = rendererSettings.MouseSensitivity;
@@ -50,7 +52,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
 
     public RendererSettings ToRendererSettings() => new()
     {
-        RenderDistance = Math.Clamp(RenderDistance, 100f, 1_000_000f),
+        TerrainRenderDistance = Math.Clamp(TerrainRenderDistance, 100f, 1_000_000f),
+        ModelRenderDistance = Math.Clamp(ModelRenderDistance, 100f, 1_000_000f),
         TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
         MovementSpeed = Math.Clamp(MovementSpeed, 1f, 10_000f),
         MouseSensitivity = Math.Clamp(MouseSensitivity, 0.001f, 2f),

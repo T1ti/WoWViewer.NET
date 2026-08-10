@@ -13,18 +13,21 @@
     <controls:Dx11View Focusable="False"/>
 
     <!-- Overlay UI -->
-    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
+    <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
+            Padding="8" Background="#99000000" ZIndex="10"
             IsHitTestVisible="False">
+      <StackPanel Spacing="2">
 
-        <TextBlock Text="{Binding Fps, StringFormat='FPS: {0:F1}'}" />
-        <TextBlock Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
+        <TextBlock Foreground="White" Text="{Binding Fps, StringFormat='FPS: {0:F1}'}" />
+        <TextBlock Foreground="White" Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
 
-        <TextBlock Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
-        <TextBlock Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>
+        <TextBlock Foreground="White" Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
+        <TextBlock Foreground="White" Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>
 
-        <TextBlock Text="{Binding CameraPosition}"/>
+        <TextBlock Foreground="White" Text="{Binding CameraPosition}"/>
 
-    </StackPanel>
+      </StackPanel>
+    </Border>
 
     <StackPanel
         HorizontalAlignment="Right"
