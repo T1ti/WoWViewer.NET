@@ -132,6 +132,12 @@ namespace WTEditor.Avalonia.Controls
 
         private void OnClientConfigChanged(object? sender, WowClientConfig config)
         {
+            if (_engine?.activeCamera != null && _vm != null)
+            {
+                _vm.SetInitialCameraPosition(_engine.activeCamera.Position);
+                _vm.SetInitialCameraDirection(_engine.activeCamera.Front);
+            }
+
             _clientConfig = config;
             Dispatcher.UIThread.Post(RestartEngine, DispatcherPriority.Render);
         }
@@ -170,10 +176,20 @@ namespace WTEditor.Avalonia.Controls
             _wowConfig = config;
             _engine = new WowViewerEngine(_wowConfig, null, false)
             {
-                UseKeyedMutex = true
+                UseKeyedMutex = true,
+                InitialCameraPosition = _vm?.HasInitialCameraPosition == true
+                    ? _vm.InitialCameraPosition
+                    : null,
+                InitialCameraDirection = _vm?.HasInitialCameraDirection == true
+                    ? _vm.InitialCameraDirection
+                    : null
             };
             _engine.Initialize(_dxgi!, _device, _deviceContext,
                 new Vector2D<int>(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)));
+            if (_vm?.HasInitialCameraPosition == true && _engine.activeCamera != null)
+                _engine.activeCamera.Position = _vm.InitialCameraPosition;
+            if (_vm?.HasInitialCameraDirection == true && _engine.activeCamera != null)
+                _engine.activeCamera.SetDirection(_vm.InitialCameraDirection);
             _engine.ApplySettings(_rendererSettings);
         }
 
@@ -292,6 +308,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.Fps = engine.Stats.FPS;
                 _vm.FrameTime = engine.Stats.FrameTimeMs;
                 _vm.CameraPosition = engine.activeCamera?.Position ?? Vector3.Zero;
+                _vm.CameraDirection = engine.activeCamera?.Front ?? Vector3.Zero;
                 _vm.DrawCalls = (int)engine.Stats.DrawCalls;
                 _vm.VertexCount = (int)engine.Stats.VertexCount;
             }

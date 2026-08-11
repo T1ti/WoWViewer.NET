@@ -30,13 +30,20 @@ namespace WTEditor.Avalonia.ViewModels
             ViewportVM.SetRendererSettings(RendererSettings);
             ViewportVM.SetKeyboardLayout(KeyboardLayout);
             ViewportVM.SetClientConfig(ClientConfig);
+            ViewportVM.SetInitialCameraPosition(persisted.HasCameraPosition ? persisted.GetCameraPosition() : null);
+            ViewportVM.SetInitialCameraDirection(persisted.HasCameraDirection ? persisted.GetCameraDirection() : null);
         }
 
         public void ApplyClientConfig(WowClientConfig config)
         {
             ClientConfig = config;
             ViewportVM.SetClientConfig(config);
-            EditorSettingsStore.Save(ClientConfig, RendererSettings, KeyboardLayout);
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                cameraDirection: ViewportVM.CameraDirection);
         }
 
         public void ApplyEditorSettings(WowClientConfig config, RendererSettings rendererSettings, string keyboardLayout)
@@ -47,7 +54,62 @@ namespace WTEditor.Avalonia.ViewModels
             ViewportVM.SetRendererSettings(RendererSettings);
             ViewportVM.SetKeyboardLayout(KeyboardLayout);
             ViewportVM.SetClientConfig(ClientConfig);
-            EditorSettingsStore.Save(ClientConfig, RendererSettings, KeyboardLayout);
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                cameraDirection: ViewportVM.CameraDirection);
+        }
+
+        public void SaveSettings()
+        {
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                cameraDirection: ViewportVM.CameraDirection);
+        }
+
+        public void SaveSettings(int windowX, int windowY, double windowWidth, double windowHeight)
+        {
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                windowX,
+                windowY,
+                windowWidth,
+                windowHeight,
+                cameraDirection: ViewportVM.CameraDirection);
+        }
+
+        public void SaveSettings(string windowState)
+        {
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                windowState: windowState,
+                cameraDirection: ViewportVM.CameraDirection);
+        }
+
+        public void SaveSettings(int windowX, int windowY, double windowWidth, double windowHeight, string windowState)
+        {
+            EditorSettingsStore.Save(
+                ClientConfig,
+                RendererSettings,
+                KeyboardLayout,
+                ViewportVM.CameraPosition,
+                windowX,
+                windowY,
+                windowWidth,
+                windowHeight,
+                windowState,
+                cameraDirection: ViewportVM.CameraDirection);
         }
     }
 }

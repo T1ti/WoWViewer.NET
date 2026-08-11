@@ -42,6 +42,17 @@ public class Camera
         UpdateVectors();
     }
 
+    public void SetDirection(Vector3 direction)
+    {
+        if (direction.LengthSquared() < float.Epsilon)
+            return;
+
+        var normalizedDirection = Vector3.Normalize(direction);
+        Yaw = RadiansToDegrees(MathF.Atan2(normalizedDirection.Y, normalizedDirection.X));
+        Pitch = RadiansToDegrees(MathF.Asin(Math.Clamp(normalizedDirection.Z, -1f, 1f)));
+        UpdateVectors();
+    }
+
     private void UpdateVectors()
     {
         Front = Vector3.Normalize(new Vector3(MathF.Cos(DegreesToRadians(Pitch)) * MathF.Cos(DegreesToRadians(Yaw)), MathF.Cos(DegreesToRadians(Pitch)) * MathF.Sin(DegreesToRadians(Yaw)), MathF.Sin(DegreesToRadians(Pitch))));
@@ -94,6 +105,11 @@ public class Camera
     public static float DegreesToRadians(float degrees)
     {
         return MathF.PI / 180f * degrees;
+    }
+
+    private static float RadiansToDegrees(float radians)
+    {
+        return radians * 180f / MathF.PI;
     }
 
     public void UpdateFrustum()

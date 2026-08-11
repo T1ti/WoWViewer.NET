@@ -71,6 +71,8 @@ namespace WoWRenderLib.DX11
 
         public RendererStats Stats { get; } = new();
         public RendererSettings Settings { get; private set; } = new();
+        public Vector3? InitialCameraPosition { get; set; }
+        public Vector3? InitialCameraDirection { get; set; }
 
         private bool disposed = false;
 
@@ -202,8 +204,8 @@ namespace WoWRenderLib.DX11
             shadersReady = true;
 
             WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
-            var startPos = new Vector3(3875f, -2050f, 616f); // quel'thalas, retail.
-            if (_wowConfig.wowProduct == "wow_classic_era")
+            var startPos = InitialCameraPosition ?? new Vector3(3875f, -2050f, 616f); // quel'thalas, retail.
+            if (!InitialCameraPosition.HasValue && _wowConfig.wowProduct == "wow_classic_era")
             {
                 startPos = new Vector3(0, 0, 200); // alterac, wow classic.
             }
@@ -214,6 +216,8 @@ namespace WoWRenderLib.DX11
                 yaw: 168f, pitch: 13f,
                 aspectRatio: frameBufferSize.X / frameBufferSize.Y
             );
+            if (InitialCameraDirection.HasValue)
+                activeCamera.SetDirection(InitialCameraDirection.Value);
             activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
             activeCamera.ModifyDirection(0, 0);
 

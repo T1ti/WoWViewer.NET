@@ -8,8 +8,21 @@ namespace WoWRenderLib.DX11.Loaders
     public static class BLPLoader
     {
         private static readonly byte[] PlaceholderPixels = new byte[] { 255, 0, 255, 255 };
+        private static readonly byte[] TransparentPixels = new byte[] { 0, 0, 0, 0 };
 
         public static unsafe ComPtr<ID3D11ShaderResourceView> CreatePlaceholderTexture(ComPtr<ID3D11Device> device)
+            => CreateSolidTexture(device, PlaceholderPixels);
+
+        /// <summary>
+        /// Creates the neutral texture used for optional WMO material slots.
+        /// WMO shaders treat absent auxiliary textures as zero contribution; an
+        /// opaque diagnostic (magenta) texture would incorrectly affect alpha
+        /// weighting and layer selection.
+        /// </summary>
+        public static unsafe ComPtr<ID3D11ShaderResourceView> CreateTransparentTexture(ComPtr<ID3D11Device> device)
+            => CreateSolidTexture(device, TransparentPixels);
+
+        private static unsafe ComPtr<ID3D11ShaderResourceView> CreateSolidTexture(ComPtr<ID3D11Device> device, byte[] pixels)
         {
             var texDesc = new Texture2DDesc
             {
@@ -26,7 +39,7 @@ namespace WoWRenderLib.DX11.Loaders
             };
 
             SubresourceData initData = default;
-            fixed (byte* p = PlaceholderPixels)
+            fixed (byte* p = pixels)
             {
                 initData.PSysMem = p;
                 initData.SysMemPitch = (uint)(4 * texDesc.Width);

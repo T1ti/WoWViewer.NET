@@ -27,6 +27,27 @@ namespace WTEditor.Avalonia.ViewModels
         [ObservableProperty]
         private Vector3 _cameraPosition;
         [ObservableProperty]
+        private Vector3 _cameraDirection;
+
+        public bool HasInitialCameraPosition { get; private set; }
+        public Vector3 InitialCameraPosition { get; private set; }
+        public bool HasInitialCameraDirection { get; private set; }
+        public Vector3 InitialCameraDirection { get; private set; }
+
+        public void SetInitialCameraPosition(Vector3? position)
+        {
+            HasInitialCameraPosition = position.HasValue;
+            InitialCameraPosition = position ?? Vector3.Zero;
+            CameraPosition = InitialCameraPosition;
+        }
+
+        public void SetInitialCameraDirection(Vector3? direction)
+        {
+            HasInitialCameraDirection = direction.HasValue;
+            InitialCameraDirection = direction ?? Vector3.Zero;
+            CameraDirection = InitialCameraDirection;
+        }
+        [ObservableProperty]
         private int _drawCalls;
         [ObservableProperty]
         private int _vertexCount;

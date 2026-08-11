@@ -25,6 +25,7 @@
         <TextBlock Foreground="White" Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>
 
         <TextBlock Foreground="White" Text="{Binding CameraPosition}"/>
+        <TextBlock Foreground="White" Text="{Binding CameraDirection, StringFormat='Direction: {0}'}"/>
 
       </StackPanel>
     </Border>
