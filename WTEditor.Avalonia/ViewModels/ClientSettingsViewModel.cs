@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WoWRenderLib.DX11;
 
@@ -19,6 +20,12 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private int _tileLoadingDistance;
     [ObservableProperty] private float _movementSpeed;
     [ObservableProperty] private float _mouseSensitivity;
+    [ObservableProperty] private float _ambientColorR;
+    [ObservableProperty] private float _ambientColorG;
+    [ObservableProperty] private float _ambientColorB;
+    [ObservableProperty] private float _diffuseColorR;
+    [ObservableProperty] private float _diffuseColorG;
+    [ObservableProperty] private float _diffuseColorB;
     [ObservableProperty] private bool _renderAdt;
     [ObservableProperty] private bool _renderWmo;
     [ObservableProperty] private bool _renderM2;
@@ -37,6 +44,12 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _tileLoadingDistance = rendererSettings.TileLoadingDistance;
         _movementSpeed = rendererSettings.MovementSpeed;
         _mouseSensitivity = rendererSettings.MouseSensitivity;
+        _ambientColorR = rendererSettings.AmbientColor.X;
+        _ambientColorG = rendererSettings.AmbientColor.Y;
+        _ambientColorB = rendererSettings.AmbientColor.Z;
+        _diffuseColorR = rendererSettings.DiffuseColor.X;
+        _diffuseColorG = rendererSettings.DiffuseColor.Y;
+        _diffuseColorB = rendererSettings.DiffuseColor.Z;
         _renderAdt = rendererSettings.RenderADT;
         _renderWmo = rendererSettings.RenderWMO;
         _renderM2 = rendererSettings.RenderM2;
@@ -52,6 +65,14 @@ public partial class ClientSettingsViewModel : ViewModelBase
 
     public RendererSettings ToRendererSettings() => new()
     {
+        AmbientColor = new Vector3(
+            Math.Clamp(AmbientColorR, 0f, 4f),
+            Math.Clamp(AmbientColorG, 0f, 4f),
+            Math.Clamp(AmbientColorB, 0f, 4f)),
+        DiffuseColor = new Vector3(
+            Math.Clamp(DiffuseColorR, 0f, 4f),
+            Math.Clamp(DiffuseColorG, 0f, 4f),
+            Math.Clamp(DiffuseColorB, 0f, 4f)),
         TerrainRenderDistance = Math.Clamp(TerrainRenderDistance, 100f, 1_000_000f),
         ModelRenderDistance = Math.Clamp(ModelRenderDistance, 100f, 1_000_000f),
         TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),

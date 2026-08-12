@@ -15,6 +15,10 @@ namespace WoWRenderLib.Structs
         public Vector2 _pad0;
         public Vector3 lightDirection;
         public float alphaRef;
+        public Vector3 ambientColor;
+        public float _pad1;
+        public Vector3 diffuseColor;
+        public float _pad2;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]

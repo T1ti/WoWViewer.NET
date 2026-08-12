@@ -535,6 +535,8 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;
+                sceneManager.AmbientColor = Settings.AmbientColor;
+                sceneManager.DiffuseColor = Settings.DiffuseColor;
                 sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;
                 sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
             }

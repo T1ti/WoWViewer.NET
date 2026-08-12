@@ -23,6 +23,8 @@ public sealed class EditorSettingsSmokeTests
         };
         var renderer = new RendererSettings
         {
+            AmbientColor = new Vector3(0.1f, 0.2f, 0.3f),
+            DiffuseColor = new Vector3(0.9f, 0.8f, 0.7f),
             TerrainRenderDistance = 12_500f,
             ModelRenderDistance = 8_000f,
             TileLoadingDistance = 6,
@@ -65,6 +67,8 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(restored.HasCameraDirection);
         Assert.AreEqual(renderer.TerrainRenderDistance, restored.Renderer.TerrainRenderDistance);
         Assert.AreEqual(renderer.ModelRenderDistance, restored.Renderer.ModelRenderDistance);
+        Assert.AreEqual(renderer.AmbientColor, restored.Renderer.AmbientColor);
+        Assert.AreEqual(renderer.DiffuseColor, restored.Renderer.DiffuseColor);
         Assert.AreEqual(renderer.TileLoadingDistance, restored.Renderer.TileLoadingDistance);
         Assert.IsFalse(restored.Renderer.RenderADT);
         Assert.IsTrue(restored.Renderer.ShowBoundingBoxes);

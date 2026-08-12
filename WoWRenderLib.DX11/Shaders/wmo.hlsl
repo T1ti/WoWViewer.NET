@@ -10,6 +10,10 @@ cbuffer PerObject : register(b0)
 
     float3 lightDirection;
     float alphaRef;
+    float3 ambientColor;
+    float _pad1;
+    float3 diffuseColor;
+    float _pad2;
 }
 
 
@@ -56,6 +60,7 @@ struct VSOut
     float4 vColor1 : COLOR0;
     float4 vColor2 : COLOR1;
     float4 vColor3 : COLOR2;
+    float3 LitColor : TEXCOORD4;
 };
 
 float2 posToTexCoord(float3 vertexPosInView, float3 n)
@@ -106,6 +111,16 @@ VSOut VS_Main(VSIn input)
     float3x3 normalMatrix = transpose(invMV3);
     o.Normal = normalize(mul(normalMatrix, input.normal));
 
+    // Wisp's WMO basic vertex shader folds MOCV and directional lighting into
+    // the vertex colour, which the fragment combiner modulates by 2x. Models
+    // without MOCV use a neutral 0.5 colour rather than black.
+    float3 mocv = input.color1.rgb;
+    if (dot(abs(mocv), float3(1.0f, 1.0f, 1.0f)) < 0.0001f)
+        mocv = float3(0.5f, 0.5f, 0.5f);
+    float nDotL = max(dot(o.Normal, normalize(lightDirection)), 0.0f);
+    float3 lightTerm = saturate(ambientColor + diffuseColor * nDotL);
+    o.LitColor = saturate(mocv * lightTerm * 2.0f);
+
     o.vColor1 = input.color1;
     o.vColor2 = input.color2;
     o.vColor3 = input.color3;
@@ -127,13 +142,15 @@ VSOut VS_Main(VSIn input)
     else if (vertexShader == 1) // MapObjDiffuse_T1_Refl
     {
         o.TexCoord = input.texCoord;
-        o.TexCoord2 = reflect(normalize(float3(1.0f, 1.0f, 1.0f)), input.normal).xy; // TODO: replace float3(1) with cameraPoint
+        o.TexCoord2 = posToTexCoord(viewSpacePos, o.Normal);
         o.TexCoord3 = input.texCoord3;
     }
     else if (vertexShader == 2) // MapObjDiffuse_T1_T2
     {
         o.TexCoord = input.texCoord;
-        o.TexCoord2 = input.texCoord2;
+        // This shader is MapObjDiffuse_T1_Env_T2 in the WMO table: the
+        // second stage is an environment map, not the model's second UV set.
+        o.TexCoord2 = posToTexCoord(viewSpacePos, o.Normal);
         o.TexCoord3 = input.texCoord3;
     }
     else if (vertexShader == 3) // MapObjSpecular_T1
@@ -152,7 +169,7 @@ VSOut VS_Main(VSIn input)
     {
         o.TexCoord = input.texCoord;
         o.TexCoord2 = input.texCoord2;
-        o.TexCoord3 = reflect(normalize(float3(1.0f, 1.0f, 1.0f)), input.normal).xy; // TODO: replace float3(1) with cameraPoint
+        o.TexCoord3 = posToTexCoord(viewSpacePos, o.Normal);
     }
     else if (vertexShader == 6) // MapObjDiffuse_Comp_Terrain
     {
@@ -195,7 +212,7 @@ float4 PS_Main(VSOut i) : SV_Target
     float3 spec = float3(0.0f, 0.0f, 0.0f);
     float3 emissive = float3(0.0f, 0.0f, 0.0f);
     float distFade = 1.0f;
-    float finalOpacity = 0.0f;
+    float finalOpacity = 1.0f;
 
     if (pixelShader == -1)
     {
@@ -204,7 +221,9 @@ float4 PS_Main(VSOut i) : SV_Target
     }
     else if (pixelShader == 0) // MapObjDiffuse
     {
-        matDiffuse = tex.rgb;
+        // Wisp's wmo_basic.frag is texture * vertex colour * 2x. The old
+        // DX11 path ignored MOCV and applied a second fragment normal light.
+        matDiffuse = tex.rgb * i.LitColor;
         finalOpacity = tex.a;
     }
     else if (pixelShader == 1) // MapObjSpecular
@@ -375,6 +394,18 @@ float4 PS_Main(VSOut i) : SV_Target
     float ambientStrength = 0.3f;
     float3 ambient = ambientStrength * float3(1.0f, 1.0f, 1.0f);
     float3 lighting = ambient + diffuse;
+
+    // MapObjDiffuse already contains the Wisp vertex lighting term above.
+    if (pixelShader == 0)
+        lighting = float3(1.0f, 1.0f, 1.0f);
+
+    // need to properly set finalOpacity to 1.0 instead of text alpha when we do opaque (no blending)
+    // or it becomes white with Angle
+    if (alphaRef == -1.0)
+    {
+        finalOpacity = 1.0;
+    }
+
 
     return float4(matDiffuse * lighting + emissive, finalOpacity);
 }

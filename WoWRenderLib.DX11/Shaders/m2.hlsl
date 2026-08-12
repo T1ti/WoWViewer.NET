@@ -13,6 +13,10 @@ cbuffer PerObject : register(b0)
     float alphaRef;
     float blendMode;
     float3 _pad;
+    float3 ambientColor;
+    float _pad1;
+    float3 diffuseColor;
+    float _pad2;
 };
 
 Texture2D texture1 : register(t0);
@@ -44,7 +48,20 @@ struct VSOutput
     float2 TexCoord3 : TEXCOORD2;
     float3 Normal : TEXCOORD3;
     float EdgeFade : TEXCOORD4;
+    float3 LitColor : TEXCOORD5;
 };
+
+// Environment-map coordinates used by the Wisp/WebWowViewer shader family.
+// The view-space position is reflected around the view-space normal and then
+// projected onto the 2D environment map (the old DX11 path left these UVs at
+// (0, 0), which made all environment stages sample one texel).
+float2 posToTexCoord(float3 vertexPosInView, float3 normal)
+{
+    float3 viewVec = normalize(vertexPosInView);
+    float3 reflection = reflect(viewVec, normalize(normal));
+    float3 projected = float3(reflection.xy, reflection.z + 1.0f);
+    return normalize(projected).xy * 0.5f + float2(0.5f, 0.5f);
+}
 
 VSOutput VS_Main(VSInput input)
 {
@@ -62,7 +79,10 @@ VSOutput VS_Main(VSInput input)
     float4 worldPos = mul(instanceMatrix, float4(input.position, 1.0));
     output.position = mul(projection_matrix, mul(view_matrix, worldPos));
 
-    float4x4 modelViewMatrix = mul(view_matrix, model_matrix);
+    // M2 instances carry the model transform in the second vertex stream.
+    // Use it for normals as well as positions; using model_matrix (identity)
+    // here caused lighting to ignore per-instance rotation and scale.
+    float4x4 modelViewMatrix = mul(view_matrix, instanceMatrix);
     float3x3 mv3 = (float3x3) modelViewMatrix;
 
     float3x3 invMV3;
@@ -84,10 +104,16 @@ VSOutput VS_Main(VSInput input)
     float3x3 normalMatrix = transpose(invMV3);
     output.Normal = normalize(mul(normalMatrix, input.normal));
 
+    // Wisp's Diffuse_* vertex shaders carry a clamped lighting term into the
+    // combiner stage. Keep the same neutral ambient/diffuse balance here so
+    // textures are not multiplied by the old unbounded (1 + N.L) factor.
+    float nDotL = max(dot(output.Normal, normalize(lightDirection)), 0.0f);
+    output.LitColor = saturate(ambientColor + diffuseColor * nDotL);
+
     float4x4 textureMatrix1 = hasTexMatrix1 != 0 ? texMatrix1 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
     float4x4 textureMatrix2 = hasTexMatrix2 != 0 ? texMatrix2 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 
-    float2 envCoord = float2(0.0, 0.0);
+    float2 envCoord = posToTexCoord(mul(view_matrix, worldPos).xyz, output.Normal);
     output.EdgeFade = 1.0;
 
     output.TexCoord1 = input.texCoord1;
@@ -193,20 +219,6 @@ VSOutput VS_Main(VSInput input)
     }
 
     return output;
-}
-
-float3 calc_lighting(float3 color, float3 normal)
-{
-    float3 u_ambient_color = float3(1.0, 1.0, 1.0);
-    float3 u_diffuse_color = float3(1.0, 1.0, 1.0);
-
-    float3 n = normalize(normal);
-    float n_dot_l = max(dot(n, normalize(-lightDirection)), 0.0);
-
-    float3 ambient = u_ambient_color * color;
-    float3 diffuse = u_diffuse_color * color * n_dot_l;
-
-    return ambient + diffuse;
 }
 
 float4 PS_Main(VSOutput input) : SV_TARGET
@@ -506,7 +518,7 @@ float4 PS_Main(VSOutput input) : SV_TARGET
     if (do_discard)
         discard;
 
-    float3 lit_color = calc_lighting(mat_diffuse, input.Normal);
+    float3 lit_color = mat_diffuse * input.LitColor;
     // lit_color += specular; // uncomment when ready
 
     return float4(lit_color, final_opacity);

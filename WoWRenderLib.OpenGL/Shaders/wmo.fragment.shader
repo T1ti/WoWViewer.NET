@@ -239,5 +239,12 @@ void main()
     vec3 ambient = ambientStrength * vec3(1.0);
     vec3 lighting = ambient + diffuse;
 
+    // need to properly set finalOpacity to 1.0 instead of text alpha when we do opaque (no blending)
+    // or it becomes white with Angle
+    if (alphaRef == -1.0)
+    {
+        finalOpacity = 1.0;
+    }
+
     outputColor = vec4(matDiffuse * lighting + emissive, finalOpacity);
 }

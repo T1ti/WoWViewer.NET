@@ -44,7 +44,11 @@ namespace WoWRenderLib.DX11.Managers
         public float TerrainRenderDistance { get; set; } = 20_000f;
         public float ModelRenderDistance { get; set; } = 20_000f;
 
-        public Vector3 LightDirection { get; set; } = new Vector3(0.5f, 1f, 0.5f);
+        // World-space light from north-west at a 45° elevation. WoW's world
+        // axes map north/west to the negative X/Y directions in this renderer.
+        public Vector3 LightDirection { get; set; } = new(-0.5f, -0.5f, 0.70710678f);
+        public Vector3 AmbientColor { get; set; } = new(104f / 255f, 130f / 255f, 154f / 255f);
+        public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
 
         private const int MaxInstancesPerBatch = 1024;
 
@@ -215,8 +219,12 @@ namespace WoWRenderLib.DX11.Managers
                 var wmoRastDesc = new RasterizerDesc
                 {
                     FillMode = FillMode.Solid,
-                    CullMode = CullMode.Front,
-                    FrontCounterClockwise = false,
+                    // Wisp follows the client convention: CCW triangles are
+                    // front-facing and back faces are culled. The previous
+                    // Front/clockwise state inverted this and hid valid M2/WMO
+                    // surfaces.
+                    CullMode = CullMode.Back,
+                    FrontCounterClockwise = true,
                     DepthClipEnable = true
                 };
                 SilkMarshal.ThrowHResult(device.CreateRasterizerState(in wmoRastDesc, ref wmoRasterizerState));
@@ -894,6 +902,8 @@ namespace WoWRenderLib.DX11.Managers
                 pixelShader = 0,
                 _pad0 = Vector2.Zero,
                 lightDirection = LightDirection,
+                ambientColor = AmbientColor,
+                diffuseColor = DiffuseColor,
                 alphaRef = 1.0f,
             };
 
@@ -959,6 +969,9 @@ namespace WoWRenderLib.DX11.Managers
 
                         wmoConstantBuffer.vertexShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].VertexShader;
                         wmoConstantBuffer.pixelShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].PixelShader;
+                        // Match the OpenGL WMO path: -1 means opaque/no alpha
+                        // test, while blend mode 1 supplies the alpha-test ref.
+                        wmoConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType);
 
                         deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
 
@@ -996,6 +1009,8 @@ namespace WoWRenderLib.DX11.Managers
                 hasTexMatrix1 = 0,
                 hasTexMatrix2 = 0,
                 lightDirection = LightDirection,
+                ambientColor = AmbientColor,
+                diffuseColor = DiffuseColor,
                 alphaRef = 1.0f,
                 blendMode = 0,
                 _pad = Vector3.Zero
@@ -1053,9 +1068,6 @@ namespace WoWRenderLib.DX11.Managers
                     {
                         var batch = m2.submeshes[j];
 
-                        if (batch.blendType != 0 && batch.blendType != 1)
-                            continue;
-
                         m2ConstantBuffer.blendMode = batch.blendType;
                         m2ConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType);
                         m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
@@ -1090,6 +1102,8 @@ namespace WoWRenderLib.DX11.Managers
             {
                 layerCount = 0,
                 lightDirection = LightDirection,
+                ambientColor = AmbientColor,
+                diffuseColor = DiffuseColor,
                 heightScales0 = Vector4.One,
                 heightScales1 = Vector4.One,
                 heightOffsets0 = Vector4.Zero,

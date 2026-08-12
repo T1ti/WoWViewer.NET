@@ -45,6 +45,10 @@ namespace WoWRenderLib.Structs
     {
         public int layerCount;
         public Vector3 lightDirection;
+        public Vector3 ambientColor;
+        public float _pad0;
+        public Vector3 diffuseColor;
+        public float _pad1;
         public Vector4 heightScales0;
         public Vector4 heightScales1;
         public Vector4 heightOffsets0;

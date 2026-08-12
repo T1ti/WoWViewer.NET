@@ -21,6 +21,10 @@ namespace WoWRenderLib.Structs
         public float alphaRef;
         public float blendMode;
         public Vector3 _pad;
+        public Vector3 ambientColor;
+        public float _pad1;
+        public Vector3 diffuseColor;
+        public float _pad2;
     }
 
     public struct ParsedM2

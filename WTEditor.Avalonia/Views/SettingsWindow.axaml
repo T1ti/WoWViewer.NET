@@ -28,7 +28,7 @@
         <StackPanel Margin="8" Spacing="10">
           <TextBlock TextWrapping="Wrap" Opacity="0.75"
                      Text="Tile loading distance is used for both loading and unloading. Larger values increase memory use and streaming work." />
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
             <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Terrain render distance" />
             <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TerrainRenderDistance}" />
             <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Tile loading distance" />
@@ -39,6 +39,18 @@
             <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MovementSpeed}" />
             <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Mouse sensitivity" />
             <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding MouseSensitivity}" />
+            <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="Ambient color (R,G,B)" />
+            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+              <TextBox Width="60" Text="{Binding AmbientColorR}" PlaceholderText="R" />
+              <TextBox Width="60" Text="{Binding AmbientColorG}" PlaceholderText="G" />
+              <TextBox Width="60" Text="{Binding AmbientColorB}" PlaceholderText="B" />
+            </StackPanel>
+            <TextBlock Grid.Row="6" VerticalAlignment="Center" Text="Diffuse color (R,G,B)" />
+            <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+              <TextBox Width="60" Text="{Binding DiffuseColorR}" PlaceholderText="R" />
+              <TextBox Width="60" Text="{Binding DiffuseColorG}" PlaceholderText="G" />
+              <TextBox Width="60" Text="{Binding DiffuseColorB}" PlaceholderText="B" />
+            </StackPanel>
           </Grid>
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
             <CheckBox Content="Render terrain (ADT)" IsChecked="{Binding RenderAdt}" />

@@ -4,13 +4,17 @@ cbuffer PerObject : register(b0)
     float4x4 projection_matrix;
     float4x4 rotation_matrix;
     float3 firstPos;
-    float _pad0;
+    float _adtObjectPad;
 }
 
 cbuffer LayerData : register(b1)
 {
     int layerCount;
     float3 lightDirection;
+    float3 ambientColor;
+    float _adtLayerPad0;
+    float3 diffuseColor;
+    float _adtLayerPad1;
     float4 heightScales[2]; // [0].xyzw = indices 0-3, [1].xyzw = indices 4-7
     float4 heightOffsets[2];
     float4 layerScales[2];
@@ -127,9 +131,7 @@ float4 PS_Main(VSOut i) : SV_Target
     }
 
     float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
-    float ambientStrength = 0.3f;
-    float3 ambient = ambientStrength * float3(1.0f, 1.0f, 1.0f);
-    float3 lighting = ambient + diffuse;
+    float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
 
     return float4(final_color * in_vertexColor.rgb * 2.0f * lighting, 1.0f);
 }
