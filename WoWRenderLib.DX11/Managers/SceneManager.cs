@@ -976,9 +976,9 @@ namespace WoWRenderLib.DX11.Managers
 
                     deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
 
-                    for (int j = 0; j < wmo.wmoRenderBatch.Length; j++)
+                    for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
                     {
-                        var batch = wmo.wmoRenderBatch[j];
+                        var batch = wmo.wmoRenderBatches[j];
                         if (!enabledGroups[batch.groupID])
                             continue;
 

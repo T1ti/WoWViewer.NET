@@ -18,7 +18,7 @@ namespace WoWRenderLib.DX11.Structs
         public uint rootWMOFileDataID;
         public WorldModelGroupBatches[] groupBatches;
         public PreppedWMOMaterial[] preppedMats;
-        public WMORenderBatch[] wmoRenderBatch;
+        public WMORenderBatch[] wmoRenderBatches;
         public WMODoodad[] doodads;
         public string[] doodadSets;
         public BoundingBox boundingBox;

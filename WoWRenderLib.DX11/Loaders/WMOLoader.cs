@@ -118,7 +118,7 @@ namespace WoWRenderLib.DX11.Loaders
             wmoBatch.doodads = preppedWMO.Doodads;
             wmoBatch.preppedMats = preppedWMO.Materials;
             //wmoBatch.mats = mats;
-            wmoBatch.wmoRenderBatch = [.. renderBatches];
+            wmoBatch.wmoRenderBatches = [.. renderBatches];
             wmoBatch.doodads = preppedWMO.Doodads;
             return wmoBatch;
         }
