@@ -1,62 +1,56 @@
-using System;
 using Avalonia;
 using Avalonia.Controls;
-using WTEditor.Avalonia.Services;
+using WTEditor.Application.Models;
 using WTEditor.Avalonia.ViewModels;
 
-namespace WTEditor.Avalonia.Views
+namespace WTEditor.Avalonia.Views;
+
+public partial class MainWindow : Window
 {
-    public partial class MainWindow : Window
+    public MainWindow()
     {
-        public MainWindow()
-        {
-            InitializeComponent();
+        InitializeComponent();
+    }
 
-            var persisted = EditorSettingsStore.Load();
-            if (persisted.HasWindowBounds && persisted.WindowWidth > 0 && persisted.WindowHeight > 0)
+    public MainWindow(MainWindowViewModel viewModel)
+        : this()
+    {
+        DataContext = viewModel;
+        ApplySavedPlacement(viewModel.Session.Current.Window);
+        Closing += OnClosing;
+    }
+
+    private void ApplySavedPlacement(WindowPlacement placement)
+    {
+        if (placement.HasBounds && placement.Width > 0 && placement.Height > 0)
+        {
+            Width = placement.Width;
+            Height = placement.Height;
+            Position = new PixelPoint(placement.X, placement.Y);
+        }
+
+        if (Enum.TryParse<WindowState>(placement.State, true, out var savedWindowState))
+            WindowState = savedWindowState;
+    }
+
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        var previous = viewModel.Session.Current.Window;
+        var placement = WindowState == WindowState.Normal && Width > 0 && Height > 0
+            ? new WindowPlacement
             {
-                Width = persisted.WindowWidth;
-                Height = persisted.WindowHeight;
-                Position = new PixelPoint(persisted.WindowX, persisted.WindowY);
+                HasBounds = true,
+                State = WindowState.ToString(),
+                X = Position.X,
+                Y = Position.Y,
+                Width = Width,
+                Height = Height
             }
+            : previous with { State = WindowState.ToString() };
 
-            if (Enum.TryParse<WindowState>(persisted.WindowState, true, out var savedWindowState))
-                WindowState = savedWindowState;
-
-            Closing += OnClosing;
-        }
-
-        private void OnClosing(object? sender, WindowClosingEventArgs e)
-        {
-            if (DataContext is MainWindowViewModel windowViewModel &&
-                windowViewModel.CurrentView is MainViewModel mainViewModel)
-            {
-                if (WindowState == WindowState.Normal && Width > 0 && Height > 0)
-                    mainViewModel.SaveSettings(Position.X, Position.Y, Width, Height, WindowState.ToString());
-                else
-                    mainViewModel.SaveSettings(WindowState.ToString());
-            }
-        }
-
-        private async void Settings_OnClick(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
-        {
-            if (DataContext is not MainWindowViewModel windowViewModel ||
-                windowViewModel.CurrentView is not MainViewModel mainViewModel)
-                return;
-
-            var settings = new SettingsWindow
-            {
-                    DataContext = new ClientSettingsViewModel(
-                    mainViewModel.ClientConfig,
-                    mainViewModel.ViewportVM.RendererSettings,
-                    mainViewModel.KeyboardLayout)
-            };
-
-            if (await settings.ShowDialog<bool>(this) && settings.DataContext is ClientSettingsViewModel settingsViewModel)
-                mainViewModel.ApplyEditorSettings(
-                    settingsViewModel.ToConfig(),
-                    settingsViewModel.ToRendererSettings(),
-                    settingsViewModel.KeyboardLayout);
-        }
+        viewModel.Session.UpdateWindow(placement, save: true);
     }
 }

@@ -169,11 +169,12 @@ namespace WoWRenderLib.DX11.Cache
             return fallback;
         }
 
-        public static void Upload(Stopwatch queueTimer)
+        public static int Upload(Stopwatch queueTimer)
         {
             if (!cachedDevice.HasValue)
-                return;
+                return 0;
 
+            var uploaded = 0;
             while (queueTimer.ElapsedMilliseconds < 5)
             {
                 if (!uploadQueue.TryDequeue(out var decoded))
@@ -261,6 +262,7 @@ namespace WoWRenderLib.DX11.Cache
                             srv = BLPLoader.CreatePlaceholderTexture(device);
 
                         Cache[decoded.FileDataId] = srv;
+                        uploaded++;
 
                         tex.Dispose();
                     }
@@ -273,14 +275,37 @@ namespace WoWRenderLib.DX11.Cache
                 inFlight.Remove(decoded.FileDataId);
             }
 
+            return uploaded;
         }
 
         public static void StopWorker()
         {
-            workerCancellation?.Cancel();
-            workerCancellation?.Dispose();
+            StopWorkerAsync().GetAwaiter().GetResult();
+        }
+
+        public static async Task StopWorkerAsync()
+        {
+            var cancellation = workerCancellation;
+            var task = workerTask;
             workerCancellation = null;
             workerTask = null;
+
+            if (cancellation == null)
+                return;
+
+            cancellation.Cancel();
+            try
+            {
+                if (task != null)
+                    await task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
         }
 
         public static int GetQueueCount()
@@ -338,6 +363,10 @@ namespace WoWRenderLib.DX11.Cache
 
             Cache.Clear();
             Users.Clear();
+            inFlight.Clear();
+            while (decodeQueue.TryDequeue(out _)) { }
+            while (uploadQueue.TryDequeue(out _)) { }
+            cachedDevice = null;
         }
     }
 }

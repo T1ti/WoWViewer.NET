@@ -8,9 +8,35 @@
              x:Class="WTEditor.Avalonia.Views.Editor3DView"
              x:DataType="vm:Editor3DViewModel"
              Focusable="True">
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.viewport-tool">
+      <Setter Property="Foreground" Value="#D7E2EC"/>
+      <Setter Property="Background" Value="#26313B"/>
+      <Setter Property="BorderBrush" Value="#4B5B69"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="9,6"/>
+    </Style>
+    <Style Selector="ToggleButton.viewport-tool:checked">
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="Background" Value="#24669A"/>
+      <Setter Property="BorderBrush" Value="#6CB6FF"/>
+    </Style>
+  </UserControl.Styles>
   <Grid Background="Transparent">
     <!-- Render surface -->
     <controls:Dx11View Focusable="False"/>
+
+    <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+            Padding="14,10" CornerRadius="4" Background="#D0181B20" ZIndex="20"
+            IsVisible="{Binding IsRendererStatusVisible}"
+            IsHitTestVisible="False">
+      <StackPanel Spacing="4" MaxWidth="520">
+        <TextBlock Foreground="White" FontWeight="SemiBold"
+                   Text="{Binding RendererStatusMessage}" TextAlignment="Center"/>
+        <TextBlock Foreground="#FFFF8A80" Text="{Binding RendererError}"
+                   TextWrapping="Wrap" TextAlignment="Center"/>
+      </StackPanel>
+    </Border>
 
     <!-- Overlay UI -->
     <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
@@ -42,5 +68,44 @@
       <TextBlock Foreground="White" Text="Sensitivity"/>
       <Slider Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="0.5" />
     </StackPanel>
+
+    <!-- These controls belong to this world viewport instance. Other viewport types
+         can provide their own visibility tools without inheriting these switches. -->
+    <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
+            Padding="5" CornerRadius="7" Background="#E61A2027"
+            BorderBrush="#526170" BorderThickness="1" ZIndex="30">
+      <StackPanel Orientation="Horizontal" Spacing="5">
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderTerrain}"
+                      ToolTip.Tip="Show or hide terrain in this world viewport">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M2,20 L9,8 L13,14 L16,10 L22,20 Z M8,20 L13,12 L18,20 Z"/>
+            <TextBlock Text="Terrain"/>
+          </StackPanel>
+        </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderWorldModels}"
+                      ToolTip.Tip="Show or hide WMO buildings in this world viewport">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M3,21 L3,7 L12,2 L21,7 L21,21 Z M8,21 L8,12 L11,12 L11,21 M15,21 L15,12 L18,12 L18,21"/>
+            <TextBlock Text="WMO"/>
+          </StackPanel>
+        </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderDoodads}"
+                      ToolTip.Tip="Show or hide M2 doodads in this world viewport">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M12,2 L21,7 L21,17 L12,22 L3,17 L3,7 Z M3,7 L12,12 L21,7 M12,12 L12,22"/>
+            <TextBlock Text="M2"/>
+          </StackPanel>
+        </ToggleButton>
+        <Border Width="1" Margin="3,3" Background="#526170"/>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsMetricsPanelVisible}"
+                      ToolTip.Tip="Show the profiler for this world viewport">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M3,20 L3,13 L7,13 L7,20 M10,20 L10,8 L14,8 L14,20 M17,20 L17,3 L21,3 L21,20"/>
+            <TextBlock Text="Profiler"/>
+          </StackPanel>
+        </ToggleButton>
+      </StackPanel>
+    </Border>
+
   </Grid>
 </UserControl>

@@ -117,4 +117,5 @@ namespace WoWRenderLib.DX11.Loaders
             }
         }
     }
+
 }

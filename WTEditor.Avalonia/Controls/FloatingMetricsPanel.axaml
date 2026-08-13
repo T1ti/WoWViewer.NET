@@ -1,0 +1,165 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             x:Class="WTEditor.Avalonia.Controls.FloatingMetricsPanel"
+             x:DataType="vm:Editor3DViewModel"
+             MinWidth="360" MinHeight="320">
+  <UserControl.Resources>
+    <controls:FrameStepBrushConverter x:Key="FrameStepBrushConverter"/>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="#F2F5F8"/>
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="#F2F5F8"/>
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="Foreground" Value="#F2F5F8"/>
+      <Setter Property="Background" Value="#354250"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="#F21A2027" BorderBrush="#607284" BorderThickness="1"
+          CornerRadius="7" BoxShadow="0 8 24 0 #99000000" ClipToBounds="True">
+    <Grid RowDefinitions="38,*">
+      <Border Grid.Row="0" Background="#293440" Padding="10,0">
+        <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Width="16" Height="16" Foreground="#6CB6FF"
+                      Data="M2,18 L2,11 L6,11 L6,15 L10,15 L10,7 L14,7 L14,13 L18,13 L18,4 L22,4 L22,18 Z"/>
+            <TextBlock Text="Frame profiler" FontWeight="SemiBold"/>
+          </StackPanel>
+          <CheckBox Grid.Column="1" Content="Pause" Margin="8,0"
+                    IsChecked="{Binding IsProfilingPaused}"/>
+          <Button Grid.Column="2" Width="28" Height="26" Padding="0"
+                  Command="{Binding CloseMetricsPanelCommand}" ToolTip.Tip="Close profiler">
+            <PathIcon Width="12" Height="12" Data="M4,4 L20,20 M20,4 L4,20"/>
+          </Button>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12" Spacing="12">
+          <Grid ColumnDefinitions="*,*,*">
+            <Border Padding="8" Background="#25303A" CornerRadius="4" Margin="0,0,4,0">
+              <StackPanel>
+                <TextBlock Text="CPU work" Foreground="#AFC7DC" FontSize="11"/>
+                <TextBlock FontSize="18" FontWeight="SemiBold"
+                           Text="{Binding ProfileCpuMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Padding="8" Background="#302735" CornerRadius="4" Margin="2,0">
+              <StackPanel>
+                <TextBlock Text="GPU execution" Foreground="#FF99C7" FontSize="11"/>
+                <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="#FF5DA2"
+                           Text="{Binding ProfileGpuMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Padding="8" Background="#25303A" CornerRadius="4" Margin="4,0,0,0">
+              <StackPanel>
+                <TextBlock Text="Engine frame" Foreground="#AFC7DC" FontSize="11"/>
+                <TextBlock FontSize="18" FontWeight="SemiBold"
+                           Text="{Binding ProfileFrameMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <Border Padding="9" CornerRadius="4" Background="#352B3A">
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding ProfileBottleneck}" Foreground="#FFD166" FontWeight="SemiBold"/>
+              <TextBlock Text="Compares recent CPU command-building time with the time the GPU spends executing the frame."
+                         Foreground="#C5D0DA" TextWrapping="Wrap" FontSize="11"/>
+            </StackPanel>
+          </Border>
+
+          <StackPanel Spacing="5">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="CPU and GPU frame history" FontWeight="SemiBold"/>
+              <Button Grid.Column="1" Content="Clear" Padding="8,3"
+                      Command="{Binding ClearPerformanceHistoryCommand}"/>
+            </Grid>
+            <controls:FrameTimelineGraph Height="210" Samples="{Binding PerformanceHistory}"/>
+            <TextBlock Text="Each sample has a stacked CPU bar (left) and GPU bar (right). The graph scales to recent activity; horizontal lines mark visible frame budgets."
+                       Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <StackPanel Spacing="5">
+            <TextBlock Text="Latest measured frame" FontWeight="SemiBold"/>
+            <ItemsControl ItemsSource="{Binding CurrentFrameSteps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="12,*,78" Margin="0,2">
+                    <Border Width="8" Height="8" CornerRadius="2"
+                            Background="{Binding Name, Converter={StaticResource FrameStepBrushConverter}}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Column="2" HorizontalAlignment="Right" Foreground="#D7E1E9"
+                               Text="{Binding DurationMilliseconds, StringFormat='{}{0:F3} ms'}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="Upload submission is render-thread time spent creating resources. GPU upload timing can be zero on idle frames and D3D11 initial-data transfers are not always independently observable. World drawing is terrain, WMO and M2 execution on the GPU."
+                       Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <Border Padding="9" CornerRadius="4" Background="#242D35">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+              <TextBlock Text="Pending streamed resources"/>
+              <TextBlock Grid.Column="1" Text="{Binding ProfilePendingAssets}"/>
+              <TextBlock Grid.Row="1" Text="Resources uploaded this frame"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileUploadedResources}"/>
+              <TextBlock Grid.Row="2" Text="Draw calls submitted"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DrawCalls}"/>
+              <TextBlock Grid.Row="3" Text="Indices / vertices submitted"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding VertexCount}"/>
+            </Grid>
+          </Border>
+
+          <StackPanel Spacing="5">
+            <TextBlock Text="Visibility culling" FontWeight="SemiBold"/>
+            <Border Padding="9" CornerRadius="4" Background="#242D35">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Text="Terrain chunks visible / tested"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                  <TextBlock Text="{Binding ProfileCulling.VisibleTerrainChunks}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateTerrainChunks}"/>
+                </StackPanel>
+                <TextBlock Grid.Row="1" Text="WMO instances visible / tested"/>
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                  <TextBlock Text="{Binding ProfileCulling.VisibleWorldModels}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateWorldModels}"/>
+                </StackPanel>
+                <TextBlock Grid.Row="2" Text="M2 instances visible / tested"/>
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                  <TextBlock Text="{Binding ProfileCulling.VisibleDoodads}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateDoodads}"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </StackPanel>
+
+          <StackPanel Spacing="5">
+            <TextBlock Text="Application process" FontWeight="SemiBold"/>
+            <Border Padding="9" CornerRadius="4" Background="#242D35">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Text="CPU utilization"/>
+                <TextBlock Grid.Column="1" Text="{Binding ProfileProcessCpuPercent, StringFormat='{}{0:F1}%'}"/>
+                <TextBlock Grid.Row="1" Text="Managed memory"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileManagedMemoryMegabytes, StringFormat='{}{0:F1} MB'}"/>
+                <TextBlock Grid.Row="2" Text="Working set"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ProfileWorkingSetMegabytes, StringFormat='{}{0:F1} MB'}"/>
+                <TextBlock Grid.Row="3" Text="Managed allocation rate"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ProfileAllocationMegabytesPerSecond, StringFormat='{}{0:F2} MB/s'}"/>
+                <TextBlock Grid.Row="4" Text="Gen 0 collections"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ProfileGen0Collections}"/>
+              </Grid>
+            </Border>
+          </StackPanel>
+
+          <TextBlock Margin="0,0,8,6"
+                     Text="GPU timings arrive several frames late because queries are read without blocking the rendering thread."
+                     Foreground="#91A4B5" FontSize="11" TextWrapping="Wrap"/>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

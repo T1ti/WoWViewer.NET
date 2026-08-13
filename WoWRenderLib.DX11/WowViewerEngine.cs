@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Managers;
+using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.Managers;
 using WoWRenderLib.Providers;
 
@@ -53,11 +54,49 @@ namespace WoWRenderLib.DX11
 
         public uint DrawCalls { get; internal set; }
         public uint VertexCount { get; internal set; }
+        public double UpdateTimeMs { get; internal set; }
+        public double MutexWaitTimeMs { get; internal set; }
+        public double TileUpdateTimeMs { get; internal set; }
+        public double AssetUploadTimeMs { get; internal set; }
+        public double SceneRenderTimeMs { get; internal set; }
+        public double CullingTimeMs { get; internal set; }
+        public double RenderOverheadTimeMs { get; internal set; }
+        public double CpuFrameTimeMs => UpdateTimeMs + TileUpdateTimeMs +
+            AssetUploadTimeMs + SceneRenderTimeMs + RenderOverheadTimeMs;
+        public double? GpuFrameTimeMs { get; internal set; }
+        public double? GpuUploadTimeMs { get; internal set; }
+        public double? GpuDrawTimeMs { get; internal set; }
+        public int PendingAssetOperations { get; internal set; }
+        public int UploadedResources { get; internal set; }
+        public int VisibleTerrainChunks { get; internal set; }
+        public int CandidateTerrainChunks { get; internal set; }
+        public int VisibleWorldModels { get; internal set; }
+        public int CandidateWorldModels { get; internal set; }
+        public int VisibleDoodads { get; internal set; }
+        public int CandidateDoodads { get; internal set; }
     }
 
-    public class WowViewerEngine : IDisposable
+    public enum WowViewerEngineState
     {
+        Created,
+        Initializing,
+        LoadingContent,
+        Ready,
+        Failed,
+        Disposed
+    }
+
+    public sealed record WowViewerEngineStatus(WowViewerEngineState State, string Message, Exception? Error = null);
+
+    public class WowViewerEngine : IDisposable, IAsyncDisposable
+    {
+        private static readonly SemaphoreSlim ContentInitializationGate = new(1, 1);
+        private static long _activeGeneration;
+
         private WowClientConfig _wowConfig;
+        private readonly long _generation;
+        private readonly CancellationTokenSource _lifetimeCancellation = new();
+        private Task? _contentInitializationTask;
 
         private Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
 
@@ -73,6 +112,9 @@ namespace WoWRenderLib.DX11
         public RendererSettings Settings { get; private set; } = new();
         public Vector3? InitialCameraPosition { get; set; }
         public Vector3? InitialCameraDirection { get; set; }
+        public WowViewerEngineStatus Status { get; private set; } =
+            new(WowViewerEngineState.Created, "Renderer created.");
+        public event EventHandler<WowViewerEngineStatus>? StatusChanged;
 
         private bool disposed = false;
 
@@ -86,6 +128,7 @@ namespace WoWRenderLib.DX11
         private ComPtr<ID3D11Texture2D> sharedTexture = default;
         private ComPtr<ID3D11RenderTargetView> _sharedRTV = default;
         private ComPtr<IDXGIKeyedMutex> _keyedMutex = default;
+        private GpuFrameTimer? _gpuFrameTimer;
         public ComPtr<ID3D11ShaderResourceView> SharedSRV { get; private set; }
         public uint SharedTextureWidth => (uint)viewportWidth;
         public uint SharedTextureHeight => (uint)viewportHeight;
@@ -107,7 +150,7 @@ namespace WoWRenderLib.DX11
         private Vector2? MouseDownPosition;
         private bool wasMouseDown = false;
 
-        public Camera activeCamera { get; private set; }
+        public Camera activeCamera { get; private set; } = null!;
 
         private int viewportWidth = 1;
         private int viewportHeight = 1;
@@ -122,9 +165,9 @@ namespace WoWRenderLib.DX11
         private bool wasSpacePressed = false;
         private bool showMapSelection = false;
 
-        private ShaderManager shaderManager;
-        private SceneManager sceneManager;
-        private DBCManager dbcManager;
+        private ShaderManager shaderManager = null!;
+        private SceneManager sceneManager = null!;
+        private DBCManager? dbcManager;
 
         // private ImGuiController imGuiController = null;
 
@@ -140,6 +183,7 @@ namespace WoWRenderLib.DX11
         private IntPtr _cachedSharedHandle = IntPtr.Zero;
         public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend? imguiBackend, bool renderImGUI)
         {
+            _generation = Interlocked.Increment(ref _activeGeneration);
             _wowConfig = wowConfig;
 
             if (string.IsNullOrEmpty(_wowConfig.wowDir))
@@ -177,9 +221,14 @@ namespace WoWRenderLib.DX11
             if (IsInitializing) return;
 
             IsInitializing = true;
+            SetStatus(WowViewerEngineState.Initializing, "Initializing Direct3D renderer...");
+
+            try
+            {
 
             this.device = device;
             this.deviceContext = deviceContext;
+            _gpuFrameTimer = new GpuFrameTimer(device, deviceContext);
 
             // TODO verify if this should be this project or UI app after split
             var exeLocation = Path.GetDirectoryName(AppContext.BaseDirectory);
@@ -228,7 +277,14 @@ namespace WoWRenderLib.DX11
             LoadCurrentProduct();
             IsInitialized = true;
             IsInitializing = false;
-
+            }
+            catch (Exception exception)
+            {
+                IsInitializing = false;
+                IsInitialized = false;
+                SetStatus(WowViewerEngineState.Failed, "Renderer initialization failed.", exception);
+                throw;
+            }
         }
 
         public unsafe void Resize(uint width, uint height)
@@ -309,6 +365,7 @@ namespace WoWRenderLib.DX11
         }
         public void Update(double deltaTime, InputFrame input)
         {
+            var started = Stopwatch.GetTimestamp();
             HandleMouseLook(input, false, (float)deltaTime);
             HandleClickSelection(input, false);
             HandleKeyboardMovement(input, (float)deltaTime);
@@ -334,39 +391,79 @@ namespace WoWRenderLib.DX11
 
             // TODO : we may need a special update function for controls/camera triggered by events if refresh rate isn't enough
             // eg a key could be pressed and released between two frame
-
+            Stats.UpdateTimeMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         }
 
         public unsafe void Render(double deltaTime)
         {
             if (!IsInitialized) return;
+            var renderStarted = Stopwatch.GetTimestamp();
             frameDelta = (uint)(deltaTime * 1000);
 
+            var mutexAcquired = false;
+            var mutexStarted = Stopwatch.GetTimestamp();
             if (UseKeyedMutex && _keyedMutex.Handle != null)
-                _keyedMutex.AcquireSync(0, unchecked((uint)-1));
-
-            sceneManager.UpdateTilesByCameraPos(activeCamera.Position);
-
-            sceneManager.ProcessQueue();
-
-            if (shadersReady)
             {
-                (var drawCalls, var vertices) = sceneManager.RenderScene(activeCamera, out bool renderGizmoWasUsing, out bool renderGizmoWasOver);
-                //if (renderImGUI)
-                //    RenderGizmo();
+                _keyedMutex.AcquireSync(0, unchecked((uint)-1));
+                mutexAcquired = true;
+            }
+            Stats.MutexWaitTimeMs = Stopwatch.GetElapsedTime(mutexStarted).TotalMilliseconds;
 
-                Stats.DrawCalls = drawCalls;
-                Stats.VertexCount = vertices;
+            try
+            {
+                _gpuFrameTimer?.BeginFrame();
 
-                gizmoWasUsing = renderGizmoWasUsing;
-                gizmoWasOver = renderGizmoWasOver;
+                var phaseStarted = Stopwatch.GetTimestamp();
+                sceneManager.UpdateTilesByCameraPos(activeCamera.Position);
+                Stats.TileUpdateTimeMs = Stopwatch.GetElapsedTime(phaseStarted).TotalMilliseconds;
+
+                phaseStarted = Stopwatch.GetTimestamp();
+                _gpuFrameTimer?.BeginUploads();
+                sceneManager.ProcessQueue();
+                _gpuFrameTimer?.EndUploads();
+                Stats.AssetUploadTimeMs = Stopwatch.GetElapsedTime(phaseStarted).TotalMilliseconds;
+                Stats.UploadedResources = sceneManager.UploadedResourcesLastFrame;
+
+                phaseStarted = Stopwatch.GetTimestamp();
+                _gpuFrameTimer?.BeginDraws();
+                if (shadersReady)
+                {
+                    (var drawCalls, var vertices) = sceneManager.RenderScene(activeCamera, out bool renderGizmoWasUsing, out bool renderGizmoWasOver);
+                    //if (renderImGUI)
+                    //    RenderGizmo();
+
+                    Stats.DrawCalls = drawCalls;
+                    Stats.VertexCount = vertices;
+                    Stats.CullingTimeMs = sceneManager.CullingTimeMs;
+                    Stats.VisibleTerrainChunks = sceneManager.visibleChunks;
+                    Stats.CandidateTerrainChunks = sceneManager.candidateChunks;
+                    Stats.VisibleWorldModels = sceneManager.visibleWMOs;
+                    Stats.CandidateWorldModels = sceneManager.candidateWMOs;
+                    Stats.VisibleDoodads = sceneManager.visibleM2s;
+                    Stats.CandidateDoodads = sceneManager.candidateM2s;
+
+                    gizmoWasUsing = renderGizmoWasUsing;
+                    gizmoWasOver = renderGizmoWasOver;
+                }
+                _gpuFrameTimer?.EndDraws();
+                Stats.SceneRenderTimeMs = Stopwatch.GetElapsedTime(phaseStarted).TotalMilliseconds;
+                Stats.PendingAssetOperations = sceneManager.GetPendingOperationCount();
+            }
+            finally
+            {
+                _gpuFrameTimer?.EndFrame();
+                if (mutexAcquired)
+                    _keyedMutex.ReleaseSync(1);
             }
 
-            //if (renderImGUI)
-            //    imgui?.Render();
-
-            if (UseKeyedMutex && _keyedMutex.Handle != null)
-                _keyedMutex.ReleaseSync(1);
+            Stats.GpuFrameTimeMs = _gpuFrameTimer?.LatestFrameMilliseconds;
+            Stats.GpuUploadTimeMs = _gpuFrameTimer?.LatestUploadMilliseconds;
+            Stats.GpuDrawTimeMs = _gpuFrameTimer?.LatestDrawMilliseconds;
+            var accountedTime = Stats.MutexWaitTimeMs + Stats.TileUpdateTimeMs +
+                Stats.AssetUploadTimeMs + Stats.SceneRenderTimeMs;
+            Stats.RenderOverheadTimeMs = Math.Max(
+                0,
+                Stopwatch.GetElapsedTime(renderStarted).TotalMilliseconds - accountedTime);
 
             _frameCount++;
 
@@ -384,21 +481,41 @@ namespace WoWRenderLib.DX11
             }
         }
 
-        public void Dispose()
+        public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        public async ValueTask DisposeAsync()
         {
             if (disposed)
                 return;
 
+            disposed = true;
+            IsInitialized = false;
+            _lifetimeCancellation.Cancel();
+
+            if (_contentInitializationTask != null)
+            {
+                try
+                {
+                    await _contentInitializationTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            await Dx11CacheLifecycle.ResetAsync();
+
             _keyedMutex.Dispose();
+            _gpuFrameTimer?.Dispose();
+            _gpuFrameTimer = null;
             _sharedRTV.Dispose();
             SharedSRV.Dispose();
             sharedTexture.Dispose();
-            shaderManager.Dispose();
             sceneManager?.Dispose();
+            shaderManager?.Dispose();
             imgui?.Dispose();
-            // inputContext?.Dispose();
-
-            disposed = true;
+            _lifetimeCancellation.Dispose();
+            SetStatus(WowViewerEngineState.Disposed, "Renderer disposed.");
         }
 
         private void LoadBuildInfo(string wowDirInput)
@@ -425,6 +542,9 @@ namespace WoWRenderLib.DX11
                 }
                 var splitLine = line.Split('|');
 
+                if (splitLine.Length <= 14)
+                    continue;
+
                 // TODO: Copy proper .build.info header parsing from WTL
                 _productList[splitLine[14]] = (splitLine[2], splitLine[3]);
             }
@@ -440,7 +560,7 @@ namespace WoWRenderLib.DX11
 
             _currentProduct = Array.IndexOf(_products, _wowConfig.wowProduct);
 
-            if (string.IsNullOrEmpty(_wowConfig.wowProduct) && _currentProduct == -1)
+            if (!string.IsNullOrEmpty(_wowConfig.wowProduct) && _currentProduct == -1)
             {
                 Console.WriteLine("Error : The WoW product (" + _wowConfig.wowProduct + ") set in config could not be found in .build.info.");
             }
@@ -453,11 +573,16 @@ namespace WoWRenderLib.DX11
             {
                 var selectedProduct = _productList.ElementAt(_currentProduct);
                 _wowConfig.wowProduct = selectedProduct.Key;
-                _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
-                _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
-
-                StartCASCInitialization();
+                if (string.IsNullOrWhiteSpace(_wowConfig.buildConfig))
+                    _wowConfig.buildConfig = selectedProduct.Value.buildConfig;
+                if (string.IsNullOrWhiteSpace(_wowConfig.cdnConfig))
+                    _wowConfig.cdnConfig = selectedProduct.Value.cdnConfig;
             }
+
+            if (!string.IsNullOrWhiteSpace(_wowConfig.wowProduct))
+                StartCASCInitialization();
+            else
+                SetStatus(WowViewerEngineState.Ready, "Renderer ready; select a WoW client to load content.");
         }
 
         private unsafe void RenderGizmo()
@@ -467,23 +592,66 @@ namespace WoWRenderLib.DX11
 
         private void StartCASCInitialization()
         {
-            Task.Run(async () =>
+            SetStatus(WowViewerEngineState.LoadingContent, $"Loading {_wowConfig.wowProduct} content...");
+            _contentInitializationTask = Task.Run(async () =>
             {
-                await Services.CASC.Initialize(_wowConfig.wowProduct, _wowConfig.wowDir, _wowConfig.buildConfig, _wowConfig.cdnConfig);
+                var cancellationToken = _lifetimeCancellation.Token;
+                var gateEntered = false;
+                try
+                {
+                    await ContentInitializationGate.WaitAsync(cancellationToken);
+                    gateEntered = true;
 
-                var tactFileProvider = new TACTSharpFileProvider();
-                tactFileProvider.InitTACT(Services.CASC.buildInstance);
-                FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
-                FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
+                    var result = await Services.CASC.CreateBuildAsync(
+                        _wowConfig.wowProduct,
+                        _wowConfig.wowDir,
+                        _wowConfig.buildConfig,
+                        _wowConfig.cdnConfig,
+                        cancellationToken);
 
-                sceneManager.GetCurrentWDT();
-                sceneManager.PreloadTEX();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_generation != Volatile.Read(ref _activeGeneration))
+                        return;
 
-                var dbcProvider = new DBCProvider();
-                var dbdProvider = new DBDProvider();
+                    Services.CASC.Activate(result);
 
-                dbcManager = new DBCManager(dbdProvider, dbcProvider);
+                    var tactFileProvider = new TACTSharpFileProvider();
+                    tactFileProvider.InitTACT(result.BuildInstance);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_generation != Volatile.Read(ref _activeGeneration))
+                        return;
+
+                    FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
+                    FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
+
+                    sceneManager.GetCurrentWDT();
+                    sceneManager.PreloadTEX();
+
+                    var dbcProvider = new DBCProvider();
+                    var dbdProvider = new DBDProvider();
+
+                    dbcManager = new DBCManager(dbdProvider, dbcProvider);
+                    SetStatus(WowViewerEngineState.Ready, $"{result.BuildName} ready.");
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    SetStatus(WowViewerEngineState.Failed, "WoW content initialization failed.", exception);
+                }
+                finally
+                {
+                    if (gateEntered)
+                        ContentInitializationGate.Release();
+                }
             });
+        }
+
+        private void SetStatus(WowViewerEngineState state, string message, Exception? exception = null)
+        {
+            Status = new WowViewerEngineStatus(state, message, exception);
+            StatusChanged?.Invoke(this, Status);
         }
 
         public static Vector3 QuaternionToEuler(Quaternion q)

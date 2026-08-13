@@ -53,9 +53,6 @@
             </StackPanel>
           </Grid>
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
-            <CheckBox Content="Render terrain (ADT)" IsChecked="{Binding RenderAdt}" />
-            <CheckBox Content="Render world models (WMO)" IsChecked="{Binding RenderWmo}" />
-            <CheckBox Content="Render doodads (M2)" IsChecked="{Binding RenderM2}" />
             <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />
             <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" />
           </WrapPanel>

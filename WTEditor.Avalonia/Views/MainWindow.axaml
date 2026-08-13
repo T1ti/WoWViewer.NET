@@ -9,13 +9,6 @@
         Icon="/Assets/avalonia-logo.ico"
          Title="{Binding Title}">
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
-
-
     <DockPanel>
         <Menu DockPanel.Dock="Top">
           <MenuItem Header="_File">
@@ -27,7 +20,7 @@
             <MenuItem Header="Copy"/>
             <MenuItem Header="Paste"/>
           </MenuItem>
-          <MenuItem Header="_Settings" Click="Settings_OnClick"/>
+          <MenuItem Header="_Settings" Command="{Binding OpenSettingsCommand}"/>
         </Menu>
 
     <!-- Main content goes here -->

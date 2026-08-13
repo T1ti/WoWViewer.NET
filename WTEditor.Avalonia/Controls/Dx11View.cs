@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -14,14 +15,16 @@ using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using Silk.NET.Maths;
+using WTEditor.Application.Models;
+using WTEditor.Avalonia.Rendering;
 using WoWRenderLib.DX11;
 
 namespace WTEditor.Avalonia.Controls
 {
     public sealed class Dx11View : Control
     {
-        private WowClientConfig _wowConfig;
-        private WowViewerEngine? _engine;
+        private readonly Dx11RendererSession _rendererSession = new();
+        private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
 
         private DXGI? _dxgi;
         private D3D11? _d3d11;
@@ -44,26 +47,26 @@ namespace WTEditor.Avalonia.Controls
         private double _last;
 
         private ViewModels.Editor3DViewModel? _vm;
-        private RendererSettings _rendererSettings = new();
+        private RenderingConfiguration _renderingConfiguration = new();
         private bool _renderFrameInProgress;
         private bool _restartPending;
-        private WowClientConfig _clientConfig = new()
-        {
-            wowDir = @"C:\Program Files (x86)\World of Warcraft",
-            wowProduct = "wow_classic_era"
-        };
+        private bool _cleanupPending;
+        private bool _attached;
+        private int _attachmentGeneration;
+        private long _profileFrameNumber;
+        private ClientConfiguration _clientConfiguration = new();
 
         public Dx11View()
         {
-            
+            _rendererSession.StatusChanged += OnRendererStatusChanged;
         }
 
         protected override void OnDataContextChanged(EventArgs e)
         {
             if (_vm != null)
             {
-                _vm.ClientConfigChanged -= OnClientConfigChanged;
-                _vm.RendererSettingsChanged -= OnRendererSettingsChanged;
+                _vm.ClientConfigurationChanged -= OnClientConfigurationChanged;
+                _vm.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
             }
 
             base.OnDataContextChanged(e);
@@ -71,28 +74,32 @@ namespace WTEditor.Avalonia.Controls
 
             if (_vm != null)
             {
-                _clientConfig = _vm.ClientConfig;
-                _rendererSettings = _vm.RendererSettings.Clone();
-                _vm.ClientConfigChanged += OnClientConfigChanged;
-                _vm.RendererSettingsChanged += OnRendererSettingsChanged;
+                _clientConfiguration = _vm.ClientConfiguration;
+                _renderingConfiguration = _vm.RenderingConfiguration;
+                _vm.ClientConfigurationChanged += OnClientConfigurationChanged;
+                _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
             }
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
+            _attached = true;
+            var generation = ++_attachmentGeneration;
             // Focusable = true;
             // Focus();
-            InitializeAsync();
+            InitializeAsync(generation);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
-            Cleanup();
+            _attached = false;
+            _attachmentGeneration++;
+            BeginCleanup();
         }
 
-        private async void InitializeAsync()
+        private async void InitializeAsync(int generation)
         {
             var compositionVisual = ElementComposition.GetElementVisual(this);
             if (compositionVisual == null)
@@ -101,50 +108,75 @@ namespace WTEditor.Avalonia.Controls
             _compositor = compositionVisual.Compositor;
 
             _interop = await _compositor.TryGetCompositionGpuInterop();
+            if (!_attached || generation != _attachmentGeneration)
+                return;
+
             if (_interop == null)
             {
                 Console.WriteLine("Dx11View: ICompositionGpuInterop not available on this platform/backend.");
+                _vm?.UpdateRendererStatus(new RendererStatus(
+                    RendererLifecycleState.Failed,
+                    "The active Avalonia backend cannot share GPU images with the renderer."));
                 return;
             }
 
             if (!_interop.SupportedImageHandleTypes.Contains(KnownPlatformGraphicsExternalImageHandleTypes.D3D11TextureGlobalSharedHandle))
             {
                 Console.WriteLine("Dx11View: D3D11 shared texture handle import not supported by compositor.");
+                _vm?.UpdateRendererStatus(new RendererStatus(
+                    RendererLifecycleState.Failed,
+                    "The active compositor does not support D3D11 shared textures."));
                 return;
             }
 
-            CreateD3DDevice();
+            await _lifecycleLock.WaitAsync();
+            try
+            {
+                if (!_attached || generation != _attachmentGeneration)
+                    return;
 
-            CreateEngine(_clientConfig);
+                CreateD3DDevice();
 
-            _surface = _compositor.CreateDrawingSurface();
-            _surfaceVisual = _compositor.CreateSurfaceVisual();
-            _surfaceVisual.Surface = _surface;
-            _surfaceVisual.Size = new Vector2((float)Bounds.Width, (float)Bounds.Height);
-            _surfaceVisual.Scale = new Vector3(1, -1, 1);
-            _surfaceVisual.CenterPoint = new Vector3(0, (float)Bounds.Height / 2f, 0);
+                try
+                {
+                    CreateEngine(_clientConfiguration);
+                }
+                catch (Exception exception)
+                {
+                    _vm?.UpdateRendererStatus(new RendererStatus(
+                        RendererLifecycleState.Failed,
+                        "Unable to initialize the renderer.",
+                        exception.Message));
+                    return;
+                }
 
-            ElementComposition.SetElementChildVisual(this, _surfaceVisual);
+                _surface = _compositor.CreateDrawingSurface();
+                _surfaceVisual = _compositor.CreateSurfaceVisual();
+                _surfaceVisual.Surface = _surface;
+                _surfaceVisual.Size = new Vector2((float)Bounds.Width, (float)Bounds.Height);
+                _surfaceVisual.Scale = new Vector3(1, -1, 1);
+                _surfaceVisual.CenterPoint = new Vector3(0, (float)Bounds.Height / 2f, 0);
 
-            _initialized = true;
-            RequestRenderFrame();
+                ElementComposition.SetElementChildVisual(this, _surfaceVisual);
+
+                _initialized = true;
+                RequestRenderFrame();
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
         }
 
-        private void OnClientConfigChanged(object? sender, WowClientConfig config)
+        private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration)
         {
-            if (_engine?.activeCamera != null && _vm != null)
-            {
-                _vm.SetInitialCameraPosition(_engine.activeCamera.Position);
-                _vm.SetInitialCameraDirection(_engine.activeCamera.Front);
-            }
-
-            _clientConfig = config;
+            _clientConfiguration = configuration;
             Dispatcher.UIThread.Post(RestartEngine, DispatcherPriority.Render);
         }
 
-        private void RestartEngine()
+        private async void RestartEngine()
         {
-            if (!_initialized || _dxgi == null)
+            if (!_initialized || _dxgi == null || !_attached)
                 return;
 
             if (_renderFrameInProgress)
@@ -153,44 +185,59 @@ namespace WTEditor.Avalonia.Controls
                 return;
             }
 
-            _initialized = false;
-            _importedImage = null;
-            _lastSharedHandle = IntPtr.Zero;
-            _engine?.Dispose();
-            CreateEngine(_clientConfig);
-            _initialized = true;
-            RequestRenderFrame();
+            await _lifecycleLock.WaitAsync();
+            try
+            {
+                _initialized = false;
+                _importedImage = null;
+                _lastSharedHandle = IntPtr.Zero;
+                await _rendererSession.DisposeAsync();
+
+                if (!_attached || _dxgi == null)
+                    return;
+
+                try
+                {
+                    CreateEngine(_clientConfiguration);
+                    _initialized = true;
+                    RequestRenderFrame();
+                }
+                catch (Exception exception)
+                {
+                    _vm?.UpdateRendererStatus(new RendererStatus(
+                        RendererLifecycleState.Failed,
+                        "Unable to restart the renderer.",
+                        exception.Message));
+                }
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
         }
 
-        private void OnRendererSettingsChanged(object? sender, RendererSettings settings)
+        private void OnRenderingConfigurationChanged(object? sender, RenderingConfiguration configuration)
         {
-            _rendererSettings = settings.Clone();
-            if (_engine == null)
+            _renderingConfiguration = configuration;
+            if (_rendererSession.Engine == null)
                 return;
 
-            Dispatcher.UIThread.Post(() => _engine?.ApplySettings(_rendererSettings), DispatcherPriority.Render);
+            Dispatcher.UIThread.Post(
+                () => _rendererSession.Engine?.ApplySettings(_renderingConfiguration.ToDx11()),
+                DispatcherPriority.Render);
         }
 
-        private void CreateEngine(WowClientConfig config)
+        private void CreateEngine(ClientConfiguration configuration)
         {
-            _wowConfig = config;
-            _engine = new WowViewerEngine(_wowConfig, null, false)
-            {
-                UseKeyedMutex = true,
-                InitialCameraPosition = _vm?.HasInitialCameraPosition == true
-                    ? _vm.InitialCameraPosition
-                    : null,
-                InitialCameraDirection = _vm?.HasInitialCameraDirection == true
-                    ? _vm.InitialCameraDirection
-                    : null
-            };
-            _engine.Initialize(_dxgi!, _device, _deviceContext,
-                new Vector2D<int>(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)));
-            if (_vm?.HasInitialCameraPosition == true && _engine.activeCamera != null)
-                _engine.activeCamera.Position = _vm.InitialCameraPosition;
-            if (_vm?.HasInitialCameraDirection == true && _engine.activeCamera != null)
-                _engine.activeCamera.SetDirection(_vm.InitialCameraDirection);
-            _engine.ApplySettings(_rendererSettings);
+            _rendererSession.Initialize(
+                configuration,
+                _renderingConfiguration,
+                _dxgi!,
+                _device,
+                _deviceContext,
+                new Vector2D<int>(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)),
+                _vm?.HasInitialCameraPosition == true ? _vm.InitialCameraPosition : null,
+                _vm?.HasInitialCameraDirection == true ? _vm.InitialCameraDirection : null);
         }
 
         private unsafe void CreateD3DDevice()
@@ -225,24 +272,36 @@ namespace WTEditor.Avalonia.Controls
 
         private async void RenderFrame()
         {
-            if (!_initialized || _engine == null || _interop == null || _surface == null || _surfaceVisual == null)
+            var engine = _rendererSession.Engine;
+            if (!_initialized || engine == null || _interop == null || _surface == null || _surfaceVisual == null)
                 return;
 
             if (_renderFrameInProgress)
                 return;
 
             _renderFrameInProgress = true;
-            var engine = _engine;
-
             try
             {
                 await RenderFrameCore(engine);
+            }
+            catch (Exception exception)
+            {
+                _initialized = false;
+                _vm?.UpdateRendererStatus(new RendererStatus(
+                    RendererLifecycleState.Failed,
+                    "Rendering stopped after an error.",
+                    exception.Message));
             }
             finally
             {
                 _renderFrameInProgress = false;
 
-                if (_restartPending)
+                if (_cleanupPending)
+                {
+                    _cleanupPending = false;
+                    _ = CleanupAsync();
+                }
+                else if (_restartPending)
                 {
                     _restartPending = false;
                     RestartEngine();
@@ -277,14 +336,13 @@ namespace WTEditor.Avalonia.Controls
                 _importedImage = null;
             }
 
+            var inputStarted = Stopwatch.GetTimestamp();
             var inputFrame = BuildInputFrame();
-            if (_vm != null)
-            {
-                engine.SetMovementSpeed(_vm.MoveSpeed);
-                engine.SetMouseSensitivity(_vm.MouseSensitivity);
-            }
+            var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
+            var engineFrameStarted = Stopwatch.GetTimestamp();
             engine.Update(delta, inputFrame);
             engine.Render(delta);
+            var engineFrameMilliseconds = Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
 
             var handle = engine.GetSharedTextureHandle();
             if (handle != IntPtr.Zero && handle != _lastSharedHandle)
@@ -305,12 +363,52 @@ namespace WTEditor.Avalonia.Controls
 
             if (_vm != null)
             {
-                _vm.Fps = engine.Stats.FPS;
-                _vm.FrameTime = engine.Stats.FrameTimeMs;
-                _vm.CameraPosition = engine.activeCamera?.Position ?? Vector3.Zero;
-                _vm.CameraDirection = engine.activeCamera?.Front ?? Vector3.Zero;
-                _vm.DrawCalls = (int)engine.Stats.DrawCalls;
-                _vm.VertexCount = (int)engine.Stats.VertexCount;
+                _vm.UpdateTelemetry(new ViewportTelemetry(
+                    engine.Stats.FPS,
+                    engineFrameMilliseconds,
+                    engine.activeCamera?.Position ?? Vector3.Zero,
+                    engine.activeCamera?.Front ?? Vector3.Zero,
+                    (int)engine.Stats.DrawCalls,
+                    (int)engine.Stats.VertexCount));
+
+                var gpuUploadMilliseconds = engine.Stats.GpuUploadTimeMs ?? 0;
+                var gpuDrawMilliseconds = engine.Stats.GpuDrawTimeMs ?? 0;
+                var gpuOtherMilliseconds = Math.Max(
+                    0,
+                    (engine.Stats.GpuFrameTimeMs ?? 0) - gpuUploadMilliseconds - gpuDrawMilliseconds);
+                var steps = new FrameTimingStep[]
+                {
+                    new("World streaming (CPU)", engine.Stats.TileUpdateTimeMs),
+                    new("Resource upload submission (CPU)", engine.Stats.AssetUploadTimeMs),
+                    new("Visibility culling (CPU)", engine.Stats.CullingTimeMs),
+                    new("Draw submission (CPU)", Math.Max(0, engine.Stats.SceneRenderTimeMs - engine.Stats.CullingTimeMs)),
+                    new("Other frame work (CPU)", inputMilliseconds + engine.Stats.UpdateTimeMs + engine.Stats.RenderOverheadTimeMs),
+                    new("Resource uploads (GPU)", gpuUploadMilliseconds, FrameTimingDomain.Gpu),
+                    new("World drawing (GPU)", gpuDrawMilliseconds, FrameTimingDomain.Gpu),
+                    new("Other GPU work", gpuOtherMilliseconds, FrameTimingDomain.Gpu),
+                    new("Wait for viewport texture", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation)
+                };
+                _vm.UpdatePerformanceProfile(new FrameProfileSnapshot(
+                    ++_profileFrameNumber,
+                    DateTimeOffset.UtcNow,
+                    delta * 1_000d,
+                    inputMilliseconds + engine.Stats.CpuFrameTimeMs,
+                    engine.Stats.GpuFrameTimeMs,
+                    steps,
+                    (int)engine.Stats.DrawCalls,
+                    (int)engine.Stats.VertexCount,
+                    engine.Stats.PendingAssetOperations)
+                {
+                    EngineFrameMilliseconds = engineFrameMilliseconds,
+                    UploadedResources = engine.Stats.UploadedResources,
+                    Culling = new CullingMetrics(
+                        engine.Stats.VisibleTerrainChunks,
+                        engine.Stats.CandidateTerrainChunks,
+                        engine.Stats.VisibleWorldModels,
+                        engine.Stats.CandidateWorldModels,
+                        engine.Stats.VisibleDoodads,
+                        engine.Stats.CandidateDoodads)
+                });
             }
         }
 
@@ -341,24 +439,46 @@ namespace WTEditor.Avalonia.Controls
             };
         }
 
-        private void Cleanup()
+        private void OnRendererStatusChanged(object? sender, RendererStatus status)
         {
-            if (_vm != null)
+            Dispatcher.UIThread.Post(() => _vm?.UpdateRendererStatus(status));
+        }
+
+        private void BeginCleanup()
+        {
+            _initialized = false;
+            _restartPending = false;
+            if (_renderFrameInProgress)
             {
-                _vm.ClientConfigChanged -= OnClientConfigChanged;
-                _vm.RendererSettingsChanged -= OnRendererSettingsChanged;
+                _cleanupPending = true;
+                return;
             }
 
-            _initialized = false;
-            _importedImage = null;
-            _surface = null;
-            _surfaceVisual = null;
-            _engine?.Dispose();
-            _engine = null;
-            _deviceContext.Dispose();
-            _device.Dispose();
-            _d3d11?.Dispose();
-            _dxgi?.Dispose();
+            _ = CleanupAsync();
+        }
+
+        private async Task CleanupAsync()
+        {
+            await _lifecycleLock.WaitAsync();
+            try
+            {
+                _importedImage = null;
+                _surface = null;
+                _surfaceVisual = null;
+                await _rendererSession.DisposeAsync();
+                _deviceContext.Dispose();
+                _device.Dispose();
+                _d3d11?.Dispose();
+                _dxgi?.Dispose();
+                _deviceContext = default;
+                _device = default;
+                _d3d11 = null;
+                _dxgi = null;
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
         }
     }
 }

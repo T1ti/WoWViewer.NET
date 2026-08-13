@@ -105,12 +105,13 @@ namespace WoWRenderLib.DX11.Cache
             }
         }
 
-        public static void Upload(Stopwatch queueTimer, ComPtr<ID3D11Device> device)
+        public static int Upload(Stopwatch queueTimer, ComPtr<ID3D11Device> device)
         {
+            var uploaded = 0;
             while (queueTimer.ElapsedMilliseconds < 10)
             {
                 if (!uploadQueue.TryDequeue(out var item))
-                    return;
+                    return uploaded;
 
                 var (key, parsedADT) = item;
 
@@ -127,6 +128,7 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     var newTerrain = ADTLoader.LoadADT(device, parsedADT);
                     Cache[key] = newTerrain;
+                    uploaded++;
 
                     if (Callbacks.Remove(key, out var callback))
                         callback(newTerrain);
@@ -139,15 +141,40 @@ namespace WoWRenderLib.DX11.Cache
 
                 lock(inFlightLock)
                     inFlight.Remove(key);
+
             }
+
+            return uploaded;
         }
 
         public static void StopWorker()
         {
-            workerCancellation?.Cancel();
-            workerCancellation?.Dispose();
+            StopWorkerAsync().GetAwaiter().GetResult();
+        }
+
+        public static async Task StopWorkerAsync()
+        {
+            var cancellation = workerCancellation;
+            var task = workerTask;
             workerCancellation = null;
             workerTask = null;
+
+            if (cancellation == null)
+                return;
+
+            cancellation.Cancel();
+            try
+            {
+                if (task != null)
+                    await task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
         }
 
         public static int GetLoadQueueCount() => parseQueue.Count + uploadQueue.Count;
@@ -183,6 +210,10 @@ namespace WoWRenderLib.DX11.Cache
             Callbacks.Clear();
             Users.Clear();
             Cache.Clear();
+            while (parseQueue.TryDequeue(out _)) { }
+            while (uploadQueue.TryDequeue(out _)) { }
+            lock (inFlightLock)
+                inFlight.Clear();
         }
     }
 }

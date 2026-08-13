@@ -6,7 +6,8 @@ change alters ownership, threading, renderer lifecycle, or the editor/engine API
 ## Solution map
 
 `WTEditor.Avalonia` is the active desktop editor host (`net10.0`, Avalonia 12).
-It references `WoWRenderLib.DX11`, which in turn uses the rendering-agnostic
+It references the renderer-independent `WTEditor.Application` for authoritative editor
+configuration/session state and `WoWRenderLib.DX11` for rendering. DX11 in turn uses the rendering-agnostic
 `WoWRenderLib` and the WoW data projects (`WoWFormatLib`, `TACTSharp`, `CascLib`,
 `DBCD`, and `BLPSharp`).  The solution still includes earlier WPF/OpenGL hosts;
 they are useful references, not the current UI path.
@@ -15,17 +16,26 @@ they are useful references, not the current UI path.
 Avalonia shell and MVVM
   MainWindow -> MainView -> Editor3DView
                          -> Dx11View
-                              -> WowViewerEngine (DX11)
+                              -> Dx11RendererSession
+                                   -> WowViewerEngine (DX11)
                                    -> SceneManager / ShaderManager / caches
                                    -> CASC + FileProvider + WoW format readers
+
+Editor application state
+  EditorSession -> client/rendering/keyboard/camera/window snapshots
+                -> IEditorSettingsStore
+  EditorDocument -> stable objects / dirty state / changed-object set
+  UndoService -> editor commands / grouped transactions
+  SelectionService + ToolManager -> editor interaction state
+  Avalonia/DX11 boundary -> Dx11ConfigurationMapper
 ```
 
 ## Application/UI flow
 
 - `Program` builds a small DI container and registers `MainViewModel` and
   `MainWindowViewModel` as singletons. `App` resolves the window view model.
-- `MainWindowViewModel.CurrentView` starts as `MainViewModel`; Avalonia's
-  reflection-based `ViewLocator` maps view-model names to views.
+- `MainWindowViewModel.CurrentView` starts as `MainViewModel`; an explicit typed
+  Avalonia data template maps it to `MainView`.
 - `MainViewModel` owns an `Editor3DViewModel`. `Editor3DView` captures pointer
   and keyboard input, with automatic AZERTY/QWERTY key selection, and writes
   input state into that view model.
@@ -42,32 +52,34 @@ Avalonia shell and MVVM
   enabled, the engine releases mutex key `1` after rendering and Avalonia imports
   it using `UpdateWithKeyedMutexAsync(acquire: 1, release: 0)`.
 - On a size change, the control resizes the engine, discards the imported image,
-  and imports the new shared texture handle. `Dx11View.Cleanup` disposes engine
-  and D3D resources when removed from the visual tree.
+  and imports the new shared texture handle. Attach, restart, and detach are serialized;
+  the renderer session is asynchronously disposed before D3D resources.
 - This host is Windows/D3D11-compositor specific. Unsupported Avalonia graphics
   backends currently only log a message and leave the viewport blank.
 
 ## Renderer lifecycle and data flow
 
-1. `WowViewerEngine.Initialize` constructs `ShaderManager` with
-   `AppContext.BaseDirectory/Shaders`, creates `SceneManager`, creates the shared target,
-   then selects a WoW product. Shader discovery uses that absolute directory, but shader
-   compilation currently reads the relative path `Shaders/<name>.hlsl`; see the risks below.
-2. Product initialization reads `.build.info` and starts `Services.CASC.Initialize` on a
-   background task. It configures the global `WoWFormatLib.FileProvider`, loads the
-   default WDT, and preloads its TEX data.
-3. Each render frame updates tiles around the camera, processes queued work, then calls
+1. `Dx11RendererSession` owns a `WowViewerEngine` generation and translates its lifecycle
+   into renderer-independent status snapshots for the editor overlay.
+2. `WowViewerEngine.Initialize` constructs `ShaderManager` from the absolute
+   `AppContext.BaseDirectory/Shaders` path, creates `SceneManager` and the shared target,
+   then begins cancellable product loading.
+3. CASC builds are created without publishing process-global state. Only the latest live
+   engine generation activates its completed build, configures `FileProvider`, loads the
+   default WDT, and preloads TEX data. Initialization failures become visible status.
+4. Each render frame updates tiles around the camera, processes queued work, then calls
    `SceneManager.RenderScene` using the active camera.
-4. The scene queues ADT tiles surrounding the camera (currently view distance 4).
+5. The scene queues ADT tiles surrounding the camera (currently view distance 4).
    ADT/WMO/M2/BLP caches parse/decode on background workers and enqueue render-thread
    GPU uploads. `SceneManager.ProcessQueue` limits these uploads to roughly 10 ms per frame.
-5. `SceneManager` renders ADT terrain plus instanced WMO and M2 data, performs camera
+6. `SceneManager` renders ADT terrain plus instanced WMO and M2 data, performs camera
    frustum visibility checks, and can expose selection/bounding-volume debug state.
 
 ## Responsibilities by project
 
 | Area | Main responsibility |
 | --- | --- |
+| `WTEditor.Application` | Renderer-independent settings, documents, selection, tools, commands, undo history, and renderer contracts. |
 | `WTEditor.Avalonia` | Window layout, editor input, composition-surface presentation, telemetry overlay. |
 | `WoWRenderLib.DX11` | Direct3D 11 resources, HLSL compilation, camera/input behavior, scene rendering, async asset caches. |
 | `WoWRenderLib` | Shared map/model structures, WDT cache, CASC initialization facade, data providers, raycasting. |
@@ -77,8 +89,8 @@ Avalonia shell and MVVM
 
 ## Current editor state
 
-- Client, renderer, keyboard, camera, and window settings are persisted as `settings.json`
-  beside the executable by `EditorSettingsStore`. The defaults still target a Classic Era
+- Client, renderer, keyboard, camera, and window settings are owned by `EditorSession` and
+  persisted as `settings.json` beside the executable by `JsonEditorSettingsStore`. The defaults still target a Classic Era
   installation. Writing beside the executable may fail for a packaged install in a
   protected directory; failures currently go only to the console.
 - Renderer settings include terrain/model distance, tile radius, movement speed, mouse
@@ -90,8 +102,33 @@ Avalonia shell and MVVM
 - Mouse-wheel state exists in `Editor3DViewModel` and `InputFrame`, but the view never
   populates it and the engine never consumes it. `SetHasFocus` similarly stores an unused
   flag.
-- Client-setting changes currently restart the entire engine while retaining the same
-  D3D11 device. Camera position/direction are copied through the view model first.
+- Client-setting changes restart the entire engine while retaining the same D3D11 device.
+  Restart cancellation, cache reset, and recreation are serialized; camera state is copied
+  through the view model first.
+- The world-viewport profiler is an owned native tool window, so it remains tied to its
+  viewport while being movable outside the editor window and onto another display. It retains
+  180 frame samples and publishes UI updates at 10 Hz. Its paired stacked bars compare CPU
+  command building with GPU execution;
+  an adaptive 8.33/16.67/33.33 ms scale avoids compressing fast frames into the graph floor.
+- CPU stages are world streaming, resource-upload submission, visibility culling, draw
+  submission, and other frame work. GPU stages are measurable resource-transfer activity,
+  world drawing, and remaining GPU frame work. The engine-frame card measures `Update` plus
+  `Render` wall time; Avalonia scheduling delay is deliberately excluded.
+- Culling telemetry exposes both cost and visible/tested counts for terrain chunks, WMO
+  instances, and M2 instances. Streaming telemetry also reports resources uploaded per frame;
+  a zero GPU transfer duration is hidden because D3D11 initial-data resource creation is not
+  always independently observable as an asynchronous GPU pass.
+- GPU frame and phase durations come from a four-slot ring of non-blocking D3D11
+  timestamp/disjoint queries. Results are polled with `DoNotFlush`, arrive a few frames late,
+  and never deliberately stall the immediate context. Unsupported query creation leaves GPU
+  timing unavailable.
+- Terrain, WMO, and M2 visibility are local to each world viewport. The icon toolbar emits
+  an effective rendering configuration without persisting these transient visibility choices;
+  engine-wide quality/distance settings remain in the application settings dialog.
+- CPU/GPU bottleneck classification compares average CPU submission and GPU execution over
+  the most recent 30 comparable samples with a 15% dominance threshold. The panel also
+  reports process CPU, managed memory, working set, allocation rate, GC count, draw calls,
+  submitted vertices/indices, and pending asset operations.
 
 ## Threading and ownership invariants
 
@@ -100,7 +137,8 @@ Avalonia shell and MVVM
   Avalonia's UI dispatcher at render priority. Keep D3D11 immediate-context access on this
   thread unless the engine is deliberately redesigned around deferred contexts.
 - ADT/WMO/M2 parsing and BLP decoding run on background tasks. Their queues hand parsed
-  CPU data back to `SceneManager.ProcessQueue`, where GPU resources are created.
+  CPU data back to `SceneManager.ProcessQueue`, where GPU resources are created. Teardown
+  cancels and awaits all four workers, clears queues/state, then releases GPU caches.
 - The shared-texture keyed-mutex protocol is: renderer acquires key 0 and releases key 1;
   Avalonia acquires key 1 and releases key 0. Any change must preserve this pairing.
 - `Services.CASC`, `FileProvider`, `WDTCache`, and the DX11 asset caches are process-global.
@@ -113,6 +151,13 @@ Avalonia shell and MVVM
 | File | Why it matters |
 | --- | --- |
 | `WTEditor.Avalonia/Controls/Dx11View.cs` | Avalonia/D3D interop, frame loop, engine restart, input translation, renderer telemetry. |
+| `WTEditor.Avalonia/Rendering/Dx11RendererSession.cs` | DX11 engine generation ownership and editor-facing status translation. |
+| `WTEditor.Avalonia/Controls/FloatingMetricsPanel.axaml` | Movable/resizable world-viewport profiler UI and timing descriptions. |
+| `WTEditor.Avalonia/Controls/FrameTimelineGraph.cs` | Paired CPU/GPU stacked history, adaptive frame-budget scaling, and profiler color mapping. |
+| `WTEditor.Application/Models/PerformanceModels.cs` | Renderer-independent frame snapshots and CPU/GPU bottleneck policy. |
+| `WoWRenderLib.DX11/Profiling/GpuFrameTimer.cs` | Non-blocking D3D11 timestamp-query ring for whole-frame, upload, and drawing GPU durations. |
+| `WTEditor.Application/EditorDocument.cs` | Document identity, object snapshots, dirty/version state, and changed-object tracking. |
+| `WTEditor.Application/Services/UndoService.cs` | Command history and grouped transaction semantics. |
 | `WTEditor.Avalonia/Views/Editor3DView.axaml.cs` | Pointer capture, focus, QWERTY/AZERTY mapping, input-state reset. |
 | `WTEditor.Avalonia/Services/EditorSettingsStore.cs` | Persisted client/editor/window/camera state. |
 | `WoWRenderLib.DX11/WowViewerEngine.cs` | Public renderer surface, shared target, camera/input, product and CASC startup. |
@@ -125,40 +170,29 @@ Avalonia shell and MVVM
 
 ## Risk register and preferred order of work
 
-### P0: engine restart and cache lifetime
+### Completed baseline: lifecycle and D3D ownership
 
-- `StartCASCInitialization` is fire-and-forget and has no cancellation, generation token,
-  or observed error path. An old task can access a disposed `SceneManager` after a client
-  change or viewport teardown.
-- DX11 caches are static. M2/WMO retain a cached device pointer, and engine disposal neither
-  awaits all workers nor releases all caches. `SceneManager.Dispose` stops WMO/BLP workers
-  but leaves ADT/M2 cleanup commented out.
-- `StopWorker` cancels without awaiting task completion and leaves shared queues/state that
-  a newly started worker can consume.
-- Before relying on product switching or multiple viewports, introduce a cancellable
-  renderer session with deterministic teardown. Prefer instance-owned caches; if that is
-  staged later, first add one explicit, device-aware reset operation.
+- CASC startup is cancellation-aware and generation-checked before publishing global state.
+- `Dx11CacheLifecycle.ResetAsync` awaits ADT/M2/WMO/BLP workers before clearing queues,
+  references, cached device pointers, and GPU resources.
+- Shader paths are absolute, missing shaders fail immediately, replaced/final shaders are
+  disposed, omitted scene resources are released, and keyed-mutex release uses `finally`.
+- Remaining hardware validation: exercise rapid client switching and inspect D3D11 debug
+  live-object output. Static caches still enforce one active DX11 renderer per process.
 
-### P0: shader and D3D resource lifetime
+### P0: complete document-to-renderer editing path
 
-- `ShaderManager.CompileShader` ignores its configured absolute directory and reads a
-  relative path. A missing file retries forever with `Thread.Sleep(100)`, which can freeze
-  the UI/render thread.
-- Hot reload replaces shader structs without disposing the old vertex shader, pixel shader,
-  or input layout. `ShaderManager.Dispose` currently only disposes the compiler.
-- `SceneManager.Dispose` omits several owned rasterizer/debug buffers and cached resources.
-- Keyed-mutex acquire/release in `WowViewerEngine.Render` is not protected by `try/finally`;
-  a render exception can leave the shared surface permanently locked.
+- `EditorDocument`, stable object IDs, selection snapshots, `UndoService`, grouped
+  transactions, `ToolManager`, and `TransformObjectCommand` now establish the application
+  layer. Implement a DX11 `IEditorSceneSink`, map renderer selection to stable IDs, and
+  route actual gizmo transforms through commands rather than direct `SceneManager` writes.
 
-### P1: initialization and status reporting
+### P1: remaining initialization configuration
 
-- CASC/build failures only reach console output or an unobserved task. Add explicit renderer
-  states such as `Created`, `Initializing`, `Ready`, `Failed`, and `Disposed`, and expose a
-  status/error snapshot to the editor overlay.
-- `.build.info` parsing assumes fixed indices without validating the header or row length.
-  The invalid-product diagnostic condition is also too narrow.
-- `LoadCurrentProduct` replaces supplied build/CDN config values with `.build.info` values.
-  Decide and document precedence before extending the settings UI.
+- `.build.info` rows are length-checked, but parsing still relies on fixed column positions
+  rather than the header names.
+- Explicit build/CDN configuration now takes precedence over `.build.info`; add validation
+  and explain this precedence in the settings UI.
 - CASC locale/region are currently hardcoded to `enUS`/`us`, and TACT keys are read/written
   via a relative `WoW.txt` path.
 
@@ -202,11 +236,12 @@ After every code, project, configuration, or shader change, run from the reposit
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\run-smoke-tests.ps1
 ```
 
-As of 2026-08-13 this builds `WTEditor.Avalonia` and passes 4 tests. The tests cover
-settings serialization/cloning, normal-window bounds preservation, and camera-direction
-restoration. They do not cover D3D initialization, shader compilation, cache teardown,
-streaming, input routing, selection, or rendered output. Add focused unit tests around
-new non-GPU policies and keep hardware-dependent smoke checks separate and explicit.
+As of 2026-08-13 this builds `WTEditor.Avalonia` and passes 11 tests. Coverage includes
+settings/session behavior, normal-window bounds preservation, camera-direction restoration,
+document transform undo/redo and renderer notification, grouped undo transactions, and
+selection identity, plus instantaneous and rolling CPU/GPU bottleneck classification. It
+does not cover hardware D3D initialization, shader compilation,
+cache teardown, streaming, input routing, or rendered output.
 
 For renderer work, also verify manually on Windows with the D3D11 compositor:
 

@@ -34,9 +34,12 @@ namespace WoWRenderLib.DX11.Managers
             this.device = device;
             compiler = D3DCompiler.GetApi();
 
-            this.shaderFolder = shaderFolder;
+            this.shaderFolder = Path.GetFullPath(shaderFolder);
 
-            foreach (var file in Directory.GetFiles(shaderFolder, "*.hlsl"))
+            if (!Directory.Exists(this.shaderFolder))
+                throw new DirectoryNotFoundException($"Shader directory was not found: {this.shaderFolder}");
+
+            foreach (var file in Directory.GetFiles(this.shaderFolder, "*.hlsl"))
                 shaderMTimes.Add(file, File.GetLastWriteTime(file));
         }
 
@@ -46,6 +49,8 @@ namespace WoWRenderLib.DX11.Managers
                 return shaderProgram;
 
             shaderProgram = CompileShader(type);
+            if (_compiledShaders.Remove(type, out var previous))
+                DisposeShader(previous);
             _compiledShaders[type] = shaderProgram;
             return shaderProgram;
         }
@@ -60,17 +65,33 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (disposing)
             {
-                compiler.Dispose();
+                foreach (var shader in _compiledShaders.Values)
+                    DisposeShader(shader);
 
-                // TODO: Delete DX11 shaders
+                _compiledShaders.Clear();
+                compiler.Dispose();
             }
+        }
+
+        private static void DisposeShader(CompiledShader shader)
+        {
+            shader.InputLayout.Dispose();
+            shader.PixelShader.Dispose();
+            shader.VertexShader.Dispose();
         }
 
         public bool CheckForChanges()
         {
             foreach (var file in Directory.GetFiles(shaderFolder, "*.hlsl"))
             {
-                if (shaderMTimes[file] < File.GetLastWriteTime(file))
+                var modified = File.GetLastWriteTime(file);
+                if (!shaderMTimes.TryGetValue(file, out var previousModified))
+                {
+                    shaderMTimes[file] = modified;
+                    continue;
+                }
+
+                if (previousModified < modified)
                 {
                     shadersReady = false;
                     Console.WriteLine("Reloading shader " + file);
@@ -97,22 +118,8 @@ namespace WoWRenderLib.DX11.Managers
 
         private unsafe CompiledShader CompileShader(string type)
         {
-            string? shaderSource;
-
-            while (true)
-            {
-                try
-                {
-                    shaderSource = File.ReadAllText("Shaders/" + type + ".hlsl");
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Error reading shader files: " + ex.Message);
-                    Console.WriteLine("Retrying in 100ms");
-                    Thread.Sleep(100);
-                }
-            }
+            var shaderPath = Path.Combine(shaderFolder, type + ".hlsl");
+            var shaderSource = File.ReadAllText(shaderPath);
 
             var shaderBytes = Encoding.ASCII.GetBytes(shaderSource);
             ComPtr<ID3D11VertexShader> vertexShader = default;

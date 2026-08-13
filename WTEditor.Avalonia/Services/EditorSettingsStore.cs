@@ -1,10 +1,65 @@
-using System;
-using System.IO;
 using System.Numerics;
 using System.Text.Json;
-using WoWRenderLib.DX11;
+using WTEditor.Application.Models;
+using WTEditor.Application.Services;
 
 namespace WTEditor.Avalonia.Services;
+
+public sealed class PersistedRenderingSettings
+{
+    public float AmbientColorR { get; set; } = 104f / 255f;
+    public float AmbientColorG { get; set; } = 130f / 255f;
+    public float AmbientColorB { get; set; } = 154f / 255f;
+    public float DiffuseColorR { get; set; } = 1f;
+    public float DiffuseColorG { get; set; } = 136f / 255f;
+    public float DiffuseColorB { get; set; }
+    public float TerrainRenderDistance { get; set; } = 20_000f;
+    public float ModelRenderDistance { get; set; } = 20_000f;
+    public int TileLoadingDistance { get; set; } = 4;
+    public float MovementSpeed { get; set; } = 150f;
+    public float MouseSensitivity { get; set; } = 0.1f;
+    public bool RenderADT { get; set; } = true;
+    public bool RenderWMO { get; set; } = true;
+    public bool RenderM2 { get; set; } = true;
+    public bool ShowBoundingBoxes { get; set; }
+    public bool ShowBoundingSpheres { get; set; }
+
+    public RenderingConfiguration ToModel() => new()
+    {
+        AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
+        DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
+        TerrainRenderDistance = TerrainRenderDistance,
+        ModelRenderDistance = ModelRenderDistance,
+        TileLoadingDistance = TileLoadingDistance,
+        MovementSpeed = MovementSpeed,
+        MouseSensitivity = MouseSensitivity,
+        RenderADT = RenderADT,
+        RenderWMO = RenderWMO,
+        RenderM2 = RenderM2,
+        ShowBoundingBoxes = ShowBoundingBoxes,
+        ShowBoundingSpheres = ShowBoundingSpheres
+    };
+
+    public static PersistedRenderingSettings From(RenderingConfiguration rendering) => new()
+    {
+        AmbientColorR = rendering.AmbientColor.X,
+        AmbientColorG = rendering.AmbientColor.Y,
+        AmbientColorB = rendering.AmbientColor.Z,
+        DiffuseColorR = rendering.DiffuseColor.X,
+        DiffuseColorG = rendering.DiffuseColor.Y,
+        DiffuseColorB = rendering.DiffuseColor.Z,
+        TerrainRenderDistance = rendering.TerrainRenderDistance,
+        ModelRenderDistance = rendering.ModelRenderDistance,
+        TileLoadingDistance = rendering.TileLoadingDistance,
+        MovementSpeed = rendering.MovementSpeed,
+        MouseSensitivity = rendering.MouseSensitivity,
+        RenderADT = rendering.RenderADT,
+        RenderWMO = rendering.RenderWMO,
+        RenderM2 = rendering.RenderM2,
+        ShowBoundingBoxes = rendering.ShowBoundingBoxes,
+        ShowBoundingSpheres = rendering.ShowBoundingSpheres
+    };
+}
 
 public sealed class PersistedEditorSettings
 {
@@ -13,7 +68,7 @@ public sealed class PersistedEditorSettings
     public string BuildConfig { get; set; } = "";
     public string CdnConfig { get; set; } = "";
     public string KeyboardLayout { get; set; } = "Auto";
-    public RendererSettings Renderer { get; set; } = new();
+    public PersistedRenderingSettings Renderer { get; set; } = new();
     public bool HasCameraPosition { get; set; }
     public float CameraPositionX { get; set; }
     public float CameraPositionY { get; set; }
@@ -29,42 +84,73 @@ public sealed class PersistedEditorSettings
     public double WindowWidth { get; set; }
     public double WindowHeight { get; set; }
 
-    public Vector3 GetCameraPosition() => new(CameraPositionX, CameraPositionY, CameraPositionZ);
-    public Vector3 GetCameraDirection() => new(CameraDirectionX, CameraDirectionY, CameraDirectionZ);
-
-    public WowClientConfig ToClientConfig() => new()
+    public EditorSettingsSnapshot ToModel()
     {
-        wowDir = WowDirectory ?? "",
-        wowProduct = WowProduct ?? "",
-        buildConfig = BuildConfig ?? "",
-        cdnConfig = CdnConfig ?? ""
-    };
+        CameraState? camera = HasCameraPosition || HasCameraDirection
+            ? new CameraState(
+                new Vector3(CameraPositionX, CameraPositionY, CameraPositionZ),
+                new Vector3(CameraDirectionX, CameraDirectionY, CameraDirectionZ))
+            : null;
 
-    public static PersistedEditorSettings From(
-        WowClientConfig clientConfig,
-        RendererSettings renderer,
-        string keyboardLayout,
-        Vector3? cameraPosition = null,
-        Vector3? cameraDirection = null) => new()
+        return new EditorSettingsSnapshot
+        {
+            Client = new ClientConfiguration
+            {
+                WowDirectory = WowDirectory ?? "",
+                WowProduct = WowProduct ?? "",
+                BuildConfig = BuildConfig ?? "",
+                CdnConfig = CdnConfig ?? ""
+            },
+            Rendering = (Renderer ?? new PersistedRenderingSettings()).ToModel(),
+            KeyboardLayout = ParseKeyboardLayout(KeyboardLayout),
+            Camera = camera,
+            Window = new WindowPlacement
+            {
+                HasBounds = HasWindowBounds,
+                State = WindowState ?? "Normal",
+                X = WindowX,
+                Y = WindowY,
+                Width = WindowWidth,
+                Height = WindowHeight
+            }
+        }.Normalize();
+    }
+
+    public static PersistedEditorSettings From(EditorSettingsSnapshot settings)
     {
-        WowDirectory = clientConfig.wowDir,
-        WowProduct = clientConfig.wowProduct,
-        BuildConfig = clientConfig.buildConfig,
-        CdnConfig = clientConfig.cdnConfig,
-        KeyboardLayout = keyboardLayout,
-        Renderer = renderer.Clone(),
-        HasCameraPosition = cameraPosition.HasValue,
-        CameraPositionX = cameraPosition?.X ?? 0f,
-        CameraPositionY = cameraPosition?.Y ?? 0f,
-        CameraPositionZ = cameraPosition?.Z ?? 0f,
-        HasCameraDirection = cameraDirection.HasValue,
-        CameraDirectionX = cameraDirection?.X ?? 0f,
-        CameraDirectionY = cameraDirection?.Y ?? 0f,
-        CameraDirectionZ = cameraDirection?.Z ?? 0f
-    };
+        var normalized = settings.Normalize();
+        return new PersistedEditorSettings
+        {
+            WowDirectory = normalized.Client.WowDirectory,
+            WowProduct = normalized.Client.WowProduct,
+            BuildConfig = normalized.Client.BuildConfig,
+            CdnConfig = normalized.Client.CdnConfig,
+            KeyboardLayout = normalized.KeyboardLayout.ToString(),
+            Renderer = PersistedRenderingSettings.From(normalized.Rendering),
+            HasCameraPosition = normalized.Camera != null,
+            CameraPositionX = normalized.Camera?.Position.X ?? 0f,
+            CameraPositionY = normalized.Camera?.Position.Y ?? 0f,
+            CameraPositionZ = normalized.Camera?.Position.Z ?? 0f,
+            HasCameraDirection = normalized.Camera != null,
+            CameraDirectionX = normalized.Camera?.Direction.X ?? 0f,
+            CameraDirectionY = normalized.Camera?.Direction.Y ?? 0f,
+            CameraDirectionZ = normalized.Camera?.Direction.Z ?? 0f,
+            HasWindowBounds = normalized.Window.HasBounds,
+            WindowState = normalized.Window.State,
+            WindowX = normalized.Window.X,
+            WindowY = normalized.Window.Y,
+            WindowWidth = normalized.Window.Width,
+            WindowHeight = normalized.Window.Height
+        };
+    }
+
+    private static KeyboardLayoutMode ParseKeyboardLayout(string? value) =>
+        Enum.TryParse<KeyboardLayoutMode>(value, true, out var parsed)
+            ? parsed
+            : KeyboardLayoutMode.Auto;
 }
 
-public static class EditorSettingsStore
+public sealed class JsonEditorSettingsStore : IEditorSettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -72,77 +158,48 @@ public static class EditorSettingsStore
         PropertyNameCaseInsensitive = true
     };
 
-    // Keep the editor configuration next to the executable so portable copies
-    // of the application retain their settings with the program directory.
-    private static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "settings.json");
+    private readonly string _settingsPath;
 
-    public static PersistedEditorSettings Load()
+    public JsonEditorSettingsStore()
+        : this(Path.Combine(AppContext.BaseDirectory, "settings.json"))
+    {
+    }
+
+    public JsonEditorSettingsStore(string settingsPath)
+    {
+        _settingsPath = settingsPath;
+    }
+
+    public EditorSettingsSnapshot Load()
     {
         try
         {
-            if (!File.Exists(SettingsPath))
-                return new PersistedEditorSettings();
+            if (!File.Exists(_settingsPath))
+                return new EditorSettingsSnapshot();
 
-            return JsonSerializer.Deserialize<PersistedEditorSettings>(
-                       File.ReadAllText(SettingsPath), JsonOptions)
-                   ?? new PersistedEditorSettings();
+            return (JsonSerializer.Deserialize<PersistedEditorSettings>(
+                        File.ReadAllText(_settingsPath), JsonOptions)
+                    ?? new PersistedEditorSettings()).ToModel();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Unable to load editor settings: {ex.Message}");
-            return new PersistedEditorSettings();
+            return new EditorSettingsSnapshot();
         }
     }
 
-    public static void Save(
-        WowClientConfig clientConfig,
-        RendererSettings renderer,
-        string keyboardLayout,
-        Vector3? cameraPosition = null,
-        int? windowX = null,
-        int? windowY = null,
-        double? windowWidth = null,
-        double? windowHeight = null,
-        string? windowState = null,
-        Vector3? cameraDirection = null)
+    public void Save(EditorSettingsSnapshot settings)
     {
         try
         {
-            var temporaryPath = SettingsPath + ".tmp";
-            var persisted = PersistedEditorSettings.From(
-                clientConfig,
-                renderer,
-                keyboardLayout,
-                cameraPosition,
-                cameraDirection);
-            if (windowX.HasValue && windowY.HasValue && windowWidth.HasValue && windowHeight.HasValue)
-            {
-                persisted.HasWindowBounds = true;
-                persisted.WindowX = windowX.Value;
-                persisted.WindowY = windowY.Value;
-                persisted.WindowWidth = windowWidth.Value;
-                persisted.WindowHeight = windowHeight.Value;
-            }
+            var directory = Path.GetDirectoryName(_settingsPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
 
-            if (!windowX.HasValue || !windowY.HasValue || !windowWidth.HasValue || !windowHeight.HasValue)
-            {
-                var previous = Load();
-                persisted.HasWindowBounds = previous.HasWindowBounds;
-                persisted.WindowX = previous.WindowX;
-                persisted.WindowY = previous.WindowY;
-                persisted.WindowWidth = previous.WindowWidth;
-                persisted.WindowHeight = previous.WindowHeight;
-                if (windowState == null)
-                    persisted.WindowState = previous.WindowState;
-            }
-
-            if (windowState != null)
-                persisted.WindowState = windowState;
-
-            var json = JsonSerializer.Serialize(persisted, JsonOptions);
-
+            var temporaryPath = _settingsPath + ".tmp";
+            var json = JsonSerializer.Serialize(PersistedEditorSettings.From(settings), JsonOptions);
             File.WriteAllText(temporaryPath, json);
-            File.Move(temporaryPath, SettingsPath, true);
+            File.Move(temporaryPath, _settingsPath, true);
         }
         catch (Exception ex)
         {

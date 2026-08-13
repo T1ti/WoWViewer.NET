@@ -2,35 +2,54 @@
 
 namespace WoWRenderLib.Services
 {
+    public sealed record CASCInitializationResult(BuildInstance BuildInstance, string BuildName);
+
     public static class CASC
     {
-        public static BuildInstance buildInstance;
+        public static BuildInstance buildInstance = null!;
         public static bool IsInitialized { get; private set; } = false;
         public static string BuildName { get; private set; } = "";
 
         public static async Task Initialize(string wowProduct, string wowDir = "", string buildConfig = "", string cdnConfig = "")
         {
+            var result = await CreateBuildAsync(wowProduct, wowDir, buildConfig, cdnConfig);
+            Activate(result);
+        }
+
+        public static async Task<CASCInitializationResult> CreateBuildAsync(
+            string wowProduct,
+            string wowDir = "",
+            string buildConfig = "",
+            string cdnConfig = "",
+            CancellationToken cancellationToken = default)
+        {
             if (string.IsNullOrEmpty(wowProduct) || !wowProduct.StartsWith("wow"))
                 throw new Exception("Invalid WoW product");
 
-            buildInstance = new BuildInstance();
-            buildInstance.Settings.Product = wowProduct;
+            cancellationToken.ThrowIfCancellationRequested();
 
-            buildInstance.Settings.Locale = RootInstance.LocaleFlags.enUS;
-            buildInstance.Settings.Region = "us";
-            buildInstance.Settings.RootMode = RootInstance.LoadMode.Normal;
+            var candidate = new BuildInstance();
+            candidate.Settings.Product = wowProduct;
+
+            candidate.Settings.Locale = RootInstance.LocaleFlags.enUS;
+            candidate.Settings.Region = "us";
+            candidate.Settings.RootMode = RootInstance.LoadMode.Normal;
 
             if (string.IsNullOrEmpty(buildConfig) || string.IsNullOrEmpty(cdnConfig))
             {
-                var versions = await buildInstance.cdn.GetPatchServiceFile(wowProduct, "versions");
+                var versions = await candidate.cdn.GetPatchServiceFile(wowProduct, "versions");
+                cancellationToken.ThrowIfCancellationRequested();
                 foreach (var line in versions.Split("\n"))
                 {
                     var splitLine = line.Split('|');
 
+                    if (splitLine.Length < 3)
+                        continue;
+
                     if (splitLine[0].StartsWith("Region") || splitLine[0].StartsWith("##"))
                         continue;
 
-                    if (splitLine[0] != buildInstance.Settings.Region)
+                    if (splitLine[0] != candidate.Settings.Region)
                         continue;
 
                     buildConfig = splitLine[1];
@@ -46,6 +65,9 @@ namespace WoWRenderLib.Services
 
                         var splitLine = line.Split('|');
 
+                        if (splitLine.Length < 3)
+                            continue;
+
                         if (splitLine[0].StartsWith("Region") || splitLine[0].StartsWith("##"))
                             continue;
 
@@ -59,28 +81,40 @@ namespace WoWRenderLib.Services
                 throw new Exception("No configs specified and was unable to retrieve version information from Ribbit");
 
             if (!string.IsNullOrEmpty(wowDir) && Directory.Exists(wowDir))
-                buildInstance.Settings.BaseDir = wowDir;
+                candidate.Settings.BaseDir = wowDir;
 
-            buildInstance.Settings.BuildConfig = buildConfig;
-            buildInstance.Settings.CDNConfig = cdnConfig;
+            candidate.Settings.BuildConfig = buildConfig;
+            candidate.Settings.CDNConfig = cdnConfig;
 
-            buildInstance.Settings.AdditionalCDNs = ["archive.wow.tools", "casc.wago.tools", "cdn.arctium.tools"];
-            buildInstance.Settings.BlockedCDNs = ["level3.blizzard.com", "us.cdn.blizzard.com"];
+            candidate.Settings.AdditionalCDNs = ["archive.wow.tools", "casc.wago.tools", "cdn.arctium.tools"];
+            candidate.Settings.BlockedCDNs = ["level3.blizzard.com", "us.cdn.blizzard.com"];
 
-            buildInstance.LoadConfigs(buildConfig, cdnConfig);
-            if (buildInstance.BuildConfig == null || buildInstance.CDNConfig == null)
+            candidate.LoadConfigs(buildConfig, cdnConfig);
+            if (candidate.BuildConfig == null || candidate.CDNConfig == null)
                 throw new Exception("Failed to load build configs");
 
+            cancellationToken.ThrowIfCancellationRequested();
             LoadKeys();
 
-            buildInstance.Load();
+            cancellationToken.ThrowIfCancellationRequested();
+            candidate.Load();
 
-            if (buildInstance.Encoding == null || buildInstance.Root == null || buildInstance.Install == null || buildInstance.GroupIndex == null)
+            if (candidate.Encoding == null || candidate.Root == null || candidate.Install == null || candidate.GroupIndex == null)
                 throw new Exception("Failed to load build components");
 
-            var fullBuildName = buildInstance.BuildConfig.Values["build-name"][0];
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var fullBuildName = candidate.BuildConfig.Values["build-name"][0];
             var splitName = fullBuildName.Replace("WOW-", "").Split("patch");
-            BuildName = splitName[1].Split("_")[0] + "." + splitName[0];
+            var buildName = splitName[1].Split("_")[0] + "." + splitName[0];
+
+            return new CASCInitializationResult(candidate, buildName);
+        }
+
+        public static void Activate(CASCInitializationResult result)
+        {
+            buildInstance = result.BuildInstance;
+            BuildName = result.BuildName;
             IsInitialized = true;
         }
 

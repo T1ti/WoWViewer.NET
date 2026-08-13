@@ -1,15 +1,19 @@
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using WTEditor.Application.Models;
 using WTEditor.Avalonia.ViewModels;
 
 namespace WTEditor.Avalonia.Views;
 
 public partial class Editor3DView : UserControl
 {
+    private Editor3DViewModel? _subscribedViewModel;
+    private MetricsWindow? _metricsWindow;
     // private bool _leftMouseDown = false;
     // private bool _rightMouseDown = false;
     // private Point _lastMousePos;
@@ -26,7 +30,7 @@ public partial class Editor3DView : UserControl
     private Key _MoveDownKey = Key.E;
     private Key _MoveUpKey = Key.Q;
 
-    public Editor3DViewModel ViewModel
+    public Editor3DViewModel? ViewModel
     {
         get => DataContext as Editor3DViewModel;
         set => DataContext = value;
@@ -58,23 +62,74 @@ public partial class Editor3DView : UserControl
 
     protected override void OnDataContextChanged(EventArgs e)
     {
-        if (DataContext is Editor3DViewModel oldViewModel)
-            oldViewModel.KeyboardLayoutChanged -= OnKeyboardLayoutChanged;
+        if (_subscribedViewModel != null)
+        {
+            _subscribedViewModel.KeyboardLayoutChanged -= OnKeyboardLayoutChanged;
+            _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
 
         base.OnDataContextChanged(e);
 
         if (DataContext is Editor3DViewModel viewModel)
         {
+            _subscribedViewModel = viewModel;
             viewModel.KeyboardLayoutChanged += OnKeyboardLayoutChanged;
+            viewModel.PropertyChanged += OnViewModelPropertyChanged;
             ApplyKeyboardLayout(viewModel.KeyboardLayout);
+            UpdateMetricsWindow();
+        }
+        else
+        {
+            _subscribedViewModel = null;
         }
     }
 
-    private void OnKeyboardLayoutChanged(object? sender, string layout) => ApplyKeyboardLayout(layout);
+    private void OnKeyboardLayoutChanged(object? sender, KeyboardLayoutMode layout) => ApplyKeyboardLayout(layout);
 
-    private void ApplyKeyboardLayout(string layout)
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        SetKeyboardMode(layout == "AZERTY" || layout == "Auto" && _DetectedAzertyInput);
+        if (e.PropertyName == nameof(Editor3DViewModel.IsMetricsPanelVisible))
+            UpdateMetricsWindow();
+    }
+
+    private void UpdateMetricsWindow()
+    {
+        var viewModel = ViewModel;
+        if (viewModel?.IsMetricsPanelVisible == true && VisualRoot != null)
+        {
+            if (_metricsWindow != null)
+                return;
+
+            _metricsWindow = new MetricsWindow { DataContext = viewModel };
+            _metricsWindow.Closed += OnMetricsWindowClosed;
+            if (TopLevel.GetTopLevel(this) is Window owner)
+                _metricsWindow.Show(owner);
+            else
+                _metricsWindow.Show();
+        }
+        else if (_metricsWindow != null)
+        {
+            var window = _metricsWindow;
+            _metricsWindow = null;
+            window.Closed -= OnMetricsWindowClosed;
+            window.Close();
+        }
+    }
+
+    private void OnMetricsWindowClosed(object? sender, EventArgs e)
+    {
+        if (_metricsWindow != sender)
+            return;
+
+        _metricsWindow = null;
+        if (ViewModel != null)
+            ViewModel.IsMetricsPanelVisible = false;
+    }
+
+    private void ApplyKeyboardLayout(KeyboardLayoutMode layout)
+    {
+        SetKeyboardMode(layout == KeyboardLayoutMode.Azerty ||
+                        layout == KeyboardLayoutMode.Auto && _DetectedAzertyInput);
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -82,6 +137,20 @@ public partial class Editor3DView : UserControl
         base.OnAttachedToVisualTree(e);
         // Focusable = true;
         Focus();
+        UpdateMetricsWindow();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        var window = _metricsWindow;
+        _metricsWindow = null;
+        if (window != null)
+        {
+            window.Closed -= OnMetricsWindowClosed;
+            window.Close();
+        }
+
+        base.OnDetachedFromVisualTree(e);
     }
 
     public void SetKeyboardMode(bool Azerty)
@@ -110,22 +179,25 @@ public partial class Editor3DView : UserControl
     {
         base.OnPointerPressed(e);
 
+        var viewModel = ViewModel;
+        if (viewModel == null)
+            return;
 
         var props = e.GetCurrentPoint(this).Properties;
 
         switch (props.PointerUpdateKind)
         {
             case PointerUpdateKind.LeftButtonPressed:
-                ViewModel.LeftMouseDown = true;
+                viewModel.LeftMouseDown = true;
                 break;
 
             case PointerUpdateKind.RightButtonPressed:
-                ViewModel.RightMouseDown = true;
+                viewModel.RightMouseDown = true;
                 break;
         }
 
         var pos = e.GetPosition(this);
-        ViewModel.MousePosition = new System.Numerics.Vector2((float)pos.X, (float)pos.Y);
+        viewModel.MousePosition = new System.Numerics.Vector2((float)pos.X, (float)pos.Y);
 
         e.Pointer.Capture(this);
 
@@ -134,21 +206,24 @@ public partial class Editor3DView : UserControl
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        var viewModel = ViewModel;
+        if (viewModel == null)
+            return;
 
         var props = e.GetCurrentPoint(this).Properties;
         switch (props.PointerUpdateKind)
         {
             case PointerUpdateKind.LeftButtonReleased:
-                ViewModel.LeftMouseDown = false;
+                viewModel.LeftMouseDown = false;
                 break;
 
             case PointerUpdateKind.RightButtonReleased:
-                ViewModel.RightMouseDown = false;
+                viewModel.RightMouseDown = false;
                 break;
         }
 
         // Only release capture if no buttons are still held
-        if (!ViewModel.LeftMouseDown && !ViewModel.RightMouseDown)
+        if (!viewModel.LeftMouseDown && !viewModel.RightMouseDown)
         {
             e.Pointer.Capture(null);
         }

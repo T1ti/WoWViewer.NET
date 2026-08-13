@@ -91,6 +91,11 @@ namespace WoWRenderLib.DX11.Managers
         public int visibleChunks { get; private set; } = 0;
         public int visibleWMOs { get; private set; } = 0;
         public int visibleM2s { get; private set; } = 0;
+        public int candidateChunks { get; private set; }
+        public int candidateWMOs { get; private set; }
+        public int candidateM2s { get; private set; }
+        public double CullingTimeMs { get; private set; }
+        public int UploadedResourcesLastFrame { get; private set; }
 
         public bool SceneLoaded => loadedTiles.Count > 0; // this won't work for WMO only maps
         public string StatusMessage { get; private set; } = "";
@@ -661,10 +666,10 @@ namespace WoWRenderLib.DX11.Managers
             var queueTimer = new Stopwatch();
             queueTimer.Start();
 
-            ADTCache.Upload(queueTimer, device);
-            WMOCache.Upload(queueTimer);
-            M2Cache.Upload(queueTimer);
-            BLPCache.Upload(queueTimer);
+            UploadedResourcesLastFrame = ADTCache.Upload(queueTimer, device);
+            UploadedResourcesLastFrame += WMOCache.Upload(queueTimer);
+            UploadedResourcesLastFrame += M2Cache.Upload(queueTimer);
+            UploadedResourcesLastFrame += BLPCache.Upload(queueTimer);
 
             if (queueTimer.ElapsedMilliseconds > 10)
                 return true;
@@ -714,6 +719,15 @@ namespace WoWRenderLib.DX11.Managers
 
             return true;
         }
+
+        public int GetPendingOperationCount() =>
+            tilesToLoad.Count +
+            tilesInFlight.Count +
+            pendingWMODoodads.Count +
+            ADTCache.GetLoadQueueCount() +
+            WMOCache.GetLoadQueueCount() +
+            M2Cache.GetLoadQueueCount() +
+            BLPCache.GetQueueCount();
 
         private void OnADTContainerLoaded(ADTContainer adtContainer, Terrain terrain)
         {
@@ -850,6 +864,7 @@ namespace WoWRenderLib.DX11.Managers
 
             var cameraMatrix = camera.GetViewMatrix();
 
+            var cullingStarted = Stopwatch.GetTimestamp();
             camera.UpdateFrustum();
 
             var frustum = camera.GetFrustum();
@@ -857,6 +872,10 @@ namespace WoWRenderLib.DX11.Managers
             visibleM2s = 0;
             visibleWMOs = 0;
             visibleChunks = 0;
+            candidateM2s = 0;
+            candidateWMOs = 0;
+            candidateChunks = 0;
+            CullingTimeMs = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
 
             var backgroundColour = new[] { 0f, 0f, 0f, 1.0f };
 
@@ -916,6 +935,8 @@ namespace WoWRenderLib.DX11.Managers
                 if (!firstInstance.IsLoaded)
                     continue;
 
+                candidateWMOs += instances.Count;
+                cullingStarted = Stopwatch.GetTimestamp();
                 _visibleIndices.Clear();
                 for (int i = 0; i < instances.Count; i++)
                 {
@@ -928,6 +949,7 @@ namespace WoWRenderLib.DX11.Managers
                         _visibleIndices.Add(i);
                     }
                 }
+                CullingTimeMs += Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
 
                 if (_visibleIndices.Count == 0)
                     continue;
@@ -1021,6 +1043,8 @@ namespace WoWRenderLib.DX11.Managers
                 if (!RenderM2 || instances.Count == 0)
                     continue;
 
+                candidateM2s += instances.Count;
+                cullingStarted = Stopwatch.GetTimestamp();
                 _visibleIndices.Clear();
                 for (int i = 0; i < instances.Count; i++)
                 {
@@ -1029,10 +1053,11 @@ namespace WoWRenderLib.DX11.Managers
                         IsWithinRenderDistance(camera.Position, sphere.Value.Center, sphere.Value.Radius, ModelRenderDistance) &&
                         frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
                     {
-                        visibleWMOs++;
+                        visibleM2s++;
                         _visibleIndices.Add(i);
                     }
                 }
+                CullingTimeMs += Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
 
                 if (_visibleIndices.Count == 0)
                     continue;
@@ -1045,7 +1070,6 @@ namespace WoWRenderLib.DX11.Managers
                 deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
                 deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
 
-                visibleM2s++;
                 for (int batchStart = 0; batchStart < _visibleIndices.Count; batchStart += MaxInstancesPerBatch)
                 {
                     int batchCount = Math.Min(MaxInstancesPerBatch, _visibleIndices.Count - batchStart);
@@ -1135,17 +1159,25 @@ namespace WoWRenderLib.DX11.Managers
                     deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in adtVertexStride, in adtVertexOffset);
                     deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR32Uint, 0);
 
-                    for (uint c = 0; c < 256; c++)
+                    candidateChunks += 256;
+                    cullingStarted = Stopwatch.GetTimestamp();
+                    _visibleIndices.Clear();
+                    for (var c = 0; c < 256; c++)
                     {
                         var bounds = adt.Terrain.chunkBounds[c];
                         var boundsCenter = (bounds.Min + bounds.Max) * 0.5f;
                         var boundsRadius = Vector3.Distance(boundsCenter, bounds.Max);
-                        if (!IsWithinRenderDistance(camera.Position, boundsCenter, boundsRadius, TerrainRenderDistance) ||
-                            !frustum.IsBoxVisible(bounds.Min, bounds.Max))
-                            continue;
-                        else
+                        if (IsWithinRenderDistance(camera.Position, boundsCenter, boundsRadius, TerrainRenderDistance) &&
+                            frustum.IsBoxVisible(bounds.Min, bounds.Max))
+                        {
                             visibleChunks++;
+                            _visibleIndices.Add(c);
+                        }
+                    }
+                    CullingTimeMs += Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
 
+                    foreach (var c in _visibleIndices)
+                    {
                         var batch = adt.Terrain.renderBatches[c];
 
                         layerCB.layerCount = batch.materialFDIDs.Length;
@@ -1170,7 +1202,7 @@ namespace WoWRenderLib.DX11.Managers
 
                         deviceContext.PSSetShaderResources(16, 2, ref batch.alphaMaterialID[0]);
 
-                        deviceContext.DrawIndexed(768, c * 768, 0);
+                        deviceContext.DrawIndexed(768, (uint)c * 768, 0);
                         drawCalls++;
                         verticeCount += 768;
                     }
@@ -1438,12 +1470,6 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (disposing)
             {
-                //M2Cache.StopWorker();
-                WMOCache.StopWorker();
-                BLPCache.StopWorker();
-
-                // TODO: Release all cached resources
-
                 textureSampler.Dispose();
                 clampSampler.Dispose();
                 depthStencilView.Dispose();
@@ -1455,6 +1481,11 @@ namespace WoWRenderLib.DX11.Managers
                 instanceMatrixBuffer.Dispose();
                 defaultTexture.Dispose();
                 bboxDepthStencilState.Dispose();
+                bboxConstantBuffer.Dispose();
+                bboxVertexBuffer.Dispose();
+                rasterizerState.Dispose();
+                wmoRasterizerState.Dispose();
+                wireframeRasterizerState.Dispose();
                 foreach (var bs in _blendStates)
                     bs.Dispose();
             }

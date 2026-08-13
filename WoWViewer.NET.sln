@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWViewer.NET", "WoWViewer.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTEditor.Avalonia", "WTEditor.Avalonia\WTEditor.Avalonia.csproj", "{2DFB9835-68E0-46AE-85D2-266BA5656D4B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTEditor.Application", "WTEditor.Application\WTEditor.Application.csproj", "{6F3D0C8B-4CA0-4D07-A52A-7894C133EBF2}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WTEditor.Avalonia.Tests", "WTEditor.Avalonia.Tests\WTEditor.Avalonia.Tests.csproj", "{9D6C7AF7-3B13-4A8A-AB71-CDFD9B4F8BBE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWRenderLib.DX11", "WoWRenderLib.DX11\WoWRenderLib.DX11.csproj", "{4E1CF946-327D-B6C5-A771-BF6928FABF0B}"
@@ -82,6 +84,10 @@ Global
 		{2DFB9835-68E0-46AE-85D2-266BA5656D4B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2DFB9835-68E0-46AE-85D2-266BA5656D4B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2DFB9835-68E0-46AE-85D2-266BA5656D4B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F3D0C8B-4CA0-4D07-A52A-7894C133EBF2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F3D0C8B-4CA0-4D07-A52A-7894C133EBF2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F3D0C8B-4CA0-4D07-A52A-7894C133EBF2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F3D0C8B-4CA0-4D07-A52A-7894C133EBF2}.Release|Any CPU.Build.0 = Release|Any CPU
 		{9D6C7AF7-3B13-4A8A-AB71-CDFD9B4F8BBE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{9D6C7AF7-3B13-4A8A-AB71-CDFD9B4F8BBE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9D6C7AF7-3B13-4A8A-AB71-CDFD9B4F8BBE}.Release|Any CPU.ActiveCfg = Release|Any CPU

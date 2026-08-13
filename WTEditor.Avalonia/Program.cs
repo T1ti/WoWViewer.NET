@@ -1,39 +1,47 @@
-﻿using System;
 using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
+using WTEditor.Application;
+using WTEditor.Application.Services;
+using WTEditor.Avalonia.Services;
 using WTEditor.Avalonia.ViewModels;
 using WTEditor.Avalonia.Views;
 
-namespace WTEditor.Avalonia
+namespace WTEditor.Avalonia;
+
+internal static class Program
 {
-    internal sealed class Program
+    public static ServiceProvider Services { get; private set; } = null!;
+
+    [STAThread]
+    public static void Main(string[] args)
     {
-        public static IServiceProvider Services { get; private set; }
-        public static IServiceScope? AppScope { get; private set; }
+        Services = ConfigureServices().BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
-        // Initialization code. Don't use any Avalonia, third-party APIs or any
-        // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
-        // yet and stuff might break.
-        [STAThread]
-        public static void Main(string[] args)
-        {
-            var services = new ServiceCollection();
-
-            // Register view models
-            services.AddSingleton<MainViewModel>();
-            services.AddSingleton<MainWindowViewModel>();
-
-
-            Services = services.BuildServiceProvider();
-
-            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
-        }
-
-        // Avalonia configuration, don't remove; also used by visual designer.
-        public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<App>()
-                .UsePlatformDetect()
-                .WithInterFont()
-                .LogToTrace();
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
+
+    private static ServiceCollection ConfigureServices()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IEditorSettingsStore, JsonEditorSettingsStore>();
+        services.AddSingleton<EditorSession>();
+        services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
+
+        services.AddSingleton<Editor3DViewModel>();
+        services.AddSingleton<MainViewModel>();
+        services.AddSingleton<MainWindowViewModel>();
+        services.AddTransient<MainWindow>();
+
+        return services;
+    }
+
+    public static void DisposeServices() => Services.Dispose();
+
+    public static AppBuilder BuildAvaloniaApp() =>
+        AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .LogToTrace();
 }

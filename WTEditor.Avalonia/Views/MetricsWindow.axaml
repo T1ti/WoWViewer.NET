@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:WTEditor.Avalonia.Controls"
+        xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+        x:Class="WTEditor.Avalonia.Views.MetricsWindow"
+        x:DataType="vm:Editor3DViewModel"
+        Title="World viewport profiler"
+        Width="460" Height="700" MinWidth="360" MinHeight="320"
+        CanResize="True" Background="#1A2027">
+  <controls:FloatingMetricsPanel/>
+</Window>

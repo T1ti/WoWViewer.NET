@@ -104,15 +104,16 @@ namespace WoWRenderLib.DX11.Cache
             }
         }
 
-        public static void Upload(Stopwatch queueTimer)
+        public static int Upload(Stopwatch queueTimer)
         {
             if (cachedDevice == null)
-                return;
+                return 0;
 
+            var uploaded = 0;
             while (queueTimer.ElapsedMilliseconds < 5)
             {
                 if (!uploadQueue.TryDequeue(out var item))
-                    return;
+                    return uploaded;
 
                 uint originalFileDataId;
                 PreppedWMO preppedWMO;
@@ -122,13 +123,14 @@ namespace WoWRenderLib.DX11.Cache
                 if (!Cache.TryGetValue(originalFileDataId, out var oldWMO))
                 {
                     inFlight.Remove(originalFileDataId);
-                    return;
+                    return uploaded;
                 }
 
                 try
                 {
                     var newWMO = WMOLoader.LoadWMO(preppedWMO, cachedDevice.Value);
                     Cache[originalFileDataId] = newWMO;
+                    uploaded++;
 
                     if (oldWMO.groupBatches != null && oldWMO.groupBatches.Length > 0)
                         WMOLoader.UnloadWMO(oldWMO);
@@ -140,14 +142,38 @@ namespace WoWRenderLib.DX11.Cache
 
                 inFlight.Remove(originalFileDataId);
             }
+
+            return uploaded;
         }
 
         public static void StopWorker()
         {
-            workerCancellation?.Cancel();
-            workerCancellation?.Dispose();
+            StopWorkerAsync().GetAwaiter().GetResult();
+        }
+
+        public static async Task StopWorkerAsync()
+        {
+            var cancellation = workerCancellation;
+            var task = workerTask;
             workerCancellation = null;
             workerTask = null;
+
+            if (cancellation == null)
+                return;
+
+            cancellation.Cancel();
+            try
+            {
+                if (task != null)
+                    await task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
         }
 
         public static int GetLoadQueueCount()
@@ -209,6 +235,10 @@ namespace WoWRenderLib.DX11.Cache
 
             Cache.Clear();
             Users.Clear();
+            inFlight.Clear();
+            while (parseQueue.TryDequeue(out _)) { }
+            while (uploadQueue.TryDequeue(out _)) { }
+            cachedDevice = null;
         }
     }
 }
