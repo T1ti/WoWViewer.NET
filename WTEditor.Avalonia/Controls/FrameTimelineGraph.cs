@@ -115,12 +115,21 @@ public sealed class FrameStepBrushConverter : IValueConverter
         {
             ["World streaming (CPU)"] = Brush("#FFD166"),
             ["Resource upload submission (CPU)"] = Brush("#F78C6B"),
-            ["Visibility culling (CPU)"] = Brush("#55D6BE"),
-            ["Draw submission (CPU)"] = Brush("#C792EA"),
+            ["WMO culling (CPU)"] = Brush("#65D6C1"),
+            ["WMO command submission (CPU)"] = Brush("#A88BFA"),
+            ["M2 culling (CPU)"] = Brush("#78D5E3"),
+            ["M2 command submission (CPU)"] = Brush("#C792EA"),
+            ["Terrain culling (CPU)"] = Brush("#A7D46F"),
+            ["Terrain command submission (CPU)"] = Brush("#D8A0DF"),
+            ["Scene setup / debug (CPU)"] = Brush("#8494A7"),
             ["Other frame work (CPU)"] = Brush("#5EA1FF"),
-            ["Resource uploads (GPU)"] = Brush("#FF9F43"),
-            ["World drawing (GPU)"] = Brush("#FF5DA2"),
-            ["Other GPU work"] = Brush("#B455D4"),
+            ["Resource uploads (GPU timeline)"] = Brush("#FF9F43"),
+            ["World span (GPU timeline)"] = Brush("#FF5DA2"),
+            ["WMO span (GPU timeline)"] = Brush("#FF5DA2"),
+            ["M2 span (GPU timeline)"] = Brush("#FF7A90"),
+            ["Terrain span (GPU timeline)"] = Brush("#EF6FFF"),
+            ["Debug span (GPU timeline)"] = Brush("#B89CFF"),
+            ["Other GPU timeline"] = Brush("#B455D4"),
             ["Wait for viewport texture"] = Brush("#607080")
         };
 

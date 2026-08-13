@@ -31,6 +31,8 @@ public sealed class RendererSettings
 
     public float TerrainRenderDistance { get; set; } = 20_000f;
     public float ModelRenderDistance { get; set; } = 20_000f;
+    public float MinimumModelScreenSizePixels { get; set; } = 1f;
+    public float TerrainLodTransitionPixels { get; set; } = 32f;
     public int TileLoadingDistance { get; set; } = 4;
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
@@ -47,6 +49,8 @@ public sealed class RendererSettings
         DiffuseColor = DiffuseColor,
         TerrainRenderDistance = TerrainRenderDistance,
         ModelRenderDistance = ModelRenderDistance,
+        MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
+        TerrainLodTransitionPixels = TerrainLodTransitionPixels,
         TileLoadingDistance = TileLoadingDistance,
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,

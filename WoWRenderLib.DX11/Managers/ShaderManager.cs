@@ -45,13 +45,36 @@ namespace WoWRenderLib.DX11.Managers
 
         public CompiledShader GetOrCompileShader(string type, bool forceRecompile = false)
         {
-            if (_compiledShaders.TryGetValue(type, out var shaderProgram) && !forceRecompile)
+            return GetOrCompileShader(type, null, true, forceRecompile);
+        }
+
+        public CompiledShader GetOrCompileAdtShader(
+            int layerCount,
+            bool useHeightTextures,
+            bool forceRecompile = false)
+        {
+            if (layerCount is not (1 or 2 or 4 or 8))
+                throw new ArgumentOutOfRangeException(nameof(layerCount));
+
+            return GetOrCompileShader("adt", layerCount, useHeightTextures, forceRecompile);
+        }
+
+        private CompiledShader GetOrCompileShader(
+            string type,
+            int? adtLayerCount,
+            bool adtUseHeightTextures,
+            bool forceRecompile)
+        {
+            var cacheKey = adtLayerCount.HasValue
+                ? $"{type}@{adtLayerCount}@height-{adtUseHeightTextures}"
+                : type;
+            if (_compiledShaders.TryGetValue(cacheKey, out var shaderProgram) && !forceRecompile)
                 return shaderProgram;
 
-            shaderProgram = CompileShader(type);
-            if (_compiledShaders.Remove(type, out var previous))
+            shaderProgram = CompileShader(type, adtLayerCount, adtUseHeightTextures);
+            if (_compiledShaders.Remove(cacheKey, out var previous))
                 DisposeShader(previous);
-            _compiledShaders[type] = shaderProgram;
+            _compiledShaders[cacheKey] = shaderProgram;
             return shaderProgram;
         }
 
@@ -97,7 +120,14 @@ namespace WoWRenderLib.DX11.Managers
                     Console.WriteLine("Reloading shader " + file);
 
                     if (Path.GetFileNameWithoutExtension(file).StartsWith("adt"))
+                    {
                         GetOrCompileShader("adt", true);
+                        foreach (var layerCount in new[] { 1, 2, 4, 8 })
+                        {
+                            GetOrCompileAdtShader(layerCount, false, true);
+                            GetOrCompileAdtShader(layerCount, true, true);
+                        }
+                    }
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
                         GetOrCompileShader("wmo", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
@@ -116,10 +146,20 @@ namespace WoWRenderLib.DX11.Managers
             return false;
         }
 
-        private unsafe CompiledShader CompileShader(string type)
+        private unsafe CompiledShader CompileShader(
+            string type,
+            int? adtLayerCount,
+            bool adtUseHeightTextures)
         {
             var shaderPath = Path.Combine(shaderFolder, type + ".hlsl");
             var shaderSource = File.ReadAllText(shaderPath);
+            if (adtLayerCount.HasValue)
+            {
+                shaderSource =
+                    $"#define ADT_LAYER_COUNT {adtLayerCount.Value}\n" +
+                    $"#define ADT_USE_HEIGHT_TEXTURES {(adtUseHeightTextures ? 1 : 0)}\n" +
+                    shaderSource;
+            }
 
             var shaderBytes = Encoding.ASCII.GetBytes(shaderSource);
             ComPtr<ID3D11VertexShader> vertexShader = default;

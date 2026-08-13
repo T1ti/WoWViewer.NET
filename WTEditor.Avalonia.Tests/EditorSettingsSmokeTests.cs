@@ -6,7 +6,14 @@ using WTEditor.Application.Commands;
 using WTEditor.Application.Models;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.Services;
+using WTEditor.Avalonia.Rendering;
 using WTEditor.Avalonia.ViewModels;
+using WoWRenderLib.DX11.Objects;
+using WoWRenderLib.DX11.Renderer;
+using WoWRenderLib.DX11.Structs;
+using WoWFormatLib.Structs.M2;
+using WoWRenderLib.Raycasting;
+using WoWRenderLib.Structs;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -189,6 +196,162 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void ScreenSpaceCulling_UsesProjectedSphereDiameter()
+    {
+        var projection = Matrix4x4.CreatePerspectiveFieldOfViewLeftHanded(
+            MathF.PI / 4f,
+            16f / 9f,
+            1f,
+            100_000f);
+        var diameter = ScreenSpaceCulling.EstimateProjectedDiameterPixels(
+            Vector3.Zero,
+            Vector3.UnitX,
+            new Vector3(1_000f, 0f, 0f),
+            1f,
+            projection.M22,
+            1_080);
+
+        Assert.AreEqual(2.61f, diameter, 0.02f);
+        Assert.IsFalse(ScreenSpaceCulling.IsBelowPixelThreshold(
+            Vector3.Zero, Vector3.UnitX, new Vector3(1_000f, 0f, 0f), 1f,
+            projection.M22, 1_080, 1f));
+        Assert.IsTrue(ScreenSpaceCulling.IsBelowPixelThreshold(
+            Vector3.Zero, Vector3.UnitX, new Vector3(10_000f, 0f, 0f), 1f,
+            projection.M22, 1_080, 1f));
+        Assert.IsFalse(ScreenSpaceCulling.IsBelowPixelThreshold(
+            Vector3.Zero, Vector3.UnitX, new Vector3(10_000f, 0f, 0f), 1f,
+            projection.M22, 1_080, 0f));
+
+        Assert.AreEqual(
+            diameter,
+            ScreenSpaceCulling.EstimateProjectedDiameterPixelsNormalized(
+                Vector3.Zero,
+                Vector3.UnitX,
+                new Vector3(1_000f, 0f, 0f),
+                1f,
+                projection.M22,
+                1_080),
+            0.0001f);
+    }
+
+    [TestMethod]
+    public void Frustum_ClassifiesBoxesForHierarchicalTerrainCulling()
+    {
+        var frustum = new Frustum();
+        frustum.ExtractFromMatrix(Matrix4x4.Identity);
+
+        Assert.AreEqual(
+            Frustum.BoxIntersection.Inside,
+            frustum.ClassifyBox(new Vector3(-0.5f), new Vector3(0.5f)));
+        Assert.AreEqual(
+            Frustum.BoxIntersection.Intersecting,
+            frustum.ClassifyBox(
+                new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(1.5f, 0.5f, 0.5f)));
+        Assert.AreEqual(
+            Frustum.BoxIntersection.Outside,
+            frustum.ClassifyBox(
+                new Vector3(2f, -0.5f, -0.5f),
+                new Vector3(3f, 0.5f, 0.5f)));
+    }
+
+    [TestMethod]
+    public void TileSceneBounds_AggregatesChildrenAndRebuildsAfterExplicitInvalidation()
+    {
+        var tileBounds = new TileSceneBounds(new MapTile
+        {
+            wdtFileDataID = 1,
+            tileX = 2,
+            tileY = 3
+        });
+        var child = new TestBoundsContainer(new BoundingBox(
+            new Vector3(2f, -2f, 0.5f),
+            new Vector3(4f, 0.5f, 3f)));
+
+        tileBounds.SetTerrain(42, new BoundingBox(Vector3.Zero, Vector3.One));
+        tileBounds.AddObject(child);
+
+        Assert.IsTrue(tileBounds.TryGetCombinedBounds(out var combined));
+        Assert.AreEqual(new Vector3(0f, -2f, 0f), combined.Min);
+        Assert.AreEqual(new Vector3(4f, 1f, 3f), combined.Max);
+        Assert.IsFalse(tileBounds.IsDirty);
+
+        child.SetBounds(new BoundingBox(
+            new Vector3(-5f, -4f, -3f),
+            new Vector3(-2f, -1f, -0.5f)));
+        tileBounds.MarkDirty();
+
+        Assert.IsTrue(tileBounds.IsDirty);
+        Assert.IsTrue(tileBounds.TryGetCombinedBounds(out combined));
+        Assert.AreEqual(new Vector3(-5f, -4f, -3f), combined.Min);
+        Assert.AreEqual(Vector3.One, combined.Max);
+    }
+
+    [TestMethod]
+    public void TileSceneBounds_DoesNotCullWithIncompleteChildBounds()
+    {
+        var tileBounds = new TileSceneBounds(default);
+        tileBounds.SetTerrain(7, new BoundingBox(Vector3.Zero, Vector3.One));
+        tileBounds.AddObject(new TestBoundsContainer(null));
+
+        Assert.IsFalse(tileBounds.TryGetCombinedBounds(out _));
+        Assert.IsTrue(tileBounds.IsDirty);
+    }
+
+    [TestMethod]
+    public void M2RenderBounds_ContainEveryUploadedVertex()
+    {
+        var vertices = new[]
+        {
+            new Vertice { position = new Vector3(-2, -3, -4) },
+            new Vertice { position = new Vector3(10, 5, 6) },
+            new Vertice { position = new Vector3(1, 20, 2) }
+        };
+
+        var (box, radius) = WoWRenderLib.Loaders.M2Loader.CalculateRenderBounds(vertices);
+
+        Assert.AreEqual(new Vector3(-2, -3, -4), box.Min);
+        Assert.AreEqual(new Vector3(10, 20, 6), box.Max);
+        foreach (var vertex in vertices)
+        {
+            Assert.IsTrue(
+                Vector3.Distance(box.Center, vertex.position) <= radius + 0.0001f,
+                $"Render vertex {vertex.position} escaped the calculated sphere.");
+        }
+    }
+
+    [TestMethod]
+    public void M2WorldSphere_AppliesAdtPlacementScaleRotationAndTranslation()
+    {
+        var local = new BoundingSphere(new Vector3(1, 2, 3), 5f);
+        var transform = Matrix4x4.CreateScale(3f) *
+                        Matrix4x4.CreateRotationZ(MathF.PI / 4f) *
+                        Matrix4x4.CreateTranslation(100, -50, 20);
+
+        var world = BoundingSphere.Transform(local, transform);
+
+        Assert.AreEqual(15f, world.Radius, 0.0001f);
+        Assert.IsTrue(world.Center.X > 90f);
+        Assert.IsTrue(world.Center.Y < -35f);
+    }
+
+    [TestMethod]
+    public void WmoEnabledGroupSignature_UsesMaskContentsRatherThanArrayIdentity()
+    {
+        var first = new[] { true, false, true, true, false, false, false, false, true };
+        var sameContents = first.ToArray();
+        var different = first.ToArray();
+        different[1] = true;
+
+        Assert.AreEqual(
+            WMOContainer.CreateEnabledGroupSignature(first),
+            WMOContainer.CreateEnabledGroupSignature(sameContents));
+        Assert.AreNotEqual(
+            WMOContainer.CreateEnabledGroupSignature(first),
+            WMOContainer.CreateEnabledGroupSignature(different));
+    }
+
+    [TestMethod]
     public void TransformCommand_UpdatesDocumentRendererAndUndoHistory()
     {
         var document = new EditorDocument("Test map");
@@ -293,6 +456,281 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(PerformanceBottleneck.Gpu, PerformanceAnalyzer.ClassifyRecent(samples));
     }
 
+    [TestMethod]
+    public void PerformanceAnalyzer_DetectsCpuSubmissionStarvation()
+    {
+        var samples = Enumerable.Range(1, 30)
+            .Select(index => new FrameProfileSnapshot(
+                index,
+                DateTimeOffset.UtcNow,
+                80,
+                75,
+                68,
+                Array.Empty<FrameTimingStep>(),
+                9_500,
+                0,
+                0)
+            {
+                RenderWorkload = new RenderWorkloadMetrics(
+                    [new RenderPassMetrics("Terrain", 3, 67, null, 9_500, 9_500, "draws")],
+                    0,
+                    0,
+                    0,
+                    0)
+            })
+            .ToArray();
+
+        Assert.IsTrue(PerformanceAnalyzer.IsLikelyCpuSubmissionStarved(samples));
+        Assert.IsFalse(PerformanceAnalyzer.IsLikelyCpuSubmissionStarved(
+            samples.Select(sample => sample with { CpuFrameMilliseconds = 5, GpuFrameMilliseconds = 4 })));
+    }
+
+    [TestMethod]
+    public void PerformanceWorkload_ReportsIndexedTrianglesAndExplicitCullReasons()
+    {
+        var snapshot = new FrameProfileSnapshot(
+            1, DateTimeOffset.UtcNow, 16, 5, 4,
+            Array.Empty<FrameTimingStep>(), 2, 30, 0);
+        var pass = new RenderPassMetrics("M2", 1, 1, 1, 2, 4, "instances", 21);
+        var culling = new CullingMetrics(
+            10, 100,
+            5, 20,
+            8, 50,
+            SizeCulledWorldModels: 3,
+            SizeCulledDoodads: 7);
+
+        Assert.AreEqual(10, snapshot.SubmittedTriangles);
+        Assert.AreEqual(7, pass.SubmittedTriangles);
+        Assert.AreEqual(90, culling.CulledTerrainChunks);
+        Assert.AreEqual(12, culling.CulledWorldModels);
+        Assert.AreEqual(35, culling.CulledDoodads);
+    }
+
+    [TestMethod]
+    public void PerformanceCaptureAnalyzer_ComputesInterpolatedPercentiles()
+    {
+        var distribution = PerformanceCaptureAnalyzer.Summarize(
+            Enumerable.Range(1, 100).Select(value => (double)value));
+
+        Assert.AreEqual(100, distribution.SampleCount);
+        Assert.AreEqual(50.5d, distribution.Mean, 0.0001d);
+        Assert.AreEqual(50.5d, distribution.Median, 0.0001d);
+        Assert.AreEqual(95.05d, distribution.P95, 0.0001d);
+        Assert.AreEqual(99.01d, distribution.P99, 0.0001d);
+        Assert.AreEqual(100d, distribution.Maximum, 0.0001d);
+    }
+
+    [TestMethod]
+    public void PerformanceCaptureAnalyzer_PreservesRawSamplesAndGroupsSteps()
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        var samples = new[]
+        {
+            new FrameProfileSnapshot(
+                1, startedAt, 10, 4, 6,
+                [new FrameTimingStep("Terrain drawing (GPU)", 5, FrameTimingDomain.Gpu)],
+                10, 100, 0) { EngineFrameMilliseconds = 4.5 },
+            new FrameProfileSnapshot(
+                2, startedAt.AddMilliseconds(10), 10, 5, 8,
+                [new FrameTimingStep("Terrain drawing (GPU)", 7, FrameTimingDomain.Gpu)],
+                12, 120, 0) { EngineFrameMilliseconds = 5.5 }
+        };
+        var context = new PerformanceCaptureContext(
+            "terrain-only", 1920, 1080, Vector3.Zero, Vector3.UnitX,
+            true, false, false, true, 20_000, 20_000, 4);
+
+        var capture = PerformanceCaptureAnalyzer.Create(
+            startedAt,
+            startedAt.AddSeconds(10),
+            context,
+            samples);
+
+        Assert.AreEqual(2, capture.Samples.Count);
+        Assert.AreEqual(1, capture.Summary.Steps.Count);
+        Assert.AreEqual(6d, capture.Summary.Steps[0].DurationMilliseconds.Median, 0.0001d);
+        Assert.AreEqual(7d, capture.Summary.GpuFrameMilliseconds.Median, 0.0001d);
+    }
+
+    [TestMethod]
+    public void AutomatedBenchmarkOptions_ReadAndClampEnvironmentValues()
+    {
+        var values = new Dictionary<string, string>
+        {
+            ["WTEDITOR_BENCHMARK"] = "true",
+            ["WTEDITOR_BENCHMARK_MINIMUM_LOAD_SECONDS"] = "2.5",
+            ["WTEDITOR_BENCHMARK_STABLE_FRAMES"] = "0",
+            ["WTEDITOR_BENCHMARK_WARMUP_SECONDS"] = "3",
+            ["WTEDITOR_BENCHMARK_CAPTURE_SECONDS"] = "12.5",
+            ["WTEDITOR_BENCHMARK_TIMEOUT_SECONDS"] = "900"
+        };
+
+        var options = AutomatedBenchmarkOptions.FromEnvironment(name =>
+            values.TryGetValue(name, out var value) ? value : null);
+
+        Assert.IsTrue(options.Enabled);
+        Assert.AreEqual(2.5d, options.MinimumLoadDuration.TotalSeconds, 0.001d);
+        Assert.AreEqual(1, options.StableFrameCount);
+        Assert.AreEqual(3d, options.WarmupDuration.TotalSeconds, 0.001d);
+        Assert.AreEqual(12.5d, options.CaptureDuration.TotalSeconds, 0.001d);
+        Assert.AreEqual(900d, options.Timeout.TotalSeconds, 0.001d);
+    }
+
+    [TestMethod]
+    public void AutomatedBenchmarkCoordinator_WaitsForIdleStableWorldWorkload()
+    {
+        var options = new AutomatedBenchmarkOptions(
+            true,
+            TimeSpan.FromSeconds(1),
+            StableFrameCount: 2,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(30));
+        var coordinator = new AutomatedBenchmarkCoordinator(options);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.None,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt, pendingAssets: 1)));
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.None,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt.AddSeconds(1), drawCalls: 100)));
+        Assert.AreEqual(1, coordinator.StableFrames);
+
+        // A changing workload restarts the consecutive stable-frame window.
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.None,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt.AddSeconds(1.1), drawCalls: 101)));
+        Assert.AreEqual(1, coordinator.StableFrames);
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.StartCapture,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt.AddSeconds(1.2), drawCalls: 101)));
+    }
+
+    [TestMethod]
+    public void AutomatedBenchmarkCoordinator_TimesOutWithoutWorldWorkload()
+    {
+        var options = new AutomatedBenchmarkOptions(
+            true,
+            TimeSpan.Zero,
+            StableFrameCount: 1,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(10));
+        var coordinator = new AutomatedBenchmarkCoordinator(options);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.None,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt, drawCalls: 0, hasWorld: false)));
+        Assert.AreEqual(
+            AutomatedBenchmarkAction.Timeout,
+            coordinator.Observe(CreateBenchmarkSnapshot(startedAt.AddSeconds(10), drawCalls: 0, hasWorld: false)));
+    }
+
+    [TestMethod]
+    public void TerrainBatching_MergesContiguousChunksWithSharedBoundResources()
+    {
+        var common = CreateTerrainBatch(material: 10, scale: 1f);
+        var batches = new[]
+        {
+            common,
+            CreateTerrainBatch(material: 10, scale: 1f),
+            CreateTerrainBatch(material: 20, scale: 1f),
+            CreateTerrainBatch(material: 10, scale: 1f)
+        };
+
+        Assert.AreEqual(
+            2,
+            TerrainBatching.CountCompatibleContiguousChunks(
+                0,
+                new[] { 0, 1, 2, 3 },
+                new[] { true, true, true, true },
+                batches));
+        Assert.AreEqual(
+            1,
+            TerrainBatching.CountCompatibleContiguousChunks(
+                0,
+                new[] { 0, 1 },
+                new[] { true, false },
+                batches));
+        Assert.AreEqual(
+            1,
+            TerrainBatching.CountCompatibleContiguousChunks(
+                0,
+                new[] { 0, 2 },
+                new[] { true, true },
+                batches));
+        Assert.IsTrue(TerrainBatching.AreCompatible(
+            CreateTerrainBatch(material: 10, scale: 1f),
+            CreateTerrainBatch(material: 10, scale: 2f)));
+    }
+
+    [TestMethod]
+    public void TerrainShaderVariants_SelectSmallestFixedLayerBucket()
+    {
+        Assert.AreEqual(1, TerrainBatching.GetShaderLayerCount(1));
+        Assert.AreEqual(2, TerrainBatching.GetShaderLayerCount(2));
+        Assert.AreEqual(4, TerrainBatching.GetShaderLayerCount(3));
+        Assert.AreEqual(4, TerrainBatching.GetShaderLayerCount(4));
+        Assert.AreEqual(8, TerrainBatching.GetShaderLayerCount(5));
+    }
+
+    private static ADTRenderBatch CreateTerrainBatch(int material, float scale) => new()
+    {
+        layerCount = 1,
+        materialFDIDs = [material, -1, -1, -1, -1, -1, -1, -1],
+        heightMaterialFDIDs = [material, -1, -1, -1, -1, -1, -1, -1],
+        scales = [scale, 1, 1, 1, 1, 1, 1, 1],
+        heightScales = [1, 1, 1, 1, 1, 1, 1, 1],
+        heightOffsets = [0, 0, 0, 0, 0, 0, 0, 0]
+    };
+
+    private static FrameProfileSnapshot CreateBenchmarkSnapshot(
+        DateTimeOffset capturedAt,
+        int pendingAssets = 0,
+        int drawCalls = 100,
+        bool hasWorld = true) =>
+        new(
+            1,
+            capturedAt,
+            16,
+            5,
+            4,
+            Array.Empty<FrameTimingStep>(),
+            drawCalls,
+            1_000,
+            pendingAssets)
+        {
+            Culling = new CullingMetrics(
+                hasWorld ? 10 : 0,
+                hasWorld ? 10 : 0,
+                0,
+                0,
+                0,
+                0)
+        };
+
+    [TestMethod]
+    public void ContainerTransformChange_InvalidatesMatrixAndWorldBounds()
+    {
+        var container = new Container3D(default, 1, 1)
+        {
+            Position = new Vector3(10, 20, 30),
+            Rotation = Vector3.Zero,
+            Scale = 1
+        };
+        var firstMatrix = container.GetModelMatrix();
+        container.CachedBoundingSphere = new BoundingSphere(Vector3.Zero, 1);
+        container.CachedBoundingBox = new BoundingBox(Vector3.Zero, Vector3.One);
+
+        container.Position = new Vector3(11, 20, 30);
+
+        Assert.IsNull(container.ModelMatrix);
+        Assert.IsNull(container.CachedBoundingSphere);
+        Assert.IsNull(container.CachedBoundingBox);
+        Assert.AreNotEqual(firstMatrix, container.GetModelMatrix());
+    }
+
     private static EditorObjectSnapshot GetObject(EditorDocument document, EditorObjectId id)
     {
         Assert.IsTrue(document.TryGetObject(id, out var snapshot));
@@ -305,6 +743,19 @@ public sealed class EditorSettingsSmokeTests
 
         public void UpdateObjectTransform(Guid documentId, EditorObjectId objectId, ObjectTransform transform) =>
             Updates.Add((documentId, objectId, transform));
+    }
+
+    private sealed class TestBoundsContainer(BoundingBox? bounds) : Container3D(default, 1, 1)
+    {
+        private BoundingBox? _bounds = bounds;
+
+        public override BoundingBox? GetBoundingBox() => _bounds;
+
+        public void SetBounds(BoundingBox? value)
+        {
+            _bounds = value;
+            InvalidateTransform();
+        }
     }
 
     private sealed class DelegateCommand(

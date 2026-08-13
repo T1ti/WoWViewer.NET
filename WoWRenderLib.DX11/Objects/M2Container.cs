@@ -11,11 +11,55 @@ namespace WoWRenderLib.DX11.Objects
     public class M2Container : Container3D
     {
         private bool[]? _enabledGeosets;
+        private WMOContainer? _parentWmo;
+        private Vector3 _localPosition;
+        private Quaternion _localRotation;
+        private float _localScale = 1.0f;
 
-        public WMOContainer? ParentWMO { get; set; } = null;
-        public Vector3 LocalPosition { get; set; }
-        public Quaternion LocalRotation { get; set; }
-        public float LocalScale { get; set; } = 1.0f;
+        public WMOContainer? ParentWMO
+        {
+            get => _parentWmo;
+            set
+            {
+                if (ReferenceEquals(_parentWmo, value))
+                    return;
+                _parentWmo = value;
+                InvalidateTransform();
+            }
+        }
+        public Vector3 LocalPosition
+        {
+            get => _localPosition;
+            set
+            {
+                if (_localPosition == value)
+                    return;
+                _localPosition = value;
+                InvalidateTransform();
+            }
+        }
+        public Quaternion LocalRotation
+        {
+            get => _localRotation;
+            set
+            {
+                if (_localRotation == value)
+                    return;
+                _localRotation = value;
+                InvalidateTransform();
+            }
+        }
+        public float LocalScale
+        {
+            get => _localScale;
+            set
+            {
+                if (_localScale == value)
+                    return;
+                _localScale = value;
+                InvalidateTransform();
+            }
+        }
 
         public bool[] EnabledGeosets
         {
@@ -38,38 +82,36 @@ namespace WoWRenderLib.DX11.Objects
             GetM2(true);
         }
 
-        private static float GetMaxScaleFromMatrix(Matrix4x4 m)
-        {
-            var scaleX = new Vector3(m.M11, m.M12, m.M13).Length();
-            var scaleY = new Vector3(m.M21, m.M22, m.M23).Length();
-            var scaleZ = new Vector3(m.M31, m.M32, m.M33).Length();
-
-            return MathF.Max(scaleX, MathF.Max(scaleY, scaleZ));
-        }
-
-        // the way to deal with scaling here is definitely a bit of a hack
         public override BoundingSphere? GetBoundingSphere()
         {
+            if (CachedBoundingSphere.HasValue)
+                return CachedBoundingSphere.Value;
+
             var m2 = GetM2();
-            var matrix = GetModelMatrix();
+            if (m2.fileDataID != FileDataId)
+                return null;
 
-            var localCenter = (m2.boundingBox.Min + m2.boundingBox.Max) / 2f;
-            var transformedCenter = Vector3.Transform(localCenter, matrix);
-
-            float scale = GetMaxScaleFromMatrix(matrix);
-
-            return new BoundingSphere(transformedCenter, m2.boundingRadius * scale);
+            var localSphere = new BoundingSphere(m2.boundingBox.Center, m2.boundingRadius);
+            CachedBoundingSphere = BoundingSphere.Transform(localSphere, GetModelMatrix());
+            return CachedBoundingSphere.Value;
         }
 
         public override BoundingBox? GetBoundingBox()
         {
-            return BoundingBox.Transform(GetLocalBoundingBox(), GetModelMatrix());
+            if (CachedBoundingBox.HasValue)
+                return CachedBoundingBox.Value;
+
+            var m2 = GetM2();
+            if (m2.fileDataID != FileDataId)
+                return null;
+
+            CachedBoundingBox = BoundingBox.Transform(m2.boundingBox, GetModelMatrix());
+            return CachedBoundingBox.Value;
         }
 
         public BoundingBox GetLocalBoundingBox()
         {
-            var m2 = GetM2();
-            return m2.boundingBox;
+            return GetM2().boundingBox;
         }
 
         public ParsedDoodadBatch GetM2(bool keepTrack = false)

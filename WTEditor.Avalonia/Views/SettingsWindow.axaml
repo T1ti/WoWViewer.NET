@@ -28,7 +28,7 @@
         <StackPanel Margin="8" Spacing="10">
           <TextBlock TextWrapping="Wrap" Opacity="0.75"
                      Text="Tile loading distance is used for both loading and unloading. Larger values increase memory use and streaming work." />
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
             <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Terrain render distance" />
             <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TerrainRenderDistance}" />
             <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Tile loading distance" />
@@ -51,6 +51,12 @@
               <TextBox Width="60" Text="{Binding DiffuseColorG}" PlaceholderText="G" />
               <TextBox Width="60" Text="{Binding DiffuseColorB}" PlaceholderText="B" />
             </StackPanel>
+            <TextBlock Grid.Row="7" VerticalAlignment="Center" Text="Minimum model size (pixels)" />
+            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding MinimumModelScreenSizePixels}"
+                     ToolTip.Tip="Cull WMO and M2 objects smaller than this projected diameter; 0 disables" />
+            <TextBlock Grid.Row="8" VerticalAlignment="Center" Text="Terrain LOD transition (pixels)" />
+            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding TerrainLodTransitionPixels}"
+                     ToolTip.Tip="Use the half-index terrain mesh below this projected chunk diameter; 0 disables" />
           </Grid>
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
             <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />

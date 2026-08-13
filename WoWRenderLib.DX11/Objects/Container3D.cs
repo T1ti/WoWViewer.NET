@@ -8,13 +8,61 @@ namespace WoWRenderLib.DX11.Objects
 {
     public class Container3D
     {
+        private Vector3 _position;
+        private Vector3 _rotation;
+        private float _scale;
+        private Matrix4x4? _modelMatrix;
+
         public uint ParentFileDataId { get; set; }
         public uint FileDataId { get; set; }
-        public Vector3 Position { get; set; }
-        public Vector3 Rotation { get; set; }
-        public float Scale;
+        public Vector3 Position
+        {
+            get => _position;
+            set
+            {
+                if (_position == value)
+                    return;
+                _position = value;
+                InvalidateTransform();
+            }
+        }
+        public Vector3 Rotation
+        {
+            get => _rotation;
+            set
+            {
+                if (_rotation == value)
+                    return;
+                _rotation = value;
+                InvalidateTransform();
+            }
+        }
+        public float Scale
+        {
+            get => _scale;
+            set
+            {
+                if (_scale == value)
+                    return;
+                _scale = value;
+                InvalidateTransform();
+            }
+        }
 
-        public Matrix4x4? ModelMatrix { get; set; }
+        public Matrix4x4? ModelMatrix
+        {
+            get => _modelMatrix;
+            set
+            {
+                if (_modelMatrix == value)
+                    return;
+
+                _modelMatrix = value;
+                CachedBoundingBox = null;
+                CachedBoundingSphere = null;
+                OnTransformInvalidated();
+            }
+        }
 
         public ComPtr<ID3D11Device> _device;
 
@@ -38,6 +86,18 @@ namespace WoWRenderLib.DX11.Objects
         public virtual BoundingBox? GetBoundingBox()
         {
             return null;
+        }
+
+        public void InvalidateTransform()
+        {
+            _modelMatrix = null;
+            CachedBoundingBox = null;
+            CachedBoundingSphere = null;
+            OnTransformInvalidated();
+        }
+
+        protected virtual void OnTransformInvalidated()
+        {
         }
 
         public virtual Matrix4x4 GetModelMatrix()
@@ -72,7 +132,7 @@ namespace WoWRenderLib.DX11.Objects
 
             modelMatrix *= Matrix4x4.CreateRotationZ(MathF.PI / 180f * -270f);
 
-            ModelMatrix = modelMatrix;
+            _modelMatrix = modelMatrix;
 
             return modelMatrix;
         }

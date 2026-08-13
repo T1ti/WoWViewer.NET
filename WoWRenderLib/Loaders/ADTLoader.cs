@@ -89,8 +89,10 @@ namespace WoWRenderLib.Loaders
 
             var vertices = new ADTVertex[256 * 145];
             var indices = new int[256 * 768];
+            var farLodIndices = new int[256 * 384];
             var verticesOffset = 0;
             var indicesOffset = 0;
+            var farLodIndicesOffset = 0;
 
             var chunkBounds = new BoundingBox[256];
             var holesHighRes = new byte[8];
@@ -187,6 +189,9 @@ namespace WoWRenderLib.Loaders
                         indices[indicesOffset++] = 0;
                         indices[indicesOffset++] = 0;
                         indices[indicesOffset++] = 0;
+
+                        for (var triangleIndex = 0; triangleIndex < 6; triangleIndex++)
+                            farLodIndices[farLodIndicesOffset++] = 0;
                     }
                     else
                     {
@@ -205,6 +210,17 @@ namespace WoWRenderLib.Loaders
                         indices[indicesOffset++] = off + j + 9;
                         indices[indicesOffset++] = off + j + 8;
                         indices[indicesOffset++] = off + j;
+
+                        var topLeft = off + yy * 17 + xx;
+                        var topRight = topLeft + 1;
+                        var bottomLeft = off + (yy + 1) * 17 + xx;
+                        var bottomRight = bottomLeft + 1;
+                        farLodIndices[farLodIndicesOffset++] = bottomLeft;
+                        farLodIndices[farLodIndicesOffset++] = topLeft;
+                        farLodIndices[farLodIndicesOffset++] = topRight;
+                        farLodIndices[farLodIndicesOffset++] = topRight;
+                        farLodIndices[farLodIndicesOffset++] = bottomRight;
+                        farLodIndices[farLodIndicesOffset++] = bottomLeft;
                     }
 
                     if ((j + 1) % (9 + 8) == 0) j += 9;
@@ -292,6 +308,7 @@ namespace WoWRenderLib.Loaders
 
             parsedADT.vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray();
             parsedADT.indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray();
+            parsedADT.farLodIndiceBuffer = MemoryMarshal.AsBytes(farLodIndices.AsSpan()).ToArray();
 
             var doodads = new Doodad[adt.objects.models.entries.Length];
             for (var mi = 0; mi < adt.objects.models.entries.Length; mi++)

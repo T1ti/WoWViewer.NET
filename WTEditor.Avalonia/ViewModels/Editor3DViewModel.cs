@@ -1,15 +1,20 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Text.Json;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WTEditor.Application;
 using WTEditor.Application.Models;
+using WTEditor.Avalonia.Rendering;
 
 namespace WTEditor.Avalonia.ViewModels;
 
 public partial class Editor3DViewModel : ViewModelBase, IDisposable
 {
     private const int PerformanceHistoryCapacity = 180;
+    private static readonly TimeSpan CaptureWarmupDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CaptureSampleDuration = TimeSpan.FromSeconds(10);
     private readonly EditorSession _session;
     private readonly Queue<FrameProfileSnapshot> _performanceSamples = [];
     private readonly Stopwatch _performancePublishTimer = Stopwatch.StartNew();
@@ -17,30 +22,44 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     private TimeSpan _lastProcessCpuTime;
     private long _lastAllocatedBytes;
     private bool _synchronizingRenderingSettings;
+    private readonly List<FrameProfileSnapshot> _activeCaptureSamples = [];
+    private FrameProfileSnapshot? _latestProfileSnapshot;
+    private DateTimeOffset _captureSampleStartedAt;
+    private DateTimeOffset _captureEndsAt;
+    private PerformanceCaptureContext? _captureContext;
+    private int _lastCaptureStatusSecond = -1;
+    private bool _isAutomatedPerformanceCapture;
 
     public event EventHandler<ClientConfiguration>? ClientConfigurationChanged;
     public event EventHandler<RenderingConfiguration>? RenderingConfigurationChanged;
     public event EventHandler<KeyboardLayoutMode>? KeyboardLayoutChanged;
+    public event EventHandler<string>? AutomatedPerformanceCaptureSaved;
+    public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
     {
         RenderADT = RenderTerrain,
         RenderWMO = RenderWorldModels,
-        RenderM2 = RenderDoodads
+        RenderM2 = RenderDoodads,
+        MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
+        TerrainLodTransitionPixels = TerrainLodTransitionPixels
     };
     public KeyboardLayoutMode KeyboardLayout => _session.Current.KeyboardLayout;
     public bool HasInitialCameraPosition => _session.Current.Camera != null;
     public Vector3 InitialCameraPosition => _session.Current.Camera?.Position ?? Vector3.Zero;
     public bool HasInitialCameraDirection => _session.Current.Camera != null;
     public Vector3 InitialCameraDirection => _session.Current.Camera?.Direction ?? Vector3.Zero;
+    public string PerformanceEnvironmentLabel => Dx11RuntimeOptions.ProfilerEnvironmentLabel;
+    public bool IsPerformanceEnvironmentWarningVisible =>
+        Dx11RuntimeOptions.IsDebugBuild || Dx11RuntimeOptions.IsDebugLayerRequested;
 
     [ObservableProperty] private double _fps;
     [ObservableProperty] private double _frameTime;
     [ObservableProperty] private Vector3 _cameraPosition;
     [ObservableProperty] private Vector3 _cameraDirection;
     [ObservableProperty] private int _drawCalls;
-    [ObservableProperty] private int _vertexCount;
+    [ObservableProperty] private long _submittedTriangleCount;
     [ObservableProperty] private float _moveSpeed;
     [ObservableProperty] private float _mouseSensitivity;
     [ObservableProperty] private RendererLifecycleState _rendererState = RendererLifecycleState.Detached;
@@ -51,6 +70,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _renderTerrain;
     [ObservableProperty] private bool _renderWorldModels;
     [ObservableProperty] private bool _renderDoodads;
+    [ObservableProperty] private float _minimumModelScreenSizePixels;
+    [ObservableProperty] private float _terrainLodTransitionPixels;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
     [ObservableProperty] private IReadOnlyList<FrameTimingStep> _currentFrameSteps = Array.Empty<FrameTimingStep>();
@@ -61,11 +82,17 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private int _profilePendingAssets;
     [ObservableProperty] private int _profileUploadedResources;
     [ObservableProperty] private CullingMetrics _profileCulling = new(0, 0, 0, 0, 0, 0);
+    [ObservableProperty] private RenderWorkloadMetrics _profileRenderWorkload = RenderWorkloadMetrics.Empty;
     [ObservableProperty] private double _profileProcessCpuPercent;
     [ObservableProperty] private double _profileManagedMemoryMegabytes;
     [ObservableProperty] private double _profileWorkingSetMegabytes;
     [ObservableProperty] private double _profileAllocationMegabytesPerSecond;
     [ObservableProperty] private int _profileGen0Collections;
+    [ObservableProperty] private bool _isPerformanceCaptureActive;
+    [ObservableProperty] private bool _isDetailedGpuProfilingEnabled;
+    [ObservableProperty] private string _performanceCaptureStatus =
+        "Choose a visibility preset, keep the camera still, then capture.";
+    [ObservableProperty] private string? _performanceCaptureFilePath;
 
     // Viewport input state. This remains view-facing state while editor/session
     // configuration is owned centrally by EditorSession.
@@ -91,6 +118,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _renderTerrain = session.Current.Rendering.RenderADT;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
         _renderDoodads = session.Current.Rendering.RenderM2;
+        _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
+        _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
         _cameraPosition = session.Current.Camera?.Position ?? Vector3.Zero;
         _cameraDirection = session.Current.Camera?.Direction ?? Vector3.Zero;
         _lastProcessCpuTime = _currentProcess.TotalProcessorTime;
@@ -120,6 +149,28 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     partial void OnRenderTerrainChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderWorldModelsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderDoodadsChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnMinimumModelScreenSizePixelsChanged(float value)
+    {
+        var normalized = Math.Clamp(value, 0f, 16f);
+        if (normalized != value)
+        {
+            MinimumModelScreenSizePixels = normalized;
+            return;
+        }
+
+        PublishViewportRenderingConfiguration();
+    }
+    partial void OnTerrainLodTransitionPixelsChanged(float value)
+    {
+        var normalized = Math.Clamp(value, 0f, 256f);
+        if (normalized != value)
+        {
+            TerrainLodTransitionPixels = normalized;
+            return;
+        }
+
+        PublishViewportRenderingConfiguration();
+    }
 
     private void PublishViewportRenderingConfiguration()
     {
@@ -136,7 +187,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         CameraPosition = telemetry.CameraPosition;
         CameraDirection = telemetry.CameraDirection;
         DrawCalls = telemetry.DrawCalls;
-        VertexCount = telemetry.VertexCount;
+        SubmittedTriangleCount = telemetry.SubmittedTriangleCount;
         _session.UpdateCamera(telemetry.CameraPosition, telemetry.CameraDirection);
     }
 
@@ -150,6 +201,13 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public void UpdatePerformanceProfile(FrameProfileSnapshot snapshot)
     {
+        var hadProfileSnapshot = _latestProfileSnapshot != null;
+        _latestProfileSnapshot = snapshot;
+        if (!hadProfileSnapshot)
+            StartPerformanceCaptureCommand.NotifyCanExecuteChanged();
+
+        CollectPerformanceCaptureSample(snapshot);
+
         if (IsProfilingPaused)
             return;
 
@@ -166,7 +224,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _performancePublishTimer.Restart();
         PerformanceHistory = _performanceSamples.ToArray();
         CurrentFrameSteps = snapshot.Steps
-            .Where(step => step.Name != "Resource uploads (GPU)" || step.DurationMilliseconds >= 0.001d)
+            .Where(step => step.Name != "Resource uploads (GPU timeline)" || step.DurationMilliseconds >= 0.001d)
             .ToArray();
         ProfileCpuMilliseconds = snapshot.CpuFrameMilliseconds;
         ProfileGpuMilliseconds = snapshot.GpuFrameMilliseconds;
@@ -174,6 +232,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfilePendingAssets = snapshot.PendingAssetOperations;
         ProfileUploadedResources = snapshot.UploadedResources;
         ProfileCulling = snapshot.Culling;
+        ProfileRenderWorkload = snapshot.RenderWorkload;
 
         _currentProcess.Refresh();
         var processCpuTime = _currentProcess.TotalProcessorTime;
@@ -193,13 +252,15 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfileManagedMemoryMegabytes = GC.GetTotalMemory(forceFullCollection: false) / 1_048_576d;
         ProfileWorkingSetMegabytes = _currentProcess.WorkingSet64 / 1_048_576d;
         ProfileGen0Collections = GC.CollectionCount(0);
-        ProfileBottleneck = PerformanceAnalyzer.ClassifyRecent(PerformanceHistory) switch
-        {
-            PerformanceBottleneck.Cpu => "CPU bound",
-            PerformanceBottleneck.Gpu => "GPU bound",
-            PerformanceBottleneck.Balanced => "CPU / GPU balanced",
-            _ => "Collecting GPU timing"
-        };
+        ProfileBottleneck = PerformanceAnalyzer.IsLikelyCpuSubmissionStarved(PerformanceHistory)
+            ? "CPU submission bound · GPU starvation likely"
+            : PerformanceAnalyzer.ClassifyRecent(PerformanceHistory) switch
+            {
+                PerformanceBottleneck.Cpu => "CPU bound",
+                PerformanceBottleneck.Gpu => "GPU timeline bound",
+                PerformanceBottleneck.Balanced => "CPU / GPU timeline balanced",
+                _ => "Collecting GPU timing"
+            };
     }
 
     [RelayCommand]
@@ -214,6 +275,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfilePendingAssets = 0;
         ProfileUploadedResources = 0;
         ProfileCulling = new CullingMetrics(0, 0, 0, 0, 0, 0);
+        ProfileRenderWorkload = RenderWorkloadMetrics.Empty;
         ProfileProcessCpuPercent = 0;
         ProfileManagedMemoryMegabytes = 0;
         ProfileWorkingSetMegabytes = 0;
@@ -225,6 +287,186 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void CloseMetricsPanel() => IsMetricsPanelVisible = false;
 
+    private bool CanStartPerformanceCapture() =>
+        !IsPerformanceCaptureActive && _latestProfileSnapshot != null;
+
+    [RelayCommand(CanExecute = nameof(CanStartPerformanceCapture))]
+    private void StartPerformanceCapture() =>
+        TryStartPerformanceCapture(
+            CaptureWarmupDuration,
+            CaptureSampleDuration,
+            isAutomated: false);
+
+    public bool TryStartAutomatedPerformanceCapture(TimeSpan warmupDuration, TimeSpan captureDuration) =>
+        TryStartPerformanceCapture(warmupDuration, captureDuration, isAutomated: true);
+
+    private bool TryStartPerformanceCapture(
+        TimeSpan warmupDuration,
+        TimeSpan captureDuration,
+        bool isAutomated)
+    {
+        var latest = _latestProfileSnapshot;
+        if (latest == null || IsPerformanceCaptureActive)
+            return false;
+
+        var requestedAt = DateTimeOffset.UtcNow;
+        _captureSampleStartedAt = requestedAt + warmupDuration;
+        _captureEndsAt = _captureSampleStartedAt + captureDuration;
+        _activeCaptureSamples.Clear();
+        _lastCaptureStatusSecond = -1;
+        _isAutomatedPerformanceCapture = isAutomated;
+        PerformanceCaptureFilePath = null;
+        _captureContext = new PerformanceCaptureContext(
+            DescribeVisibilityScenario(),
+            latest.ViewportWidth,
+            latest.ViewportHeight,
+            CameraPosition,
+            CameraDirection,
+            RenderTerrain,
+            RenderWorldModels,
+            RenderDoodads,
+            IsDetailedGpuProfilingEnabled,
+            RenderingConfiguration.TerrainRenderDistance,
+            RenderingConfiguration.ModelRenderDistance,
+            RenderingConfiguration.TileLoadingDistance)
+        {
+            BuildConfiguration = Dx11RuntimeOptions.BuildConfiguration,
+            D3D11DebugLayerEnabled = Dx11RuntimeOptions.IsDebugLayerRequested,
+            MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
+            TerrainLodTransitionPixels = TerrainLodTransitionPixels
+        };
+        IsPerformanceCaptureActive = true;
+        IsProfilingPaused = false;
+        PerformanceCaptureStatus =
+            $"Warming up GPU timing ({warmupDuration.TotalSeconds:0.#} s); keep the camera still.";
+        StartPerformanceCaptureCommand.NotifyCanExecuteChanged();
+        return true;
+    }
+
+    public void UpdateAutomatedBenchmarkWaitingStatus(
+        TimeSpan elapsed,
+        int stableFrames,
+        int requiredStableFrames)
+    {
+        if (IsPerformanceCaptureActive)
+            return;
+
+        PerformanceCaptureStatus = stableFrames > 0
+            ? $"Automated benchmark: workload stable {stableFrames}/{requiredStableFrames} frames."
+            : $"Automated benchmark: waiting for world streaming ({elapsed.TotalSeconds:0} s).";
+    }
+
+    public void FailAutomatedPerformanceCapture(string message)
+    {
+        PerformanceCaptureStatus = message;
+        AutomatedPerformanceCaptureFailed?.Invoke(this, message);
+    }
+
+    private void CollectPerformanceCaptureSample(FrameProfileSnapshot snapshot)
+    {
+        if (!IsPerformanceCaptureActive)
+            return;
+
+        var capturedAt = snapshot.CapturedAt;
+        if (capturedAt < _captureSampleStartedAt)
+            return;
+
+        if (capturedAt < _captureEndsAt)
+        {
+            _activeCaptureSamples.Add(snapshot);
+            var remainingSeconds = Math.Max(1, (int)Math.Ceiling((_captureEndsAt - capturedAt).TotalSeconds));
+            if (remainingSeconds != _lastCaptureStatusSecond)
+            {
+                _lastCaptureStatusSecond = remainingSeconds;
+                PerformanceCaptureStatus = $"Capturing {_captureContext?.Scenario}: {remainingSeconds} s remaining.";
+            }
+            return;
+        }
+
+        FinishPerformanceCapture(capturedAt);
+    }
+
+    private void FinishPerformanceCapture(DateTimeOffset endedAt)
+    {
+        var context = _captureContext;
+        var samples = _activeCaptureSamples.ToArray();
+        var wasAutomated = _isAutomatedPerformanceCapture;
+        _activeCaptureSamples.Clear();
+        _captureContext = null;
+        _isAutomatedPerformanceCapture = false;
+        IsPerformanceCaptureActive = false;
+        StartPerformanceCaptureCommand.NotifyCanExecuteChanged();
+
+        if (context == null || samples.Length == 0)
+        {
+            PerformanceCaptureStatus = "Capture failed: no frame samples were recorded.";
+            if (wasAutomated)
+                AutomatedPerformanceCaptureFailed?.Invoke(this, PerformanceCaptureStatus);
+            return;
+        }
+
+        var capture = PerformanceCaptureAnalyzer.Create(
+            _captureSampleStartedAt,
+            endedAt,
+            context,
+            samples);
+        PerformanceCaptureStatus = $"Saving {samples.Length} samples...";
+        _ = SavePerformanceCaptureAsync(capture, wasAutomated);
+    }
+
+    private async Task SavePerformanceCaptureAsync(
+        PerformanceCaptureFile capture,
+        bool isAutomated)
+    {
+        try
+        {
+            var captureDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WTEditor",
+                "PerformanceCaptures");
+            Directory.CreateDirectory(captureDirectory);
+            var scenario = string.Concat(capture.Context.Scenario.Select(character =>
+                char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '-'));
+            var fileName = $"{capture.StartedAt:yyyyMMdd-HHmmss}-{scenario}.json";
+            var filePath = Path.Combine(captureDirectory, fileName);
+            var json = JsonSerializer.Serialize(capture, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                IncludeFields = true
+            });
+            await File.WriteAllTextAsync(filePath, json);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                PerformanceCaptureFilePath = filePath;
+                PerformanceCaptureStatus =
+                    $"Saved {capture.Samples.Count} samples: {filePath}";
+                if (isAutomated)
+                    AutomatedPerformanceCaptureSaved?.Invoke(this, filePath);
+            });
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                PerformanceCaptureStatus = $"Capture save failed: {exception.Message}";
+                if (isAutomated)
+                    AutomatedPerformanceCaptureFailed?.Invoke(this, PerformanceCaptureStatus);
+            });
+        }
+    }
+
+    private string DescribeVisibilityScenario() =>
+        (RenderTerrain, RenderWorldModels, RenderDoodads) switch
+        {
+            (true, false, false) => "terrain-only",
+            (false, true, false) => "wmo-only",
+            (false, false, true) => "m2-only",
+            (true, true, true) => "mixed-world",
+            (false, false, false) => "empty-world",
+            _ => $"terrain-{RenderTerrain}-wmo-{RenderWorldModels}-m2-{RenderDoodads}"
+        };
+
     private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
         ClientConfigurationChanged?.Invoke(this, configuration);
 
@@ -235,6 +477,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         {
             MoveSpeed = configuration.MovementSpeed;
             MouseSensitivity = configuration.MouseSensitivity;
+            MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
+            TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
         }
         finally
         {

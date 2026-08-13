@@ -48,6 +48,10 @@ Editor application state
 
 - `Dx11View` owns the Silk D3D11 device and device context. It requires the
   Avalonia compositor to support `D3D11TextureGlobalSharedHandle` import.
+- D3D11 debug-layer validation is deliberately opt-in, including in .NET Debug builds,
+  because validating thousands of draw/state calls invalidates performance measurements.
+  Set `WTEDITOR_D3D11_DEBUG=1` before launch when API validation or live-object diagnostics
+  are required; never compare a debug-layer capture with a normal performance baseline.
 - `WowViewerEngine` renders into a BGRA8 shared texture. With `UseKeyedMutex`
   enabled, the engine releases mutex key `1` after rendering and Avalonia imports
   it using `UpdateWithKeyedMutexAsync(acquire: 1, release: 0)`.
@@ -114,14 +118,31 @@ Editor application state
   submission, and other frame work. GPU stages are measurable resource-transfer activity,
   world drawing, and remaining GPU frame work. The engine-frame card measures `Update` plus
   `Render` wall time; Avalonia scheduling delay is deliberately excluded.
-- Culling telemetry exposes both cost and visible/tested counts for terrain chunks, WMO
-  instances, and M2 instances. Streaming telemetry also reports resources uploaded per frame;
+- Culling telemetry exposes both cost and visible/loaded-candidate counts for terrain chunks, WMO
+  instances, and M2 instances, plus coarse/visibility/size rejection counts. Geometry workload is
+  reported as exact submitted index elements and derived indexed triangles with instancing expanded;
+  it is not a unique mesh-vertex count. Streaming telemetry also reports resources uploaded per frame;
   a zero GPU transfer duration is hidden because D3D11 initial-data resource creation is not
   always independently observable as an asynchronous GPU pass.
 - GPU frame and phase durations come from a four-slot ring of non-blocking D3D11
   timestamp/disjoint queries. Results are polled with `DoNotFlush`, arrive a few frames late,
   and never deliberately stall the immediate context. Unsupported query creation leaves GPU
   timing unavailable.
+- World drawing is additionally timestamped as WMO, M2, ADT, and debug-overlay passes. CPU
+  profiling separates culling from command submission for each pass and records draw calls,
+  submitted instance/chunk draws, dynamic instance-buffer maps, constant-buffer updates,
+  material texture-binding calls, and blend-state bindings. See
+  `RENDERER_OPTIMIZATION_PLAN.md` for metric semantics and the optimization sequence.
+- M2 render packets retain dense world-sphere and world-matrix arrays per shared model resource.
+  Membership or editor transform changes invalidate/rebuild them. The CPU culler and instance upload
+  consume the same arrays; they are also the staging representation for future GPU structured buffers.
+- The viewport profiler can record a two-second warm-up plus ten-second measurement capture.
+  Captures contain raw frames and aggregate distributions and are saved as JSON under
+  `%LOCALAPPDATA%/WTEditor/PerformanceCaptures` for offline comparison.
+- Detailed WMO/M2/ADT GPU timestamps are opt-in and sampled every eight frames. Query polling
+  first checks the enclosing disjoint query and does not poll every child timestamp while the
+  frame is pending. Lightweight mode retains whole-frame/draw GPU timing and all CPU/counter
+  telemetry so the profiler can be A/B checked for observer overhead.
 - Terrain, WMO, and M2 visibility are local to each world viewport. The icon toolbar emits
   an effective rendering configuration without persisting these transient visibility choices;
   engine-wide quality/distance settings remain in the application settings dialog.
@@ -145,6 +166,22 @@ Editor application state
   The implementation therefore assumes one active client build, engine, and D3D device.
 - Camera/world movement is Z-up. Model transforms convert WoW placement data in
   `Container3D.GetModelMatrix`; avoid duplicating the axis/rotation conversion in UI code.
+- M2 visibility bounds describe render geometry, not collision/header bounds. They are derived
+  from every uploaded vertex and transformed through the full placement matrix, including the ADT
+  scale. Temporary asynchronous cache models must never publish or cache bounds for another FDID.
+- ADT chunk boxes and their conservative spheres are immutable load-time data. Keep the cached
+  spheres synchronized if terrain geometry becomes editable; reconstructing them in every frame is
+  measurably expensive at whole-world scale.
+- Loaded ADTs have a dedicated retained collection and aggregate bounds. The render pass must not
+  rediscover them by scanning the mixed scene collection, especially when terrain visibility is
+  disabled. Coarse ADT classification may skip chunk tests only when the aggregate bounds are fully
+  inside; intersecting tiles retain conservative per-chunk tests.
+- MCNK texture scale and height parameters live in an immutable 256-record constant buffer per ADT
+  and are indexed by the shader's chunk identifier. Do not reintroduce per-draw uploads for these
+  values. If terrain editing changes them, replace or update the affected retained buffer explicitly.
+- Classic ADT batches contain at most four layers and do not use `_h` height texturing. The DX11
+  shader manager nevertheless retains fixed height-capable and 8-layer variants for other client
+  formats; shader selection is a viewport renderer concern derived from batch capabilities.
 
 ## Important source index
 
@@ -154,8 +191,8 @@ Editor application state
 | `WTEditor.Avalonia/Rendering/Dx11RendererSession.cs` | DX11 engine generation ownership and editor-facing status translation. |
 | `WTEditor.Avalonia/Controls/FloatingMetricsPanel.axaml` | Movable/resizable world-viewport profiler UI and timing descriptions. |
 | `WTEditor.Avalonia/Controls/FrameTimelineGraph.cs` | Paired CPU/GPU stacked history, adaptive frame-budget scaling, and profiler color mapping. |
-| `WTEditor.Application/Models/PerformanceModels.cs` | Renderer-independent frame snapshots and CPU/GPU bottleneck policy. |
-| `WoWRenderLib.DX11/Profiling/GpuFrameTimer.cs` | Non-blocking D3D11 timestamp-query ring for whole-frame, upload, and drawing GPU durations. |
+| `WTEditor.Application/Models/PerformanceModels.cs` | Renderer-independent frame snapshots, CPU/GPU-timeline diagnosis, and CPU-submission starvation detection. |
+| `WoWRenderLib.DX11/Profiling/GpuFrameTimer.cs` | Non-blocking D3D11 timestamp-query ring for whole-frame, upload, and drawing command-stream spans; spans may include GPU idle starvation. |
 | `WTEditor.Application/EditorDocument.cs` | Document identity, object snapshots, dirty/version state, and changed-object tracking. |
 | `WTEditor.Application/Services/UndoService.cs` | Command history and grouped transaction semantics. |
 | `WTEditor.Avalonia/Views/Editor3DView.axaml.cs` | Pointer capture, focus, QWERTY/AZERTY mapping, input-state reset. |
@@ -166,7 +203,9 @@ Editor application state
 | `WoWRenderLib.DX11/Cache/*Cache.cs` | Background workers, reference tracking, GPU-upload queues, static device state. |
 | `WoWRenderLib.DX11/Objects/Container3D.cs` | WoW-to-renderer coordinate and placement transform. |
 | `WoWRenderLib/Services/CASC.cs` | Global build initialization, CDN fallback, TACT key loading. |
-| `WTEditor.Avalonia.Tests/EditorSettingsSmokeTests.cs` | Current automated coverage; not a graphics or streaming test. |
+| `WTEditor.Avalonia/Rendering/AutomatedBenchmarkOptions.cs` | Opt-in steady-state detection and one-shot benchmark policy. |
+| `build/run-render-benchmark.ps1` | Release launch, bounded wait, capture result collection, and process cleanup. |
+| `WTEditor.Avalonia.Tests/EditorSettingsSmokeTests.cs` | Current automated coverage; not a rendered-output or streaming integration test. |
 
 ## Risk register and preferred order of work
 
@@ -198,9 +237,10 @@ Editor application state
 
 ### P1: streaming correctness and scale
 
-- Desired tiles are recomputed every frame with list/queue `Contains` calls. Radius 4 is
-  manageable; the allowed radius 32 can make the nested membership checks very expensive.
-  Build a desired-tile `HashSet` and diff it against queued/in-flight/loaded sets.
+- Desired/available tiles and queue membership now use retained hash sets, avoiding the former
+  nested list/queue scans at radius 32. Loaded tiles also own conservative combined scene bounds;
+  an incomplete asynchronous child disables coarse rejection. Editor mutation paths explicitly
+  dirty the aggregate through `SceneManager.MarkTileBoundsDirty`.
 - Unloading an ADT that is still parsing removes the scene callback but does not reliably
   cancel/release the cache request. This can leave stale callbacks, users, and GPU data.
 - Worker failure paths can leave placeholders cached without requeueing. Reference tracking
@@ -222,9 +262,8 @@ Editor application state
 - Wire wheel input and focus, and clamp unusually large frame deltas after attach/restart.
 - M2 culling increments `visibleWMOs` in one path, while `visibleM2s` is incremented per
   model group rather than per visible instance.
-- `RendererStats.VertexCount` is effectively a submitted-index counter and does not
-  multiply instanced geometry by instance count. Rename or redefine it before using it for
-  performance analysis.
+- Geometry workload now uses 64-bit exact submitted-index counts with instancing expanded and a
+  derived indexed-triangle count; retain this definition when adding LOD or indirect draw paths.
 - Unsupported compositor backends should surface an editor-visible error instead of only
   leaving a blank viewport.
 
@@ -236,12 +275,28 @@ After every code, project, configuration, or shader change, run from the reposit
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\run-smoke-tests.ps1
 ```
 
-As of 2026-08-13 this builds `WTEditor.Avalonia` and passes 11 tests. Coverage includes
+As of 2026-08-14 this builds `WTEditor.Avalonia` and passes 27 tests. Coverage includes
 settings/session behavior, normal-window bounds preservation, camera-direction restoration,
 document transform undo/redo and renderer notification, grouped undo transactions, and
-selection identity, plus instantaneous and rolling CPU/GPU bottleneck classification. It
-does not cover hardware D3D initialization, shader compilation,
-cache teardown, streaming, input routing, or rendered output.
+selection identity, instantaneous and rolling CPU/GPU bottleneck classification, projected-size
+culling, hierarchical frustum classification, full-render-vertex M2 bounds, transformed placement
+spheres, stable WMO group signatures, conservative tile-scene bound aggregation and invalidation,
+performance-capture analysis, unattended benchmark settling, compatible terrain-run batching, and
+terrain shader layer buckets. It does not cover hardware D3D initialization, rendered shader
+output, cache teardown,
+streaming, input routing, or rendered-output comparison.
+
+For repeatable steady-state hardware captures, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\run-render-benchmark.ps1
+```
+
+This opt-in workflow builds and launches Release, enables detailed GPU timing, waits for a non-empty
+idle workload whose draw/culling counters remain stable, captures ten seconds, saves the JSON path,
+and exits. It has a bounded loading timeout. The legacy CASC/TACT startup still writes `WoW.txt` and
+`cache/` relative to the working directory, so the runner isolates those reusable artifacts under
+`%LOCALAPPDATA%\WTEditor\BenchmarkRuntime` instead of polluting the repository.
 
 For renderer work, also verify manually on Windows with the D3D11 compositor:
 

@@ -48,7 +48,7 @@
         <TextBlock Foreground="White" Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
 
         <TextBlock Foreground="White" Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
-        <TextBlock Foreground="White" Text="{Binding VertexCount, StringFormat='Vertices: {0}'}"/>
+        <TextBlock Foreground="White" Text="{Binding SubmittedTriangleCount, StringFormat='Triangles submitted: {0:N0}'}"/>
 
         <TextBlock Foreground="White" Text="{Binding CameraPosition}"/>
         <TextBlock Foreground="White" Text="{Binding CameraDirection, StringFormat='Direction: {0}'}"/>
@@ -96,6 +96,24 @@
             <TextBlock Text="M2"/>
           </StackPanel>
         </ToggleButton>
+        <Border Width="1" Margin="3,3" Background="#526170"/>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="5,0">
+          <TextBlock Text="Min model px" Foreground="#D7E2EC" VerticalAlignment="Center"
+                     ToolTip.Tip="Cull WMO and M2 bounding spheres whose projected diameter is smaller than this value; 0 disables size culling"/>
+          <Slider Width="90" Minimum="0" Maximum="8" TickFrequency="0.5"
+                  Value="{Binding MinimumModelScreenSizePixels}"/>
+          <TextBlock Width="28" Foreground="#FFFFFF" VerticalAlignment="Center"
+                     Text="{Binding MinimumModelScreenSizePixels, StringFormat='{}{0:F1}'}"/>
+        </StackPanel>
+        <Border Width="1" Margin="3,3" Background="#526170"/>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="5,0">
+          <TextBlock Text="Terrain LOD px" Foreground="#D7E2EC" VerticalAlignment="Center"
+                     ToolTip.Tip="Use the half-index terrain mesh below this projected chunk diameter; 0 disables terrain LOD"/>
+          <Slider Width="90" Minimum="0" Maximum="128" TickFrequency="8"
+                  Value="{Binding TerrainLodTransitionPixels}"/>
+          <TextBlock Width="30" Foreground="#FFFFFF" VerticalAlignment="Center"
+                     Text="{Binding TerrainLodTransitionPixels, StringFormat='{}{0:F0}'}"/>
+        </StackPanel>
         <Border Width="1" Margin="3,3" Background="#526170"/>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsMetricsPanelVisible}"
                       ToolTip.Tip="Show the profiler for this world viewport">

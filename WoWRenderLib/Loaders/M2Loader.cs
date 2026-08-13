@@ -27,54 +27,15 @@ namespace WoWRenderLib.Loaders
                 throw new FileNotFoundException("Model " + fileDataID + " does not exist!");
             }
 
-            Vector3 bbMin, bbMax;
-            float bbRadius;
-
-            if (
-                model.boundingbox == null ||
-                model.boundingbox.Length < 2 ||
-                (model.boundingbox[0] == Vector3.Zero && model.boundingbox[1] == Vector3.Zero) ||
-                (model.boundingbox[1] == new Vector3(-10000000, -10000000, -10000000) && model.boundingbox[0] == new Vector3(10000000, 10000000, 10000000))
-                )
-            {
-                var min = new Vector3(float.MaxValue);
-                var max = new Vector3(float.MinValue);
-
-                if (model.vertices != null && model.vertices.Length > 0)
-                {
-                    foreach (var vertex in model.vertices)
-                    {
-                        min = Vector3.Min(min, vertex.position);
-                        max = Vector3.Max(max, vertex.position);
-                    }
-
-                    bbMin = min;
-                    bbMax = max;
-                    bbRadius = Vector3.Distance((bbMin + bbMax) / 2f, bbMax);
-                }
-                else
-                {
-                    // no vertices so this is probably only particle effects?
-                    bbMin = Vector3.Zero;
-                    bbMax = Vector3.Zero;
-                    bbRadius = 0;
-                }
-            }
-            else
-            {
-                bbMin = new Vector3(model.boundingbox[0].X, model.boundingbox[0].Y, model.boundingbox[0].Z);
-                bbMax = new Vector3(model.boundingbox[1].X, model.boundingbox[1].Y, model.boundingbox[1].Z);
-                bbRadius = model.boundingradius;
-            }
+            // Header bounds are often collision-oriented and are not guaranteed to
+            // contain foliage or every vertex uploaded by this renderer. Culling must
+            // describe the complete render geometry rather than collision geometry.
+            var (renderBoundingBox, renderBoundingRadius) = CalculateRenderBounds(model.vertices);
 
             var doodadBatch = new ParsedM2()
             {
-                boundingBox = new BoundingBox()
-                {
-                    Min = bbMin,
-                    Max = bbMax
-                },
-                boundingRadius = bbRadius,
+                boundingBox = renderBoundingBox,
+                boundingRadius = renderBoundingRadius,
                 fileDataID = fileDataID
             };
 
@@ -191,6 +152,32 @@ namespace WoWRenderLib.Loaders
             }
 
             return doodadBatch;
+        }
+
+        public static (BoundingBox BoundingBox, float Radius) CalculateRenderBounds(
+            ReadOnlySpan<Vertice> vertices)
+        {
+            if (vertices.IsEmpty)
+                return (new BoundingBox(Vector3.Zero, Vector3.Zero), 0f);
+
+            var min = vertices[0].position;
+            var max = vertices[0].position;
+            for (var index = 1; index < vertices.Length; index++)
+            {
+                min = Vector3.Min(min, vertices[index].position);
+                max = Vector3.Max(max, vertices[index].position);
+            }
+
+            var center = (min + max) * 0.5f;
+            var maximumDistanceSquared = 0f;
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                maximumDistanceSquared = MathF.Max(
+                    maximumDistanceSquared,
+                    Vector3.DistanceSquared(center, vertices[index].position));
+            }
+
+            return (new BoundingBox(min, max), MathF.Sqrt(maximumDistanceSquared));
         }
 
         // Based on previously reverse engineerd logic by Deamon: https://github.com/Deamon87/WebWowViewerCpp/blob/master/wowViewerLib/src/engine/objects/m2/m2Object.cpp#L146

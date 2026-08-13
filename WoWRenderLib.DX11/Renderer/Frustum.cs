@@ -6,6 +6,13 @@ namespace WoWRenderLib.DX11.Renderer
     {
         private readonly Plane[] planes = new Plane[6];
 
+        public enum BoxIntersection
+        {
+            Outside,
+            Intersecting,
+            Inside
+        }
+
         public enum PlaneIndex
         {
             Left = 0,
@@ -72,7 +79,6 @@ namespace WoWRenderLib.DX11.Renderer
             for (int i = 0; i < 6; i++)
             {
                 var plane = planes[i];
-
                 var positiveVertex = new Vector3(
                     plane.Normal.X >= 0 ? max.X : min.X,
                     plane.Normal.Y >= 0 ? max.Y : min.Y,
@@ -84,6 +90,35 @@ namespace WoWRenderLib.DX11.Renderer
             }
 
             return true;
+        }
+
+        public BoxIntersection ClassifyBox(Vector3 min, Vector3 max)
+        {
+            var result = BoxIntersection.Inside;
+            for (int i = 0; i < 6; i++)
+            {
+                var plane = planes[i];
+
+                var positiveVertex = new Vector3(
+                    plane.Normal.X >= 0 ? max.X : min.X,
+                    plane.Normal.Y >= 0 ? max.Y : min.Y,
+                    plane.Normal.Z >= 0 ? max.Z : min.Z
+                );
+
+                if (Plane.DotCoordinate(plane, positiveVertex) < 0)
+                    return BoxIntersection.Outside;
+
+                var negativeVertex = new Vector3(
+                    plane.Normal.X >= 0 ? min.X : max.X,
+                    plane.Normal.Y >= 0 ? min.Y : max.Y,
+                    plane.Normal.Z >= 0 ? min.Z : max.Z
+                );
+
+                if (Plane.DotCoordinate(plane, negativeVertex) < 0)
+                    result = BoxIntersection.Intersecting;
+            }
+
+            return result;
         }
 
         public bool IsSphereVisible(Vector3 center, float radius)

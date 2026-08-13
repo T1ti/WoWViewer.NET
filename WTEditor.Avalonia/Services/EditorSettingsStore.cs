@@ -15,6 +15,8 @@ public sealed class PersistedRenderingSettings
     public float DiffuseColorB { get; set; }
     public float TerrainRenderDistance { get; set; } = 20_000f;
     public float ModelRenderDistance { get; set; } = 20_000f;
+    public float MinimumModelScreenSizePixels { get; set; } = 1f;
+    public float TerrainLodTransitionPixels { get; set; } = 32f;
     public int TileLoadingDistance { get; set; } = 4;
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
@@ -30,6 +32,8 @@ public sealed class PersistedRenderingSettings
         DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
         TerrainRenderDistance = TerrainRenderDistance,
         ModelRenderDistance = ModelRenderDistance,
+        MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
+        TerrainLodTransitionPixels = TerrainLodTransitionPixels,
         TileLoadingDistance = TileLoadingDistance,
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,
@@ -50,6 +54,8 @@ public sealed class PersistedRenderingSettings
         DiffuseColorB = rendering.DiffuseColor.Z,
         TerrainRenderDistance = rendering.TerrainRenderDistance,
         ModelRenderDistance = rendering.ModelRenderDistance,
+        MinimumModelScreenSizePixels = rendering.MinimumModelScreenSizePixels,
+        TerrainLodTransitionPixels = rendering.TerrainLodTransitionPixels,
         TileLoadingDistance = rendering.TileLoadingDistance,
         MovementSpeed = rendering.MovementSpeed,
         MouseSensitivity = rendering.MouseSensitivity,

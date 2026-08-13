@@ -31,6 +31,8 @@ public sealed record RenderingConfiguration
     public Vector3 DiffuseColor { get; init; } = new(1f, 136f / 255f, 0f);
     public float TerrainRenderDistance { get; init; } = 20_000f;
     public float ModelRenderDistance { get; init; } = 20_000f;
+    public float MinimumModelScreenSizePixels { get; init; } = 1f;
+    public float TerrainLodTransitionPixels { get; init; } = 32f;
     public int TileLoadingDistance { get; init; } = 4;
     public float MovementSpeed { get; init; } = 150f;
     public float MouseSensitivity { get; init; } = 0.1f;
@@ -46,6 +48,8 @@ public sealed record RenderingConfiguration
         DiffuseColor = ClampColor(DiffuseColor),
         TerrainRenderDistance = Math.Clamp(TerrainRenderDistance, 100f, 1_000_000f),
         ModelRenderDistance = Math.Clamp(ModelRenderDistance, 100f, 1_000_000f),
+        MinimumModelScreenSizePixels = Math.Clamp(MinimumModelScreenSizePixels, 0f, 16f),
+        TerrainLodTransitionPixels = Math.Clamp(TerrainLodTransitionPixels, 0f, 256f),
         TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
         MovementSpeed = Math.Clamp(MovementSpeed, 1f, 10_000f),
         MouseSensitivity = Math.Clamp(MouseSensitivity, 0.001f, 2f)

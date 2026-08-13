@@ -17,6 +17,7 @@ namespace WoWRenderLib.DX11.Objects
         public List<M2Container> ActiveDoodads = [];
 
         public Action<WMOContainer>? OnDoodadSetsChanged { get; set; }
+        public Action<WMOContainer>? OnGroupsChanged { get; set; }
 
         public string[] DoodadSets
         {
@@ -127,6 +128,7 @@ namespace WoWRenderLib.DX11.Objects
         public void ToggleGroup(int index)
         {
             EnabledGroups[index] = !EnabledGroups[index];
+            OnGroupsChanged?.Invoke(this);
         }
 
         public void ToggleDoodadSet(int index)
@@ -137,6 +139,9 @@ namespace WoWRenderLib.DX11.Objects
 
         public override BoundingSphere? GetBoundingSphere()
         {
+            if (CachedBoundingSphere.HasValue)
+                return CachedBoundingSphere.Value;
+
             if (!IsLoaded)
                 return null;
 
@@ -147,23 +152,46 @@ namespace WoWRenderLib.DX11.Objects
 
             var transformedCenter = Vector3.Transform(center, GetModelMatrix());
 
-            return new BoundingSphere(transformedCenter, radius * Scale);
+            CachedBoundingSphere = new BoundingSphere(transformedCenter, radius * Scale);
+            return CachedBoundingSphere.Value;
         }
 
         public override BoundingBox? GetBoundingBox()
         {
+            if (CachedBoundingBox.HasValue)
+                return CachedBoundingBox.Value;
+
             if (!IsLoaded)
                 return null;
 
             var wmo = GetWMO();
             var box = new BoundingBox(wmo.boundingBox.Min, wmo.boundingBox.Max);
-            return BoundingBox.Transform(box, GetModelMatrix());
+            CachedBoundingBox = BoundingBox.Transform(box, GetModelMatrix());
+            return CachedBoundingBox.Value;
+        }
+
+        protected override void OnTransformInvalidated()
+        {
+            foreach (var doodad in ActiveDoodads)
+                doodad.InvalidateTransform();
         }
 
         public BoundingBox GetLocalBoundingBox()
         {
             var wmo = GetWMO();
             return new BoundingBox(wmo.boundingBox.Min, wmo.boundingBox.Max);
+        }
+
+        public static string CreateEnabledGroupSignature(ReadOnlySpan<bool> groups)
+        {
+            var packed = new byte[(groups.Length + 7) / 8];
+            for (var index = 0; index < groups.Length; index++)
+            {
+                if (groups[index])
+                    packed[index / 8] |= (byte)(1 << (index & 7));
+            }
+
+            return $"{groups.Length}:{Convert.ToHexString(packed)}";
         }
     }
 }

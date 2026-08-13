@@ -27,4 +27,4 @@ public sealed record ViewportTelemetry(
     Vector3 CameraPosition,
     Vector3 CameraDirection,
     int DrawCalls,
-    int VertexCount);
+    long SubmittedTriangleCount);

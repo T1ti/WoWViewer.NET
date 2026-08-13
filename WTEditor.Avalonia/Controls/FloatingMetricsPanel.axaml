@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:models="using:WTEditor.Application.Models"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
              x:Class="WTEditor.Avalonia.Controls.FloatingMetricsPanel"
              x:DataType="vm:Editor3DViewModel"
@@ -25,15 +26,20 @@
           CornerRadius="7" BoxShadow="0 8 24 0 #99000000" ClipToBounds="True">
     <Grid RowDefinitions="38,*">
       <Border Grid.Row="0" Background="#293440" Padding="10,0">
-        <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <PathIcon Width="16" Height="16" Foreground="#6CB6FF"
                       Data="M2,18 L2,11 L6,11 L6,15 L10,15 L10,7 L14,7 L14,13 L18,13 L18,4 L22,4 L22,18 Z"/>
             <TextBlock Text="Frame profiler" FontWeight="SemiBold"/>
           </StackPanel>
-          <CheckBox Grid.Column="1" Content="Pause" Margin="8,0"
+          <TextBlock Grid.Column="1" Text="{Binding PerformanceEnvironmentLabel}" Foreground="#AFC7DC"
+                     FontSize="10" Margin="8,0"/>
+          <CheckBox Grid.Column="2" Content="Pause" Margin="8,0"
                     IsChecked="{Binding IsProfilingPaused}"/>
-          <Button Grid.Column="2" Width="28" Height="26" Padding="0"
+          <Button Grid.Column="3" Content="Capture 10 s" Margin="4,0,8,0" Padding="9,3"
+                  Command="{Binding StartPerformanceCaptureCommand}"
+                  ToolTip.Tip="Waits 2 seconds for GPU timing to settle, then records 10 seconds"/>
+          <Button Grid.Column="4" Width="28" Height="26" Padding="0"
                   Command="{Binding CloseMetricsPanelCommand}" ToolTip.Tip="Close profiler">
             <PathIcon Width="12" Height="12" Data="M4,4 L20,20 M20,4 L4,20"/>
           </Button>
@@ -52,7 +58,7 @@
             </Border>
             <Border Grid.Column="1" Padding="8" Background="#302735" CornerRadius="4" Margin="2,0">
               <StackPanel>
-                <TextBlock Text="GPU execution" Foreground="#FF99C7" FontSize="11"/>
+                <TextBlock Text="GPU timeline" Foreground="#FF99C7" FontSize="11"/>
                 <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="#FF5DA2"
                            Text="{Binding ProfileGpuMilliseconds, StringFormat='{}{0:F2} ms'}"/>
               </StackPanel>
@@ -66,22 +72,42 @@
             </Border>
           </Grid>
 
+          <Border Padding="9" CornerRadius="4" Background="#49351F" BorderBrush="#8B642D"
+                  BorderThickness="1" IsVisible="{Binding IsPerformanceEnvironmentWarningVisible}">
+            <TextBlock Text="Performance captures from Debug builds or with D3D11 validation enabled are diagnostic only. Use Release with validation off for representative timings."
+                       Foreground="#FFD18A" FontSize="11" TextWrapping="Wrap"/>
+          </Border>
+
           <Border Padding="9" CornerRadius="4" Background="#352B3A">
             <StackPanel Spacing="3">
               <TextBlock Text="{Binding ProfileBottleneck}" Foreground="#FFD166" FontWeight="SemiBold"/>
-              <TextBlock Text="Compares recent CPU command-building time with the time the GPU spends executing the frame."
+              <TextBlock Text="Compares CPU frame time with elapsed time between GPU command-stream markers. A slow CPU can leave the GPU idle inside that span, so this is not GPU utilization."
                          Foreground="#C5D0DA" TextWrapping="Wrap" FontSize="11"/>
+            </StackPanel>
+          </Border>
+
+          <Border Padding="9" CornerRadius="4" Background="#20313A" BorderBrush="#365365" BorderThickness="1">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Timed capture" Foreground="#7CC7F2" FontWeight="SemiBold"/>
+              <CheckBox Content="Detailed GPU pass timing (sampled every 8 frames)"
+                        IsChecked="{Binding IsDetailedGpuProfilingEnabled}"/>
+              <TextBlock Text="{Binding PerformanceCaptureStatus}" Foreground="#D6E5EF"
+                         FontSize="11" TextWrapping="Wrap"/>
+              <TextBlock Text="Capture terrain-only, WMO-only, M2-only, then the mixed scene. Do not move the camera or change visibility while a capture is running."
+                         Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
+              <TextBlock Text="Leave detailed timing off for an unperturbed baseline. Enable it only when pass-level GPU timing is needed; CPU pass timings and command counters remain available in both modes."
+                         Foreground="#91A4B5" FontSize="11" TextWrapping="Wrap"/>
             </StackPanel>
           </Border>
 
           <StackPanel Spacing="5">
             <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="CPU and GPU frame history" FontWeight="SemiBold"/>
+              <TextBlock Text="CPU work and GPU timeline history" FontWeight="SemiBold"/>
               <Button Grid.Column="1" Content="Clear" Padding="8,3"
                       Command="{Binding ClearPerformanceHistoryCommand}"/>
             </Grid>
             <controls:FrameTimelineGraph Height="210" Samples="{Binding PerformanceHistory}"/>
-            <TextBlock Text="Each sample has a stacked CPU bar (left) and GPU bar (right). The graph scales to recent activity; horizontal lines mark visible frame budgets."
+            <TextBlock Text="Each sample has a stacked CPU bar (left) and GPU command-stream timeline bar (right). The graph scales to recent activity; horizontal lines mark visible frame budgets."
                        Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
           </StackPanel>
 
@@ -100,7 +126,73 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock Text="Upload submission is render-thread time spent creating resources. GPU upload timing can be zero on idle frames and D3D11 initial-data transfers are not always independently observable. World drawing is terrain, WMO and M2 execution on the GPU."
+            <TextBlock Text="CPU command submission is time spent preparing and issuing D3D11 commands; it is not mesh upload time. GPU spans are elapsed time between command-stream timestamps and may include idle starvation while the CPU submits more commands."
+                       Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <StackPanel Spacing="5">
+            <TextBlock Text="Render passes" FontWeight="SemiBold"/>
+            <ItemsControl ItemsSource="{Binding ProfileRenderWorkload.Passes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:RenderPassMetrics">
+                  <Border Padding="9" Margin="0,0,0,5" CornerRadius="4" Background="#242D35">
+                    <StackPanel Spacing="6">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="GPU span" Foreground="#FF99C7" FontSize="11"/>
+                          <TextBlock Text="{Binding GpuMilliseconds, StringFormat='{}{0:F3} ms'}"
+                                     Foreground="#FF79B6" FontWeight="SemiBold"/>
+                        </StackPanel>
+                      </Grid>
+                      <Grid ColumnDefinitions="*,*,*,*,*">
+                        <StackPanel>
+                          <TextBlock Text="CPU cull" Foreground="#AFC7DC" FontSize="10"/>
+                          <TextBlock Text="{Binding CpuCullingMilliseconds, StringFormat='{}{0:F3} ms'}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                          <TextBlock Text="CPU commands" Foreground="#AFC7DC" FontSize="10"/>
+                          <TextBlock Text="{Binding CpuSubmissionMilliseconds, StringFormat='{}{0:F3} ms'}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Text="Draw calls" Foreground="#AFC7DC" FontSize="10"/>
+                          <TextBlock Text="{Binding DrawCalls}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="3">
+                          <TextBlock Text="{Binding SubmittedItemLabel}" Foreground="#AFC7DC" FontSize="10"/>
+                          <TextBlock Text="{Binding SubmittedItems}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="4">
+                          <TextBlock Text="Indexed triangles" Foreground="#AFC7DC" FontSize="10"/>
+                          <TextBlock Text="{Binding SubmittedTriangles, StringFormat='{}{0:N0}'}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Spacing="5">
+            <TextBlock Text="D3D11 command pressure" FontWeight="SemiBold"/>
+            <Border Padding="9" CornerRadius="4" Background="#242D35">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Text="Dynamic instance-buffer maps"/>
+                <TextBlock Grid.Column="1" Text="{Binding ProfileRenderWorkload.InstanceBufferMaps}"/>
+                <TextBlock Grid.Row="1" Text="Constant-buffer updates"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileRenderWorkload.ConstantBufferUpdates}"/>
+                <TextBlock Grid.Row="2" Text="Material texture bind calls"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ProfileRenderWorkload.TextureBindingCalls}"/>
+                <TextBlock Grid.Row="3" Text="Blend-state bind calls"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ProfileRenderWorkload.BlendStateBindings}"/>
+                <TextBlock Grid.Row="4" Text="Vertex-buffer bind calls"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ProfileRenderWorkload.VertexBufferBindings}"/>
+                <TextBlock Grid.Row="5" Text="Index-buffer bind calls"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ProfileRenderWorkload.IndexBufferBindings}"/>
+              </Grid>
+            </Border>
+            <TextBlock Text="These are API call counts, not bytes transferred. High counts paired with high CPU command time indicate immediate-context or driver overhead."
                        Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
           </StackPanel>
 
@@ -112,29 +204,47 @@
               <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileUploadedResources}"/>
               <TextBlock Grid.Row="2" Text="Draw calls submitted"/>
               <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DrawCalls}"/>
-              <TextBlock Grid.Row="3" Text="Indices / vertices submitted"/>
-              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding VertexCount}"/>
+              <TextBlock Grid.Row="3" Text="Indexed triangles submitted"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SubmittedTriangleCount, StringFormat='{}{0:N0}'}"/>
             </Grid>
           </Border>
 
           <StackPanel Spacing="5">
             <TextBlock Text="Visibility culling" FontWeight="SemiBold"/>
             <Border Padding="9" CornerRadius="4" Background="#242D35">
-              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                <TextBlock Text="Terrain chunks visible / tested"/>
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Text="Terrain chunks visible / loaded candidates"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                   <TextBlock Text="{Binding ProfileCulling.VisibleTerrainChunks}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateTerrainChunks}"/>
                 </StackPanel>
-                <TextBlock Grid.Row="1" Text="WMO instances visible / tested"/>
+                <TextBlock Grid.Row="1" Text="WMO instances visible / loaded candidates"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
                   <TextBlock Text="{Binding ProfileCulling.VisibleWorldModels}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateWorldModels}"/>
                 </StackPanel>
-                <TextBlock Grid.Row="2" Text="M2 instances visible / tested"/>
+                <TextBlock Grid.Row="2" Text="M2 instances visible / loaded candidates"/>
                 <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
                   <TextBlock Text="{Binding ProfileCulling.VisibleDoodads}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateDoodads}"/>
                 </StackPanel>
+                <TextBlock Grid.Row="3" Text="WMO culled below pixel threshold"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ProfileCulling.SizeCulledWorldModels}"/>
+                <TextBlock Grid.Row="4" Text="M2 culled below pixel threshold"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ProfileCulling.SizeCulledDoodads}"/>
+                <TextBlock Grid.Row="5" Text="Terrain chunks using far LOD"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ProfileCulling.FarLodTerrainChunks}"/>
+                <TextBlock Grid.Row="6" Text="World tiles coarse-rejected / tested"/>
+                <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal">
+                  <TextBlock Text="{Binding ProfileCulling.CoarseCulledTiles}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateTiles}"/>
+                </StackPanel>
+                <TextBlock Grid.Row="7" Text="Terrain chunks culled"/>
+                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding ProfileCulling.CulledTerrainChunks}"/>
+                <TextBlock Grid.Row="8" Text="WMO culled by visibility / distance"/>
+                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding ProfileCulling.CulledWorldModels}"/>
+                <TextBlock Grid.Row="9" Text="M2 culled by visibility / distance"/>
+                <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding ProfileCulling.CulledDoodads}"/>
               </Grid>
             </Border>
+            <TextBlock Text="Candidates are loaded scene items, not draw calls. Instancing and terrain batching can produce few draw calls while submitting many visible triangles."
+                       Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
           </StackPanel>
 
           <StackPanel Spacing="5">
@@ -156,7 +266,7 @@
           </StackPanel>
 
           <TextBlock Margin="0,0,8,6"
-                     Text="GPU timings arrive several frames late because queries are read without blocking the rendering thread."
+                     Text="GPU timeline timings arrive several frames late because queries are read without blocking the rendering thread."
                      Foreground="#91A4B5" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
       </ScrollViewer>

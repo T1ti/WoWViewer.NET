@@ -53,7 +53,8 @@ namespace WoWRenderLib.DX11
         public double FPS { get; internal set; }
 
         public uint DrawCalls { get; internal set; }
-        public uint VertexCount { get; internal set; }
+        public ulong SubmittedIndexCount { get; internal set; }
+        public ulong SubmittedTriangleCount => SubmittedIndexCount / 3;
         public double UpdateTimeMs { get; internal set; }
         public double MutexWaitTimeMs { get; internal set; }
         public double TileUpdateTimeMs { get; internal set; }
@@ -66,6 +67,35 @@ namespace WoWRenderLib.DX11
         public double? GpuFrameTimeMs { get; internal set; }
         public double? GpuUploadTimeMs { get; internal set; }
         public double? GpuDrawTimeMs { get; internal set; }
+        public double? GpuWorldModelTimeMs { get; internal set; }
+        public double? GpuDoodadTimeMs { get; internal set; }
+        public double? GpuTerrainTimeMs { get; internal set; }
+        public double? GpuDebugTimeMs { get; internal set; }
+        public double SceneSetupTimeMs { get; internal set; }
+        public double WmoCullingTimeMs { get; internal set; }
+        public double WmoSubmissionTimeMs { get; internal set; }
+        public double M2CullingTimeMs { get; internal set; }
+        public double M2SubmissionTimeMs { get; internal set; }
+        public double TerrainCullingTimeMs { get; internal set; }
+        public double TerrainSubmissionTimeMs { get; internal set; }
+        public double TileHierarchyCullingTimeMs { get; internal set; }
+        public double DebugSubmissionTimeMs { get; internal set; }
+        public uint WmoDrawCalls { get; internal set; }
+        public uint M2DrawCalls { get; internal set; }
+        public uint TerrainDrawCalls { get; internal set; }
+        public uint DebugDrawCalls { get; internal set; }
+        public uint WmoSubmittedInstances { get; internal set; }
+        public uint M2SubmittedInstances { get; internal set; }
+        public uint TerrainSubmittedChunks { get; internal set; }
+        public ulong WmoSubmittedIndices { get; internal set; }
+        public ulong M2SubmittedIndices { get; internal set; }
+        public ulong TerrainSubmittedIndices { get; internal set; }
+        public uint InstanceBufferMapCalls { get; internal set; }
+        public uint ConstantBufferUpdates { get; internal set; }
+        public uint TextureBindingCalls { get; internal set; }
+        public uint BlendStateBindings { get; internal set; }
+        public uint VertexBufferBindings { get; internal set; }
+        public uint IndexBufferBindings { get; internal set; }
         public int PendingAssetOperations { get; internal set; }
         public int UploadedResources { get; internal set; }
         public int VisibleTerrainChunks { get; internal set; }
@@ -74,6 +104,11 @@ namespace WoWRenderLib.DX11
         public int CandidateWorldModels { get; internal set; }
         public int VisibleDoodads { get; internal set; }
         public int CandidateDoodads { get; internal set; }
+        public int SizeCulledWorldModels { get; internal set; }
+        public int SizeCulledDoodads { get; internal set; }
+        public int FarLodTerrainChunks { get; internal set; }
+        public int CandidateTiles { get; internal set; }
+        public int CoarseCulledTiles { get; internal set; }
     }
 
     public enum WowViewerEngineState
@@ -110,6 +145,15 @@ namespace WoWRenderLib.DX11
 
         public RendererStats Stats { get; } = new();
         public RendererSettings Settings { get; private set; } = new();
+        public bool DetailedGpuProfilingEnabled
+        {
+            get => _gpuFrameTimer?.DetailedPassTimingEnabled ?? false;
+            set
+            {
+                if (_gpuFrameTimer != null)
+                    _gpuFrameTimer.DetailedPassTimingEnabled = value;
+            }
+        }
         public Vector3? InitialCameraPosition { get; set; }
         public Vector3? InitialCameraDirection { get; set; }
         public WowViewerEngineStatus Status { get; private set; } =
@@ -428,12 +472,16 @@ namespace WoWRenderLib.DX11
                 _gpuFrameTimer?.BeginDraws();
                 if (shadersReady)
                 {
-                    (var drawCalls, var vertices) = sceneManager.RenderScene(activeCamera, out bool renderGizmoWasUsing, out bool renderGizmoWasOver);
+                    (var drawCalls, var submittedIndices) = sceneManager.RenderScene(
+                        activeCamera,
+                        out bool renderGizmoWasUsing,
+                        out bool renderGizmoWasOver,
+                        _gpuFrameTimer);
                     //if (renderImGUI)
                     //    RenderGizmo();
 
                     Stats.DrawCalls = drawCalls;
-                    Stats.VertexCount = vertices;
+                    Stats.SubmittedIndexCount = submittedIndices;
                     Stats.CullingTimeMs = sceneManager.CullingTimeMs;
                     Stats.VisibleTerrainChunks = sceneManager.visibleChunks;
                     Stats.CandidateTerrainChunks = sceneManager.candidateChunks;
@@ -441,6 +489,36 @@ namespace WoWRenderLib.DX11
                     Stats.CandidateWorldModels = sceneManager.candidateWMOs;
                     Stats.VisibleDoodads = sceneManager.visibleM2s;
                     Stats.CandidateDoodads = sceneManager.candidateM2s;
+                    Stats.SizeCulledWorldModels = sceneManager.sizeCulledWMOs;
+                    Stats.SizeCulledDoodads = sceneManager.sizeCulledM2s;
+                    Stats.FarLodTerrainChunks = sceneManager.farLodTerrainChunks;
+                    Stats.CandidateTiles = sceneManager.candidateTiles;
+                    Stats.CoarseCulledTiles = sceneManager.coarseCulledTiles;
+                    Stats.SceneSetupTimeMs = sceneManager.SceneSetupTimeMs;
+                    Stats.WmoCullingTimeMs = sceneManager.WmoCullingTimeMs;
+                    Stats.WmoSubmissionTimeMs = sceneManager.WmoSubmissionTimeMs;
+                    Stats.M2CullingTimeMs = sceneManager.M2CullingTimeMs;
+                    Stats.M2SubmissionTimeMs = sceneManager.M2SubmissionTimeMs;
+                    Stats.TerrainCullingTimeMs = sceneManager.TerrainCullingTimeMs;
+                    Stats.TerrainSubmissionTimeMs = sceneManager.TerrainSubmissionTimeMs;
+                    Stats.TileHierarchyCullingTimeMs = sceneManager.TileHierarchyCullingTimeMs;
+                    Stats.DebugSubmissionTimeMs = sceneManager.DebugSubmissionTimeMs;
+                    Stats.WmoDrawCalls = sceneManager.WmoDrawCalls;
+                    Stats.M2DrawCalls = sceneManager.M2DrawCalls;
+                    Stats.TerrainDrawCalls = sceneManager.TerrainDrawCalls;
+                    Stats.DebugDrawCalls = sceneManager.DebugDrawCalls;
+                    Stats.WmoSubmittedInstances = sceneManager.WmoSubmittedInstances;
+                    Stats.M2SubmittedInstances = sceneManager.M2SubmittedInstances;
+                    Stats.TerrainSubmittedChunks = sceneManager.TerrainSubmittedChunks;
+                    Stats.WmoSubmittedIndices = sceneManager.WmoSubmittedIndices;
+                    Stats.M2SubmittedIndices = sceneManager.M2SubmittedIndices;
+                    Stats.TerrainSubmittedIndices = sceneManager.TerrainSubmittedIndices;
+                    Stats.InstanceBufferMapCalls = sceneManager.InstanceBufferMapCalls;
+                    Stats.ConstantBufferUpdates = sceneManager.ConstantBufferUpdates;
+                    Stats.TextureBindingCalls = sceneManager.TextureBindingCalls;
+                    Stats.BlendStateBindings = sceneManager.BlendStateBindings;
+                    Stats.VertexBufferBindings = sceneManager.VertexBufferBindings;
+                    Stats.IndexBufferBindings = sceneManager.IndexBufferBindings;
 
                     gizmoWasUsing = renderGizmoWasUsing;
                     gizmoWasOver = renderGizmoWasOver;
@@ -459,6 +537,10 @@ namespace WoWRenderLib.DX11
             Stats.GpuFrameTimeMs = _gpuFrameTimer?.LatestFrameMilliseconds;
             Stats.GpuUploadTimeMs = _gpuFrameTimer?.LatestUploadMilliseconds;
             Stats.GpuDrawTimeMs = _gpuFrameTimer?.LatestDrawMilliseconds;
+            Stats.GpuWorldModelTimeMs = _gpuFrameTimer?.LatestWorldModelMilliseconds;
+            Stats.GpuDoodadTimeMs = _gpuFrameTimer?.LatestDoodadMilliseconds;
+            Stats.GpuTerrainTimeMs = _gpuFrameTimer?.LatestTerrainMilliseconds;
+            Stats.GpuDebugTimeMs = _gpuFrameTimer?.LatestDebugMilliseconds;
             var accountedTime = Stats.MutexWaitTimeMs + Stats.TileUpdateTimeMs +
                 Stats.AssetUploadTimeMs + Stats.SceneRenderTimeMs;
             Stats.RenderOverheadTimeMs = Math.Max(
@@ -700,6 +782,8 @@ namespace WoWRenderLib.DX11
                 sceneManager.TileLoadingDistance = Math.Clamp(Settings.TileLoadingDistance, 0, 32);
                 sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
                 sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
+                sceneManager.MinimumModelScreenSizePixels = Math.Clamp(Settings.MinimumModelScreenSizePixels, 0f, 16f);
+                sceneManager.TerrainLodTransitionPixels = Math.Clamp(Settings.TerrainLodTransitionPixels, 0f, 256f);
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;

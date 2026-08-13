@@ -55,10 +55,15 @@ namespace WTEditor.Avalonia.Controls
         private int _attachmentGeneration;
         private long _profileFrameNumber;
         private ClientConfiguration _clientConfiguration = new();
+        private readonly AutomatedBenchmarkOptions _benchmarkOptions = AutomatedBenchmarkOptions.Current;
+        private readonly AutomatedBenchmarkCoordinator? _benchmarkCoordinator;
+        private int _lastBenchmarkStatusSecond = -1;
 
         public Dx11View()
         {
             _rendererSession.StatusChanged += OnRendererStatusChanged;
+            if (_benchmarkOptions.Enabled)
+                _benchmarkCoordinator = new AutomatedBenchmarkCoordinator(_benchmarkOptions);
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -78,6 +83,14 @@ namespace WTEditor.Avalonia.Controls
                 _renderingConfiguration = _vm.RenderingConfiguration;
                 _vm.ClientConfigurationChanged += OnClientConfigurationChanged;
                 _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
+                if (_benchmarkOptions.Enabled)
+                {
+                    _vm.IsDetailedGpuProfilingEnabled = true;
+                    _vm.UpdateAutomatedBenchmarkWaitingStatus(
+                        TimeSpan.Zero,
+                        stableFrames: 0,
+                        _benchmarkOptions.StableFrameCount);
+                }
             }
         }
 
@@ -244,17 +257,16 @@ namespace WTEditor.Avalonia.Controls
         {
             _dxgi = DXGI.GetApi(null, false);
             _d3d11 = D3D11.GetApi(null, false);
+            var deviceCreationFlags = Dx11RuntimeOptions.IsDebugLayerRequested
+                ? (uint)CreateDeviceFlag.Debug
+                : 0;
 
             SilkMarshal.ThrowHResult(
                 _d3d11.CreateDevice(
                     default(ComPtr<IDXGIAdapter>),
                     D3DDriverType.Hardware,
                     Software: default,
-#if DEBUG
-                    (uint)CreateDeviceFlag.Debug,
-#else
-                    0,
-#endif
+                    deviceCreationFlags,
                     null,
                     0,
                     D3D11.SdkVersion,
@@ -341,6 +353,7 @@ namespace WTEditor.Avalonia.Controls
             var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
             var engineFrameStarted = Stopwatch.GetTimestamp();
             engine.Update(delta, inputFrame);
+            engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
             engine.Render(delta);
             var engineFrameMilliseconds = Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
 
@@ -369,26 +382,64 @@ namespace WTEditor.Avalonia.Controls
                     engine.activeCamera?.Position ?? Vector3.Zero,
                     engine.activeCamera?.Front ?? Vector3.Zero,
                     (int)engine.Stats.DrawCalls,
-                    (int)engine.Stats.VertexCount));
+                    checked((long)engine.Stats.SubmittedTriangleCount)));
 
                 var gpuUploadMilliseconds = engine.Stats.GpuUploadTimeMs ?? 0;
-                var gpuDrawMilliseconds = engine.Stats.GpuDrawTimeMs ?? 0;
+                var gpuWorldModelMilliseconds = engine.Stats.GpuWorldModelTimeMs ?? 0;
+                var gpuDoodadMilliseconds = engine.Stats.GpuDoodadTimeMs ?? 0;
+                var gpuTerrainMilliseconds = engine.Stats.GpuTerrainTimeMs ?? 0;
+                var gpuDebugMilliseconds = engine.Stats.GpuDebugTimeMs ?? 0;
+                var hasDetailedGpuTiming =
+                    engine.Stats.GpuWorldModelTimeMs.HasValue ||
+                    engine.Stats.GpuDoodadTimeMs.HasValue ||
+                    engine.Stats.GpuTerrainTimeMs.HasValue ||
+                    engine.Stats.GpuDebugTimeMs.HasValue;
                 var gpuOtherMilliseconds = Math.Max(
                     0,
-                    (engine.Stats.GpuFrameTimeMs ?? 0) - gpuUploadMilliseconds - gpuDrawMilliseconds);
-                var steps = new FrameTimingStep[]
+                    (engine.Stats.GpuFrameTimeMs ?? 0) - gpuUploadMilliseconds -
+                    (hasDetailedGpuTiming
+                        ? gpuWorldModelMilliseconds + gpuDoodadMilliseconds +
+                          gpuTerrainMilliseconds + gpuDebugMilliseconds
+                        : engine.Stats.GpuDrawTimeMs ?? 0));
+                var profiledSceneCpuMilliseconds =
+                    engine.Stats.SceneSetupTimeMs +
+                    engine.Stats.TileHierarchyCullingTimeMs +
+                    engine.Stats.WmoCullingTimeMs + engine.Stats.WmoSubmissionTimeMs +
+                    engine.Stats.M2CullingTimeMs + engine.Stats.M2SubmissionTimeMs +
+                    engine.Stats.TerrainCullingTimeMs + engine.Stats.TerrainSubmissionTimeMs +
+                    engine.Stats.DebugSubmissionTimeMs;
+                var sceneSetupDebugAndOtherMilliseconds =
+                    engine.Stats.SceneSetupTimeMs + engine.Stats.DebugSubmissionTimeMs +
+                    Math.Max(0, engine.Stats.SceneRenderTimeMs - profiledSceneCpuMilliseconds);
+                var steps = new List<FrameTimingStep>
                 {
                     new("World streaming (CPU)", engine.Stats.TileUpdateTimeMs),
                     new("Resource upload submission (CPU)", engine.Stats.AssetUploadTimeMs),
-                    new("Visibility culling (CPU)", engine.Stats.CullingTimeMs),
-                    new("Draw submission (CPU)", Math.Max(0, engine.Stats.SceneRenderTimeMs - engine.Stats.CullingTimeMs)),
+                    new("Tile hierarchy culling (CPU)", engine.Stats.TileHierarchyCullingTimeMs),
+                    new("WMO culling (CPU)", engine.Stats.WmoCullingTimeMs),
+                    new("WMO command submission (CPU)", engine.Stats.WmoSubmissionTimeMs),
+                    new("M2 culling (CPU)", engine.Stats.M2CullingTimeMs),
+                    new("M2 command submission (CPU)", engine.Stats.M2SubmissionTimeMs),
+                    new("Terrain culling (CPU)", engine.Stats.TerrainCullingTimeMs),
+                    new("Terrain command submission (CPU)", engine.Stats.TerrainSubmissionTimeMs),
+                    new("Scene setup / debug (CPU)", sceneSetupDebugAndOtherMilliseconds),
                     new("Other frame work (CPU)", inputMilliseconds + engine.Stats.UpdateTimeMs + engine.Stats.RenderOverheadTimeMs),
-                    new("Resource uploads (GPU)", gpuUploadMilliseconds, FrameTimingDomain.Gpu),
-                    new("World drawing (GPU)", gpuDrawMilliseconds, FrameTimingDomain.Gpu),
-                    new("Other GPU work", gpuOtherMilliseconds, FrameTimingDomain.Gpu),
-                    new("Wait for viewport texture", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation)
+                    new("Resource uploads (GPU timeline)", gpuUploadMilliseconds, FrameTimingDomain.Gpu)
                 };
-                _vm.UpdatePerformanceProfile(new FrameProfileSnapshot(
+                if (hasDetailedGpuTiming)
+                {
+                    steps.Add(new("WMO span (GPU timeline)", gpuWorldModelMilliseconds, FrameTimingDomain.Gpu));
+                    steps.Add(new("M2 span (GPU timeline)", gpuDoodadMilliseconds, FrameTimingDomain.Gpu));
+                    steps.Add(new("Terrain span (GPU timeline)", gpuTerrainMilliseconds, FrameTimingDomain.Gpu));
+                    steps.Add(new("Debug span (GPU timeline)", gpuDebugMilliseconds, FrameTimingDomain.Gpu));
+                }
+                else
+                {
+                    steps.Add(new("World span (GPU timeline)", engine.Stats.GpuDrawTimeMs ?? 0, FrameTimingDomain.Gpu));
+                }
+                steps.Add(new("Other GPU timeline", gpuOtherMilliseconds, FrameTimingDomain.Gpu));
+                steps.Add(new("Wait for viewport texture", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation));
+                var profileSnapshot = new FrameProfileSnapshot(
                     ++_profileFrameNumber,
                     DateTimeOffset.UtcNow,
                     delta * 1_000d,
@@ -396,19 +447,100 @@ namespace WTEditor.Avalonia.Controls
                     engine.Stats.GpuFrameTimeMs,
                     steps,
                     (int)engine.Stats.DrawCalls,
-                    (int)engine.Stats.VertexCount,
+                    checked((long)engine.Stats.SubmittedIndexCount),
                     engine.Stats.PendingAssetOperations)
                 {
                     EngineFrameMilliseconds = engineFrameMilliseconds,
                     UploadedResources = engine.Stats.UploadedResources,
+                    ViewportWidth = width,
+                    ViewportHeight = height,
                     Culling = new CullingMetrics(
                         engine.Stats.VisibleTerrainChunks,
                         engine.Stats.CandidateTerrainChunks,
                         engine.Stats.VisibleWorldModels,
                         engine.Stats.CandidateWorldModels,
                         engine.Stats.VisibleDoodads,
-                        engine.Stats.CandidateDoodads)
-                });
+                        engine.Stats.CandidateDoodads,
+                        engine.Stats.SizeCulledWorldModels,
+                        engine.Stats.SizeCulledDoodads,
+                        engine.Stats.FarLodTerrainChunks,
+                        engine.Stats.CandidateTiles,
+                        engine.Stats.CoarseCulledTiles),
+                    RenderWorkload = new RenderWorkloadMetrics(
+                        new RenderPassMetrics[]
+                        {
+                            new(
+                                "World models (WMO)",
+                                engine.Stats.WmoCullingTimeMs,
+                                engine.Stats.WmoSubmissionTimeMs,
+                                engine.Stats.GpuWorldModelTimeMs,
+                                (int)engine.Stats.WmoDrawCalls,
+                                (int)engine.Stats.WmoSubmittedInstances,
+                                "instance-batch submissions",
+                                checked((long)engine.Stats.WmoSubmittedIndices)),
+                            new(
+                                "Doodads (M2)",
+                                engine.Stats.M2CullingTimeMs,
+                                engine.Stats.M2SubmissionTimeMs,
+                                engine.Stats.GpuDoodadTimeMs,
+                                (int)engine.Stats.M2DrawCalls,
+                                (int)engine.Stats.M2SubmittedInstances,
+                                "instance-batch submissions",
+                                checked((long)engine.Stats.M2SubmittedIndices)),
+                            new(
+                                "Terrain (ADT)",
+                                engine.Stats.TerrainCullingTimeMs,
+                                engine.Stats.TerrainSubmissionTimeMs,
+                                engine.Stats.GpuTerrainTimeMs,
+                                (int)engine.Stats.TerrainDrawCalls,
+                                (int)engine.Stats.TerrainSubmittedChunks,
+                                "visible chunks",
+                                checked((long)engine.Stats.TerrainSubmittedIndices))
+                        },
+                        (int)engine.Stats.InstanceBufferMapCalls,
+                        (int)engine.Stats.ConstantBufferUpdates,
+                        (int)engine.Stats.TextureBindingCalls,
+                        (int)engine.Stats.BlendStateBindings,
+                        (int)engine.Stats.VertexBufferBindings,
+                        (int)engine.Stats.IndexBufferBindings)
+                };
+                _vm.UpdatePerformanceProfile(profileSnapshot);
+                UpdateAutomatedBenchmark(profileSnapshot);
+            }
+        }
+
+        private void UpdateAutomatedBenchmark(FrameProfileSnapshot snapshot)
+        {
+            if (_vm == null || _benchmarkCoordinator == null)
+                return;
+
+            var action = _benchmarkCoordinator.Observe(snapshot);
+            var elapsedSecond = (int)_benchmarkCoordinator.Elapsed.TotalSeconds;
+            if (elapsedSecond != _lastBenchmarkStatusSecond && action == AutomatedBenchmarkAction.None)
+            {
+                _lastBenchmarkStatusSecond = elapsedSecond;
+                _vm.UpdateAutomatedBenchmarkWaitingStatus(
+                    _benchmarkCoordinator.Elapsed,
+                    _benchmarkCoordinator.StableFrames,
+                    _benchmarkOptions.StableFrameCount);
+            }
+
+            switch (action)
+            {
+                case AutomatedBenchmarkAction.StartCapture:
+                    if (!_vm.TryStartAutomatedPerformanceCapture(
+                            _benchmarkOptions.WarmupDuration,
+                            _benchmarkOptions.CaptureDuration))
+                    {
+                        _vm.FailAutomatedPerformanceCapture(
+                            "Automated benchmark could not start its performance capture.");
+                    }
+                    break;
+                case AutomatedBenchmarkAction.Timeout:
+                    _vm.FailAutomatedPerformanceCapture(
+                        $"Automated benchmark timed out after {_benchmarkCoordinator.Elapsed.TotalSeconds:0} s " +
+                        "before the world workload became idle and stable.");
+                    break;
             }
         }
 

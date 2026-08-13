@@ -5,7 +5,7 @@
         x:Class="WTEditor.Avalonia.Views.MetricsWindow"
         x:DataType="vm:Editor3DViewModel"
         Title="World viewport profiler"
-        Width="460" Height="700" MinWidth="360" MinHeight="320"
+        Width="560" Height="760" MinWidth="400" MinHeight="320"
         CanResize="True" Background="#1A2027">
   <controls:FloatingMetricsPanel/>
 </Window>

@@ -20,6 +20,7 @@ namespace WoWRenderLib.Structs
         public uint vao;
         public byte[] vertexBuffer;
         public byte[] indiceBuffer;
+        public byte[] farLodIndiceBuffer;
         public Vector3 startPos;
         public ParsedADTRenderBatch[] renderBatches;
         public WorldModelBatch[] worldModelBatches;

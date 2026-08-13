@@ -26,7 +26,51 @@ public sealed record CullingMetrics(
     int VisibleWorldModels,
     int CandidateWorldModels,
     int VisibleDoodads,
-    int CandidateDoodads);
+    int CandidateDoodads,
+    int SizeCulledWorldModels = 0,
+    int SizeCulledDoodads = 0,
+    int FarLodTerrainChunks = 0,
+    int CandidateTiles = 0,
+    int CoarseCulledTiles = 0)
+{
+    public int CulledTerrainChunks => Math.Max(0, CandidateTerrainChunks - VisibleTerrainChunks);
+    public int CulledWorldModels => Math.Max(
+        0,
+        CandidateWorldModels - VisibleWorldModels - SizeCulledWorldModels);
+    public int CulledDoodads => Math.Max(
+        0,
+        CandidateDoodads - VisibleDoodads - SizeCulledDoodads);
+}
+
+public sealed record RenderPassMetrics(
+    string Name,
+    double CpuCullingMilliseconds,
+    double CpuSubmissionMilliseconds,
+    double? GpuMilliseconds,
+    int DrawCalls,
+    int SubmittedItems,
+    string SubmittedItemLabel,
+    long SubmittedIndices = 0)
+{
+    public long SubmittedTriangles => SubmittedIndices / 3;
+}
+
+public sealed record RenderWorkloadMetrics(
+    IReadOnlyList<RenderPassMetrics> Passes,
+    int InstanceBufferMaps,
+    int ConstantBufferUpdates,
+    int TextureBindingCalls,
+    int BlendStateBindings,
+    int VertexBufferBindings = 0,
+    int IndexBufferBindings = 0)
+{
+    public static RenderWorkloadMetrics Empty { get; } = new(
+        Array.Empty<RenderPassMetrics>(),
+        0,
+        0,
+        0,
+        0);
+}
 
 public sealed record FrameProfileSnapshot(
     long FrameNumber,
@@ -36,12 +80,16 @@ public sealed record FrameProfileSnapshot(
     double? GpuFrameMilliseconds,
     IReadOnlyList<FrameTimingStep> Steps,
     int DrawCalls,
-    int SubmittedVertices,
+    long SubmittedIndices,
     int PendingAssetOperations)
 {
+    public long SubmittedTriangles => SubmittedIndices / 3;
     public double EngineFrameMilliseconds { get; init; }
     public int UploadedResources { get; init; }
     public CullingMetrics Culling { get; init; } = new(0, 0, 0, 0, 0, 0);
+    public RenderWorkloadMetrics RenderWorkload { get; init; } = RenderWorkloadMetrics.Empty;
+    public int ViewportWidth { get; init; }
+    public int ViewportHeight { get; init; }
 
     public PerformanceBottleneck Bottleneck =>
         PerformanceAnalyzer.Classify(CpuFrameMilliseconds, GpuFrameMilliseconds);
@@ -85,5 +133,31 @@ public static class PerformanceAnalyzer
         return Classify(
             comparable.Average(sample => sample.CpuFrameMilliseconds),
             comparable.Average(sample => sample.GpuFrameMilliseconds!.Value));
+    }
+
+    public static bool IsLikelyCpuSubmissionStarved(
+        IEnumerable<FrameProfileSnapshot> samples,
+        int maximumSamples = 30,
+        double minimumCpuMilliseconds = 16.67d)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumSamples, 1);
+
+        var comparable = samples
+            .Where(sample => sample.GpuFrameMilliseconds is > 0 && sample.CpuFrameMilliseconds > 0)
+            .TakeLast(maximumSamples)
+            .ToArray();
+        if (comparable.Length == 0)
+            return false;
+
+        var averageCpu = comparable.Average(sample => sample.CpuFrameMilliseconds);
+        var averageGpuTimeline = comparable.Average(sample => sample.GpuFrameMilliseconds!.Value);
+        var averageSubmission = comparable.Average(sample =>
+            sample.RenderWorkload.Passes.Sum(pass => pass.CpuSubmissionMilliseconds));
+
+        return averageCpu >= minimumCpuMilliseconds &&
+               averageSubmission >= averageCpu * 0.65d &&
+               averageGpuTimeline >= averageCpu * 0.70d &&
+               averageGpuTimeline <= averageCpu * 1.10d;
     }
 }

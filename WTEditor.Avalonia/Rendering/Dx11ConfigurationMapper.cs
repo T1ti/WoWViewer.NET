@@ -19,6 +19,8 @@ internal static class Dx11ConfigurationMapper
         DiffuseColor = configuration.DiffuseColor,
         TerrainRenderDistance = configuration.TerrainRenderDistance,
         ModelRenderDistance = configuration.ModelRenderDistance,
+        MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels,
+        TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels,
         TileLoadingDistance = configuration.TileLoadingDistance,
         MovementSpeed = configuration.MovementSpeed,
         MouseSensitivity = configuration.MouseSensitivity,

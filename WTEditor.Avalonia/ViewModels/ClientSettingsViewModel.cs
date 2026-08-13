@@ -15,6 +15,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _keyboardLayout;
     [ObservableProperty] private float _terrainRenderDistance;
     [ObservableProperty] private float _modelRenderDistance;
+    [ObservableProperty] private float _minimumModelScreenSizePixels;
+    [ObservableProperty] private float _terrainLodTransitionPixels;
     [ObservableProperty] private int _tileLoadingDistance;
     [ObservableProperty] private float _movementSpeed;
     [ObservableProperty] private float _mouseSensitivity;
@@ -38,6 +40,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _keyboardLayout = ToDisplayName(settings.KeyboardLayout);
         _terrainRenderDistance = rendererSettings.TerrainRenderDistance;
         _modelRenderDistance = rendererSettings.ModelRenderDistance;
+        _minimumModelScreenSizePixels = rendererSettings.MinimumModelScreenSizePixels;
+        _terrainLodTransitionPixels = rendererSettings.TerrainLodTransitionPixels;
         _tileLoadingDistance = rendererSettings.TileLoadingDistance;
         _movementSpeed = rendererSettings.MovementSpeed;
         _mouseSensitivity = rendererSettings.MouseSensitivity;
@@ -66,6 +70,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
             DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
             TerrainRenderDistance = TerrainRenderDistance,
             ModelRenderDistance = ModelRenderDistance,
+            MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
+            TerrainLodTransitionPixels = TerrainLodTransitionPixels,
             TileLoadingDistance = TileLoadingDistance,
             MovementSpeed = MovementSpeed,
             MouseSensitivity = MouseSensitivity,
