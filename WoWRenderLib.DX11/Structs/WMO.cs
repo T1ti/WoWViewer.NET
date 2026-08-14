@@ -40,6 +40,8 @@ namespace WoWRenderLib.DX11.Structs
     public struct WorldModel
     {
         public uint rootWMOFileDataID;
+        public uint ambientColor;
+        public ushort flags;
         public WorldModelGroupBatches[] groupBatches;
         public PreppedWMOMaterial[] preppedMats;
         public WMORenderBatch[] wmoRenderBatches;

@@ -41,6 +41,13 @@ namespace WoWRenderLib.Structs
         public readonly ShaderEnums.WMOVertexShader VertexShader { get; init; }
         public readonly ShaderEnums.WMOPixelShader PixelShader { get; init; }
         public readonly uint BlendMode { get; init; }
+        public readonly uint Flags { get; init; }
+        public readonly uint Color1 { get; init; }
+        public readonly uint Color1B { get; init; }
+        public readonly uint Color2 { get; init; }
+        public readonly uint Color3 { get; init; }
+        public readonly uint GroundType { get; init; }
+        public readonly uint Flags3 { get; init; }
         public readonly uint TexFileDataID0 { get; init; }
         public readonly uint TexFileDataID1 { get; init; }
         public readonly uint TexFileDataID2 { get; init; }
@@ -61,6 +68,7 @@ namespace WoWRenderLib.Structs
         public uint groupID;
         public uint blendType;
         public uint shader;
+        public int materialIndex;
     }
 
 
@@ -71,6 +79,9 @@ namespace WoWRenderLib.Structs
         public readonly float scale { get; init; }
         public readonly uint fileDataID { get; init; }
         public readonly uint uniqueID { get; init; }
+        public readonly ushort flags { get; init; }
+        public readonly ushort doodadSet { get; init; }
+        public readonly ushort nameSet { get; init; }
         public readonly uint[] doodadSetIDs { get; init; }
     }
 
@@ -89,6 +100,8 @@ namespace WoWRenderLib.Structs
     public readonly struct PreppedWMO
     {
         public readonly uint FileDataID { get; init; }
+        public readonly uint AmbientColor { get; init; }
+        public readonly ushort Flags { get; init; }
         public readonly BoundingBox BoundingBox { get; init; }
         public readonly WMODoodad[] Doodads { get; init; }
         public readonly string[] DoodadSets { get; init; }

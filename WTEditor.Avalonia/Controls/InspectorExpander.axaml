@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTEditor.Avalonia.Controls.InspectorExpander"
+             x:Name="ExpanderRoot">
+  <Grid RowDefinitions="Auto,Auto">
+    <ToggleButton IsChecked="{Binding IsExpanded, ElementName=ExpanderRoot}"
+                  Background="Transparent" BorderThickness="0,0,0,1"
+                  BorderBrush="#394854" Padding="2,7"
+                  HorizontalContentAlignment="Stretch">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding Header, ElementName=ExpanderRoot}"
+                   Foreground="#BFD0DC" FontSize="11" FontWeight="Bold"/>
+        <Grid Grid.Column="1">
+          <TextBlock Text="›" Foreground="#91A5B5" FontSize="17"
+                     IsVisible="{Binding !IsExpanded, ElementName=ExpanderRoot}"/>
+          <TextBlock Text="⌄" Foreground="#91A5B5" FontSize="14"
+                     IsVisible="{Binding IsExpanded, ElementName=ExpanderRoot}"/>
+        </Grid>
+      </Grid>
+    </ToggleButton>
+    <ContentPresenter Grid.Row="1" Content="{Binding SectionContent, ElementName=ExpanderRoot}"
+                      DataContext="{Binding DataContext, ElementName=ExpanderRoot}"
+                      IsVisible="{Binding IsExpanded, ElementName=ExpanderRoot}"/>
+  </Grid>
+</UserControl>

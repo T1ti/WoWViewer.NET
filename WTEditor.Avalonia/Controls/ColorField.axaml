@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTEditor.Avalonia.Controls.ColorField"
+             x:Name="Root">
+  <Grid ColumnDefinitions="125,Auto,*" Margin="0,3">
+    <TextBlock Text="{Binding Label, ElementName=Root}" Foreground="#8FA5B5" FontSize="11"
+               VerticalAlignment="Center"/>
+    <Border x:Name="ColorSwatch" Grid.Column="1" Width="26" Height="16" CornerRadius="2"
+            BorderBrush="#8194A2" BorderThickness="1"/>
+    <TextBlock x:Name="ColorText" Grid.Column="2" Margin="7,0,0,0"
+               Foreground="#EEF4F7" FontSize="11" VerticalAlignment="Center"/>
+  </Grid>
+</UserControl>

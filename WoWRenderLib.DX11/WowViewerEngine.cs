@@ -216,6 +216,16 @@ namespace WoWRenderLib.DX11
         private ShaderManager shaderManager = null!;
         private SceneManager sceneManager = null!;
         public Container3D? SelectedObject => sceneManager?.SelectedObject;
+        public void UpdateSelectedObjectTransform(Vector3 position, Vector3 rotationDegrees, float scale) =>
+            sceneManager?.UpdateSelectedObjectTransform(
+                position,
+                rotationDegrees,
+                scale,
+                lockWorldModelScale: _wowConfig.wowProduct.StartsWith(
+                    "wow_classic",
+                    StringComparison.OrdinalIgnoreCase));
+        public void UpdateSelectedWmoPlacement(ushort doodadSet, ushort nameSet) =>
+            sceneManager?.UpdateSelectedWmoPlacement(doodadSet, nameSet);
         private DBCManager? dbcManager;
 
         // private ImGuiController imGuiController = null;

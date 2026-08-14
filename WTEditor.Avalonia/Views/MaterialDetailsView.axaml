@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             x:Class="WTEditor.Avalonia.Views.MaterialDetailsView"
+             x:DataType="vm:MaterialDetailsViewModel">
+  <StackPanel>
+    <ItemsControl ItemsSource="{Binding Properties}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+          <Grid ColumnDefinitions="125,*" Margin="0,3">
+            <TextBlock Classes="label" Text="{Binding Label}"/>
+            <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}" TextWrapping="Wrap"/>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <controls:FlagsField DataContext="{Binding Flags}"/>
+    <ItemsControl ItemsSource="{Binding Colors}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:InspectorColorViewModel">
+          <controls:ColorField Label="{Binding Label}" Value="{Binding Value}"/>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <ItemsControl ItemsSource="{Binding TextureSlots}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ModelTextureSlotViewModel">
+          <Grid RowDefinitions="Auto,Auto,Auto" Margin="0,3">
+            <TextBlock Classes="label" Text="{Binding Label}"/>
+            <TextBlock Grid.Row="1" Classes="value" Text="{Binding File.Path}" TextWrapping="Wrap"
+                       ToolTip.Tip="{Binding File.ToolTip}"/>
+            <Panel Grid.Row="2" IsVisible="{Binding HasFlags}">
+              <controls:FlagsField DataContext="{Binding Flags}"/>
+            </Panel>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

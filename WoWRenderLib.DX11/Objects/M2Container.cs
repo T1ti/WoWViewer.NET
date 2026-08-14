@@ -17,6 +17,8 @@ namespace WoWRenderLib.DX11.Objects
         private float _localScale = 1.0f;
 
         public int WmoDoodadIndex { get; set; } = -1;
+        public uint UniqueID { get; set; }
+        public ushort PlacementFlags { get; set; }
 
         public WMOContainer? ParentWMO
         {
@@ -69,9 +71,9 @@ namespace WoWRenderLib.DX11.Objects
             {
                 var m2 = GetM2();
 
-                if (_enabledGeosets == null || _enabledGeosets.Length != m2.submeshes.Length)
+                if (_enabledGeosets == null || _enabledGeosets.Length != m2.geosets.Length)
                 {
-                    _enabledGeosets = new bool[m2.submeshes.Length];
+                    _enabledGeosets = new bool[m2.geosets.Length];
                     Array.Fill(_enabledGeosets, true);
                 }
 

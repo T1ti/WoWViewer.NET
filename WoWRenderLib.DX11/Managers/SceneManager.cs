@@ -826,7 +826,7 @@ namespace WoWRenderLib.DX11.Managers
             for (var doodadIndex = 0; doodadIndex < wmo.doodads.Length; doodadIndex++)
             {
                 var doodad = wmo.doodads[doodadIndex];
-                if (!enabledSets[doodad.doodadSet])
+                if (!IsWmoDoodadSpawnable(doodad, enabledSets))
                     continue;
 
                 var m2Container = new M2Container(device, doodad.filedataid, wmoContainer.ParentFileDataId)
@@ -845,6 +845,11 @@ namespace WoWRenderLib.DX11.Managers
                 owningTileBounds?.AddObject(m2Container);
             }
         }
+
+        internal static bool IsWmoDoodadSpawnable(in WMODoodad doodad, IReadOnlyList<bool> enabledSets) =>
+            doodad.filedataid != 0 &&
+            doodad.doodadSet < enabledSets.Count &&
+            enabledSets[(int)doodad.doodadSet];
 
         public void RefreshWMODoodads(WMOContainer wmoContainer)
         {
@@ -883,6 +888,7 @@ namespace WoWRenderLib.DX11.Managers
             ProcessUnloadQueue();
 
             var remaining = pendingWMODoodads.Count;
+            var spawnedWmoDoodads = false;
             for (var i = 0; i < remaining; i++)
             {
                 var wmoContainer = pendingWMODoodads.Dequeue();
@@ -895,7 +901,11 @@ namespace WoWRenderLib.DX11.Managers
 
                 SpawnWMODoodads(wmoContainer);
                 wmoContainer.DoodadsSpawned = true;
+                spawnedWmoDoodads = true;
             }
+
+            if (spawnedWmoDoodads)
+                UpdateInstanceList();
 
             if (tilesToLoad.Count == 0)
                 return ADTCache.GetLoadQueueCount() > 0 || WMOCache.GetLoadQueueCount() > 0 || M2Cache.GetLoadQueueCount() > 0 || BLPCache.GetQueueCount() > 0 || pendingWMODoodads.Count > 0;
@@ -963,11 +973,14 @@ namespace WoWRenderLib.DX11.Managers
                     Rotation = worldModel.rotation,
                     Scale = worldModel.scale == 0 ? 1 : worldModel.scale,
                     UniqueID = worldModel.uniqueID,
+                    PlacementFlags = worldModel.flags,
+                    PlacementDoodadSet = worldModel.doodadSet,
+                    PlacementNameSet = worldModel.nameSet,
                     OnDoodadSetsChanged = RefreshWMODoodads,
                     OnGroupsChanged = _ => UpdateWMOInstanceList()
                 };
 
-                worldModelContainer.DoodadSetsToEnable.AddRange(worldModel.doodadSetIDs);
+                worldModelContainer.SetDoodadSetsToEnable(worldModel.doodadSetIDs);
 
                 lock (SceneObjectLock)
                     SceneObjects.Add(worldModelContainer);
@@ -987,7 +1000,9 @@ namespace WoWRenderLib.DX11.Managers
                 {
                     Position = doodad.position,
                     Rotation = doodad.rotation,
-                    Scale = doodad.scale
+                    Scale = doodad.scale,
+                    UniqueID = doodad.uniqueID,
+                    PlacementFlags = doodad.flags
                 };
 
                 lock (SceneObjectLock)
@@ -1019,6 +1034,41 @@ namespace WoWRenderLib.DX11.Managers
                 foreach (var packet in m2InstancePackets.Values)
                     packet.Invalidate();
             }
+        }
+
+        public void UpdateSelectedObjectTransform(
+            Vector3 position,
+            Vector3 rotationDegrees,
+            float scale,
+            bool lockWorldModelScale)
+        {
+            if (SelectedObject == null)
+                return;
+
+            SelectedObject.Position = position;
+            SelectedObject.Rotation = rotationDegrees;
+            SelectedObject.Scale = lockWorldModelScale && SelectedObject is WMOContainer
+                ? 1f
+                : Math.Max(0.001f, scale);
+            MarkTileBoundsDirty(SelectedObject.ParentFileDataId);
+
+            if (SelectedObject is M2Container selectedM2 &&
+                m2InstancePackets.TryGetValue(selectedM2.FileDataId, out var packet))
+                packet.Invalidate();
+            else if (SelectedObject is WMOContainer)
+                foreach (var m2Packet in m2InstancePackets.Values)
+                    m2Packet.Invalidate();
+        }
+
+        public void UpdateSelectedWmoPlacement(ushort doodadSet, ushort nameSet)
+        {
+            if (SelectedObject is not WMOContainer worldModel)
+                return;
+
+            worldModel.PlacementDoodadSet = doodadSet;
+            worldModel.PlacementNameSet = nameSet;
+            if ((worldModel.PlacementFlags & 0x80) == 0)
+                worldModel.SetDoodadSetsToEnable([doodadSet]);
         }
 
         /// <summary>

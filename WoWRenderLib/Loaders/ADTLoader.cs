@@ -320,7 +320,9 @@ namespace WoWRenderLib.Loaders
                     position = new Vector3(-(modelentry.position.X - 17066.666f), modelentry.position.Y, (modelentry.position.Z - 17066.666f)),
                     rotation = new Vector3(modelentry.rotation.X, modelentry.rotation.Y, modelentry.rotation.Z),
                     scale = modelentry.scale / 1024.0f,
-                    fileDataID = modelentry.mmidEntry
+                    fileDataID = modelentry.mmidEntry,
+                    uniqueID = modelentry.uniqueId,
+                    flags = (ushort)modelentry.flags
                 };
             }
 
@@ -338,13 +340,16 @@ namespace WoWRenderLib.Loaders
                 }
                 else
                 {
-                    var mwdrEntry = adt.objects.worldModelDoodadRefs[wmodelentry.doodadSet];
-                    for (var i = 0; i < mwdrEntry.begin; i++)
+                    if (wmodelentry.doodadSet < adt.objects.worldModelDoodadRefs.Length)
                     {
-                        if (mwdrEntry.end <= i)
-                            break;
+                        var mwdrEntry = adt.objects.worldModelDoodadRefs[wmodelentry.doodadSet];
+                        for (var i = mwdrEntry.begin; i < mwdrEntry.end; i++)
+                        {
+                            if (i >= adt.objects.worldModelDoodadSets.Length)
+                                break;
 
-                        doodadSets.Add(adt.objects.worldModelDoodadSets[i]);
+                            doodadSets.Add(adt.objects.worldModelDoodadSets[i]);
+                        }
                     }
                 }
 
@@ -354,6 +359,9 @@ namespace WoWRenderLib.Loaders
                     rotation = new Vector3(wmodelentry.rotation.X, wmodelentry.rotation.Y, wmodelentry.rotation.Z),
                     fileDataID = wmoFDID,
                     uniqueID = wmodelentry.uniqueId,
+                    flags = (ushort)wmodelentry.flags,
+                    doodadSet = wmodelentry.doodadSet,
+                    nameSet = wmodelentry.nameSet,
                     scale = wmodelentry.scale / 1024.0f,
                     doodadSetIDs = [.. doodadSets]
                 };

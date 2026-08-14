@@ -81,6 +81,8 @@ namespace WoWRenderLib.Structs
     public struct Doodad
     {
         public uint fileDataID;
+        public uint uniqueID;
+        public ushort flags;
         public Vector3 position;
         public Vector3 rotation;
         public float scale;

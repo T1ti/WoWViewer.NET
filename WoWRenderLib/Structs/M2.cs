@@ -36,6 +36,13 @@ namespace WoWRenderLib.Structs
         public float boundingRadius;
         public Submesh[] submeshes;
         public M2Material[] mats;
+        public M2Geoset[] geosets;
+        public int vertexCount;
+        public int indexCount;
+        public int animationCount;
+        public int particleEmitterCount;
+        public int boneCount;
+        public int attachmentCount;
     }
 
     public struct M2Vertex
@@ -53,12 +60,25 @@ namespace WoWRenderLib.Structs
         public WoWFormatLib.Structs.M2.TextureFlags flags;
     }
 
+    public readonly struct M2Geoset
+    {
+        public readonly ushort id { get; init; }
+        public readonly ushort level { get; init; }
+        public readonly uint firstVertex { get; init; }
+        public readonly ushort vertexCount { get; init; }
+        public readonly uint firstIndex { get; init; }
+        public readonly ushort indexCount { get; init; }
+    }
+
     public readonly struct Submesh
     {
         public readonly uint firstFace { get; init; }
         public readonly uint numFaces { get; init; }
         public readonly uint[] material { get; init; }
+        public readonly int[] textureIndices { get; init; }
         public readonly uint blendType { get; init; }
+        public readonly ushort renderFlags { get; init; }
+        public readonly ushort geosetId { get; init; }
         public readonly int index { get; init; }
         public readonly uint vertexShaderID { get; init; }
         public readonly uint pixelShaderID { get; init; }

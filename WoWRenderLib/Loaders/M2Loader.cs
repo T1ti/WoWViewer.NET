@@ -36,7 +36,12 @@ namespace WoWRenderLib.Loaders
             {
                 boundingBox = renderBoundingBox,
                 boundingRadius = renderBoundingRadius,
-                fileDataID = fileDataID
+                fileDataID = fileDataID,
+                vertexCount = model.vertices?.Length ?? 0,
+                animationCount = model.animations?.Length ?? 0,
+                particleEmitterCount = model.particleemitters?.Length ?? 0,
+                boneCount = model.bones?.Length ?? 0,
+                attachmentCount = model.attachments?.Length ?? 0
             };
 
             if (model.textures == null)
@@ -44,6 +49,16 @@ namespace WoWRenderLib.Loaders
 
             if (model.skins == null)
                 throw new Exception("Model does not contain skins: " + fileDataID);
+
+            doodadBatch.geosets = model.skins[0].submeshes.Select(section => new M2Geoset
+            {
+                id = section.submeshID,
+                level = section.level,
+                firstVertex = section.startVertex,
+                vertexCount = section.nVertices,
+                firstIndex = section.startTriangle,
+                indexCount = section.nTriangles
+            }).ToArray();
 
             // Textures
             doodadBatch.mats = new M2Material[model.textures.Length];
@@ -86,6 +101,7 @@ namespace WoWRenderLib.Loaders
                     continue;
 
                 var materials = new uint[batch.textureCount];
+                var textureIndices = new int[batch.textureCount];
                 var firstFace = skinSection.startTriangle;
                 var numFaces = skinSection.nTriangles;
                 var blendType = model.renderflags[batch.renderFlagsIndex].blendingMode;
@@ -95,6 +111,7 @@ namespace WoWRenderLib.Loaders
                 for (var tm = 0; tm < batch.textureCount; tm++)
                 {
                     var textureID = model.texlookup[batch.texture + tm].textureID;
+                    textureIndices[tm] = textureID;
                     materials[tm] = doodadBatch.mats[textureID].fileDataID;
                 }
 
@@ -103,7 +120,10 @@ namespace WoWRenderLib.Loaders
                     firstFace = firstFace,
                     numFaces = numFaces,
                     material = materials,
+                    textureIndices = textureIndices,
                     blendType = blendType,
+                    renderFlags = (ushort)model.renderflags[batch.renderFlagsIndex].flags,
+                    geosetId = skinSection.submeshID,
                     index = i,
                     vertexShaderID = vertexShaderID,
                     pixelShaderID = pixelShaderID
@@ -133,6 +153,7 @@ namespace WoWRenderLib.Loaders
             }
 
             var modelindices = new ushort[model.skins[0].triangles.Length * 3];
+            doodadBatch.indexCount = modelindices.Length;
 
             for (var i = 0; i < model.skins[0].triangles.Length; i++)
             {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WTEditor.Application.Models;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -30,6 +31,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _activeMode = Modes[0];
         _activeMode.IsActive = true;
         ViewportVM.PropertyChanged += OnViewportPropertyChanged;
+        ViewportVM.ClientConfigurationChanged += OnClientConfigurationChanged;
+        Inspector.TransformChanged += OnInspectorTransformChanged;
+        Inspector.WmoPlacementChanged += OnInspectorWmoPlacementChanged;
+        Inspector.SetBuildProfile(ClientBuildProfile.From(ViewportVM.ClientConfiguration));
         Inspector.Inspect(ViewportVM.SelectedObject);
     }
 
@@ -56,5 +61,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             Inspector.Inspect(ViewportVM.SelectedObject);
     }
 
-    public void Dispose() => ViewportVM.PropertyChanged -= OnViewportPropertyChanged;
+    private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
+        Inspector.SetBuildProfile(ClientBuildProfile.From(configuration));
+
+    private void OnInspectorTransformChanged(object? sender, ObjectTransform transform) =>
+        ViewportVM.RequestSelectedObjectTransform(transform);
+
+    private void OnInspectorWmoPlacementChanged(object? sender, WmoPlacementSelection selection) =>
+        ViewportVM.RequestSelectedWmoPlacement(selection);
+
+    public void Dispose()
+    {
+        ViewportVM.PropertyChanged -= OnViewportPropertyChanged;
+        ViewportVM.ClientConfigurationChanged -= OnClientConfigurationChanged;
+        Inspector.TransformChanged -= OnInspectorTransformChanged;
+        Inspector.WmoPlacementChanged -= OnInspectorWmoPlacementChanged;
+    }
 }

@@ -189,6 +189,13 @@ namespace WoWRenderLib.Loaders
                     VertexShader = vertexShader,
                     PixelShader = pixelShader,
                     BlendMode = wmo.materials[i].blendMode,
+                    Flags = (uint)wmo.materials[i].flags,
+                    Color1 = wmo.materials[i].color1,
+                    Color1B = wmo.materials[i].color1b,
+                    Color2 = wmo.materials[i].color2,
+                    Color3 = wmo.materials[i].color3,
+                    GroundType = wmo.materials[i].groundType,
+                    Flags3 = wmo.materials[i].flags3,
                     TexFileDataID0 = (uint)texFileDataID0,
                     TexFileDataID1 = (uint)texFileDataID1,
                     TexFileDataID2 = (uint)texFileDataID2,
@@ -212,9 +219,14 @@ namespace WoWRenderLib.Loaders
                 {
                     for (var j = 0; j < wmo.doodadNames.Length; j++)
                         if (wmo.doodadDefinitions[i].offsetOrIndex == wmo.doodadNames[j].startOffset)
+                        {
                             doodads[i].filename = wmo.doodadNames[j].filename;
+                            if (Listfile.TryGetFileDataID(doodads[i].filename, out var fileDataId))
+                                doodads[i].filedataid = fileDataId;
+                            break;
+                        }
                 }
-                else
+                else if (wmo.doodadDefinitions[i].offsetOrIndex < wmo.doodadIds.Length)
                 {
                     doodads[i].filedataid = wmo.doodadIds[wmo.doodadDefinitions[i].offsetOrIndex];
                 }
@@ -247,6 +259,8 @@ namespace WoWRenderLib.Loaders
                     Max = new Vector3(wmo.header.boundingBox2.X, wmo.header.boundingBox2.Y, wmo.header.boundingBox2.Z)
                 },
                 FileDataID = fileDataID,
+                AmbientColor = wmo.header.ambientColor,
+                Flags = (ushort)wmo.header.flags,
                 Materials = [.. mats],
                 Doodads = doodads,
                 DoodadSets = doodadSets,

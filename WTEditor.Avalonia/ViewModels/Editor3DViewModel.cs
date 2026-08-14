@@ -35,6 +35,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<KeyboardLayoutMode>? KeyboardLayoutChanged;
     public event EventHandler<string>? AutomatedPerformanceCaptureSaved;
     public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
+    public event EventHandler<ObjectTransform>? SelectedObjectTransformRequested;
+    public event EventHandler<WmoPlacementSelection>? SelectedWmoPlacementRequested;
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
@@ -44,7 +46,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         RenderM2 = RenderDoodads,
         EnableWmoPortalCulling = WmoPortalCullingEnabled,
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
-        TerrainLodTransitionPixels = TerrainLodTransitionPixels
+        TerrainLodTransitionPixels = TerrainLodTransitionPixels,
+        TerrainRenderDistance = TerrainRenderDistance,
+        ModelRenderDistance = ModelRenderDistance,
+        TileLoadingDistance = TileLoadingDistance,
+        ShowBoundingBoxes = ShowBoundingBoxes,
+        ShowBoundingSpheres = ShowBoundingSpheres
     };
     public KeyboardLayoutMode KeyboardLayout => _session.Current.KeyboardLayout;
     public bool HasInitialCameraPosition => _session.Current.Camera != null;
@@ -74,6 +81,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _wmoPortalCullingEnabled;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
     [ObservableProperty] private float _terrainLodTransitionPixels;
+    [ObservableProperty] private float _terrainRenderDistance;
+    [ObservableProperty] private float _modelRenderDistance;
+    [ObservableProperty] private int _tileLoadingDistance;
+    [ObservableProperty] private bool _showBoundingBoxes;
+    [ObservableProperty] private bool _showBoundingSpheres;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
     [ObservableProperty] private IReadOnlyList<FrameTimingStep> _currentFrameSteps = Array.Empty<FrameTimingStep>();
@@ -124,6 +136,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
         _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
+        _terrainRenderDistance = session.Current.Rendering.TerrainRenderDistance;
+        _modelRenderDistance = session.Current.Rendering.ModelRenderDistance;
+        _tileLoadingDistance = session.Current.Rendering.TileLoadingDistance;
+        _showBoundingBoxes = session.Current.Rendering.ShowBoundingBoxes;
+        _showBoundingSpheres = session.Current.Rendering.ShowBoundingSpheres;
         _cameraPosition = session.Current.Camera?.Position ?? Vector3.Zero;
         _cameraDirection = session.Current.Camera?.Direction ?? Vector3.Zero;
         _lastProcessCpuTime = _currentProcess.TotalProcessorTime;
@@ -176,6 +193,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
         PublishViewportRenderingConfiguration();
     }
+    partial void OnTerrainRenderDistanceChanged(float value) => PublishViewportRenderingConfiguration();
+    partial void OnModelRenderDistanceChanged(float value) => PublishViewportRenderingConfiguration();
+    partial void OnTileLoadingDistanceChanged(int value) => PublishViewportRenderingConfiguration();
+    partial void OnShowBoundingBoxesChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnShowBoundingSpheresChanged(bool value) => PublishViewportRenderingConfiguration();
 
     private void PublishViewportRenderingConfiguration()
     {
@@ -209,6 +231,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         if (SelectedObject != selection)
             SelectedObject = selection;
     }
+
+    public void RequestSelectedObjectTransform(ObjectTransform transform) =>
+        SelectedObjectTransformRequested?.Invoke(this, transform);
+
+    public void RequestSelectedWmoPlacement(WmoPlacementSelection selection) =>
+        SelectedWmoPlacementRequested?.Invoke(this, selection);
 
     public void UpdatePerformanceProfile(FrameProfileSnapshot snapshot)
     {
@@ -491,6 +519,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
             WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
+            TerrainRenderDistance = configuration.TerrainRenderDistance;
+            ModelRenderDistance = configuration.ModelRenderDistance;
+            TileLoadingDistance = configuration.TileLoadingDistance;
+            ShowBoundingBoxes = configuration.ShowBoundingBoxes;
+            ShowBoundingSpheres = configuration.ShowBoundingSpheres;
         }
         finally
         {

@@ -1,0 +1,213 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:models="using:WTEditor.Application.Models"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:views="using:WTEditor.Avalonia.Views"
+             x:Class="WTEditor.Avalonia.Views.ModelInformationView"
+             x:Name="ModelInformationRoot"
+             x:DataType="vm:ModelInformationViewModel"
+             IsVisible="{Binding HasModel}">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="Foreground" Value="#BFD0DC"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="#8FA5B5"/><Setter Property="FontSize" Value="11"/></Style>
+    <Style Selector="TextBlock.value"><Setter Property="Foreground" Value="#EEF4F7"/><Setter Property="FontSize" Value="11"/></Style>
+    <Style Selector="Border.card"><Setter Property="Background" Value="#222C34"/><Setter Property="BorderBrush" Value="#394854"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Padding" Value="10,7"/></Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="12">
+    <TextBlock Classes="section-title" Text="MODEL"/>
+    <Border Classes="card">
+      <StackPanel Spacing="7">
+        <TextBlock Classes="label" Text="File"/>
+        <TextBlock Classes="value" Text="{Binding ModelFile.Path}" TextWrapping="Wrap"
+                   ToolTip.Tip="{Binding ModelFile.ToolTip}"/>
+        <ItemsControl ItemsSource="{Binding Properties}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+              <Grid ColumnDefinitions="110,*" Margin="0,3">
+                <TextBlock Classes="label" Text="{Binding Label}"/>
+                <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}" TextWrapping="Wrap"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Panel IsVisible="{Binding HasRootInformation}">
+          <StackPanel>
+            <controls:ColorField Label="Ambient color" Value="{Binding RootAmbientColor}"/>
+            <controls:FlagsField DataContext="{Binding RootFlags}"/>
+          </StackPanel>
+        </Panel>
+
+    <controls:InspectorExpander Header="{Binding WorldModelGroupsHeader}" IsExpanded="True"
+                                IsVisible="{Binding HasWorldModelGroups}">
+      <controls:InspectorExpander.SectionContent>
+      <Grid RowDefinitions="Auto,Auto" Margin="0,7,0,0">
+        <ListBox x:Name="WmoGroupsList"
+                 ItemsSource="{Binding DataContext.Groups, ElementName=ModelInformationRoot}"
+                 SelectedItem="{Binding DataContext.SelectedGroup, ElementName=ModelInformationRoot}"
+                 MaxHeight="150" Background="#222C34" BorderBrush="#394854" Foreground="#FFFFFF">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="models:WorldModelGroupData">
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Foreground="#FFFFFF"/>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Border Grid.Row="1" Classes="card" Margin="0,6,0,0">
+          <StackPanel>
+          <ItemsControl ItemsSource="{Binding DataContext.SelectedGroupProperties, ElementName=ModelInformationRoot}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+                <Grid ColumnDefinitions="125,*" Margin="0,3">
+                  <TextBlock Classes="label" Text="{Binding Label}"/>
+                  <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}" TextWrapping="Wrap"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <controls:FlagsField DataContext="{Binding DataContext.SelectedGroupFlags, ElementName=ModelInformationRoot}"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+    <controls:InspectorExpander Header="{Binding TexturesHeader}" IsVisible="{Binding HasTextures}">
+      <controls:InspectorExpander.SectionContent>
+      <Border Classes="card" Margin="0,7,0,0">
+        <ItemsControl ItemsSource="{Binding Textures}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ModelTextureItemViewModel">
+              <StackPanel Margin="0,3">
+                <TextBlock Classes="value" Text="{Binding File.Path}" TextWrapping="Wrap"
+                           ToolTip.Tip="{Binding File.ToolTip}"/>
+                <Panel IsVisible="{Binding HasFlags}">
+                  <controls:FlagsField DataContext="{Binding Flags}"/>
+                </Panel>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+    <controls:InspectorExpander Header="{Binding GeosetsHeader}" IsVisible="{Binding HasGeosets}">
+      <controls:InspectorExpander.SectionContent>
+        <Grid RowDefinitions="Auto,Auto" Margin="0,7,0,0">
+          <ListBox ItemsSource="{Binding Geosets}" SelectedItem="{Binding SelectedGeoset}"
+                   MaxHeight="180" Background="#222C34" BorderBrush="#394854" Foreground="#FFFFFF">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModelDetailItemViewModel">
+                <TextBlock Text="{Binding Name}" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Border Grid.Row="1" Classes="card" Margin="0,6,0,0">
+            <ItemsControl ItemsSource="{Binding SelectedGeoset.Properties}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+                  <Grid ColumnDefinitions="125,*" Margin="0,3">
+                    <TextBlock Classes="label" Text="{Binding Label}"/>
+                    <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}" TextWrapping="Wrap"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+        </Grid>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+    <controls:InspectorExpander Header="{Binding MaterialsHeader}" IsVisible="{Binding HasMaterials}">
+      <controls:InspectorExpander.SectionContent>
+        <Grid RowDefinitions="Auto,Auto" Margin="0,7,0,0">
+          <ListBox ItemsSource="{Binding Materials}" SelectedItem="{Binding SelectedMaterial}"
+                   MaxHeight="180" Background="#222C34" BorderBrush="#394854" Foreground="#FFFFFF">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:MaterialDetailsViewModel">
+                <TextBlock Text="{Binding Name}" Foreground="#FFFFFF"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Border Grid.Row="1" Classes="card" Margin="0,6,0,0">
+            <views:MaterialDetailsView x:Name="SelectedMaterialDetails" DataContext="{Binding SelectedMaterial}"/>
+          </Border>
+        </Grid>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+    <controls:InspectorExpander Header="{Binding BatchesHeader}" IsVisible="{Binding HasBatches}">
+      <controls:InspectorExpander.SectionContent>
+        <Grid RowDefinitions="Auto,Auto" Margin="0,7,0,0">
+          <ListBox ItemsSource="{Binding Batches}" SelectedItem="{Binding SelectedBatch}"
+                   MaxHeight="220" Background="#222C34" BorderBrush="#394854" Foreground="#FFFFFF">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModelDetailItemViewModel">
+                <TextBlock Text="{Binding Name}" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Border Grid.Row="1" Classes="card" Margin="0,6,0,0">
+            <StackPanel>
+              <ItemsControl ItemsSource="{Binding SelectedBatch.Properties}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+                    <Grid ColumnDefinitions="125,*" Margin="0,3">
+                      <TextBlock Classes="label" Text="{Binding Label}"/>
+                      <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}" TextWrapping="Wrap"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <controls:FlagsField DataContext="{Binding SelectedBatch.Flags}"/>
+              <ItemsControl ItemsSource="{Binding SelectedBatch.Textures}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:FilePathViewModel">
+                    <Grid RowDefinitions="Auto,Auto" Margin="0,3">
+                      <TextBlock Classes="label" Text="Texture"/>
+                      <TextBlock Grid.Row="1" Classes="value" Text="{Binding Path}" TextWrapping="Wrap"
+                                 ToolTip.Tip="{Binding ToolTip}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Border IsVisible="{Binding SelectedBatch.HasMaterial}"
+                      BorderBrush="#394854" BorderThickness="0,1,0,0"
+                      Padding="0,8,0,0" Margin="0,6,0,0">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="section-title" Text="{Binding SelectedBatch.Material.Name}"/>
+                  <views:MaterialDetailsView x:Name="SelectedBatchMaterialDetails"
+                                             DataContext="{Binding SelectedBatch.Material}"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+    <controls:InspectorExpander Header="Advanced model information" IsVisible="{Binding HasAdvancedInformation}">
+      <controls:InspectorExpander.SectionContent>
+      <Border Classes="card" Margin="0,7,0,0">
+        <ItemsControl ItemsSource="{Binding AdvancedProperties}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+              <Grid ColumnDefinitions="150,*" Margin="0,3">
+                <TextBlock Classes="label" Text="{Binding Label}"/>
+                <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+      </controls:InspectorExpander.SectionContent>
+    </controls:InspectorExpander>
+
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

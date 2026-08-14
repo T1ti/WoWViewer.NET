@@ -15,6 +15,7 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        WoWRenderLib.Listfile.EnsureLoadedAsync().GetAwaiter().GetResult();
         Services = ConfigureServices().BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
@@ -28,9 +29,6 @@ internal static class Program
         services.AddSingleton<IEditorSettingsStore, JsonEditorSettingsStore>();
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
-        services.AddSingleton<IObjectInspectorSectionProvider, TransformInspectorSectionProvider>();
-        services.AddSingleton<IObjectInspectorSectionProvider, M2InspectorSectionProvider>();
-        services.AddSingleton<IObjectInspectorSectionProvider, WorldModelInspectorSectionProvider>();
         services.AddSingleton<IObjectInspectorSectionProvider, TerrainInspectorSectionProvider>();
         services.AddSingleton<SelectionInspectorViewModel>();
 

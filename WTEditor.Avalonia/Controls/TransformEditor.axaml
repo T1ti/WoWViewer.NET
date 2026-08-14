@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             x:Class="WTEditor.Avalonia.Controls.TransformEditor"
+             x:Name="TransformRoot"
+             x:CompileBindings="False">
+  <StackPanel Spacing="7">
+    <TextBlock Text="Position" Foreground="#91A5B5" FontSize="11"/>
+    <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" ColumnSpacing="4">
+      <TextBlock Text="X" VerticalAlignment="Center" Foreground="#D76B70"/>
+      <controls:CompactNumberBox Grid.Column="1" MinWidth="48"
+                                 Value="{Binding PositionX, ElementName=TransformRoot}"/>
+      <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" Foreground="#74B978"/>
+      <controls:CompactNumberBox Grid.Column="3" MinWidth="48"
+                                 Value="{Binding PositionY, ElementName=TransformRoot}"/>
+      <TextBlock Grid.Column="4" Text="Z" VerticalAlignment="Center" Foreground="#6B9FD7"/>
+      <controls:CompactNumberBox Grid.Column="5" MinWidth="48"
+                                 Value="{Binding PositionZ, ElementName=TransformRoot}"/>
+    </Grid>
+    <TextBlock Text="Rotation (degrees)" Foreground="#91A5B5" FontSize="11"/>
+    <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" ColumnSpacing="4">
+      <TextBlock Text="X" VerticalAlignment="Center" Foreground="#D76B70"/>
+      <controls:CompactNumberBox Grid.Column="1" MinWidth="48"
+                                 Value="{Binding RotationX, ElementName=TransformRoot}"/>
+      <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" Foreground="#74B978"/>
+      <controls:CompactNumberBox Grid.Column="3" MinWidth="48"
+                                 Value="{Binding RotationY, ElementName=TransformRoot}"/>
+      <TextBlock Grid.Column="4" Text="Z" VerticalAlignment="Center" Foreground="#6B9FD7"/>
+      <controls:CompactNumberBox Grid.Column="5" MinWidth="48"
+                                 Value="{Binding RotationZ, ElementName=TransformRoot}"/>
+    </Grid>
+    <Grid ColumnDefinitions="74,*" Margin="0,2,0,0">
+      <TextBlock Text="Scale" Foreground="#91A5B5" FontSize="11" VerticalAlignment="Center"/>
+      <controls:CompactNumberBox Grid.Column="1" Minimum="0.001" Maximum="1000"
+                                 Value="{Binding UniformScale, ElementName=TransformRoot}"
+                                 IsEnabled="{Binding IsScaleEnabled, ElementName=TransformRoot}"/>
+    </Grid>
+    <TextBlock Text="{Binding ScaleHelpText, ElementName=TransformRoot}" Foreground="#D6A660"
+               FontSize="10" TextWrapping="Wrap"/>
+  </StackPanel>
+</UserControl>

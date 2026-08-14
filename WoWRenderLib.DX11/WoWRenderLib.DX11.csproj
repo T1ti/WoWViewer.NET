@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="WTEditor.Avalonia.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="Shaders\adt.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

@@ -32,4 +32,8 @@
     <ProjectReference Include="..\WTEditor.Application\WTEditor.Application.csproj" />
     <ProjectReference Include="..\WoWRenderLib.DX11\WoWRenderLib.DX11.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WTEditor.Avalonia.Tests" />
+  </ItemGroup>
 </Project>

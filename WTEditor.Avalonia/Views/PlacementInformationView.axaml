@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             x:Class="WTEditor.Avalonia.Views.PlacementInformationView"
+             x:DataType="vm:PlacementInformationViewModel"
+             IsVisible="{Binding HasPlacement}">
+  <StackPanel Spacing="8">
+    <TextBlock Text="MAP PLACEMENT" Foreground="#BFD0DC" FontSize="11" FontWeight="Bold"/>
+    <Border Background="#222C34" BorderBrush="#394854" BorderThickness="1"
+            CornerRadius="5" Padding="10,7">
+      <StackPanel Spacing="5">
+        <TextBlock Text="{Binding PlacementType}" Foreground="#EEF4F7" FontSize="11" FontWeight="SemiBold"/>
+        <TextBlock Text="Source ADT" Foreground="#8FA5B5" FontSize="11"/>
+        <TextBlock Text="{Binding SourceAdtFile.Path}" Foreground="#EEF4F7" FontSize="11"
+                   TextWrapping="Wrap" ToolTip.Tip="{Binding SourceAdtFile.ToolTip}"/>
+        <ItemsControl ItemsSource="{Binding Properties}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+              <Grid ColumnDefinitions="125,*" Margin="0,3">
+                <TextBlock Text="{Binding Label}" Foreground="#8FA5B5" FontSize="11"/>
+                <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="#EEF4F7"
+                           FontSize="11" TextWrapping="Wrap"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid ColumnDefinitions="125,*" Margin="0,3" IsVisible="{Binding HasWorldModelPlacement}">
+          <TextBlock Text="Doodad set" Foreground="#8FA5B5" FontSize="11" VerticalAlignment="Center"/>
+          <ComboBox x:Name="DoodadSetComboBox" Grid.Column="1" ItemsSource="{Binding DoodadSetOptions}"
+                    SelectedItem="{Binding SelectedDoodadSet}"
+                    IsEnabled="{Binding CanEditDoodadSet}" MinWidth="130"
+                    Background="#25323C" Foreground="#EEF4F7">
+            <ComboBox.Styles>
+              <Style Selector="ComboBoxItem">
+                <Setter Property="Background" Value="#25323C"/>
+                <Setter Property="Foreground" Value="#EEF4F7"/>
+              </Style>
+              <Style Selector="ComboBoxItem:pointerover">
+                <Setter Property="Background" Value="#3A5263"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+              </Style>
+              <Style Selector="ComboBoxItem:selected">
+                <Setter Property="Background" Value="#315E78"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+              </Style>
+            </ComboBox.Styles>
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PlacementOptionViewModel">
+                <TextBlock Text="{Binding DisplayName}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+        <controls:FlagsField DataContext="{Binding Flags}"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

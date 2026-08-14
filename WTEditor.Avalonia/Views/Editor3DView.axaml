@@ -63,19 +63,6 @@
       </StackPanel>
     </Border>
 
-    <StackPanel
-        HorizontalAlignment="Right"
-        Margin="10"
-        IsHitTestVisible="True"
-        Background="Transparent"
-        Focusable="False">
-      <TextBlock Foreground="White" Text="Speed"/>
-      <Slider Value="{Binding MoveSpeed}" Minimum="1" Maximum="500" />
-      
-      <TextBlock Foreground="White" Text="Sensitivity"/>
-      <Slider Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="0.5" />
-    </StackPanel>
-
     <!-- These controls belong to this world viewport instance. Other viewport types
          can provide their own visibility tools without inheriting these switches. -->
     <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
@@ -104,24 +91,6 @@
           </StackPanel>
         </ToggleButton>
         <Border Width="1" Margin="3,3" Background="#526170"/>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="5,0">
-          <TextBlock Text="Min model px" Foreground="#D7E2EC" VerticalAlignment="Center"
-                     ToolTip.Tip="Cull WMO and M2 bounding spheres whose projected diameter is smaller than this value; 0 disables size culling"/>
-          <Slider Width="90" Minimum="0" Maximum="8" TickFrequency="0.5"
-                  Value="{Binding MinimumModelScreenSizePixels}"/>
-          <TextBlock Width="28" Foreground="#FFFFFF" VerticalAlignment="Center"
-                     Text="{Binding MinimumModelScreenSizePixels, StringFormat='{}{0:F1}'}"/>
-        </StackPanel>
-        <Border Width="1" Margin="3,3" Background="#526170"/>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="5" Margin="5,0">
-          <TextBlock Text="Terrain LOD px" Foreground="#D7E2EC" VerticalAlignment="Center"
-                     ToolTip.Tip="Use the half-index terrain mesh below this projected chunk diameter; 0 disables terrain LOD"/>
-          <Slider Width="90" Minimum="0" Maximum="128" TickFrequency="8"
-                  Value="{Binding TerrainLodTransitionPixels}"/>
-          <TextBlock Width="30" Foreground="#FFFFFF" VerticalAlignment="Center"
-                     Text="{Binding TerrainLodTransitionPixels, StringFormat='{}{0:F0}'}"/>
-        </StackPanel>
-        <Border Width="1" Margin="3,3" Background="#526170"/>
         <Button Classes="viewport-tool" ToolTip.Tip="Advanced rendering settings for this world viewport">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <PathIcon Width="16" Height="16" Data="M12,8.5 A3.5,3.5 0 1 0 12,15.5 A3.5,3.5 0 1 0 12,8.5 M12,2 L13.3,4.1 L15.8,4.6 L17.8,3.2 L20.8,6.2 L19.4,8.2 L19.9,10.7 L22,12 L19.9,13.3 L19.4,15.8 L20.8,17.8 L17.8,20.8 L15.8,19.4 L13.3,19.9 L12,22 L10.7,19.9 L8.2,19.4 L6.2,20.8 L3.2,17.8 L4.6,15.8 L4.1,13.3 L2,12 L4.1,10.7 L4.6,8.2 L3.2,6.2 L6.2,3.2 L8.2,4.6 L10.7,4.1 Z"/>
@@ -129,16 +98,53 @@
           </StackPanel>
           <Button.Flyout>
             <Flyout>
-              <Border Padding="12" MinWidth="280" Background="#F21A2027"
+              <Border Padding="12" MinWidth="340" Background="#F21A2027"
                       BorderBrush="#526170" BorderThickness="1" CornerRadius="7">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="Advanced rendering" Foreground="#FFFFFF" FontWeight="SemiBold"/>
-                  <CheckBox Content="WMO portal culling"
-                            IsChecked="{Binding WmoPortalCullingEnabled}"
-                            Foreground="#D7E2EC"/>
-                  <TextBlock Text="Experimental for this client build. Disabled by default because some outdoor WMO groups are tagged as interiors."
-                             Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="300"/>
-                </StackPanel>
+                <ScrollViewer MaxHeight="620" VerticalScrollBarVisibility="Auto">
+                  <StackPanel Spacing="10">
+                    <TextBlock Text="Advanced rendering" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                    <TextBlock Text="Navigation" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6">
+                      <TextBlock Text="Camera speed" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Column="1" Value="{Binding MoveSpeed}" Minimum="1" Maximum="10000" Increment="5"/>
+                      <TextBlock Grid.Row="1" Text="Mouse sensitivity" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding MouseSensitivity}"
+                                     Minimum="0.001" Maximum="2" Increment="0.005" FormatString="0.###"/>
+                    </Grid>
+                    <Separator/>
+                    <TextBlock Text="Distances and streaming" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                      <TextBlock Text="Terrain distance" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Column="1" Value="{Binding TerrainRenderDistance}"
+                                     Minimum="100" Maximum="1000000" Increment="500"/>
+                      <TextBlock Grid.Row="1" Text="Model distance" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ModelRenderDistance}"
+                                     Minimum="100" Maximum="1000000" Increment="500"/>
+                      <TextBlock Grid.Row="2" Text="Tile loading radius" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding TileLoadingDistance}"
+                                     Minimum="0" Maximum="32" Increment="1" FormatString="0"/>
+                    </Grid>
+                    <Separator/>
+                    <TextBlock Text="Level of detail" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6">
+                      <TextBlock Text="Minimum model pixels" Foreground="#D7E2EC" VerticalAlignment="Center"
+                                 ToolTip.Tip="Cull models below this projected diameter; 0 disables size culling"/>
+                      <NumericUpDown Grid.Column="1" Value="{Binding MinimumModelScreenSizePixels}"
+                                     Minimum="0" Maximum="16" Increment="0.25" FormatString="0.##"/>
+                      <TextBlock Grid.Row="1" Text="Terrain LOD pixels" Foreground="#D7E2EC" VerticalAlignment="Center"
+                                 ToolTip.Tip="Use the reduced terrain mesh below this projected chunk diameter; 0 disables it"/>
+                      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TerrainLodTransitionPixels}"
+                                     Minimum="0" Maximum="256" Increment="4" FormatString="0"/>
+                    </Grid>
+                    <Separator/>
+                    <TextBlock Text="Diagnostics" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" Foreground="#D7E2EC"/>
+                    <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" Foreground="#D7E2EC"/>
+                    <CheckBox Content="WMO portal culling" IsChecked="{Binding WmoPortalCullingEnabled}" Foreground="#D7E2EC"/>
+                    <TextBlock Text="Portal culling is experimental for this client build."
+                               Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="310"/>
+                  </StackPanel>
+                </ScrollViewer>
               </Border>
             </Flyout>
           </Button.Flyout>

@@ -1,5 +1,11 @@
 using System.Numerics;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
+using Avalonia;
+using Avalonia.Headless;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WTEditor.Application;
 using WTEditor.Application.Commands;
@@ -7,11 +13,15 @@ using WTEditor.Application.Models;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.Services;
 using WTEditor.Avalonia.Rendering;
+using WTEditor.Avalonia.Controls;
 using WTEditor.Avalonia.ViewModels;
+using WTEditor.Avalonia.Views;
+using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
 using WoWFormatLib.Structs.M2;
+using WoWFormatLib.Structs.ADT;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
@@ -21,6 +31,25 @@ namespace WTEditor.Avalonia.Tests;
 [DoNotParallelize]
 public sealed class EditorSettingsSmokeTests
 {
+    [AssemblyInitialize]
+    public static void InitializeAvalonia(TestContext _)
+    {
+        AppBuilder.Configure<global::Avalonia.Application>()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions())
+            .SetupWithoutStarting();
+    }
+
+    [TestMethod]
+    public void MainView_XamlCanBePopulatedAtRuntime()
+    {
+        var view = new MainView();
+
+        Assert.IsNotNull(view);
+        Assert.AreEqual(7d, view.FindControl<Thumb>("InspectorLeftResizeHandle")!.Width);
+        Assert.AreEqual(7d, view.FindControl<Thumb>("InspectorRightResizeHandle")!.Width);
+        Assert.AreEqual(7d, view.FindControl<Thumb>("InspectorBottomResizeHandle")!.Height);
+    }
+
     [TestMethod]
     public void PersistedSettings_RoundTripPreservesStartupConfiguration()
     {
@@ -427,15 +456,9 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
-    public void SelectionInspector_ComposesTransformAndObjectSpecificSections()
+    public void SelectionInspector_ComposesTransformAndReusableModelInformation()
     {
-        var inspector = new SelectionInspectorViewModel(
-        [
-            new TransformInspectorSectionProvider(),
-            new M2InspectorSectionProvider(),
-            new WorldModelInspectorSectionProvider(),
-            new TerrainInspectorSectionProvider()
-        ]);
+        var inspector = new SelectionInspectorViewModel([]);
         var selected = new EditorObjectSnapshot(
             EditorObjectId.New(),
             "Training Dummy",
@@ -444,21 +467,324 @@ public sealed class EditorSettingsSmokeTests
                 new Vector3(10, 20, 30),
                 Quaternion.Identity,
                 new Vector3(2)),
-            new M2ObjectData(1234, 5678, 6, false));
+            new M2ObjectData(
+                1234, 5678, 6, false,
+                "world/model/dummy.m2",
+                [new AssetReference(99, "textures/dummy.blp")],
+                42,
+                "world/maps/test/test_1_2.adt",
+                new ModelAdvancedData(3, 100, 50, 2, 1, 8, 4),
+                new MapPlacementData(MapPlacementKind.Mddf, 42, 0x21),
+                [new ModelMaterialData(0, 2, 5, "", "Diffuse_T1", "Combiners_Mod",
+                    [new AssetReference(99, "textures/dummy.blp")],
+                    TextureSlots: [new ModelTextureData(1, new AssetReference(99, "textures/dummy.blp"), 3)])],
+                [new ModelBatchData(0, null, 0, 12, 30, 2, 5, "", "Diffuse_T1", "Combiners_Mod", [new AssetReference(99, "textures/dummy.blp")])],
+                [new ModelGeosetData(0, 101, "Hair", 0, 0, 100, 0, 30, true)],
+                [new ModelTextureData(0, new AssetReference(99, "textures/dummy.blp"), 3)]));
 
         inspector.Inspect(selected);
 
         Assert.IsTrue(inspector.HasSelection);
         Assert.AreEqual("Training Dummy", inspector.SelectionName);
+        Assert.AreEqual(10d, inspector.PositionX);
+        Assert.IsTrue(inspector.ModelInformation.HasModel);
+        Assert.AreEqual("world/model/dummy.m2", inspector.ModelInformation.ModelFile!.Path);
+        Assert.AreEqual("File data ID: 1234", inspector.ModelInformation.ModelFile.ToolTip);
+        Assert.AreEqual(0, inspector.ModelInformation.Properties.Count);
+        Assert.AreEqual("Geosets (1)", inspector.ModelInformation.GeosetsHeader);
+        Assert.AreEqual("Textures (1)", inspector.ModelInformation.TexturesHeader);
+        Assert.AreEqual("Materials (1)", inspector.ModelInformation.MaterialsHeader);
+        Assert.AreEqual("Render batches (1)", inspector.ModelInformation.BatchesHeader);
+        Assert.AreEqual("Particle emitters", inspector.ModelInformation.AdvancedProperties[4].Label);
+        Assert.AreEqual("Geoset 101 · Hair", inspector.ModelInformation.SelectedGeoset!.Name);
+        Assert.AreEqual("Alpha blend (2)", inspector.ModelInformation.SelectedMaterial!.Properties[0].Value);
+        Assert.AreEqual("Unlit, Two Sided", inspector.ModelInformation.SelectedMaterial.Flags!.DisplayText);
+        Assert.AreEqual(ModelMaterialType.M2, inspector.ModelInformation.SelectedMaterial.MaterialType);
+        Assert.AreEqual("textures/dummy.blp", inspector.ModelInformation.SelectedMaterial.Name);
+        Assert.AreSame(inspector.ModelInformation.SelectedMaterial, inspector.ModelInformation.SelectedBatch!.Material);
+        Assert.AreEqual("Wrap X, Wrap Y", inspector.ModelInformation.Textures[0].Flags!.DisplayText);
+        Assert.AreEqual("Wrap X, Wrap Y", inspector.ModelInformation.SelectedMaterial.TextureSlots[0].Flags!.DisplayText);
+        Assert.AreEqual("textures/dummy.blp", inspector.ModelInformation.SelectedMaterial!.Textures[0].Path);
+        Assert.IsTrue(inspector.PlacementInformation.HasPlacement);
+        Assert.AreEqual("42", inspector.PlacementInformation.Properties[0].Value);
         CollectionAssert.AreEqual(
-            new[] { "Transform", "M2 model" },
-            inspector.Sections.Select(section => section.Title).ToArray());
-        Assert.IsTrue(inspector.Sections[0].Properties[0].Value.Contains("X 10"));
-        Assert.AreEqual("1234", inspector.Sections[1].Properties[0].Value);
+            new[] { "Biodome", "Liquid Known" },
+            inspector.PlacementInformation.Flags!.ActiveFlags.ToArray());
 
         inspector.Inspect(null);
         Assert.IsFalse(inspector.HasSelection);
+        Assert.IsFalse(inspector.ModelInformation.HasModel);
         Assert.AreEqual(0, inspector.Sections.Count);
+    }
+
+    [TestMethod]
+    public void ModelInformation_WorldModelGroupsAreSelectable()
+    {
+        var model = new ModelInformationViewModel();
+        var groups = new[]
+        {
+            new WorldModelGroupData(0, "Exterior", "Outside", 10, 2, 600, 300, 4, 0x20),
+            new WorldModelGroupData(1, "Interior", "Hall", 11, 3, 900, 450, 8, 0x40)
+        };
+
+        model.SetModel(new EditorObjectSnapshot(
+            EditorObjectId.New(), "Keep", "World model", ObjectTransform.Identity,
+            new WorldModelObjectData(
+                1, 2, 2, 1, 5, true, "world/wmo/keep.wmo", [], 77,
+                "world/maps/test/test_1_2.adt", groups,
+                new MapPlacementData(MapPlacementKind.Modf, 77, 0x1, 1, 2),
+                new WorldModelRootData(0xFF102030, 0x11),
+                [new ModelMaterialData(0, 4, 5, "Diffuse", "MapObjDiffuse_T1", "MapObjDiffuse", [new AssetReference(9, "stone.blp")])],
+                [new ModelBatchData(0, 1, 0, 3, 60, 4, 0, "Diffuse", "MapObjDiffuse_T1", "MapObjDiffuse", [new AssetReference(9, "stone.blp")])],
+                ["Default", "Winter"])));
+
+        Assert.IsTrue(model.HasWorldModelGroups);
+        Assert.AreEqual("WMO groups (2)", model.WorldModelGroupsHeader);
+        Assert.AreEqual("Textures (0)", model.TexturesHeader);
+        Assert.AreEqual("Materials (1)", model.MaterialsHeader);
+        Assert.AreEqual("Render batches (1)", model.BatchesHeader);
+        Assert.AreEqual("Exterior", model.SelectedGroup!.Name);
+        model.SelectedGroup = groups[1];
+        Assert.AreEqual("Hall", model.SelectedGroupProperties[0].Value);
+        Assert.AreEqual("MOGI name", model.SelectedGroupProperties[0].Label);
+        Assert.AreEqual("3", model.SelectedGroupProperties[2].Value);
+        Assert.AreEqual("Exterior Lit", model.SelectedGroupFlags!.DisplayText);
+        Assert.AreEqual(0xFF102030u, model.RootAmbientColor);
+        Assert.IsFalse(model.Properties.Any(property => property.Label == "Asset state"));
+        Assert.IsNotNull(model.RootFlags);
+        Assert.AreEqual("Additive (4)", model.SelectedMaterial!.Properties[0].Value);
+        Assert.AreEqual(ModelMaterialType.Wmo, model.SelectedMaterial.MaterialType);
+        Assert.IsTrue(model.HasBatches);
+        Assert.AreEqual("Batch 0 · Group 1", model.SelectedBatch!.Name);
+        Assert.AreSame(model.SelectedMaterial, model.SelectedBatch.Material);
+        Assert.AreEqual(5, model.SelectedBatch.Properties.Count);
+        Assert.AreEqual("stone.blp", model.SelectedMaterial.TextureSlots![0].File.Path);
+    }
+
+    [TestMethod]
+    public void PlacementInformation_UsesModsNamesAndPublishesModfSetSelection()
+    {
+        var inspector = new SelectionInspectorViewModel([]);
+        WmoPlacementSelection? changed = null;
+        inspector.WmoPlacementChanged += (_, selection) => changed = selection;
+        inspector.Inspect(new EditorObjectSnapshot(
+            EditorObjectId.New(), "Keep", "World model", ObjectTransform.Identity,
+            new WorldModelObjectData(
+                1, 2, 1, 2, 4, true, "keep.wmo", [], 77, "map.adt", [],
+                new MapPlacementData(MapPlacementKind.Modf, 77, 0, 1, 2),
+                new WorldModelRootData(0xFF102030, 0), null, null,
+                ["Set_$DefaultGlobal", "Set_Winter"])));
+
+        var placement = inspector.PlacementInformation;
+        Assert.IsTrue(placement.HasWorldModelPlacement);
+        Assert.AreEqual("(1) Set_Winter", placement.SelectedDoodadSet!.DisplayName);
+        Assert.AreEqual("2", placement.Properties.Single(property => property.Label == "Name set").Value);
+        Assert.IsFalse(placement.Properties.Any(property => property.Label == "Active doodad sets"));
+
+        placement.SelectedDoodadSet = placement.DoodadSetOptions[0];
+        Assert.IsNotNull(changed);
+        Assert.AreEqual((ushort)0, changed.DoodadSet);
+        Assert.AreEqual((ushort)2, changed.NameSet);
+    }
+
+    [TestMethod]
+    public void LoadedWmoProjection_PopulatesModsComboGroupsAndMaterialData()
+    {
+        var rendererModel = new WoWRenderLib.DX11.Structs.WorldModel
+        {
+            rootWMOFileDataID = 123,
+            ambientColor = 0xFF102030,
+            flags = 1,
+            doodadSets = ["Set_$DefaultGlobal", "Set_Day"],
+            doodads = [new WMODoodad { filedataid = 456, doodadSet = 1 }],
+            preppedMats =
+            [
+                new PreppedWMOMaterial
+                {
+                    Shader = 0,
+                    BlendMode = 0,
+                    Color1 = 0xFF112233,
+                    Color2 = 0xFF445566,
+                    GroundType = 7,
+                    TexFileDataID0 = 1001,
+                    TexFileDataID1 = 1002,
+                    TexFileDataID2 = 1003,
+                    VertexShader = WoWRenderLib.Renderer.ShaderEnums.WMOVertexShader.MapObjDiffuse_T1,
+                    PixelShader = WoWRenderLib.Renderer.ShaderEnums.WMOPixelShader.MapObjDiffuse
+                }
+            ],
+            wmoRenderBatches =
+            [
+                new WMORenderBatch
+                {
+                    groupID = 0,
+                    materialIndex = 0,
+                    shader = 0,
+                    numFaces = 3,
+                    materialFDIDs = []
+                }
+            ],
+            groupBatches =
+            [
+                new WorldModelGroupBatches
+                {
+                    groupName = "Exterior",
+                    mogiGroupName = "Outside",
+                    groupID = 7,
+                    verticeCount = 3,
+                    doodadReferences = [0],
+                    portalLinks = []
+                }
+            ]
+        };
+
+        var data = Dx11View.ProjectLoadedWorldModelObjectData(
+            rendererModel, 123, 999, 42, 0, 1, 0, 1);
+        Assert.IsTrue(data.IsLoaded);
+        Assert.AreEqual(2, data.DoodadSets!.Count);
+        Assert.AreEqual("Exterior", data.Groups![0].Name);
+        Assert.AreEqual("Diffuse", data.Materials![0].Shader);
+        Assert.AreEqual(3, data.Materials[0].TextureSlots!.Count);
+        Assert.AreEqual(0xFF112233u, data.Materials[0].Color1);
+        Assert.AreEqual(7u, data.Materials[0].GroundType);
+
+        var snapshot = new EditorObjectSnapshot(
+            EditorObjectId.New(), "Test WMO", "World model", ObjectTransform.Identity, data);
+        var placement = new PlacementInformationViewModel();
+        placement.SetPlacement(snapshot);
+        Assert.AreEqual(2, placement.DoodadSetOptions.Count);
+        Assert.AreEqual("(1) Set_Day", placement.SelectedDoodadSet!.DisplayName);
+        var placementView = new PlacementInformationView { DataContext = placement };
+        placementView.Measure(new global::Avalonia.Size(400, 800));
+        var comboBox = placementView.FindControl<ComboBox>("DoodadSetComboBox");
+        Assert.IsNotNull(comboBox);
+        Assert.AreEqual(2, comboBox.ItemCount);
+
+        var model = new ModelInformationViewModel();
+        model.SetModel(snapshot);
+        Assert.IsTrue(model.HasWorldModelGroups);
+        Assert.AreEqual("Exterior", model.SelectedGroup!.Name);
+        Assert.IsTrue(model.HasBatches);
+        Assert.AreSame(model.SelectedMaterial, model.SelectedBatch!.Material);
+        Assert.AreEqual("WMO groups (1)", model.WorldModelGroupsHeader);
+        Assert.AreEqual("Textures (3)", model.TexturesHeader);
+        Assert.AreEqual("Materials (1)", model.MaterialsHeader);
+        Assert.AreEqual("Render batches (1)", model.BatchesHeader);
+        Assert.AreEqual(3, model.SelectedMaterial.TextureSlots!.Count);
+        Assert.AreEqual(4, model.SelectedMaterial.Colors!.Count);
+        var modelView = new ModelInformationView { DataContext = model };
+        modelView.Measure(new global::Avalonia.Size(400, 1200));
+        var groupsList = modelView.FindControl<ListBox>("WmoGroupsList");
+        Assert.IsNotNull(groupsList);
+        Assert.AreEqual(1, groupsList.ItemCount);
+        Assert.IsTrue(groupsList.IsVisible);
+        Assert.IsNotNull(modelView.FindControl<MaterialDetailsView>("SelectedMaterialDetails"));
+        Assert.IsNotNull(modelView.FindControl<MaterialDetailsView>("SelectedBatchMaterialDetails"));
+    }
+
+    [TestMethod]
+    public void WmoDoodadSelection_EnablesDefaultAndPlacementSetsAndRejectsInvalidFdids()
+    {
+        var enabled = WMOContainer.BuildEnabledDoodadSetMask(3, [1u]);
+        CollectionAssert.AreEqual(new[] { true, true, false }, enabled);
+        Assert.IsTrue(SceneManager.IsWmoDoodadSpawnable(
+            new WMODoodad { filedataid = 456, doodadSet = 1 }, enabled));
+        Assert.IsFalse(SceneManager.IsWmoDoodadSpawnable(
+            new WMODoodad { filedataid = 0, doodadSet = 1 }, enabled));
+        Assert.IsFalse(SceneManager.IsWmoDoodadSpawnable(
+            new WMODoodad { filedataid = 456, doodadSet = 2 }, enabled));
+    }
+
+    [TestMethod]
+    public void WmoModnParser_PreservesOffsetsWhenConvertingMdxNames()
+    {
+        var bytes = Encoding.ASCII.GetBytes("world\\a.mdx\0world\\longer.mdx\0");
+        using var stream = new MemoryStream(bytes);
+        using var reader = new BinaryReader(stream);
+        var method = typeof(WoWFormatLib.FileReaders.WMOReader).GetMethod(
+            "ReadMODNChunk",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.IsNotNull(method);
+        var names = (WoWFormatLib.Structs.WMO.MODN[])method.Invoke(null, [(uint)bytes.Length, reader])!;
+
+        Assert.AreEqual(2, names.Length);
+        Assert.AreEqual("world\\a.m2", names[0].filename);
+        Assert.AreEqual(0u, names[0].startOffset);
+        Assert.AreEqual((uint)"world\\a.mdx".Length + 1u, names[1].startOffset);
+    }
+
+    [TestMethod]
+    public void FlagsField_UsesEnumNamesAndPreservesUnknownBits()
+    {
+        var field = FlagsFieldViewModel.FromEnum<MDDFFlags>("Flags", 0x421);
+
+        CollectionAssert.AreEqual(
+            new[] { "Biodome", "Liquid Known", "Unknown (0x400)" },
+            field.ActiveFlags.ToArray());
+        Assert.AreEqual("Raw value: 0x421", field.ToolTip);
+    }
+
+    [TestMethod]
+    public void SelectionInspector_TransformSpinValuesPublishAndClassicWmoScaleIsLocked()
+    {
+        var inspector = new SelectionInspectorViewModel([]);
+        ObjectTransform? published = null;
+        inspector.TransformChanged += (_, transform) => published = transform;
+        inspector.SetBuildProfile(ClientBuildProfile.From(new ClientConfiguration
+        {
+            WowProduct = "wow_classic_era"
+        }));
+        inspector.Inspect(new EditorObjectSnapshot(
+            EditorObjectId.New(),
+            "Keep",
+            "World model",
+            ObjectTransform.Identity,
+            new WorldModelObjectData(1, 2, 3, 4, 5, true)));
+
+        Assert.IsFalse(inspector.IsScaleEditable);
+        Assert.AreEqual(1d, inspector.UniformScale);
+
+        inspector.PositionX = 42d;
+        inspector.UniformScale = 3d;
+
+        Assert.IsNotNull(published);
+        Assert.AreEqual(42f, published.Position.X);
+        Assert.AreEqual(1f, published.Scale.X);
+
+        inspector.SetBuildProfile(ClientBuildProfile.From(new ClientConfiguration
+        {
+            WowProduct = "wow"
+        }));
+        Assert.IsTrue(inspector.IsScaleEditable);
+    }
+
+    [TestMethod]
+    public void CommunityListfile_LoadsNamesAndReverseLookupFromConfiguredPath()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "WTEditor.Tests", Guid.NewGuid().ToString("N"));
+        var listfilePath = Path.Combine(tempDirectory, "community-listfile.csv");
+        Directory.CreateDirectory(tempDirectory);
+        File.WriteAllLines(listfilePath,
+        [
+            "123;World\\Model\\Keep.wmo",
+            "456;Textures/Stone.blp",
+            "invalid line"
+        ]);
+
+        try
+        {
+            WoWRenderLib.Listfile.Load(listfilePath);
+
+            Assert.IsTrue(WoWRenderLib.Listfile.TryGetFilename(123, out var modelName));
+            Assert.AreEqual("World\\Model\\Keep.wmo", modelName);
+            Assert.IsTrue(WoWRenderLib.Listfile.TryGetFileDataID("world/model/keep.wmo", out var fileDataId));
+            Assert.AreEqual(123u, fileDataId);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
     }
 
     [TestMethod]

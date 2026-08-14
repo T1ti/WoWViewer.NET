@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WTEditor.Avalonia.Controls.CompactNumberBox"
+             x:Name="NumberRoot">
+  <Border Background="#151B20" BorderBrush="#596671" BorderThickness="1" CornerRadius="3">
+    <Grid ColumnDefinitions="*,16" MinHeight="26">
+      <TextBox x:Name="ValueTextBox" Padding="5,2" BorderThickness="0"
+               Background="Transparent" Foreground="#EEF4F7"
+               VerticalContentAlignment="Center" LostFocus="ValueTextBox_OnLostFocus"
+               KeyDown="ValueTextBox_OnKeyDown"/>
+      <Grid Grid.Column="1" RowDefinitions="*,*">
+        <RepeatButton Grid.Row="0" Content="▴" Padding="0" FontSize="7"
+                      Foreground="#E6EEF4" Background="#34434E" BorderBrush="#526170"
+                      Click="IncrementButton_OnClick"/>
+        <RepeatButton Grid.Row="1" Content="▾" Padding="0" FontSize="7"
+                      Foreground="#E6EEF4" Background="#34434E" BorderBrush="#526170"
+                      Click="DecrementButton_OnClick"/>
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

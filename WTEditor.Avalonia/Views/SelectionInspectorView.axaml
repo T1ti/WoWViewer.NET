@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:views="using:WTEditor.Avalonia.Views"
+             mc:Ignorable="d" d:DesignWidth="330" d:DesignHeight="700"
+             x:Class="WTEditor.Avalonia.Views.SelectionInspectorView"
+             x:DataType="vm:SelectionInspectorViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.panel-heading">
+      <Setter Property="Foreground" Value="#F3F7FA"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="14"/>
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#91A5B5"/>
+    </Style>
+    <Style Selector="Button.panel-action">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#B8C8D3"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1">
+    <Grid RowDefinitions="Auto,*">
+      <Border Padding="12,9" BorderBrush="#3E4B57" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Classes="panel-heading" Text="Inspector"/>
+            <TextBlock Classes="muted" Text="Selection mode" FontSize="11"/>
+          </StackPanel>
+          <Button Grid.Column="1" Classes="panel-action" Content="×" Command="{Binding TogglePanelCommand}"
+                  ToolTip.Tip="Hide inspector"/>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="14" Spacing="14">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{Binding SelectionName}" Foreground="#FFFFFF"
+                       FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+            <TextBlock Classes="muted" Text="{Binding SelectionKind}"
+                       FontSize="12" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding HasSelection}" Spacing="8">
+            <TextBlock Text="TRANSFORM" Foreground="#BFD0DC" FontSize="11" FontWeight="Bold"/>
+            <Border Background="#222C34" BorderBrush="#394854" BorderThickness="1"
+                    CornerRadius="5" Padding="9">
+              <controls:TransformEditor
+                  PositionX="{Binding PositionX}"
+                  PositionY="{Binding PositionY}"
+                  PositionZ="{Binding PositionZ}"
+                  RotationX="{Binding RotationX}"
+                  RotationY="{Binding RotationY}"
+                  RotationZ="{Binding RotationZ}"
+                  UniformScale="{Binding UniformScale}"
+                  IsScaleEnabled="{Binding IsScaleEditable}"
+                  ScaleHelpText="{Binding ScaleHelpText}"/>
+            </Border>
+          </StackPanel>
+
+          <views:PlacementInformationView DataContext="{Binding PlacementInformation}"/>
+          <views:ModelInformationView DataContext="{Binding ModelInformation}"/>
+
+          <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding HasSelection}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:InspectorSectionViewModel">
+                <StackPanel Spacing="8" Margin="0,0,0,12">
+                  <TextBlock Text="{Binding Title}" Foreground="#BFD0DC" FontSize="11" FontWeight="Bold"/>
+                  <Border Background="#222C34" BorderBrush="#394854" BorderThickness="1"
+                          CornerRadius="5" Padding="10,7">
+                    <ItemsControl ItemsSource="{Binding Properties}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:InspectorPropertyViewModel">
+                          <Grid RowDefinitions="Auto,Auto" Margin="0,4">
+                            <TextBlock Text="{Binding Label}" Foreground="#8FA5B5" FontSize="11"/>
+                            <TextBlock Grid.Row="1" Text="{Binding Value}" Foreground="#EEF4F7"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

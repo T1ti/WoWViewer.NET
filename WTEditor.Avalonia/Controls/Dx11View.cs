@@ -19,6 +19,7 @@ using WTEditor.Application.Models;
 using WTEditor.Avalonia.Rendering;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Objects;
+using WoWRenderLib.Renderer;
 
 namespace WTEditor.Avalonia.Controls
 {
@@ -61,6 +62,8 @@ namespace WTEditor.Avalonia.Controls
         private int _lastBenchmarkStatusSecond = -1;
         private Container3D? _lastSelectedObject;
         private EditorObjectId _lastSelectedObjectId;
+        private IEditorObjectData? _lastSelectedObjectData;
+        private bool _lastSelectionHadListfile;
 
         public Dx11View()
         {
@@ -75,6 +78,8 @@ namespace WTEditor.Avalonia.Controls
             {
                 _vm.ClientConfigurationChanged -= OnClientConfigurationChanged;
                 _vm.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
+                _vm.SelectedObjectTransformRequested -= OnSelectedObjectTransformRequested;
+                _vm.SelectedWmoPlacementRequested -= OnSelectedWmoPlacementRequested;
             }
 
             base.OnDataContextChanged(e);
@@ -86,6 +91,8 @@ namespace WTEditor.Avalonia.Controls
                 _renderingConfiguration = _vm.RenderingConfiguration;
                 _vm.ClientConfigurationChanged += OnClientConfigurationChanged;
                 _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
+                _vm.SelectedObjectTransformRequested += OnSelectedObjectTransformRequested;
+                _vm.SelectedWmoPlacementRequested += OnSelectedWmoPlacementRequested;
                 if (_benchmarkOptions.Enabled)
                 {
                     _vm.IsDetailedGpuProfilingEnabled = true;
@@ -532,6 +539,19 @@ namespace WTEditor.Avalonia.Controls
             {
                 _lastSelectedObject = selectedObject;
                 _lastSelectedObjectId = EditorObjectId.New();
+                _lastSelectedObjectData = CreateObjectData(selectedObject);
+                _lastSelectionHadListfile = WoWRenderLib.Listfile.IsLoaded;
+            }
+            else if (!_lastSelectionHadListfile && WoWRenderLib.Listfile.IsLoaded)
+            {
+                _lastSelectedObjectData = CreateObjectData(selectedObject);
+                _lastSelectionHadListfile = true;
+            }
+            else if (selectedObject is WMOContainer selectedWmo &&
+                     _lastSelectedObjectData is WorldModelObjectData { IsLoaded: false } &&
+                     selectedWmo.IsLoaded)
+            {
+                _lastSelectedObjectData = CreateObjectData(selectedObject);
             }
 
             var rotation = selectedObject.Rotation * (MathF.PI / 180f);
@@ -540,48 +560,392 @@ namespace WTEditor.Avalonia.Controls
                 Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z),
                 new Vector3(selectedObject.Scale));
 
-            var snapshot = selectedObject switch
-            {
-                M2Container m2 => new EditorObjectSnapshot(
-                    _lastSelectedObjectId,
-                    $"M2 {m2.FileDataId}",
-                    "M2 model",
-                    transform,
-                    new M2ObjectData(
-                        m2.FileDataId,
-                        m2.ParentFileDataId,
-                        SafeCount(() => m2.EnabledGeosets.Length),
-                        m2.ParentWMO != null)),
-                WMOContainer wmo => new EditorObjectSnapshot(
-                    _lastSelectedObjectId,
-                    $"WMO {wmo.FileDataId}",
-                    "World model",
-                    transform,
-                    new WorldModelObjectData(
-                        wmo.FileDataId,
-                        wmo.ParentFileDataId,
-                        SafeCount(() => wmo.Groups.Length),
-                        SafeCount(() => wmo.DoodadSets.Length),
-                        wmo.ActiveDoodads.Count,
-                        SafeValue(() => wmo.IsLoaded))),
-                ADTContainer adt => new EditorObjectSnapshot(
-                    _lastSelectedObjectId,
-                    $"Terrain {adt.mapTile.tileX}, {adt.mapTile.tileY}",
-                    "Terrain tile",
-                    transform,
-                    new TerrainObjectData(
-                        adt.FileDataId,
-                        adt.mapTile.tileX,
-                        adt.mapTile.tileY,
-                        adt.IsLoaded)),
-                _ => new EditorObjectSnapshot(
-                    _lastSelectedObjectId,
-                    $"Object {selectedObject.FileDataId}",
-                    selectedObject.GetType().Name,
-                    transform)
-            };
+            var snapshot = new EditorObjectSnapshot(
+                _lastSelectedObjectId,
+                GetObjectDisplayName(selectedObject, _lastSelectedObjectData),
+                selectedObject switch
+                {
+                    M2Container => "M2 model",
+                    WMOContainer => "World model",
+                    ADTContainer => "Terrain tile",
+                    _ => selectedObject.GetType().Name
+                },
+                transform,
+                _lastSelectedObjectData);
 
             _vm.UpdateSelectedObject(snapshot);
+        }
+
+        private static IEditorObjectData? CreateObjectData(Container3D selectedObject) => selectedObject switch
+        {
+            M2Container m2 => CreateM2ObjectData(m2),
+            WMOContainer wmo => CreateWorldModelObjectData(wmo),
+            ADTContainer adt => new TerrainObjectData(
+                adt.FileDataId,
+                adt.mapTile.tileX,
+                adt.mapTile.tileY,
+                adt.IsLoaded),
+            _ => null
+        };
+
+        private static M2ObjectData CreateM2ObjectData(M2Container m2)
+        {
+            try
+            {
+                var model = m2.GetM2();
+                var textureDetails = model.mats.Select((texture, index) => new ModelTextureData(
+                    index,
+                    new AssetReference(texture.fileDataID, WoWRenderLib.Listfile.GetDisplayName(texture.fileDataID)),
+                    (uint)texture.flags)).ToArray();
+                var materials = model.submeshes.Select((batch, index) => new ModelMaterialData(
+                    index,
+                    batch.blendType,
+                    batch.renderFlags,
+                    string.Empty,
+                    EnumName<ShaderEnums.M2VertexShader>(batch.vertexShaderID),
+                    EnumName<ShaderEnums.M2PixelShader>(batch.pixelShaderID),
+                    SafeAssets(() => batch.material),
+                    TextureSlots: SafeM2TextureSlots(() => batch.textureIndices, textureDetails))).ToArray();
+                var batches = model.submeshes.Select((batch, index) => new ModelBatchData(
+                    index,
+                    null,
+                    index,
+                    batch.firstFace,
+                    batch.numFaces,
+                    batch.blendType,
+                    batch.renderFlags,
+                    string.Empty,
+                    EnumName<ShaderEnums.M2VertexShader>(batch.vertexShaderID),
+                    EnumName<ShaderEnums.M2PixelShader>(batch.pixelShaderID),
+                    SafeAssets(() => batch.material))).ToArray();
+                var enabledGeosets = m2.EnabledGeosets;
+                var geosets = model.geosets.Select((geoset, index) => new ModelGeosetData(
+                    index,
+                    geoset.id,
+                    GetGeosetType(geoset.id),
+                    geoset.level,
+                    geoset.firstVertex,
+                    geoset.vertexCount,
+                    geoset.firstIndex,
+                    geoset.indexCount,
+                    index < enabledGeosets.Length && enabledGeosets[index])).ToArray();
+                return new M2ObjectData(
+                    m2.FileDataId,
+                    m2.ParentFileDataId,
+                    m2.EnabledGeosets.Length,
+                    m2.ParentWMO != null,
+                    WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
+                    SafeAssets(() => model.mats.Select(material => material.fileDataID)),
+                    m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
+                    WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
+                    new ModelAdvancedData(
+                        model.submeshes?.Length ?? 0,
+                        model.vertexCount,
+                        model.indexCount / 3,
+                        model.animationCount,
+                        model.particleEmitterCount,
+                        model.boneCount,
+                        model.attachmentCount),
+                    m2.ParentWMO == null
+                        ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)
+                        : null,
+                    materials,
+                    batches,
+                    geosets,
+                    textureDetails);
+            }
+            catch
+            {
+                return new M2ObjectData(
+                    m2.FileDataId,
+                    m2.ParentFileDataId,
+                    0,
+                    m2.ParentWMO != null,
+                    WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
+                    [],
+                    m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
+                    WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
+                    null,
+                    m2.ParentWMO == null
+                        ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)
+                        : null);
+            }
+        }
+
+        private static WorldModelObjectData CreateWorldModelObjectData(WMOContainer wmo)
+        {
+            if (!wmo.IsLoaded)
+                return CreateUnloadedWorldModelObjectData(wmo);
+
+            try
+            {
+                return ProjectLoadedWorldModelObjectData(
+                    wmo.GetWMO(),
+                    wmo.FileDataId,
+                    wmo.ParentFileDataId,
+                    wmo.UniqueID,
+                    wmo.PlacementFlags,
+                    wmo.PlacementDoodadSet,
+                    wmo.PlacementNameSet,
+                    wmo.ActiveDoodads.Count);
+            }
+            catch (Exception exception)
+            {
+                Debug.WriteLine($"Unable to project loaded WMO {wmo.FileDataId} for the inspector: {exception}");
+                Console.Error.WriteLine($"Unable to project loaded WMO {wmo.FileDataId} for the inspector: {exception.Message}");
+                return CreateUnloadedWorldModelObjectData(wmo);
+            }
+        }
+
+        internal static WorldModelObjectData ProjectLoadedWorldModelObjectData(
+            WoWRenderLib.DX11.Structs.WorldModel model,
+            uint fileDataId,
+            uint parentFileDataId,
+            uint uniqueId,
+            ushort placementFlags,
+            ushort placementDoodadSet,
+            ushort placementNameSet,
+            int activeDoodadCount)
+        {
+                var preppedMaterials = model.preppedMats ?? [];
+                var materials = preppedMaterials.Select((material, index) => new ModelMaterialData(
+                    index,
+                    material.BlendMode,
+                    material.Flags,
+                    EnumName<WoWFormatLib.Structs.WMO.MOMTShader>((uint)material.Shader),
+                    material.VertexShader.ToString(),
+                    material.PixelShader.ToString(),
+                    SafeAssets(() => GetWmoTextureIds(material)),
+                    Color1: material.Color1,
+                    Color1B: material.Color1B,
+                    Color2: material.Color2,
+                    Color3: material.Color3,
+                    GroundType: material.GroundType,
+                    ExtendedFlags: material.Flags3,
+                    TextureSlots: GetWmoTextureSlots(material))).ToArray();
+                var renderBatches = model.wmoRenderBatches ?? [];
+                var detailedBatches = renderBatches.Select((batch, index) => new ModelBatchData(
+                    index,
+                    checked((int)batch.groupID),
+                    batch.materialIndex,
+                    batch.firstFace,
+                    batch.numFaces,
+                    batch.blendType,
+                    0,
+                    EnumName<WoWFormatLib.Structs.WMO.MOMTShader>(batch.shader),
+                    batch.materialIndex >= 0 && batch.materialIndex < preppedMaterials.Length
+                        ? preppedMaterials[batch.materialIndex].VertexShader.ToString()
+                        : string.Empty,
+                    batch.materialIndex >= 0 && batch.materialIndex < preppedMaterials.Length
+                        ? preppedMaterials[batch.materialIndex].PixelShader.ToString()
+                        : string.Empty,
+                    SafeAssets(() => batch.materialFDIDs))).ToArray();
+                var groups = (model.groupBatches ?? []).Select((group, index) =>
+                {
+                    var batches = renderBatches
+                        .Where(batch => batch.groupID == (uint)index)
+                        .ToArray();
+                    return new WorldModelGroupData(
+                        index,
+                        string.IsNullOrWhiteSpace(group.groupName) ? $"Group {index}" : group.groupName,
+                        group.mogiGroupName ?? string.Empty,
+                        group.groupID,
+                        batches.Length,
+                        checked((int)group.verticeCount),
+                        checked((int)(batches.Sum(batch => (long)batch.numFaces) / 3)),
+                        group.doodadReferences?.Length ?? 0,
+                        group.flags);
+                }).ToArray();
+                return new WorldModelObjectData(
+                    fileDataId,
+                    parentFileDataId,
+                    groups.Length,
+                    model.doodadSets?.Length ?? 0,
+                    activeDoodadCount,
+                    model.rootWMOFileDataID == fileDataId,
+                    WoWRenderLib.Listfile.GetDisplayName(fileDataId),
+                    SafeAssets(() => preppedMaterials.SelectMany(GetWmoTextureIds)),
+                    uniqueId,
+                    WoWRenderLib.Listfile.GetDisplayName(parentFileDataId),
+                    groups,
+                    new MapPlacementData(
+                        MapPlacementKind.Modf,
+                        uniqueId,
+                        placementFlags,
+                        placementDoodadSet,
+                        placementNameSet),
+                    new WorldModelRootData(model.ambientColor, model.flags),
+                    materials,
+                    detailedBatches,
+                    (model.doodadSets ?? []).Select((name, index) =>
+                        string.IsNullOrWhiteSpace(name) ? $"Set {index}" : name).ToArray());
+        }
+
+        private static WorldModelObjectData CreateUnloadedWorldModelObjectData(WMOContainer wmo) =>
+            new(
+                    wmo.FileDataId,
+                    wmo.ParentFileDataId,
+                    0,
+                    0,
+                    wmo.ActiveDoodads.Count,
+                    false,
+                    WoWRenderLib.Listfile.GetDisplayName(wmo.FileDataId),
+                    [],
+                    wmo.UniqueID,
+                    WoWRenderLib.Listfile.GetDisplayName(wmo.ParentFileDataId),
+                    [],
+                    new MapPlacementData(
+                        MapPlacementKind.Modf,
+                        wmo.UniqueID,
+                        wmo.PlacementFlags,
+                        wmo.PlacementDoodadSet,
+                        wmo.PlacementNameSet));
+
+        private static string GetObjectDisplayName(Container3D selectedObject, IEditorObjectData? data)
+        {
+            var fileName = data switch
+            {
+                M2ObjectData m2 => m2.FileName,
+                WorldModelObjectData wmo => wmo.FileName,
+                _ => string.Empty
+            };
+            return string.IsNullOrWhiteSpace(fileName) || fileName.StartsWith("FDID ", StringComparison.Ordinal)
+                ? $"{selectedObject.GetType().Name.Replace("Container", string.Empty)} {selectedObject.FileDataId}"
+                : Path.GetFileName(fileName);
+        }
+
+        private static IEnumerable<uint> GetWmoTextureIds(WoWRenderLib.Structs.PreppedWMOMaterial material)
+        {
+            yield return material.TexFileDataID0;
+            yield return material.TexFileDataID1;
+            yield return material.TexFileDataID2;
+            yield return material.TexFileDataID3;
+            yield return material.TexFileDataID4;
+            yield return material.TexFileDataID5;
+            yield return material.TexFileDataID6;
+            yield return material.TexFileDataID7;
+            yield return material.TexFileDataID8;
+        }
+
+        private static IReadOnlyList<ModelTextureData> GetWmoTextureSlots(
+            WoWRenderLib.Structs.PreppedWMOMaterial material)
+        {
+            var ids = new[]
+            {
+                material.TexFileDataID0, material.TexFileDataID1, material.TexFileDataID2,
+                material.TexFileDataID3, material.TexFileDataID4, material.TexFileDataID5,
+                material.TexFileDataID6, material.TexFileDataID7, material.TexFileDataID8
+            };
+            return ids.Select((fileDataId, index) => (fileDataId, index))
+                .Where(item => item.fileDataId is not 0 and not uint.MaxValue)
+                .Select(item => new ModelTextureData(
+                    item.index + 1,
+                    new AssetReference(item.fileDataId, WoWRenderLib.Listfile.GetDisplayName(item.fileDataId))))
+                .ToArray();
+        }
+
+        private static IReadOnlyList<AssetReference> SafeAssets(Func<IEnumerable<uint>> getIds)
+        {
+            try
+            {
+                return getIds()
+                    .Where(fileDataId => fileDataId is not 0 and not uint.MaxValue)
+                    .Distinct()
+                    .Select(fileDataId => new AssetReference(
+                        fileDataId,
+                        WoWRenderLib.Listfile.GetDisplayName(fileDataId)))
+                    .ToArray();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static IReadOnlyList<ModelTextureData> SafeM2TextureSlots(
+            Func<IEnumerable<int>> getIndices,
+            IReadOnlyList<ModelTextureData> textures)
+        {
+            try
+            {
+                return getIndices()
+                    .Where(index => index >= 0 && index < textures.Count)
+                    .Select((index, slot) => new ModelTextureData(
+                        slot + 1,
+                        textures[index].Asset,
+                        textures[index].Flags))
+                    .ToArray();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static string EnumName<TEnum>(uint value) where TEnum : struct, Enum
+        {
+            var enumValue = (TEnum)Enum.ToObject(typeof(TEnum), value);
+            return Enum.IsDefined(enumValue) ? enumValue.ToString() : value.ToString();
+        }
+
+        private static string GetGeosetType(ushort id) => (id / 100) switch
+        {
+            0 => "Base skin",
+            1 => "Hair",
+            2 => "Facial hair 1",
+            3 => "Facial hair 2",
+            4 => "Facial hair 3",
+            5 => "Gloves",
+            6 => "Boots",
+            7 => "Ears",
+            8 => "Wristbands",
+            9 => "Kneepads",
+            10 => "Chest",
+            11 => "Pants",
+            12 => "Tabard",
+            13 => "Trousers",
+            14 => "Cloak",
+            16 => "Eye effects",
+            17 => "Belt",
+            18 => "Bones",
+            19 => "Feet",
+            20 => "Head",
+            21 => "Torso",
+            22 => "Hand attachment",
+            23 => "Head attachment",
+            var category => $"Category {category}"
+        };
+
+        private void OnSelectedObjectTransformRequested(object? sender, ObjectTransform transform)
+        {
+            var rotation = ToEulerDegrees(transform.Rotation);
+            _rendererSession.Engine?.UpdateSelectedObjectTransform(
+                transform.Position,
+                rotation,
+                transform.Scale.X);
+        }
+
+        private void OnSelectedWmoPlacementRequested(object? sender, ViewModels.WmoPlacementSelection selection)
+        {
+            _rendererSession.Engine?.UpdateSelectedWmoPlacement(selection.DoodadSet, selection.NameSet);
+            if (_lastSelectedObject is WMOContainer wmo)
+                _lastSelectedObjectData = CreateWorldModelObjectData(wmo);
+        }
+
+        private static Vector3 ToEulerDegrees(Quaternion quaternion)
+        {
+            quaternion = Quaternion.Normalize(quaternion);
+            var sinPitch = 2f * (quaternion.W * quaternion.X - quaternion.Z * quaternion.Y);
+            var pitch = MathF.Abs(sinPitch) >= 1f
+                ? MathF.CopySign(MathF.PI / 2f, sinPitch)
+                : MathF.Asin(sinPitch);
+            var yaw = MathF.Atan2(
+                2f * (quaternion.W * quaternion.Y + quaternion.X * quaternion.Z),
+                1f - 2f * (quaternion.X * quaternion.X + quaternion.Y * quaternion.Y));
+            var roll = MathF.Atan2(
+                2f * (quaternion.W * quaternion.Z + quaternion.X * quaternion.Y),
+                1f - 2f * (quaternion.X * quaternion.X + quaternion.Z * quaternion.Z));
+            return new Vector3(pitch, yaw, roll) * (180f / MathF.PI);
         }
 
         private static int SafeCount(Func<int> getCount)

@@ -62,23 +62,21 @@ namespace WoWRenderLib.DX11.Objects
             {
                 var wmo = GetWMO();
                 if (enabledDoodadSets == null || enabledDoodadSets.Length != wmo.doodadSets.Length)
-                {
-                    enabledDoodadSets = new bool[wmo.doodadSets.Length];
-                    for (int i = 0; i < wmo.doodadSets.Length; i++)
-                    {
-                        if (i == 0) // todo: check if this is a string check like below or not
-                                    //if (wmo.doodadSets[i].Equals("Set_$DefaultGlobal", StringComparison.OrdinalIgnoreCase))
-                            enabledDoodadSets[i] = true;
-                        else
-                            if (DoodadSetsToEnable.Count > 0 && DoodadSetsToEnable.Contains((uint)i))
-                                enabledDoodadSets[i] = true;
-                            else
-                                enabledDoodadSets[i] = false;
-                    }
-                }
+                    enabledDoodadSets = BuildEnabledDoodadSetMask(wmo.doodadSets.Length, DoodadSetsToEnable);
 
                 return enabledDoodadSets;
             }
+        }
+
+        internal static bool[] BuildEnabledDoodadSetMask(int setCount, IEnumerable<uint> selectedSetIds)
+        {
+            var result = new bool[Math.Max(0, setCount)];
+            if (result.Length > 0)
+                result[0] = true;
+            foreach (var setId in selectedSetIds)
+                if (setId < result.Length)
+                    result[setId] = true;
+            return result;
         }
 
         public bool IsLoaded
@@ -91,9 +89,27 @@ namespace WoWRenderLib.DX11.Objects
         }
 
         public uint UniqueID;
+        public ushort PlacementFlags { get; set; }
+        public ushort PlacementDoodadSet { get; set; }
+        public ushort PlacementNameSet { get; set; }
 
         // TODO: This is a bit of a hack -- this is what sets should be enabled AFTER the WMO is actually loaded, so we use it above to ensure things are always loaded correctly. Keep in mind when doing async rework.
         public List<uint> DoodadSetsToEnable = [];
+
+        public void SetDoodadSetsToEnable(IEnumerable<uint> setIds)
+        {
+            DoodadSetsToEnable.Clear();
+            DoodadSetsToEnable.AddRange(setIds);
+            enabledDoodadSets = null;
+            if (DoodadsSpawned && IsLoaded)
+                RefreshDoodadSets();
+        }
+
+        private void RefreshDoodadSets()
+        {
+            _ = EnabledDoodadSets;
+            OnDoodadSetsChanged?.Invoke(this);
+        }
 
         public WMOContainer(ComPtr<ID3D11Device> device, uint fileDataID, uint parentFileDataId) : base(device, fileDataID, parentFileDataId)
         {

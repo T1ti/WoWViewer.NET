@@ -17,6 +17,8 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 groupBatches = new WorldModelGroupBatches[preppedWMO.PreppedWMOGroups.Length],
                 rootWMOFileDataID = preppedWMO.FileDataID,
+                ambientColor = preppedWMO.AmbientColor,
+                flags = preppedWMO.Flags,
                 boundingBox = preppedWMO.BoundingBox,
                 boundingRadius = CalculateBoundingRadius(preppedWMO.BoundingBox.Min, preppedWMO.BoundingBox.Max)
             };
@@ -110,6 +112,7 @@ namespace WoWRenderLib.DX11.Loaders
                         blendType = mat.BlendMode,
                         groupID = (uint)g,
                         shader = (uint)mat.Shader,
+                        materialIndex = groupBatch.MaterialID,
                         materialFDIDs = [
                             mat.TexFileDataID0,
                             mat.TexFileDataID1,

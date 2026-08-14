@@ -18,7 +18,14 @@ namespace WoWRenderLib.DX11.Loaders
                 boundingRadius = parsedM2.boundingRadius,
                 fileDataID = parsedM2.fileDataID,
                 mats = parsedM2.mats,
-                submeshes = parsedM2.submeshes
+                geosets = parsedM2.geosets,
+                submeshes = parsedM2.submeshes,
+                vertexCount = parsedM2.vertexCount,
+                indexCount = parsedM2.indexCount,
+                animationCount = parsedM2.animationCount,
+                particleEmitterCount = parsedM2.particleEmitterCount,
+                boneCount = parsedM2.boneCount,
+                attachmentCount = parsedM2.attachmentCount
             };
 
             foreach (var mat in doodadBatch.mats)
