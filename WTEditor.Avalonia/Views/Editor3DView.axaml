@@ -21,6 +21,13 @@
       <Setter Property="Background" Value="#24669A"/>
       <Setter Property="BorderBrush" Value="#6CB6FF"/>
     </Style>
+    <Style Selector="Button.viewport-tool">
+      <Setter Property="Foreground" Value="#D7E2EC"/>
+      <Setter Property="Background" Value="#26313B"/>
+      <Setter Property="BorderBrush" Value="#4B5B69"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="9,6"/>
+    </Style>
   </UserControl.Styles>
   <Grid Background="Transparent">
     <!-- Render surface -->
@@ -114,6 +121,28 @@
           <TextBlock Width="30" Foreground="#FFFFFF" VerticalAlignment="Center"
                      Text="{Binding TerrainLodTransitionPixels, StringFormat='{}{0:F0}'}"/>
         </StackPanel>
+        <Border Width="1" Margin="3,3" Background="#526170"/>
+        <Button Classes="viewport-tool" ToolTip.Tip="Advanced rendering settings for this world viewport">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M12,8.5 A3.5,3.5 0 1 0 12,15.5 A3.5,3.5 0 1 0 12,8.5 M12,2 L13.3,4.1 L15.8,4.6 L17.8,3.2 L20.8,6.2 L19.4,8.2 L19.9,10.7 L22,12 L19.9,13.3 L19.4,15.8 L20.8,17.8 L17.8,20.8 L15.8,19.4 L13.3,19.9 L12,22 L10.7,19.9 L8.2,19.4 L6.2,20.8 L3.2,17.8 L4.6,15.8 L4.1,13.3 L2,12 L4.1,10.7 L4.6,8.2 L3.2,6.2 L6.2,3.2 L8.2,4.6 L10.7,4.1 Z"/>
+            <TextBlock Text="Advanced"/>
+          </StackPanel>
+          <Button.Flyout>
+            <Flyout>
+              <Border Padding="12" MinWidth="280" Background="#F21A2027"
+                      BorderBrush="#526170" BorderThickness="1" CornerRadius="7">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Advanced rendering" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                  <CheckBox Content="WMO portal culling"
+                            IsChecked="{Binding WmoPortalCullingEnabled}"
+                            Foreground="#D7E2EC"/>
+                  <TextBlock Text="Experimental for this client build. Disabled by default because some outdoor WMO groups are tagged as interiors."
+                             Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="300"/>
+                </StackPanel>
+              </Border>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
         <Border Width="1" Margin="3,3" Background="#526170"/>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsMetricsPanelVisible}"
                       ToolTip.Tip="Show the profiler for this world viewport">

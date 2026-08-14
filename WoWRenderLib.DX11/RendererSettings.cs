@@ -40,6 +40,7 @@ public sealed class RendererSettings
     public bool RenderADT { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
+    public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
     public bool ShowBoundingSpheres { get; set; }
 
@@ -57,6 +58,7 @@ public sealed class RendererSettings
         RenderADT = RenderADT,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
+        EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres
     };

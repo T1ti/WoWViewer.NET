@@ -4,6 +4,67 @@ namespace WoWRenderLib.DX11.Renderer;
 
 public static class TerrainBatching
 {
+    public static bool UsesHeightTextures(int layerCount, IReadOnlyList<int> heightMaterialFileDataIds)
+    {
+        ArgumentNullException.ThrowIfNull(heightMaterialFileDataIds);
+
+        var activeLayerCount = Math.Clamp(layerCount, 0, heightMaterialFileDataIds.Count);
+        for (var index = 0; index < activeLayerCount; index++)
+        {
+            if (heightMaterialFileDataIds[index] > 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    public static int[] BuildCompatibleRunLengths(ADTRenderBatch[] renderBatches)
+    {
+        ArgumentNullException.ThrowIfNull(renderBatches);
+
+        var runLengths = new int[renderBatches.Length];
+        for (var index = renderBatches.Length - 1; index >= 0; index--)
+        {
+            runLengths[index] = index + 1 < renderBatches.Length &&
+                AreCompatible(renderBatches[index], renderBatches[index + 1])
+                    ? runLengths[index + 1] + 1
+                    : 1;
+        }
+
+        return runLengths;
+    }
+
+    public static int CountCompatibleContiguousChunks(
+        int startVisibleIndex,
+        IReadOnlyList<int> visibleChunkIndices,
+        IReadOnlyList<bool> farLodSelections,
+        IReadOnlyList<int> compatibleRunLengths)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(startVisibleIndex);
+        if (startVisibleIndex >= visibleChunkIndices.Count ||
+            visibleChunkIndices.Count != farLodSelections.Count)
+        {
+            return 0;
+        }
+
+        var firstChunkIndex = visibleChunkIndices[startVisibleIndex];
+        if ((uint)firstChunkIndex >= (uint)compatibleRunLengths.Count)
+            return 0;
+
+        var maximumRunLength = compatibleRunLengths[firstChunkIndex];
+        var farLod = farLodSelections[startVisibleIndex];
+        var runLength = 1;
+        while (runLength < maximumRunLength &&
+               startVisibleIndex + runLength < visibleChunkIndices.Count &&
+               visibleChunkIndices[startVisibleIndex + runLength] == firstChunkIndex + runLength &&
+               farLodSelections[startVisibleIndex + runLength] == farLod)
+        {
+            runLength++;
+        }
+
+        return runLength;
+    }
+
     public static int CountCompatibleContiguousChunks(
         int startVisibleIndex,
         IReadOnlyList<int> visibleChunkIndices,

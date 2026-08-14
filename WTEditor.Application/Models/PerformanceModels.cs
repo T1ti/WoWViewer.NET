@@ -31,7 +31,10 @@ public sealed record CullingMetrics(
     int SizeCulledDoodads = 0,
     int FarLodTerrainChunks = 0,
     int CandidateTiles = 0,
-    int CoarseCulledTiles = 0)
+    int CoarseCulledTiles = 0,
+    int PortalCulledWmoGroups = 0,
+    int PortalCulledDoodads = 0,
+    int TraversedWmoPortalReferences = 0)
 {
     public int CulledTerrainChunks => Math.Max(0, CandidateTerrainChunks - VisibleTerrainChunks);
     public int CulledWorldModels => Math.Max(
@@ -39,7 +42,7 @@ public sealed record CullingMetrics(
         CandidateWorldModels - VisibleWorldModels - SizeCulledWorldModels);
     public int CulledDoodads => Math.Max(
         0,
-        CandidateDoodads - VisibleDoodads - SizeCulledDoodads);
+        CandidateDoodads - VisibleDoodads - SizeCulledDoodads - PortalCulledDoodads);
 }
 
 public sealed record RenderPassMetrics(

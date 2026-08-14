@@ -18,6 +18,7 @@ using Silk.NET.Maths;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.Rendering;
 using WoWRenderLib.DX11;
+using WoWRenderLib.DX11.Objects;
 
 namespace WTEditor.Avalonia.Controls
 {
@@ -58,6 +59,8 @@ namespace WTEditor.Avalonia.Controls
         private readonly AutomatedBenchmarkOptions _benchmarkOptions = AutomatedBenchmarkOptions.Current;
         private readonly AutomatedBenchmarkCoordinator? _benchmarkCoordinator;
         private int _lastBenchmarkStatusSecond = -1;
+        private Container3D? _lastSelectedObject;
+        private EditorObjectId _lastSelectedObjectId;
 
         public Dx11View()
         {
@@ -353,6 +356,7 @@ namespace WTEditor.Avalonia.Controls
             var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
             var engineFrameStarted = Stopwatch.GetTimestamp();
             engine.Update(delta, inputFrame);
+            PublishSelection(engine.SelectedObject);
             engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
             engine.Render(delta);
             var engineFrameMilliseconds = Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
@@ -465,7 +469,10 @@ namespace WTEditor.Avalonia.Controls
                         engine.Stats.SizeCulledDoodads,
                         engine.Stats.FarLodTerrainChunks,
                         engine.Stats.CandidateTiles,
-                        engine.Stats.CoarseCulledTiles),
+                        engine.Stats.CoarseCulledTiles,
+                        engine.Stats.PortalCulledWmoGroups,
+                        engine.Stats.PortalCulledDoodads,
+                        engine.Stats.TraversedWmoPortalReferences),
                     RenderWorkload = new RenderWorkloadMetrics(
                         new RenderPassMetrics[]
                         {
@@ -506,6 +513,98 @@ namespace WTEditor.Avalonia.Controls
                 };
                 _vm.UpdatePerformanceProfile(profileSnapshot);
                 UpdateAutomatedBenchmark(profileSnapshot);
+            }
+        }
+
+        private void PublishSelection(Container3D? selectedObject)
+        {
+            if (_vm == null)
+                return;
+
+            if (selectedObject == null)
+            {
+                _lastSelectedObject = null;
+                _vm.UpdateSelectedObject(null);
+                return;
+            }
+
+            if (!ReferenceEquals(_lastSelectedObject, selectedObject))
+            {
+                _lastSelectedObject = selectedObject;
+                _lastSelectedObjectId = EditorObjectId.New();
+            }
+
+            var rotation = selectedObject.Rotation * (MathF.PI / 180f);
+            var transform = new ObjectTransform(
+                selectedObject.Position,
+                Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z),
+                new Vector3(selectedObject.Scale));
+
+            var snapshot = selectedObject switch
+            {
+                M2Container m2 => new EditorObjectSnapshot(
+                    _lastSelectedObjectId,
+                    $"M2 {m2.FileDataId}",
+                    "M2 model",
+                    transform,
+                    new M2ObjectData(
+                        m2.FileDataId,
+                        m2.ParentFileDataId,
+                        SafeCount(() => m2.EnabledGeosets.Length),
+                        m2.ParentWMO != null)),
+                WMOContainer wmo => new EditorObjectSnapshot(
+                    _lastSelectedObjectId,
+                    $"WMO {wmo.FileDataId}",
+                    "World model",
+                    transform,
+                    new WorldModelObjectData(
+                        wmo.FileDataId,
+                        wmo.ParentFileDataId,
+                        SafeCount(() => wmo.Groups.Length),
+                        SafeCount(() => wmo.DoodadSets.Length),
+                        wmo.ActiveDoodads.Count,
+                        SafeValue(() => wmo.IsLoaded))),
+                ADTContainer adt => new EditorObjectSnapshot(
+                    _lastSelectedObjectId,
+                    $"Terrain {adt.mapTile.tileX}, {adt.mapTile.tileY}",
+                    "Terrain tile",
+                    transform,
+                    new TerrainObjectData(
+                        adt.FileDataId,
+                        adt.mapTile.tileX,
+                        adt.mapTile.tileY,
+                        adt.IsLoaded)),
+                _ => new EditorObjectSnapshot(
+                    _lastSelectedObjectId,
+                    $"Object {selectedObject.FileDataId}",
+                    selectedObject.GetType().Name,
+                    transform)
+            };
+
+            _vm.UpdateSelectedObject(snapshot);
+        }
+
+        private static int SafeCount(Func<int> getCount)
+        {
+            try
+            {
+                return getCount();
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static bool SafeValue(Func<bool> getValue)
+        {
+            try
+            {
+                return getValue();
+            }
+            catch
+            {
+                return false;
             }
         }
 

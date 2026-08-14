@@ -21,7 +21,35 @@ public sealed record EditorObjectSnapshot(
     EditorObjectId Id,
     string Name,
     string Kind,
-    ObjectTransform Transform);
+    ObjectTransform Transform,
+    IEditorObjectData? Data = null);
+
+/// <summary>
+/// Marker for data that is specific to an editor object type. Keeping this data
+/// beside the common identity and transform lets inspector providers be added
+/// without growing <see cref="EditorObjectSnapshot"/> for every new object kind.
+/// </summary>
+public interface IEditorObjectData;
+
+public sealed record M2ObjectData(
+    uint FileDataId,
+    uint ParentFileDataId,
+    int GeosetCount,
+    bool IsWorldModelDoodad) : IEditorObjectData;
+
+public sealed record WorldModelObjectData(
+    uint FileDataId,
+    uint ParentFileDataId,
+    int GroupCount,
+    int DoodadSetCount,
+    int ActiveDoodadCount,
+    bool IsLoaded) : IEditorObjectData;
+
+public sealed record TerrainObjectData(
+    uint FileDataId,
+    int TileX,
+    int TileY,
+    bool IsLoaded) : IEditorObjectData;
 
 public enum EditorDocumentState
 {

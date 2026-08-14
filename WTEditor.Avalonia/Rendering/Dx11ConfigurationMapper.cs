@@ -27,6 +27,7 @@ internal static class Dx11ConfigurationMapper
         RenderADT = configuration.RenderADT,
         RenderWMO = configuration.RenderWMO,
         RenderM2 = configuration.RenderM2,
+        EnableWmoPortalCulling = configuration.EnableWmoPortalCulling,
         ShowBoundingBoxes = configuration.ShowBoundingBoxes,
         ShowBoundingSpheres = configuration.ShowBoundingSpheres
     };

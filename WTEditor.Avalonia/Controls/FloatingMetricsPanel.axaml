@@ -212,7 +212,7 @@
           <StackPanel Spacing="5">
             <TextBlock Text="Visibility culling" FontWeight="SemiBold"/>
             <Border Padding="9" CornerRadius="4" Background="#242D35">
-              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
                 <TextBlock Text="Terrain chunks visible / loaded candidates"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                   <TextBlock Text="{Binding ProfileCulling.VisibleTerrainChunks}"/><TextBlock Text=" / "/><TextBlock Text="{Binding ProfileCulling.CandidateTerrainChunks}"/>
@@ -241,6 +241,12 @@
                 <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding ProfileCulling.CulledWorldModels}"/>
                 <TextBlock Grid.Row="9" Text="M2 culled by visibility / distance"/>
                 <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding ProfileCulling.CulledDoodads}"/>
+                <TextBlock Grid.Row="10" Text="WMO group instances culled by portals"/>
+                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding ProfileCulling.PortalCulledWmoGroups}"/>
+                <TextBlock Grid.Row="11" Text="WMO doodads culled by portals"/>
+                <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding ProfileCulling.PortalCulledDoodads}"/>
+                <TextBlock Grid.Row="12" Text="Portal graph references traversed"/>
+                <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding ProfileCulling.TraversedWmoPortalReferences}"/>
               </Grid>
             </Border>
             <TextBlock Text="Candidates are loaded scene items, not draw calls. Instancing and terrain batching can produce few draw calls while submitting many visible triangles."

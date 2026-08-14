@@ -49,6 +49,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderADT { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+        public bool EnableWmoPortalCulling { get; set; }
         public int TileLoadingDistance { get; set; } = 4;
         public float TerrainRenderDistance { get; set; } = 20_000f;
         public float ModelRenderDistance { get; set; } = 20_000f;
@@ -96,8 +97,15 @@ namespace WoWRenderLib.DX11.Managers
         private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
 
         private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch = new ComPtr<ID3D11ShaderResourceView>[16];
+        private readonly Dictionary<uint, ComPtr<ID3D11ShaderResourceView>> _frameTextureSrvs = [];
         private readonly List<int> _visibleIndices = new(64);
         private readonly List<bool> _visibleTerrainFarLod = new(256);
+        private readonly List<WmoVisibilityBatch> _wmoVisibilityBatches = [];
+        private readonly string? _wmoGroupTraceFilter =
+            Environment.GetEnvironmentVariable("WTEDITOR_TRACE_WMO_GROUP");
+        private readonly HashSet<string> _tracedWmoGroups = [];
+        private int _activeWmoVisibilityBatchCount;
+        private long _renderFrameNumber;
 
         private uint _renderWidth = 1920;
         private uint _renderHeight = 1080;
@@ -113,6 +121,9 @@ namespace WoWRenderLib.DX11.Managers
         public int farLodTerrainChunks { get; private set; }
         public int candidateTiles { get; private set; }
         public int coarseCulledTiles { get; private set; }
+        public int portalCulledWmoGroups { get; private set; }
+        public int portalCulledM2s { get; private set; }
+        public int traversedWmoPortalReferences { get; private set; }
         public double CullingTimeMs { get; private set; }
         public int UploadedResourcesLastFrame { get; private set; }
         public double SceneSetupTimeMs { get; private set; }
@@ -370,6 +381,92 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             return blendType == 1 ? 0.90393700787f : -1.0f;
+        }
+
+        private ComPtr<ID3D11ShaderResourceView> ResolveFrameTexture(uint fileDataId)
+        {
+            if (fileDataId == 0)
+                return defaultTexture;
+
+            if (_frameTextureSrvs.TryGetValue(fileDataId, out var texture))
+                return texture;
+
+            texture = BLPCache.GetCurrent(fileDataId, defaultTexture);
+            _frameTextureSrvs.Add(fileDataId, texture);
+            return texture;
+        }
+
+        private void ResetWmoVisibilityBatches()
+        {
+            for (var index = 0; index < _activeWmoVisibilityBatchCount; index++)
+                _wmoVisibilityBatches[index].InstanceIndices.Clear();
+            _activeWmoVisibilityBatchCount = 0;
+        }
+
+        private WmoVisibilityBatch GetWmoVisibilityBatch(ReadOnlySpan<bool> groupMask)
+        {
+            for (var index = 0; index < _activeWmoVisibilityBatchCount; index++)
+            {
+                if (_wmoVisibilityBatches[index].Matches(groupMask))
+                    return _wmoVisibilityBatches[index];
+            }
+
+            WmoVisibilityBatch batch;
+            if (_activeWmoVisibilityBatchCount == _wmoVisibilityBatches.Count)
+            {
+                batch = new WmoVisibilityBatch();
+                _wmoVisibilityBatches.Add(batch);
+            }
+            else
+            {
+                batch = _wmoVisibilityBatches[_activeWmoVisibilityBatchCount];
+            }
+            _activeWmoVisibilityBatchCount++;
+            batch.Begin(groupMask);
+            return batch;
+        }
+
+        private void TraceWmoGroupVisibility(
+            in WorldModel wmo,
+            WMOContainer instance,
+            ReadOnlySpan<bool> enabledGroups,
+            ReadOnlySpan<bool> visibleGroups,
+            bool portalApplied,
+            Vector3 cameraPosition)
+        {
+            if (string.IsNullOrWhiteSpace(_wmoGroupTraceFilter))
+                return;
+
+            var tokens = _wmoGroupTraceFilter.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var placementMatches = tokens.Contains("*") || tokens.Any(token =>
+                uint.TryParse(token, out var id) && id == instance.UniqueID);
+
+            for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+            {
+                var group = wmo.groupBatches[groupIndex];
+                var groupMatches = tokens.Any(token =>
+                    group.groupName.Contains(token, StringComparison.OrdinalIgnoreCase) ||
+                    group.mogiGroupName.Contains(token, StringComparison.OrdinalIgnoreCase) ||
+                    (uint.TryParse(token, out var id) && id == group.groupID));
+                if (!placementMatches && !groupMatches)
+                    continue;
+
+                var traceKey = $"{wmo.rootWMOFileDataID}:{instance.UniqueID}:{groupIndex}";
+                if (!_tracedWmoGroups.Add(traceKey))
+                    continue;
+
+                Console.WriteLine(
+                    "WTEDITOR_WMO_TRACE " +
+                    $"root={wmo.rootWMOFileDataID} placement={instance.UniqueID} " +
+                    $"renderIndex={groupIndex} sourceIndex={group.sourceGroupIndex} " +
+                    $"groupID={group.groupID} mogpName={group.groupName} mogiName={group.mogiGroupName} " +
+                    $"mogpFlags=0x{group.flags:X8} mogiFlags=0x{group.mogiFlags:X8} " +
+                    $"enabled={enabledGroups[groupIndex]} portalApplied={portalApplied} " +
+                    $"visible={visibleGroups[groupIndex]} portalLinks={group.portalLinks.Length} " +
+                    $"modr={group.doodadReferences.Length} camera={cameraPosition}");
+            }
         }
 
         private void LoadAdtLayerShaders()
@@ -726,8 +823,9 @@ namespace WoWRenderLib.DX11.Managers
 
             wmoContainer.ActiveDoodads.Clear();
 
-            foreach (var doodad in wmo.doodads)
+            for (var doodadIndex = 0; doodadIndex < wmo.doodads.Length; doodadIndex++)
             {
+                var doodad = wmo.doodads[doodadIndex];
                 if (!enabledSets[doodad.doodadSet])
                     continue;
 
@@ -737,6 +835,7 @@ namespace WoWRenderLib.DX11.Managers
                     LocalPosition = doodad.position,
                     LocalRotation = doodad.rotation,
                     LocalScale = doodad.scale,
+                    WmoDoodadIndex = doodadIndex,
                 };
 
                 lock (SceneObjectLock)
@@ -957,9 +1056,6 @@ namespace WoWRenderLib.DX11.Managers
                     if (sceneObject is M2Container m2container && m2container.ParentWMO != null)
                         continue;
 
-                    if (sceneObject.IsSelected)
-                        continue;
-
                     var sphere = sceneObject.GetBoundingSphere();
                     if (sphere.HasValue)
                     {
@@ -1002,6 +1098,7 @@ namespace WoWRenderLib.DX11.Managers
             GpuFrameTimer? gpuTimer)
         {
             var sceneSetupStarted = Stopwatch.GetTimestamp();
+            _renderFrameNumber++;
             uint drawCalls = 0;
             ulong submittedIndexCount = 0;
 
@@ -1031,6 +1128,7 @@ namespace WoWRenderLib.DX11.Managers
             BlendStateBindings = 0;
             VertexBufferBindings = 0;
             IndexBufferBindings = 0;
+            _frameTextureSrvs.Clear();
             var currentBlendType = -1;
 
             deviceContext.RSSetState(rasterizerState);
@@ -1064,6 +1162,9 @@ namespace WoWRenderLib.DX11.Managers
             farLodTerrainChunks = 0;
             candidateTiles = tileSceneBounds.Count;
             coarseCulledTiles = 0;
+            portalCulledWmoGroups = 0;
+            portalCulledM2s = 0;
+            traversedWmoPortalReferences = 0;
 
             var verticalProjectionScale = projectionMatrix.M22;
             var normalizedCameraForward = camera.Front.LengthSquared() > float.Epsilon
@@ -1150,7 +1251,8 @@ namespace WoWRenderLib.DX11.Managers
             var lastWmoPixelShader = int.MinValue;
             var lastWmoAlphaRef = float.NaN;
 
-            foreach (var (key, instances) in wmoInstances)
+            var viewProjection = cameraMatrix * projectionMatrix;
+            foreach (var (_, instances) in wmoInstances)
             {
                 if (!RenderWMO || instances.Count == 0)
                     continue;
@@ -1159,9 +1261,10 @@ namespace WoWRenderLib.DX11.Managers
                 if (!firstInstance.IsLoaded)
                     continue;
 
+                var wmo = firstInstance.GetWMO();
                 candidateWMOs += instances.Count;
                 var cullingStarted = Stopwatch.GetTimestamp();
-                _visibleIndices.Clear();
+                ResetWmoVisibilityBatches();
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
@@ -1184,93 +1287,138 @@ namespace WoWRenderLib.DX11.Managers
                         }
 
                         visibleWMOs++;
-                        _visibleIndices.Add(i);
+                        var enabledGroups = instance.EnabledGroups;
+                        instance.GetPortalVisibilityBuffers(
+                            wmo,
+                            out var portalVisibleGroups,
+                            out var portalVisibleDoodads,
+                            out var portalVisibilityScratch);
+                        var traversedPortalReferences = 0;
+                        var portalApplied = EnableWmoPortalCulling &&
+                            WmoPortalVisibility.TryCompute(
+                                wmo,
+                                instance.GetModelMatrix(),
+                                viewProjection,
+                                camera.Position,
+                                enabledGroups,
+                                portalVisibleGroups,
+                                portalVisibleDoodads,
+                                portalVisibilityScratch,
+                                out traversedPortalReferences);
+                        if (portalApplied)
+                        {
+                            traversedWmoPortalReferences += traversedPortalReferences;
+                            for (var groupIndex = 0; groupIndex < enabledGroups.Length; groupIndex++)
+                            {
+                                if (enabledGroups[groupIndex] && !portalVisibleGroups[groupIndex])
+                                    portalCulledWmoGroups++;
+                            }
+                        }
+                        else
+                        {
+                            enabledGroups.CopyTo(portalVisibleGroups, 0);
+                            portalVisibleDoodads.AsSpan().Fill(true);
+                        }
+                        TraceWmoGroupVisibility(
+                            wmo,
+                            instance,
+                            enabledGroups,
+                            portalVisibleGroups,
+                            portalApplied,
+                            camera.Position);
+                        instance.SetPortalVisibilityFrame(_renderFrameNumber);
+                        GetWmoVisibilityBatch(portalVisibleGroups).InstanceIndices.Add(i);
                     }
                 }
                 var cullingElapsed = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
                 WmoCullingTimeMs += cullingElapsed;
                 CullingTimeMs += cullingElapsed;
 
-                if (_visibleIndices.Count == 0)
+                if (_activeWmoVisibilityBatchCount == 0)
                     continue;
 
-                var wmo = firstInstance.GetWMO();
-                var enabledGroups = firstInstance.EnabledGroups;
-
-                for (int batchStart = 0; batchStart < _visibleIndices.Count; batchStart += MaxInstancesPerBatch)
+                for (var visibilityBatchIndex = 0;
+                     visibilityBatchIndex < _activeWmoVisibilityBatchCount;
+                     visibilityBatchIndex++)
                 {
-                    int batchSize = Math.Min(MaxInstancesPerBatch, _visibleIndices.Count - batchStart);
-
-                    // the normal approach to do updatesubresource doesn't work for dynamic buffers, so we have to do the below block instead
-                    unsafe
+                    var visibilityBatch = _wmoVisibilityBatches[visibilityBatchIndex];
+                    var visibleInstanceIndices = visibilityBatch.InstanceIndices;
+                    var enabledGroups = visibilityBatch.GroupMask;
+                    for (int batchStart = 0; batchStart < visibleInstanceIndices.Count; batchStart += MaxInstancesPerBatch)
                     {
-                        MappedSubresource mapped = default;
-                        SilkMarshal.ThrowHResult(deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+                        int batchSize = Math.Min(MaxInstancesPerBatch, visibleInstanceIndices.Count - batchStart);
 
-                        var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
-                        for (int i = 0; i < batchSize; i++)
-                            dest[i] = instances[_visibleIndices[batchStart + i]].GetModelMatrix();
-
-                        deviceContext.Unmap(instanceMatrixBuffer, 0);
-                        InstanceBufferMapCalls++;
-                    }
-
-                    deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
-                    VertexBufferBindings++;
-
-                    var currentGroupId = uint.MaxValue;
-
-                    for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
-                    {
-                        var batch = wmo.wmoRenderBatches[j];
-                        if (!enabledGroups[batch.groupID])
-                            continue;
-
-                        if (currentGroupId != batch.groupID)
+                        // the normal approach to do updatesubresource doesn't work for dynamic buffers, so we have to do the below block instead
+                        unsafe
                         {
-                            var group = wmo.groupBatches[batch.groupID];
-                            var vertexBuffer = group.vertexBuffer;
-                            var indiceBuffer = group.indiceBuffer;
-                            deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
-                            deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
-                            VertexBufferBindings++;
-                            IndexBufferBindings++;
-                            currentGroupId = batch.groupID;
+                            MappedSubresource mapped = default;
+                            SilkMarshal.ThrowHResult(deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+
+                            var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
+                            for (int i = 0; i < batchSize; i++)
+                                dest[i] = instances[visibleInstanceIndices[batchStart + i]].GetModelMatrix();
+
+                            deviceContext.Unmap(instanceMatrixBuffer, 0);
+                            InstanceBufferMapCalls++;
                         }
 
-                        wmoConstantBuffer.vertexShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].VertexShader;
-                        wmoConstantBuffer.pixelShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].PixelShader;
+                        deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                        VertexBufferBindings++;
+
+                        var currentGroupId = uint.MaxValue;
+
+                        for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
+                        {
+                            var batch = wmo.wmoRenderBatches[j];
+                            if (!enabledGroups[batch.groupID])
+                                continue;
+
+                            if (currentGroupId != batch.groupID)
+                            {
+                                var group = wmo.groupBatches[batch.groupID];
+                                var vertexBuffer = group.vertexBuffer;
+                                var indiceBuffer = group.indiceBuffer;
+                                deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
+                                deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
+                                VertexBufferBindings++;
+                                IndexBufferBindings++;
+                                currentGroupId = batch.groupID;
+                            }
+
+                            wmoConstantBuffer.vertexShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].VertexShader;
+                            wmoConstantBuffer.pixelShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].PixelShader;
                         // Match the OpenGL WMO path: -1 means opaque/no alpha
                         // test, while blend mode 1 supplies the alpha-test ref.
-                        wmoConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
+                            wmoConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
 
-                        if (wmoConstantBuffer.vertexShader != lastWmoVertexShader ||
-                            wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
-                            wmoConstantBuffer.alphaRef != lastWmoAlphaRef)
-                        {
-                            deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
-                            ConstantBufferUpdates++;
-                            lastWmoVertexShader = wmoConstantBuffer.vertexShader;
-                            lastWmoPixelShader = wmoConstantBuffer.pixelShader;
-                            lastWmoAlphaRef = wmoConstantBuffer.alphaRef;
+                            if (wmoConstantBuffer.vertexShader != lastWmoVertexShader ||
+                                wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
+                                wmoConstantBuffer.alphaRef != lastWmoAlphaRef)
+                            {
+                                deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
+                                ConstantBufferUpdates++;
+                                lastWmoVertexShader = wmoConstantBuffer.vertexShader;
+                                lastWmoPixelShader = wmoConstantBuffer.pixelShader;
+                                lastWmoAlphaRef = wmoConstantBuffer.alphaRef;
+                            }
+
+                            for (int s = 0; s < batch.materialFDIDs.Length; s++)
+                                _srvScratch[s] = ResolveFrameTexture(batch.materialFDIDs[s]);
+                            if (batch.materialFDIDs.Length > 0)
+                            {
+                                deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
+                                TextureBindingCalls++;
+                            }
+
+                            deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
+
+                            drawCalls++;
+                            WmoDrawCalls++;
+                            WmoSubmittedInstances += (uint)batchSize;
+                            var submittedIndices = (ulong)batch.numFaces * (uint)batchSize;
+                            submittedIndexCount += submittedIndices;
+                            WmoSubmittedIndices += submittedIndices;
                         }
-
-                        for (int s = 0; s < batch.materialFDIDs.Length; s++)
-                            _srvScratch[s] = batch.materialFDIDs[s] != 0 ? BLPCache.GetCurrent(batch.materialFDIDs[s], defaultTexture) : defaultTexture;
-                        if (batch.materialFDIDs.Length > 0)
-                        {
-                            deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
-                            TextureBindingCalls++;
-                        }
-
-                        deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
-
-                        drawCalls++;
-                        WmoDrawCalls++;
-                        WmoSubmittedInstances += (uint)batchSize;
-                        var submittedIndices = (ulong)batch.numFaces * (uint)batchSize;
-                        submittedIndexCount += submittedIndices;
-                        WmoSubmittedIndices += submittedIndices;
                     }
                 }
             }
@@ -1329,6 +1477,14 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
+                    if (instance.ParentWMO != null &&
+                        !instance.ParentWMO.IsDoodadPortalVisible(
+                            instance.WmoDoodadIndex,
+                            _renderFrameNumber))
+                    {
+                        portalCulledM2s++;
+                        continue;
+                    }
                     var sphere = packet.WorldBounds[i];
                     if (IsWithinRenderDistance(camera.Position, sphere.Center, sphere.Radius, ModelRenderDistance) &&
                         frustum.IsSphereVisible(sphere.Center, sphere.Radius))
@@ -1408,7 +1564,7 @@ namespace WoWRenderLib.DX11.Managers
                         }
 
                         for (int s = 0; s < batch.material.Length; s++)
-                            _srvScratch[s] = batch.material[s] != 0 ? BLPCache.GetCurrent(batch.material[s], defaultTexture) : defaultTexture;
+                            _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
                         if (batch.material.Length > 0)
                         {
                             deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
@@ -1576,7 +1732,7 @@ namespace WoWRenderLib.DX11.Managers
                             visibleIndex,
                             _visibleIndices,
                             _visibleTerrainFarLod,
-                            adt.Terrain.renderBatches);
+                            adt.Terrain.compatibleRenderRunLengths);
                         if (currentFarLod != useFarLod)
                         {
                             var indexBuffer = useFarLod
@@ -1608,7 +1764,9 @@ namespace WoWRenderLib.DX11.Managers
                         }
 
                         for (int s = 0; s < shaderLayerCount; s++)
-                            _srvScratch[s] = s < batch.materialFDIDs.Length && batch.materialFDIDs[s] != 0 ? BLPCache.GetCurrent((uint)batch.materialFDIDs[s], defaultTexture) : defaultTexture;
+                            _srvScratch[s] = s < batch.materialFDIDs.Length
+                                ? ResolveFrameTexture((uint)batch.materialFDIDs[s])
+                                : defaultTexture;
                         if (batch.materialFDIDs.Length > 0)
                         {
                             deviceContext.PSSetShaderResources(0, (uint)shaderLayerCount, ref _srvScratch[0]);
@@ -1618,7 +1776,9 @@ namespace WoWRenderLib.DX11.Managers
                         if (batch.usesHeightTextures)
                         {
                             for (int s = 0; s < shaderLayerCount; s++)
-                                _srvScratch[s] = s < batch.heightMaterialFDIDs.Length && batch.heightMaterialFDIDs[s] != 0 ? BLPCache.GetCurrent((uint)batch.heightMaterialFDIDs[s], defaultTexture) : defaultTexture;
+                                _srvScratch[s] = s < batch.heightMaterialFDIDs.Length
+                                    ? ResolveFrameTexture((uint)batch.heightMaterialFDIDs[s])
+                                    : defaultTexture;
                             deviceContext.PSSetShaderResources(8, (uint)shaderLayerCount, ref _srvScratch[0]);
                             TextureBindingCalls++;
                         }

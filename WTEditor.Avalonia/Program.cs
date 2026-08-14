@@ -28,6 +28,11 @@ internal static class Program
         services.AddSingleton<IEditorSettingsStore, JsonEditorSettingsStore>();
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
+        services.AddSingleton<IObjectInspectorSectionProvider, TransformInspectorSectionProvider>();
+        services.AddSingleton<IObjectInspectorSectionProvider, M2InspectorSectionProvider>();
+        services.AddSingleton<IObjectInspectorSectionProvider, WorldModelInspectorSectionProvider>();
+        services.AddSingleton<IObjectInspectorSectionProvider, TerrainInspectorSectionProvider>();
+        services.AddSingleton<SelectionInspectorViewModel>();
 
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();

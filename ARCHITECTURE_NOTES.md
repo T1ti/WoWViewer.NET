@@ -264,6 +264,18 @@ Editor application state
   model group rather than per visible instance.
 - Geometry workload now uses 64-bit exact submitted-index counts with instancing expanded and a
   derived indexed-triangle count; retain this definition when adding LOD or indirect draw paths.
+- Loaded terrain retains chunk bounds, compatible material-run lengths, and per-chunk constant data.
+  Classic terrain selects non-height shader variants from active height-texture IDs rather than
+  default scale values. Frame-local SRV resolution is refreshed each frame so asynchronous texture
+  replacement remains visible without concurrent-cache lookups for every draw.
+- WMO resources retain a validated immutable portal graph and per-group `MODR` doodad ownership.
+  Portal visibility is placement-specific and transient; identical masks are instanced together and
+  parent WMO masks are consumed by globally batched M2 doodads. Portal reachability only suppresses
+  unambiguously interior groups. Classification uses the group-file MOGP flags only: `0x2000` set
+  without `0x8` is portal-cullable interior; `0x8` or the absence of `0x2000` is exterior. Root MOGI
+  flags are not merged because they can disagree with the render group's own classification.
+  Invalid graphs conservatively use the persistent enabled masks. Metrics distinguish portal-culled
+  group instances and doodads.
 - Unsupported compositor backends should surface an editor-visible error instead of only
   leaving a blank viewport.
 
@@ -275,14 +287,16 @@ After every code, project, configuration, or shader change, run from the reposit
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\run-smoke-tests.ps1
 ```
 
-As of 2026-08-14 this builds `WTEditor.Avalonia` and passes 27 tests. Coverage includes
+As of 2026-08-14 this builds `WTEditor.Avalonia` and passes 29 tests. Coverage includes
 settings/session behavior, normal-window bounds preservation, camera-direction restoration,
 document transform undo/redo and renderer notification, grouped undo transactions, and
 selection identity, instantaneous and rolling CPU/GPU bottleneck classification, projected-size
 culling, hierarchical frustum classification, full-render-vertex M2 bounds, transformed placement
 spheres, stable WMO group signatures, conservative tile-scene bound aggregation and invalidation,
-performance-capture analysis, unattended benchmark settling, compatible terrain-run batching, and
-terrain shader layer buckets. It does not cover hardware D3D initialization, rendered shader
+performance-capture analysis, unattended benchmark settling, compatible retained terrain-run
+batching, terrain shader layer buckets, active height-texture detection, and synthetic exterior-to-
+interior portal/`MODR` visibility. It does not cover
+hardware D3D initialization, rendered shader
 output, cache teardown,
 streaming, input routing, or rendered-output comparison.
 

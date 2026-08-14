@@ -42,6 +42,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         RenderADT = RenderTerrain,
         RenderWMO = RenderWorldModels,
         RenderM2 = RenderDoodads,
+        EnableWmoPortalCulling = WmoPortalCullingEnabled,
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = TerrainLodTransitionPixels
     };
@@ -70,6 +71,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _renderTerrain;
     [ObservableProperty] private bool _renderWorldModels;
     [ObservableProperty] private bool _renderDoodads;
+    [ObservableProperty] private bool _wmoPortalCullingEnabled;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
     [ObservableProperty] private float _terrainLodTransitionPixels;
     [ObservableProperty] private bool _isProfilingPaused;
@@ -93,6 +95,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _performanceCaptureStatus =
         "Choose a visibility preset, keep the camera still, then capture.";
     [ObservableProperty] private string? _performanceCaptureFilePath;
+    [ObservableProperty] private EditorObjectSnapshot? _selectedObject;
 
     // Viewport input state. This remains view-facing state while editor/session
     // configuration is owned centrally by EditorSession.
@@ -118,6 +121,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _renderTerrain = session.Current.Rendering.RenderADT;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
         _renderDoodads = session.Current.Rendering.RenderM2;
+        _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
         _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
         _cameraPosition = session.Current.Camera?.Position ?? Vector3.Zero;
@@ -149,6 +153,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     partial void OnRenderTerrainChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderWorldModelsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderDoodadsChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnWmoPortalCullingEnabledChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnMinimumModelScreenSizePixelsChanged(float value)
     {
         var normalized = Math.Clamp(value, 0f, 16f);
@@ -197,6 +202,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         RendererStatusMessage = status.Message;
         RendererError = status.Error;
         IsRendererStatusVisible = status.State != RendererLifecycleState.Ready || status.HasError;
+    }
+
+    public void UpdateSelectedObject(EditorObjectSnapshot? selection)
+    {
+        if (SelectedObject != selection)
+            SelectedObject = selection;
     }
 
     public void UpdatePerformanceProfile(FrameProfileSnapshot snapshot)
@@ -479,6 +490,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             MouseSensitivity = configuration.MouseSensitivity;
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
+            WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
         }
         finally
         {

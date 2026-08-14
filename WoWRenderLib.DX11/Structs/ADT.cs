@@ -18,6 +18,7 @@ namespace WoWRenderLib.DX11.Structs
         public ComPtr<ID3D11ShaderResourceView> alphaMaterialArray;
         public Vector3 startPos;
         public ADTRenderBatch[] renderBatches;
+        public int[] compatibleRenderRunLengths;
         public WorldModelBatch[] worldModelBatches;
         public Doodad[] doodads;
         public uint[] blpFileDataIDs;

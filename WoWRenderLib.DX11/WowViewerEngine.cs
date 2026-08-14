@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Managers;
+using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.Managers;
 using WoWRenderLib.Providers;
@@ -109,6 +110,9 @@ namespace WoWRenderLib.DX11
         public int FarLodTerrainChunks { get; internal set; }
         public int CandidateTiles { get; internal set; }
         public int CoarseCulledTiles { get; internal set; }
+        public int PortalCulledWmoGroups { get; internal set; }
+        public int PortalCulledDoodads { get; internal set; }
+        public int TraversedWmoPortalReferences { get; internal set; }
     }
 
     public enum WowViewerEngineState
@@ -211,6 +215,7 @@ namespace WoWRenderLib.DX11
 
         private ShaderManager shaderManager = null!;
         private SceneManager sceneManager = null!;
+        public Container3D? SelectedObject => sceneManager?.SelectedObject;
         private DBCManager? dbcManager;
 
         // private ImGuiController imGuiController = null;
@@ -494,6 +499,9 @@ namespace WoWRenderLib.DX11
                     Stats.FarLodTerrainChunks = sceneManager.farLodTerrainChunks;
                     Stats.CandidateTiles = sceneManager.candidateTiles;
                     Stats.CoarseCulledTiles = sceneManager.coarseCulledTiles;
+                    Stats.PortalCulledWmoGroups = sceneManager.portalCulledWmoGroups;
+                    Stats.PortalCulledDoodads = sceneManager.portalCulledM2s;
+                    Stats.TraversedWmoPortalReferences = sceneManager.traversedWmoPortalReferences;
                     Stats.SceneSetupTimeMs = sceneManager.SceneSetupTimeMs;
                     Stats.WmoCullingTimeMs = sceneManager.WmoCullingTimeMs;
                     Stats.WmoSubmissionTimeMs = sceneManager.WmoSubmissionTimeMs;
@@ -787,6 +795,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;
+                sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;
                 sceneManager.AmbientColor = Settings.AmbientColor;
                 sceneManager.DiffuseColor = Settings.DiffuseColor;
                 sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;

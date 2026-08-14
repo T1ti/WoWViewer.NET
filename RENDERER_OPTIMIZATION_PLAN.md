@@ -366,31 +366,34 @@ cost was 0.035 ms. World streaming fell from the preceding retained-buffer basel
 stable claims are the streaming and terrain-culling reductions plus unchanged rendered workload;
 whole-frame values remain distribution evidence rather than a guaranteed delta.
 
-### WMO portal-culling plan
+### WMO portal culling (implemented 2026-08-14)
 
-Portal culling is compatible with the renderer, but is not yet active. The format reader currently
-recognizes and skips root `MOPV`, `MOPT`, and `MOPR`; render conversion also drops `MOGI`/`MOGP`
-indoor/exterior flags and each group's portal-reference range. The implementation order is:
+The format reader now parses root `MOPV`, `MOPT`, and `MOPR` data plus each group file's `MODR`
+doodad-reference indices. Render resources retain local portal polygons/planes, exterior/interior and
+always-draw group flags, local group bounds, mapped adjacency links, and group-owned doodad indices.
+Source group indices are mapped explicitly because non-rendered antiportal groups must not shift portal
+targets.
 
-1. parse and validate portal vertices, portal planes, and group relations against `MOHD.nPortals`,
-   `MOGP.ofsPortals/numPortals`, group count, and chunk lengths; malformed graphs must fall back to
-   drawing all enabled groups;
-2. retain immutable local-space group bounds/flags and a portal adjacency graph in `PreppedWMO`
-   and the DX11 `WorldModel` resource;
-3. determine the camera's containing interior group per WMO placement, then traverse visible
-   portals with a clipped frustum and produce a transient placement-specific group mask;
-4. apply the same visible-group result to that placement's WMO doodads, while preserving the
-   editor's persistent/manual `EnabledGroups` mask as a separate input;
-5. packet interior placements by transient result only when profitable, or draw the small number
-   of nearby interior placements separately. Never mutate the shared mask used by every instanced
-   copy of a WMO.
+For an exterior camera, traversal seeds enabled exterior groups intersecting the camera frustum. For
+an interior camera it seeds all enabled interior AABBs containing the camera, conservatively unioning
+overlaps. Directed portal-side tests and successively clipped portal frusta restrict traversal. The
+result is placement-specific: placements with identical transient masks remain instanced together,
+while different copies never share a visibility decision. Persistent editor group and doodad-set masks
+remain separate. Globally resource-batched M2 doodads retain their original WMO doodad index and query
+their parent placement's current `MODR` visibility before ordinary frustum/size culling.
 
-The last constraint is important: the current WMO renderer batches placements by resource and
-persistent enabled-group signature, but two copies can contain cameras in different rooms. A shared
-per-resource portal mask would produce incorrect visibility. Portal traversal should therefore be
-implemented after capture data identifies interior-heavy scenes and must be validated by comparing
-its group mask against the all-groups path while moving through doors and across indoor/outdoor
-boundaries.
+Invalid chunk sizes, degenerate portal polygons, invalid indices/ranges, unclassified WMOs, singular
+placement transforms, and traversal-budget exhaustion all fall back to the old all-enabled behavior.
+Unreferenced/global doodads remain visible. These rules make failures conservative rather than allowing
+format anomalies to remove geometry.
+
+Two identical 1920x977 whole-world Release captures reduced WMO draws from 15,098 to 5,299 and total
+draws from 55,103 to 45,285. Each frame portal-culled 1,464 WMO group instances and 2,396 group-owned
+doodads while preserving 978 visible WMO placements. Submitted indexed triangles fell from 22,985,491
+to 19,660,030. Median WMO culling rose from 0.09 to 0.32 ms, but WMO CPU submission fell from 2.99 to
+0.85/0.92 ms, WMO GPU time from 5.11 to 3.27/3.38 ms, and engine time from 16.35 to 10.55/10.64 ms.
+Visual validation must still cover exterior façades, doors, overlapping group bounds, and transitions
+between outside and multiple interior rooms.
 
 ### Reviewed next priorities (2026-08-14)
 
@@ -400,9 +403,9 @@ boundaries.
 2. M2 culling remains the next CPU target (5.62 ms median across about 130k candidates). Avoid
    adding fields or membership branches to every object; reorganize immutable bounds/transforms
    into dense packet arrays, which is also the prerequisite for compute culling and indirect draws.
-3. Implement and validate WMO portal parsing before traversal. Use an indoor-heavy fixed camera,
-   group-visibility comparisons, and doodad counts; the whole-world exterior capture cannot prove
-   portal-culling value or correctness.
+3. WMO portal parsing, traversal, and MODR-owned doodad filtering are implemented. Complete visual
+   validation in building- and city-heavy exterior views, doorway transitions, and multi-room
+   interiors. Revisit the traversal only if those views expose bad portal boundaries or source data.
 4. Inventory M2 skin/LOD data from the active Classic corpus, then add projected-size LOD packet
    selection only for formats and models that actually contain usable alternative skins.
 
@@ -431,6 +434,27 @@ reduced median M2 culling from 7.41 ms to 4.20/3.80 ms and M2 submission from 1.
 The repeat used the identical 130,245-candidate, 31,865-visible workload. This dense layout is the CPU
 optimization and data-model prerequisite for the later structured GPU bounds buffer, compute culling,
 visible-ID compaction, and indirect draws.
+
+### Retained terrain runs and correct Classic height-texture specialization (2026-08-14)
+
+Each loaded ADT now retains the maximum material-compatible run length beginning at every chunk.
+The frame loop only clips that immutable run against visibility gaps and the near/far LOD split,
+instead of repeatedly comparing material arrays. Texture SRVs are also resolved once per file-data ID
+per frame, preserving asynchronous replacement on the following frame while removing repeated
+concurrent-cache lookups from terrain, WMO, and M2 submission.
+
+The DX11 loader also incorrectly selected height-texture terrain shaders from initialized scale values.
+Because parsed scale arrays are initialized to one, this classified every Classic chunk as height
+textured, bound a second texture set, and executed height-blending samples even though Classic has no
+height textures. Selection now requires a positive height-texture file-data ID in an active layer.
+This remains valid for newer data, including the parser's deliberate diffuse-texture fallback when a
+declared height texture is missing.
+
+On the identical 1920x977 whole-world workload (55,103 draws, 117,545 visible terrain chunks,
+22,985,491 submitted triangles), texture binding calls fell from 94,086 to 55,566. Median terrain CPU
+submission fell from 8.87 to 6.00 ms, terrain GPU time from 9.87 to 6.97 ms, GPU frame time from 17.65
+to 15.64 ms, and engine frame time from 18.24 to 16.35 ms. The intermediate retained-run/frame-texture
+capture measured 7.72 ms terrain submission, separating its CPU benefit from the shader correction.
 
 ## Immediate interpretation guide
 

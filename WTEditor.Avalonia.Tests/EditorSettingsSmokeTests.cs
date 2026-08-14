@@ -45,6 +45,7 @@ public sealed class EditorSettingsSmokeTests
                 RenderADT = false,
                 RenderWMO = true,
                 RenderM2 = false,
+                EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
                 ShowBoundingSpheres = true
             },
@@ -118,7 +119,8 @@ public sealed class EditorSettingsSmokeTests
             {
                 RenderADT = true,
                 RenderWMO = true,
-                RenderM2 = true
+                RenderM2 = true,
+                EnableWmoPortalCulling = false
             }
         };
         var store = new MemorySettingsStore(initial);
@@ -130,15 +132,19 @@ public sealed class EditorSettingsSmokeTests
 
         firstViewport.RenderTerrain = false;
         firstViewport.RenderDoodads = false;
+        firstViewport.WmoPortalCullingEnabled = true;
 
         Assert.IsNotNull(published);
         Assert.IsFalse(published.RenderADT);
         Assert.IsFalse(published.RenderM2);
         Assert.IsTrue(published.RenderWMO);
+        Assert.IsTrue(published.EnableWmoPortalCulling);
         Assert.IsTrue(secondViewport.RenderTerrain);
         Assert.IsTrue(secondViewport.RenderDoodads);
+        Assert.IsFalse(secondViewport.WmoPortalCullingEnabled);
         Assert.IsTrue(session.Current.Rendering.RenderADT);
         Assert.IsTrue(session.Current.Rendering.RenderM2);
+        Assert.IsFalse(session.Current.Rendering.EnableWmoPortalCulling);
         Assert.AreEqual(0, store.SaveCount);
     }
 
@@ -421,6 +427,41 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void SelectionInspector_ComposesTransformAndObjectSpecificSections()
+    {
+        var inspector = new SelectionInspectorViewModel(
+        [
+            new TransformInspectorSectionProvider(),
+            new M2InspectorSectionProvider(),
+            new WorldModelInspectorSectionProvider(),
+            new TerrainInspectorSectionProvider()
+        ]);
+        var selected = new EditorObjectSnapshot(
+            EditorObjectId.New(),
+            "Training Dummy",
+            "M2 model",
+            new ObjectTransform(
+                new Vector3(10, 20, 30),
+                Quaternion.Identity,
+                new Vector3(2)),
+            new M2ObjectData(1234, 5678, 6, false));
+
+        inspector.Inspect(selected);
+
+        Assert.IsTrue(inspector.HasSelection);
+        Assert.AreEqual("Training Dummy", inspector.SelectionName);
+        CollectionAssert.AreEqual(
+            new[] { "Transform", "M2 model" },
+            inspector.Sections.Select(section => section.Title).ToArray());
+        Assert.IsTrue(inspector.Sections[0].Properties[0].Value.Contains("X 10"));
+        Assert.AreEqual("1234", inspector.Sections[1].Properties[0].Value);
+
+        inspector.Inspect(null);
+        Assert.IsFalse(inspector.HasSelection);
+        Assert.AreEqual(0, inspector.Sections.Count);
+    }
+
+    [TestMethod]
     public void PerformanceAnalyzer_ClassifiesCpuGpuAndBalancedFrames()
     {
         Assert.AreEqual(
@@ -663,6 +704,23 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(TerrainBatching.AreCompatible(
             CreateTerrainBatch(material: 10, scale: 1f),
             CreateTerrainBatch(material: 10, scale: 2f)));
+
+        var retainedRunLengths = TerrainBatching.BuildCompatibleRunLengths(batches);
+        CollectionAssert.AreEqual(new[] { 2, 1, 1, 1 }, retainedRunLengths);
+        Assert.AreEqual(
+            2,
+            TerrainBatching.CountCompatibleContiguousChunks(
+                0,
+                new[] { 0, 1, 2, 3 },
+                new[] { true, true, true, true },
+                retainedRunLengths));
+        Assert.AreEqual(
+            1,
+            TerrainBatching.CountCompatibleContiguousChunks(
+                0,
+                new[] { 0, 1 },
+                new[] { true, false },
+                retainedRunLengths));
     }
 
     [TestMethod]
@@ -673,6 +731,143 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(4, TerrainBatching.GetShaderLayerCount(3));
         Assert.AreEqual(4, TerrainBatching.GetShaderLayerCount(4));
         Assert.AreEqual(8, TerrainBatching.GetShaderLayerCount(5));
+        Assert.IsFalse(TerrainBatching.UsesHeightTextures(4, new[] { 0, 0, 0, 0 }));
+        Assert.IsFalse(TerrainBatching.UsesHeightTextures(2, new[] { 0, 0, 123, 0 }));
+        Assert.IsTrue(TerrainBatching.UsesHeightTextures(2, new[] { 0, 123, 0, 0 }));
+    }
+
+    [TestMethod]
+    public void WmoPortalVisibility_CullsInteriorButNeverExteriorGroupsOrTheirModrDoodads()
+    {
+        var portal = new WmoPortal
+        {
+            Vertices =
+            [
+                new(-0.25f, -0.25f, 0f),
+                new(0.25f, -0.25f, 0f),
+                new(0.25f, 0.25f, 0f),
+                new(-0.25f, 0.25f, 0f)
+            ],
+            Normal = Vector3.UnitZ,
+            Distance = 0f,
+            Bounds = new BoundingBox(new(-0.25f, -0.25f, 0f), new(0.25f, 0.25f, 0f))
+        };
+        var exterior = new WorldModelGroupBatches
+        {
+            flags = 0x8,
+            boundingBox = new BoundingBox(new(-0.8f), new(0.8f)),
+            portalLinks = [new WmoPortalLink { PortalIndex = 0, TargetGroupIndex = 1, Side = 1 }],
+            doodadReferences = []
+        };
+        var interior = new WorldModelGroupBatches
+        {
+            flags = 0x2000,
+            boundingBox = new BoundingBox(new(-0.4f), new(0.4f)),
+            portalLinks = [],
+            doodadReferences = [0]
+        };
+        var disconnectedExterior = new WorldModelGroupBatches
+        {
+            flags = 0x8,
+            boundingBox = new BoundingBox(new(10f), new(11f)),
+            portalLinks = [],
+            doodadReferences = [1]
+        };
+        var unclassifiedOutdoor = new WorldModelGroupBatches
+        {
+            flags = 0,
+            boundingBox = new BoundingBox(new(20f), new(21f)),
+            portalLinks = [],
+            doodadReferences = [2]
+        };
+        var ambiguousOutdoor = new WorldModelGroupBatches
+        {
+            flags = 0x8 | 0x2000,
+            boundingBox = new BoundingBox(new(30f), new(31f)),
+            portalLinks = [],
+            doodadReferences = [3]
+        };
+        var exteriorLitWithoutInteriorFlag = new WorldModelGroupBatches
+        {
+            flags = 0x40,
+            boundingBox = new BoundingBox(new(40f), new(41f)),
+            portalLinks = [],
+            doodadReferences = [4]
+        };
+        var wmo = new WorldModel
+        {
+            groupBatches =
+            [
+                exterior,
+                interior,
+                disconnectedExterior,
+                unclassifiedOutdoor,
+                ambiguousOutdoor,
+                exteriorLitWithoutInteriorFlag
+            ],
+            portals = [portal],
+            portalGraphValid = true,
+            doodads = new WMODoodad[5],
+            doodadsReferencedByGroups = [true, true, true, true, true]
+        };
+        var groups = new bool[6];
+        var doodads = new bool[5];
+        var scratch = new WmoPortalVisibilityScratch();
+
+        Assert.IsTrue(WmoPortalVisibility.TryCompute(
+            wmo,
+            Matrix4x4.Identity,
+            Matrix4x4.Identity,
+            new Vector3(0f, 0f, -0.5f),
+            new[] { true, true, true, true, true, true },
+            groups,
+            doodads,
+            scratch,
+            out _));
+        CollectionAssert.AreEqual(new[] { true, false, true, true, true, true }, groups);
+        CollectionAssert.AreEqual(new[] { false, true, true, true, true }, doodads);
+
+        wmo.groupBatches[0] = new WorldModelGroupBatches
+        {
+            flags = 0x8,
+            boundingBox = exterior.boundingBox,
+            portalLinks = [new WmoPortalLink { PortalIndex = 0, TargetGroupIndex = 1, Side = -1 }],
+            doodadReferences = []
+        };
+        Assert.IsTrue(WmoPortalVisibility.TryCompute(
+            wmo,
+            Matrix4x4.Identity,
+            Matrix4x4.Identity,
+            new Vector3(0f, 0f, -0.5f),
+            new[] { true, true, true, true, true, true },
+            groups,
+            doodads,
+            scratch,
+            out _));
+        CollectionAssert.AreEqual(new[] { true, true, true, true, true, true }, groups);
+        CollectionAssert.AreEqual(new[] { true, true, true, true, true }, doodads);
+
+        // A missing 0x2000 interior bit defines an exterior group even when the
+        // redundant 0x8 exterior bit is absent. It must seed portal traversal.
+        wmo.groupBatches[0] = new WorldModelGroupBatches
+        {
+            flags = 0,
+            boundingBox = exterior.boundingBox,
+            portalLinks = [new WmoPortalLink { PortalIndex = 0, TargetGroupIndex = 1, Side = -1 }],
+            doodadReferences = []
+        };
+        Assert.IsTrue(WmoPortalVisibility.TryCompute(
+            wmo,
+            Matrix4x4.Identity,
+            Matrix4x4.Identity,
+            new Vector3(0f, 0f, -0.5f),
+            new[] { true, true, true, true, true, true },
+            groups,
+            doodads,
+            scratch,
+            out _));
+        CollectionAssert.AreEqual(new[] { true, true, true, true, true, true }, groups);
+        CollectionAssert.AreEqual(new[] { true, true, true, true, true }, doodads);
     }
 
     private static ADTRenderBatch CreateTerrainBatch(int material, float scale) => new()

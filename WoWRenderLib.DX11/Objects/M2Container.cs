@@ -16,6 +16,8 @@ namespace WoWRenderLib.DX11.Objects
         private Quaternion _localRotation;
         private float _localScale = 1.0f;
 
+        public int WmoDoodadIndex { get; set; } = -1;
+
         public WMOContainer? ParentWMO
         {
             get => _parentWmo;

@@ -2,6 +2,7 @@
 using Silk.NET.Direct3D11;
 using System.Numerics;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
@@ -11,6 +12,10 @@ namespace WoWRenderLib.DX11.Objects
     {
         private bool[]? enabledGroups;
         private bool[]? enabledDoodadSets;
+        private bool[]? _portalVisibleGroups;
+        private bool[]? _portalVisibleDoodads;
+        private readonly WmoPortalVisibilityScratch _portalVisibilityScratch = new();
+        private long _portalVisibilityFrame = -1;
 
         public bool DoodadsSpawned = false;
 
@@ -136,6 +141,30 @@ namespace WoWRenderLib.DX11.Objects
             EnabledDoodadSets[index] = !EnabledDoodadSets[index];
             OnDoodadSetsChanged?.Invoke(this);
         }
+
+        public void GetPortalVisibilityBuffers(
+            in Structs.WorldModel wmo,
+            out bool[] visibleGroups,
+            out bool[] visibleDoodads,
+            out WmoPortalVisibilityScratch scratch)
+        {
+            if (_portalVisibleGroups == null || _portalVisibleGroups.Length != wmo.groupBatches.Length)
+                _portalVisibleGroups = new bool[wmo.groupBatches.Length];
+            if (_portalVisibleDoodads == null || _portalVisibleDoodads.Length != wmo.doodads.Length)
+                _portalVisibleDoodads = new bool[wmo.doodads.Length];
+            visibleGroups = _portalVisibleGroups;
+            visibleDoodads = _portalVisibleDoodads;
+            scratch = _portalVisibilityScratch;
+        }
+
+        public void SetPortalVisibilityFrame(long frameNumber) =>
+            _portalVisibilityFrame = frameNumber;
+
+        public bool IsDoodadPortalVisible(int doodadIndex, long frameNumber) =>
+            _portalVisibilityFrame != frameNumber ||
+            _portalVisibleDoodads == null ||
+            (uint)doodadIndex >= (uint)_portalVisibleDoodads.Length ||
+            _portalVisibleDoodads[doodadIndex];
 
         public override BoundingSphere? GetBoundingSphere()
         {

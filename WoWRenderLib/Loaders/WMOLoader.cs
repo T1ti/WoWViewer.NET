@@ -17,10 +17,13 @@ namespace WoWRenderLib.Loaders
             {
                 var group = wmo.group[g];
 
-                string groupName = "";
-                for (var i = 0; i < wmo.groupNames.Length; i++)
-                    if (group.mogp.nameOffset == wmo.groupNames[i].offset)
-                        groupName = wmo.groupNames[i].name.Replace(" ", "_");
+                MOGI? mogi = wmo.groupInfo is { } groupInfo && g < groupInfo.Length
+                    ? groupInfo[g]
+                    : null;
+                var mogiGroupName = ResolveGroupName(
+                    wmo.groupNames,
+                    mogi?.nameIndex ?? (int)group.mogp.nameOffset);
+                var groupName = ResolveGroupName(wmo.groupNames, (int)group.mogp.nameOffset);
 
                 if (groupName == "antiportal")
                     continue;
@@ -106,7 +109,19 @@ namespace WoWRenderLib.Loaders
 
                 groupBatches.Add(new PreppedWMOGroup()
                 {
+                    sourceGroupIndex = g,
+                    groupID = group.mogp.groupID,
                     groupName = groupName,
+                    mogiGroupName = mogiGroupName,
+                    mogiFlags = mogi is { } groupInfoEntry ? (uint)groupInfoEntry.flags : 0,
+                    // Rendering classification comes from the group's MOGP
+                    // header. Do not merge the root MOGI copy: those flags can
+                    // disagree and incorrectly classify outdoor geometry as
+                    // portal-cullable interior geometry.
+                    flags = (uint)group.mogp.flags,
+                    portalStart = group.mogp.ofsPortals,
+                    portalCount = group.mogp.numPortals,
+                    doodadReferences = group.mogp.doodadReferences ?? [],
                     boundingBox = new BoundingBox()
                     {
                         Min = new Vector3(wmo.group[g].mogp.boundingBox1.X, wmo.group[g].mogp.boundingBox1.Y, wmo.group[g].mogp.boundingBox1.Z),
@@ -235,7 +250,22 @@ namespace WoWRenderLib.Loaders
                 Materials = [.. mats],
                 Doodads = doodads,
                 DoodadSets = doodadSets,
-                PreppedWMOGroups = [.. groupBatches]
+                PreppedWMOGroups = [.. groupBatches],
+                PortalVertices = wmo.portalVertices ?? [],
+                Portals = wmo.portals?.Select(portal => new PreppedWMOPortal
+                {
+                    StartVertex = portal.startVertex,
+                    VertexCount = portal.vertexCount,
+                    Normal = portal.normal,
+                    Distance = portal.distance
+                }).ToArray() ?? [],
+                PortalReferences = wmo.portalReferences?.Select(reference => new PreppedWMOPortalReference
+                {
+                    PortalIndex = reference.portalIndex,
+                    GroupIndex = reference.groupIndex,
+                    Side = reference.side
+                }).ToArray() ?? [],
+                SourceGroupCount = wmo.group.Length
             };
         }
 
@@ -243,6 +273,17 @@ namespace WoWRenderLib.Loaders
         {
             var center = (min + max) * 0.5f;
             return Vector3.Distance(center, max);
+        }
+
+        private static string ResolveGroupName(MOGN[] groupNames, int nameOffset)
+        {
+            for (var index = 0; index < groupNames.Length; index++)
+            {
+                if (groupNames[index].offset == nameOffset)
+                    return groupNames[index].name.Replace(" ", "_");
+            }
+
+            return "";
         }
     }
 }

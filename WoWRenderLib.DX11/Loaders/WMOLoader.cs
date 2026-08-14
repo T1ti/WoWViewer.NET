@@ -21,6 +21,18 @@ namespace WoWRenderLib.DX11.Loaders
                 boundingRadius = CalculateBoundingRadius(preppedWMO.BoundingBox.Min, preppedWMO.BoundingBox.Max)
             };
 
+            var sourceGroupToRenderGroup = new int[Math.Max(0, preppedWMO.SourceGroupCount)];
+            Array.Fill(sourceGroupToRenderGroup, -1);
+            for (var groupIndex = 0; groupIndex < preppedWMO.PreppedWMOGroups.Length; groupIndex++)
+            {
+                var sourceGroupIndex = preppedWMO.PreppedWMOGroups[groupIndex].sourceGroupIndex;
+                if ((uint)sourceGroupIndex < (uint)sourceGroupToRenderGroup.Length)
+                    sourceGroupToRenderGroup[sourceGroupIndex] = groupIndex;
+            }
+
+            wmoBatch.portals = BuildPortals(preppedWMO);
+            wmoBatch.portalGraphValid = ValidatePortalGraph(preppedWMO, sourceGroupToRenderGroup, wmoBatch.portals);
+
             for (var g = 0; g < preppedWMO.PreppedWMOGroups.Length; g++)
             {
                 var preppedGroup = preppedWMO.PreppedWMOGroups[g];
@@ -66,9 +78,17 @@ namespace WoWRenderLib.DX11.Loaders
                 wmoBatch.groupBatches[g] = new WorldModelGroupBatches()
                 {
                     groupName = preppedGroup.groupName,
+                    mogiGroupName = preppedGroup.mogiGroupName,
                     vertexBuffer = vertexBuffer,
                     indiceBuffer = indiceBuffer,
-                    verticeCount = (uint)preppedGroup.vertexBuffer.Length / (uint)sizeof(WMOVertex)
+                    verticeCount = (uint)preppedGroup.vertexBuffer.Length / (uint)sizeof(WMOVertex),
+                    boundingBox = preppedGroup.boundingBox,
+                    sourceGroupIndex = preppedGroup.sourceGroupIndex,
+                    groupID = preppedGroup.groupID,
+                    flags = preppedGroup.flags,
+                    mogiFlags = preppedGroup.mogiFlags,
+                    portalLinks = BuildPortalLinks(preppedGroup, preppedWMO.PortalReferences, sourceGroupToRenderGroup),
+                    doodadReferences = preppedGroup.doodadReferences ?? []
                 };
             }
 
@@ -120,7 +140,117 @@ namespace WoWRenderLib.DX11.Loaders
             //wmoBatch.mats = mats;
             wmoBatch.wmoRenderBatches = [.. renderBatches];
             wmoBatch.doodads = preppedWMO.Doodads;
+            wmoBatch.doodadsReferencedByGroups = new bool[wmoBatch.doodads.Length];
+            foreach (var group in wmoBatch.groupBatches)
+            {
+                foreach (var doodadIndex in group.doodadReferences)
+                {
+                    if (doodadIndex < wmoBatch.doodadsReferencedByGroups.Length)
+                        wmoBatch.doodadsReferencedByGroups[doodadIndex] = true;
+                    else
+                        wmoBatch.portalGraphValid = false;
+                }
+            }
             return wmoBatch;
+        }
+
+        private static WmoPortal[] BuildPortals(in PreppedWMO preppedWMO)
+        {
+            var result = new WmoPortal[preppedWMO.Portals.Length];
+            for (var portalIndex = 0; portalIndex < result.Length; portalIndex++)
+            {
+                var source = preppedWMO.Portals[portalIndex];
+                var end = (int)source.StartVertex + source.VertexCount;
+                if (source.VertexCount < 3 || end > preppedWMO.PortalVertices.Length)
+                    continue;
+
+                var vertices = preppedWMO.PortalVertices
+                    .AsSpan(source.StartVertex, source.VertexCount)
+                    .ToArray();
+                var min = vertices[0];
+                var max = vertices[0];
+                foreach (var vertex in vertices.AsSpan(1))
+                {
+                    min = Vector3.Min(min, vertex);
+                    max = Vector3.Max(max, vertex);
+                }
+
+                var normal = source.Normal.LengthSquared() > 0.000001f
+                    ? Vector3.Normalize(source.Normal)
+                    : Vector3.Zero;
+                result[portalIndex] = new WmoPortal
+                {
+                    Vertices = vertices,
+                    Normal = normal,
+                    Distance = normal == Vector3.Zero ? 0f : -Vector3.Dot(normal, vertices[0]),
+                    Bounds = new BoundingBox(min, max)
+                };
+            }
+            return result;
+        }
+
+        private static WmoPortalLink[] BuildPortalLinks(
+            in PreppedWMOGroup group,
+            PreppedWMOPortalReference[] references,
+            int[] sourceGroupToRenderGroup)
+        {
+            var end = (int)group.portalStart + group.portalCount;
+            if (end > references.Length)
+                return [];
+
+            var result = new List<WmoPortalLink>(group.portalCount);
+            for (var referenceIndex = group.portalStart; referenceIndex < end; referenceIndex++)
+            {
+                var reference = references[referenceIndex];
+                if (reference.GroupIndex >= sourceGroupToRenderGroup.Length)
+                    continue;
+                var targetGroupIndex = sourceGroupToRenderGroup[reference.GroupIndex];
+                if (targetGroupIndex < 0)
+                    continue;
+                result.Add(new WmoPortalLink
+                {
+                    PortalIndex = reference.PortalIndex,
+                    TargetGroupIndex = (ushort)targetGroupIndex,
+                    Side = reference.Side
+                });
+            }
+            return [.. result];
+        }
+
+        private static bool ValidatePortalGraph(
+            in PreppedWMO preppedWMO,
+            int[] sourceGroupToRenderGroup,
+            WmoPortal[] portals)
+        {
+            if (portals.Length == 0 ||
+                preppedWMO.PortalReferences.Length == 0 ||
+                sourceGroupToRenderGroup.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var portal in portals)
+            {
+                if (portal.Vertices == null || portal.Vertices.Length < 3 || portal.Normal == Vector3.Zero)
+                    return false;
+            }
+
+            foreach (var group in preppedWMO.PreppedWMOGroups)
+            {
+                if ((int)group.portalStart + group.portalCount > preppedWMO.PortalReferences.Length)
+                    return false;
+            }
+
+            foreach (var reference in preppedWMO.PortalReferences)
+            {
+                if (reference.PortalIndex >= portals.Length ||
+                    reference.GroupIndex >= sourceGroupToRenderGroup.Length)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static float CalculateBoundingRadius(Vector3 min, Vector3 max)

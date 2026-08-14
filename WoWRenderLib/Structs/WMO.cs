@@ -94,16 +94,43 @@ namespace WoWRenderLib.Structs
         public readonly string[] DoodadSets { get; init; }
         public readonly PreppedWMOMaterial[] Materials { get; init; }
         public readonly PreppedWMOGroup[] PreppedWMOGroups { get; init; }
+        public readonly Vector3[] PortalVertices { get; init; }
+        public readonly PreppedWMOPortal[] Portals { get; init; }
+        public readonly PreppedWMOPortalReference[] PortalReferences { get; init; }
+        public readonly int SourceGroupCount { get; init; }
+    }
+
+    public readonly struct PreppedWMOPortal
+    {
+        public readonly ushort StartVertex { get; init; }
+        public readonly ushort VertexCount { get; init; }
+        public readonly Vector3 Normal { get; init; }
+        public readonly float Distance { get; init; }
+    }
+
+    public readonly struct PreppedWMOPortalReference
+    {
+        public readonly ushort PortalIndex { get; init; }
+        public readonly ushort GroupIndex { get; init; }
+        public readonly short Side { get; init; }
     }
 
     public readonly struct PreppedWMOGroup
     {
         public readonly string groupName { get; init; }
+        public readonly string mogiGroupName { get; init; }
         public readonly BoundingBox boundingBox { get; init; }
         public readonly float boundingRadius { get; init; }
         public readonly byte[] vertexBuffer { get; init; }
         public readonly byte[] indiceBuffer { get; init; }
         public readonly PreppedWMOGroupBatch[] groupBatches { get; init; }
+        public readonly int sourceGroupIndex { get; init; }
+        public readonly uint groupID { get; init; }
+        public readonly uint flags { get; init; }
+        public readonly uint mogiFlags { get; init; }
+        public readonly ushort portalStart { get; init; }
+        public readonly ushort portalCount { get; init; }
+        public readonly ushort[] doodadReferences { get; init; }
 
     }
 

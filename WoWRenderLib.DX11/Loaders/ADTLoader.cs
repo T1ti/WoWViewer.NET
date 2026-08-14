@@ -3,6 +3,7 @@ using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using System.Numerics;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
@@ -25,9 +26,9 @@ namespace WoWRenderLib.DX11.Loaders
                     Array.FindLastIndex(renderBatch.materialFDIDs, fileDataId => fileDataId > 0) + 1,
                     1,
                     8);
-                batch.usesHeightTextures =
-                    renderBatch.heightScales.Any(scale => MathF.Abs(scale) > 0.000001f) ||
-                    renderBatch.heightOffsets.Any(offset => MathF.Abs(offset - 1f) > 0.000001f);
+                batch.usesHeightTextures = TerrainBatching.UsesHeightTextures(
+                    batch.layerCount,
+                    renderBatch.heightMaterialFDIDs);
                 batch.heightScales = renderBatch.heightScales;
                 batch.heightOffsets = renderBatch.heightOffsets;
                 batch.materialFDIDs = renderBatch.materialFDIDs;
@@ -91,6 +92,7 @@ namespace WoWRenderLib.DX11.Loaders
             result.doodads = parsedADT.doodads;
             result.worldModelBatches = parsedADT.worldModelBatches;
             result.renderBatches = renderBatches;
+            result.compatibleRenderRunLengths = TerrainBatching.BuildCompatibleRunLengths(renderBatches);
             result.rootADTFileDataID = parsedADT.rootADTFileDataID;
             result.chunkBounds = parsedADT.chunkBounds;
             result.chunkBoundingSpheres = CreateChunkBoundingSpheres(parsedADT.chunkBounds);

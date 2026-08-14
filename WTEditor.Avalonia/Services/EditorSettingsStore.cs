@@ -23,6 +23,7 @@ public sealed class PersistedRenderingSettings
     public bool RenderADT { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
+    public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
     public bool ShowBoundingSpheres { get; set; }
 
@@ -40,6 +41,7 @@ public sealed class PersistedRenderingSettings
         RenderADT = RenderADT,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
+        EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres
     };
@@ -62,6 +64,7 @@ public sealed class PersistedRenderingSettings
         RenderADT = rendering.RenderADT,
         RenderWMO = rendering.RenderWMO,
         RenderM2 = rendering.RenderM2,
+        EnableWmoPortalCulling = rendering.EnableWmoPortalCulling,
         ShowBoundingBoxes = rendering.ShowBoundingBoxes,
         ShowBoundingSpheres = rendering.ShowBoundingSpheres
     };
