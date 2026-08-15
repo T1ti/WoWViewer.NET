@@ -164,7 +164,8 @@ public sealed class TerrainInspectorSectionProvider : IObjectInspectorSectionPro
         [
             new("File data ID", data.FileDataId.ToString()),
             new("Tile", $"{data.TileX}, {data.TileY}"),
-            new("Asset state", data.IsLoaded ? "Loaded" : "Loading")
+            new("Asset state", data.IsLoaded ? "Loaded" : "Loading"),
+            new("Save state", data.IsModified ? "Modified" : "Unchanged")
         ]);
     }
 }

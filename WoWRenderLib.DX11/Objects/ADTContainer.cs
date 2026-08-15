@@ -13,6 +13,8 @@ namespace WoWRenderLib.DX11.Objects
         public MapTile mapTile;
         public event Action<ADTContainer, Terrain>? LoadCallback;
         public bool IsLoaded { get; private set; }
+        public bool IsModified { get; private set; }
+        private ADTVertex[] _originalVertices = [];
 
         public ADTContainer(ComPtr<ID3D11Device> device, MapTile mapTile) : base(device, mapTile.wdtFileDataID, mapTile.wdtFileDataID)
         {
@@ -29,6 +31,8 @@ namespace WoWRenderLib.DX11.Objects
         {
             // this gets called by the cache when it finishes (up)loading terrain
             UpdateTerrain(terrain);
+            _originalVertices = terrain.vertices?.ToArray() ?? [];
+            IsModified = false;
             IsLoaded = true;
             LoadCallback?.Invoke(this, terrain); // and in turn we left scene manager know it loaded!
         }
@@ -39,7 +43,34 @@ namespace WoWRenderLib.DX11.Objects
                 ADTCache.Release(mapTile, mapTile.wdtFileDataID);
 
             IsLoaded = false;
+            IsModified = false;
+            _originalVertices = [];
             Terrain = default;
+        }
+
+        public void RefreshModifiedState()
+        {
+            var vertices = Terrain.vertices;
+            IsModified = vertices is { Length: > 0 } &&
+                         (_originalVertices.Length != vertices.Length ||
+                          !HaveSamePositions(_originalVertices, vertices));
+        }
+
+        public void MarkSaved()
+        {
+            _originalVertices = Terrain.vertices?.ToArray() ?? [];
+            IsModified = false;
+        }
+
+        private static bool HaveSamePositions(ADTVertex[] left, ADTVertex[] right)
+        {
+            for (var index = 0; index < left.Length; index++)
+            {
+                if (left[index].Position != right[index].Position)
+                    return false;
+            }
+
+            return true;
         }
 
         public override Matrix4x4 GetModelMatrix()

@@ -8,6 +8,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using WoWFormatLib.FileProviders;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
@@ -16,6 +17,21 @@ using WoWRenderLib.Providers;
 
 namespace WoWRenderLib.DX11
 {
+    [Flags]
+    public enum InputModifiers
+    {
+        None = 0,
+        Shift = 1,
+        Control = 2
+    }
+
+    public enum EditAction
+    {
+        Default,
+        Positive,
+        Negative
+    }
+
     public struct WowClientConfig
     {
         public string wowDir = "";
@@ -42,10 +58,24 @@ namespace WoWRenderLib.DX11
         public Vector2 MousePosition;
         public bool LeftMouseDown;
         public bool RightMouseDown;
+        public EditorModeId Mode;
+        public TerrainBrushInput TerrainBrush;
+        public InputModifiers Modifiers;
 
         public float MouseWheel;
 
         public HashSet<Key> KeysDown;
+    }
+
+    public struct TerrainBrushInput
+    {
+        public TerrainBrushMode ToolMode;
+        public EditAction Action;
+        public float Radius;
+        public float Speed;
+        public float InnerRadius;
+        public float FlattenHeight;
+        public int SmoothIterations;
     }
 
     public class RendererStats
@@ -216,6 +246,16 @@ namespace WoWRenderLib.DX11
         private ShaderManager shaderManager = null!;
         private SceneManager sceneManager = null!;
         public Container3D? SelectedObject => sceneManager?.SelectedObject;
+        public bool HasUnsavedTerrainChanges => sceneManager?.HasUnsavedTerrainChanges == true;
+        public IReadOnlyList<ModifiedTerrainTile> ModifiedTerrainTiles =>
+            sceneManager?.GetModifiedTerrainTiles() ?? [];
+
+        public void BeginTerrainStroke() => sceneManager?.BeginTerrainStroke();
+        public TerrainStrokeDelta? EndTerrainStroke() => sceneManager?.EndTerrainStroke();
+        public void ApplyTerrainStroke(TerrainStrokeDelta delta, bool useAfter) =>
+            sceneManager?.ApplyTerrainStroke(delta, useAfter);
+        public void MarkTerrainChangesSaved() => sceneManager?.MarkTerrainChangesSaved();
+
         public void UpdateSelectedObjectTransform(Vector3 position, Vector3 rotationDegrees, float scale) =>
             sceneManager?.UpdateSelectedObjectTransform(
                 position,
@@ -426,6 +466,26 @@ namespace WoWRenderLib.DX11
         {
             var started = Stopwatch.GetTimestamp();
             HandleMouseLook(input, false, (float)deltaTime);
+            if (input.Mode == EditorModeId.Terrain)
+            {
+                var terrainBrush = input.TerrainBrush;
+                terrainBrush.Action = ResolveEditAction(input.Modifiers);
+                sceneManager.UpdateTerrainBrush(
+                    input.MousePosition,
+                    activeCamera,
+                    viewportWidth,
+                    viewportHeight,
+                    terrainBrush,
+                    input.LeftMouseDown && terrainBrush.Action != EditAction.Default,
+                    (float)deltaTime);
+            }
+            else
+            {
+                sceneManager.ClearTerrainBrush();
+            }
+
+            sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;
+
             HandleClickSelection(input, false);
             HandleKeyboardMovement(input, (float)deltaTime);
 
@@ -452,6 +512,13 @@ namespace WoWRenderLib.DX11
             // eg a key could be pressed and released between two frame
             Stats.UpdateTimeMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         }
+
+        private static EditAction ResolveEditAction(InputModifiers modifiers) =>
+            modifiers.HasFlag(InputModifiers.Control)
+                ? EditAction.Negative
+                : modifiers.HasFlag(InputModifiers.Shift)
+                    ? EditAction.Positive
+                    : EditAction.Default;
 
         public unsafe void Render(double deltaTime)
         {
@@ -848,6 +915,13 @@ namespace WoWRenderLib.DX11
         private void HandleClickSelection(InputFrame input, bool gizmoInUse)
         {
             bool mouseDownThisFrame = input.LeftMouseDown;
+
+            if (input.Mode != EditorModeId.Selection)
+            {
+                wasMouseDown = mouseDownThisFrame;
+                MouseDownPosition = null;
+                return;
+            }
 
             if (mouseDownThisFrame && !wasMouseDown && !gizmoInUse)
             {

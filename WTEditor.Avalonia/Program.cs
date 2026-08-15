@@ -27,10 +27,12 @@ internal static class Program
         var services = new ServiceCollection();
 
         services.AddSingleton<IEditorSettingsStore, JsonEditorSettingsStore>();
+        services.AddSingleton<UndoService>();
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
         services.AddSingleton<IObjectInspectorSectionProvider, TerrainInspectorSectionProvider>();
         services.AddSingleton<SelectionInspectorViewModel>();
+        services.AddSingleton<TerrainEditingViewModel>();
 
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();

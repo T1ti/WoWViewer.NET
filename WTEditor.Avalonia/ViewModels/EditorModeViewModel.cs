@@ -1,21 +1,67 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using WoWRenderLib.DX11.Editing;
 
 namespace WTEditor.Avalonia.ViewModels;
 
-/// <summary>
-/// Describes an editor interaction mode. Additional modes can be registered by
-/// MainViewModel without changing the editor shell.
-/// </summary>
-public partial class EditorModeViewModel(
-    string id,
-    string displayName,
-    string description,
-    string shortcut) : ViewModelBase
+/// <summary>Capabilities exposed by an editor interaction mode.</summary>
+[Flags]
+public enum EditorModeCapabilities
 {
-    public string Id { get; } = id;
-    public string DisplayName { get; } = displayName;
-    public string Description { get; } = description;
-    public string Shortcut { get; } = shortcut;
+    None = 0,
+    Selection = 1,
+    TerrainEditing = 2
+}
+
+/// <summary>
+/// Immutable mode metadata. Keeping identity, presentation, and capabilities
+/// together prevents the shell and input bridge from duplicating mode strings.
+/// </summary>
+public sealed record EditorModeDefinition(
+    string Id,
+    string DisplayName,
+    string Description,
+    string Shortcut,
+    string Icon,
+    EditorModeCapabilities Capabilities,
+    EditorModeId RendererMode);
+
+public static class EditorModeDefinitions
+{
+    public const string SelectionId = "selection";
+    public const string TerrainId = "terrain";
+
+    public static EditorModeDefinition Selection { get; } = new(
+        SelectionId,
+        "Select",
+        "Select and inspect objects in the world viewport",
+        "1",
+        "⌖",
+        EditorModeCapabilities.Selection,
+        EditorModeId.Selection);
+
+    public static EditorModeDefinition Terrain { get; } = new(
+        TerrainId,
+        "Terrain",
+        "Sculpt, smooth, and flatten terrain in the world viewport",
+        "2",
+        "⛰",
+        EditorModeCapabilities.TerrainEditing,
+        EditorModeId.Terrain);
+}
+
+/// <summary>
+/// View-model wrapper for a registered editor mode. Additional modes only need
+/// a definition and their own settings/panel view model.
+/// </summary>
+public partial class EditorModeViewModel(EditorModeDefinition definition) : ViewModelBase
+{
+    public EditorModeDefinition Definition { get; } = definition;
+    public string Id => Definition.Id;
+    public string DisplayName => Definition.DisplayName;
+    public string Description => Definition.Description;
+    public string Shortcut => Definition.Shortcut;
+    public string Icon => Definition.Icon;
+    public EditorModeCapabilities Capabilities => Definition.Capabilities;
 
     [ObservableProperty]
     private bool _isActive;

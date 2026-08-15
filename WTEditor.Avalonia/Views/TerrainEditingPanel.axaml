@@ -1,0 +1,119 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             x:Class="WTEditor.Avalonia.Views.TerrainEditingPanel"
+             x:DataType="vm:TerrainEditingViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.panel-heading">
+      <Setter Property="Foreground" Value="#F3F7FA"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="Foreground" Value="#BFD0DC"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#91A5B5"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="ToggleButton.tool-button">
+      <Setter Property="Background" Value="#222C34"/>
+      <Setter Property="Foreground" Value="#DCE7ED"/>
+      <Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="8,7"/>
+    </Style>
+    <Style Selector="ToggleButton.tool-button:checked">
+      <Setter Property="Background" Value="#276B82"/>
+      <Setter Property="BorderBrush" Value="#5FB9D2"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="13" Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Classes="panel-heading" Text="Terrain tools"/>
+            <TextBlock Classes="muted" Text="Brush editing"/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="×" Width="26" Height="26" Padding="0"
+                  Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
+                  Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide terrain tools"/>
+        </Grid>
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="section-label" Text="MODE"/>
+          <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+            <ToggleButton Classes="tool-button" IsChecked="{Binding IsSculptSelected, Mode=OneWay}"
+                          Command="{Binding SelectToolCommand}" CommandParameter="Sculpt"
+                          Content="Sculpt"/>
+            <ToggleButton Grid.Column="1" Classes="tool-button" IsChecked="{Binding IsSmoothSelected, Mode=OneWay}"
+                          Command="{Binding SelectToolCommand}" CommandParameter="Smooth"
+                          Content="Smooth"/>
+            <ToggleButton Grid.Column="2" Classes="tool-button" IsChecked="{Binding IsFlattenSelected, Mode=OneWay}"
+                          Command="{Binding SelectToolCommand}" CommandParameter="Flatten"
+                          Content="Flatten"/>
+          </Grid>
+          <TextBlock Classes="muted" Text="{Binding ToolDescription}" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Border Background="#222C34" BorderBrush="#394854" BorderThickness="1" CornerRadius="5" Padding="9">
+          <StackPanel Spacing="9">
+            <TextBlock Classes="section-label" Text="BRUSH"/>
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+              <TextBlock Text="Size" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <controls:NonlinearSlider Value="{Binding BrushSize}" Minimum="{Binding BrushSizeMinimum}"
+                                           Maximum="{Binding BrushSizeMaximum}" Curve="{Binding BrushSizeCurve}"
+                                           Width="118" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding BrushSize, StringFormat={}{0:0}}" Width="36" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock Grid.Row="1" Text="{Binding SpeedLabel}" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <controls:NonlinearSlider Value="{Binding Speed}" Minimum="{Binding SpeedMinimum}"
+                                           Maximum="{Binding SpeedMaximum}" Curve="{Binding SpeedCurve}"
+                                           Width="118" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding Speed, StringFormat={}{0:0.0}}" Width="34" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock Grid.Row="2" Text="Inner radius" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+              <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Slider Value="{Binding InnerRadius}" Minimum="0" Maximum="1" Width="118" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding InnerRadius, StringFormat={}{0:0%}}" Width="30" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+            <TextBlock Classes="muted" Text="Outer ring shows brush size; inner ring shows full-strength area. Shift raises; Control lowers."
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+
+        <StackPanel IsVisible="{Binding IsFlattenSelected}" Spacing="6">
+          <TextBlock Classes="section-label" Text="FLATTEN TARGET"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Height" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Column="1" Value="{Binding FlattenHeight}" Increment="0.5" FormatString="0.0" Width="92"/>
+          </Grid>
+        </StackPanel>
+
+        <StackPanel IsVisible="{Binding IsSmoothSelected}" Spacing="6">
+          <TextBlock Classes="section-label" Text="SMOOTHING"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Iterations" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Column="1" Value="{Binding SmoothIterations}" Minimum="1" Maximum="8" Increment="1" Width="92"/>
+          </Grid>
+        </StackPanel>
+
+        <Border Background="#1B3038" BorderBrush="#315E6B" BorderThickness="1" CornerRadius="4" Padding="8">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Brush preview" Foreground="#B9E5EF" FontSize="11" FontWeight="SemiBold"/>
+            <TextBlock Text="Move over terrain to position the projected brush. Hold the left mouse button to sculpt across every loaded tile within its radius."
+                       Foreground="#9FC0CA" FontSize="10" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

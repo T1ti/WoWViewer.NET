@@ -18,7 +18,9 @@ using WTEditor.Avalonia.ViewModels;
 using WTEditor.Avalonia.Views;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
+using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Renderer;
+using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Structs;
 using WoWFormatLib.Structs.M2;
 using WoWFormatLib.Structs.ADT;
@@ -435,6 +437,23 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual("Drag object", history.UndoDescription);
         history.Undo();
         Assert.AreEqual(0, value);
+        history.Redo();
+        Assert.AreEqual(2, value);
+    }
+
+    [TestMethod]
+    public void UndoService_RecordExecutedDoesNotApplyLiveActionTwice()
+    {
+        var value = 1;
+        var history = new UndoService();
+        var command = new DelegateCommand("Live edit", () => value = 2, () => value = 1);
+
+        value = 2;
+        history.RecordExecuted(command);
+
+        Assert.AreEqual(2, value);
+        history.Undo();
+        Assert.AreEqual(1, value);
         history.Redo();
         Assert.AreEqual(2, value);
     }
@@ -1060,6 +1079,34 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsFalse(TerrainBatching.UsesHeightTextures(4, new[] { 0, 0, 0, 0 }));
         Assert.IsFalse(TerrainBatching.UsesHeightTextures(2, new[] { 0, 0, 123, 0 }));
         Assert.IsTrue(TerrainBatching.UsesHeightTextures(2, new[] { 0, 123, 0, 0 }));
+    }
+
+    [TestMethod]
+    public void TerrainBrushTools_KeepSharedPipelineAndModeSpecificOperationsSeparate()
+    {
+        var vertices = new ADTVertex[145];
+        var sample = new TerrainBrushSample(
+            vertices,
+            0,
+            10f,
+            2f,
+            8f,
+            20f,
+            EditAction.Positive);
+
+        Assert.AreEqual(12f, TerrainBrushTools.Get(TerrainBrushMode.Sculpt).Apply(sample));
+        Assert.AreEqual(20f, TerrainBrushTools.Get(TerrainBrushMode.Flatten).Apply(sample));
+        Assert.AreEqual(1, TerrainBrushTools.Get(TerrainBrushMode.Sculpt).GetPassCount(8));
+        Assert.AreEqual(8, TerrainBrushTools.Get(TerrainBrushMode.Smooth).GetPassCount(8));
+    }
+
+    [TestMethod]
+    public void EditorModeDefinitions_KeepCapabilitiesWithModeMetadata()
+    {
+        Assert.AreEqual(EditorModeDefinitions.SelectionId, EditorModeDefinitions.Selection.Id);
+        Assert.IsTrue(EditorModeDefinitions.Selection.Capabilities.HasFlag(EditorModeCapabilities.Selection));
+        Assert.IsTrue(EditorModeDefinitions.Terrain.Capabilities.HasFlag(EditorModeCapabilities.TerrainEditing));
+        Assert.AreEqual("⛰", EditorModeDefinitions.Terrain.Icon);
     }
 
     [TestMethod]

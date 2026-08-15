@@ -16,8 +16,10 @@ using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using WTEditor.Application.Models;
+using WTEditor.Application.Services;
 using WTEditor.Avalonia.Rendering;
 using WoWRenderLib.DX11;
+using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.Renderer;
 
@@ -64,6 +66,9 @@ namespace WTEditor.Avalonia.Controls
         private EditorObjectId _lastSelectedObjectId;
         private IEditorObjectData? _lastSelectedObjectData;
         private bool _lastSelectionHadListfile;
+        private bool _terrainStrokeActive;
+        private IUndoTransaction? _terrainStrokeTransaction;
+        private bool? _lastPublishedTerrainDirtyState;
 
         public Dx11View()
         {
@@ -214,6 +219,8 @@ namespace WTEditor.Avalonia.Controls
                 _initialized = false;
                 _importedImage = null;
                 _lastSharedHandle = IntPtr.Zero;
+                if (_terrainStrokeActive && _rendererSession.Engine is { } activeEngine)
+                    CompleteTerrainStroke(activeEngine);
                 await _rendererSession.DisposeAsync();
 
                 if (!_attached || _dxgi == null)
@@ -361,9 +368,24 @@ namespace WTEditor.Avalonia.Controls
             var inputStarted = Stopwatch.GetTimestamp();
             var inputFrame = BuildInputFrame();
             var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
+            var terrainStrokeRequested = inputFrame.Mode == EditorModeId.Terrain &&
+                                         inputFrame.LeftMouseDown &&
+                                         inputFrame.Modifiers != InputModifiers.None;
+            if (terrainStrokeRequested && !_terrainStrokeActive && _vm != null)
+            {
+                engine.BeginTerrainStroke();
+                _terrainStrokeTransaction = _vm.BeginEditAction("Terrain stroke");
+                _terrainStrokeActive = true;
+            }
+
             var engineFrameStarted = Stopwatch.GetTimestamp();
             engine.Update(delta, inputFrame);
+
+            if (_terrainStrokeActive && !terrainStrokeRequested)
+                CompleteTerrainStroke(engine);
+
             PublishSelection(engine.SelectedObject);
+            PublishTerrainDirtyState(engine, includeSnapshots: false);
             engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
             engine.Render(delta);
             var engineFrameMilliseconds = Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
@@ -553,6 +575,12 @@ namespace WTEditor.Avalonia.Controls
             {
                 _lastSelectedObjectData = CreateObjectData(selectedObject);
             }
+            else if (selectedObject is ADTContainer selectedAdt &&
+                     _lastSelectedObjectData is TerrainObjectData terrainData &&
+                     terrainData.IsModified != selectedAdt.IsModified)
+            {
+                _lastSelectedObjectData = CreateObjectData(selectedAdt);
+            }
 
             var rotation = selectedObject.Rotation * (MathF.PI / 180f);
             var transform = new ObjectTransform(
@@ -584,7 +612,8 @@ namespace WTEditor.Avalonia.Controls
                 adt.FileDataId,
                 adt.mapTile.tileX,
                 adt.mapTile.tileY,
-                adt.IsLoaded),
+                adt.IsLoaded,
+                adt.IsModified),
             _ => null
         };
 
@@ -925,6 +954,39 @@ namespace WTEditor.Avalonia.Controls
                 transform.Scale.X);
         }
 
+        private void CompleteTerrainStroke(WowViewerEngine engine)
+        {
+            var delta = engine.EndTerrainStroke();
+            if (delta is { IsEmpty: false } && _vm != null)
+            {
+                _vm.RecordAppliedEdit(new DelegateEditorCommand(
+                    "Terrain stroke",
+                    () => _rendererSession.Engine?.ApplyTerrainStroke(delta, useAfter: true),
+                    () => _rendererSession.Engine?.ApplyTerrainStroke(delta, useAfter: false)));
+                _terrainStrokeTransaction?.Commit();
+            }
+
+            _terrainStrokeTransaction?.Dispose();
+            _terrainStrokeTransaction = null;
+            _terrainStrokeActive = false;
+            PublishTerrainDirtyState(engine, includeSnapshots: true);
+        }
+
+        private void PublishTerrainDirtyState(WowViewerEngine engine, bool includeSnapshots)
+        {
+            if (_vm == null)
+                return;
+
+            var hasUnsavedChanges = engine.HasUnsavedTerrainChanges;
+            if (!includeSnapshots && _lastPublishedTerrainDirtyState == hasUnsavedChanges)
+                return;
+
+            _vm.UpdateTerrainDirtyState(
+                hasUnsavedChanges,
+                engine.ModifiedTerrainTiles);
+            _lastPublishedTerrainDirtyState = hasUnsavedChanges;
+        }
+
         private void OnSelectedWmoPlacementRequested(object? sender, ViewModels.WmoPlacementSelection selection)
         {
             _rendererSession.Engine?.UpdateSelectedWmoPlacement(selection.DoodadSet, selection.NameSet);
@@ -1029,6 +1091,18 @@ namespace WTEditor.Avalonia.Controls
                 MousePosition = _vm?.MousePosition ?? Vector2.Zero,
                 LeftMouseDown = _vm?.LeftMouseDown ?? false,
                 RightMouseDown = _vm?.RightMouseDown ?? false,
+                Mode = _vm?.EditorMode ?? EditorModeId.Selection,
+                Modifiers = (_vm?.Shift == true ? InputModifiers.Shift : InputModifiers.None) |
+                            (_vm?.Ctrl == true ? InputModifiers.Control : InputModifiers.None),
+                TerrainBrush = new TerrainBrushInput
+                {
+                    ToolMode = (TerrainBrushMode)(_vm?.TerrainBrushToolMode ?? 0),
+                    Radius = (float)(_vm?.TerrainBrushSize ?? 50),
+                    Speed = (float)(_vm?.TerrainBrushSpeed ?? 5),
+                    InnerRadius = (float)(_vm?.TerrainBrushInnerRadius ?? 0.35),
+                    FlattenHeight = (float)(_vm?.TerrainFlattenHeight ?? 0),
+                    SmoothIterations = _vm?.TerrainSmoothIterations ?? 1
+                },
                 MouseWheel = _vm?.MouseWheel ?? 0f,
                 KeysDown = keysDown
             };
@@ -1060,6 +1134,8 @@ namespace WTEditor.Avalonia.Controls
                 _importedImage = null;
                 _surface = null;
                 _surfaceVisual = null;
+                if (_terrainStrokeActive && _rendererSession.Engine is { } activeEngine)
+                    CompleteTerrainStroke(activeEngine);
                 await _rendererSession.DisposeAsync();
                 _deviceContext.Dispose();
                 _device.Dispose();

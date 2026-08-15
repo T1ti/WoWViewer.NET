@@ -150,7 +150,8 @@ public sealed record TerrainObjectData(
     uint FileDataId,
     int TileX,
     int TileY,
-    bool IsLoaded) : IEditorObjectData;
+    bool IsLoaded,
+    bool IsModified = false) : IEditorObjectData;
 
 public enum EditorDocumentState
 {

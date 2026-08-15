@@ -2,6 +2,7 @@
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
@@ -44,8 +45,9 @@ namespace WoWRenderLib.DX11.Loaders
             var bufferDesc = new BufferDesc
             {
                 ByteWidth = (uint)parsedADT.vertexBuffer.Length,
-                Usage = Usage.Default,
-                BindFlags = (uint)BindFlag.VertexBuffer
+                Usage = Usage.Dynamic,
+                BindFlags = (uint)BindFlag.VertexBuffer,
+                CPUAccessFlags = (uint)CpuAccessFlag.Write
             };
 
             fixed (byte* vertexData = parsedADT.vertexBuffer)
@@ -95,6 +97,8 @@ namespace WoWRenderLib.DX11.Loaders
             result.compatibleRenderRunLengths = TerrainBatching.BuildCompatibleRunLengths(renderBatches);
             result.rootADTFileDataID = parsedADT.rootADTFileDataID;
             result.chunkBounds = parsedADT.chunkBounds;
+            result.vertices = MemoryMarshal.Cast<byte, ADTVertex>(parsedADT.vertexBuffer).ToArray();
+            result.indices = MemoryMarshal.Cast<byte, int>(parsedADT.indiceBuffer).ToArray();
             result.chunkBoundingSpheres = CreateChunkBoundingSpheres(parsedADT.chunkBounds);
             (result.terrainBounds, result.terrainBoundingSphere) =
                 CreateTerrainBounds(parsedADT.chunkBounds);

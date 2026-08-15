@@ -1,5 +1,9 @@
 namespace WTEditor.Application.Services;
 
+/// <summary>
+/// Reversible unit of editor state mutation. Commands are the only supported
+/// way for tools to participate in the shared editor history.
+/// </summary>
 public interface IEditorCommand
 {
     string Description { get; }
@@ -7,6 +11,10 @@ public interface IEditorCommand
     void Undo();
 }
 
+/// <summary>
+/// Groups a continuous user gesture into one history entry. Dispose without
+/// Commit to cancel and roll back commands already added to the transaction.
+/// </summary>
 public interface IUndoTransaction : IDisposable
 {
     void Commit();
@@ -28,6 +36,17 @@ public sealed class UndoService
     {
         ArgumentNullException.ThrowIfNull(command);
         command.Execute();
+        RecordExecuted(command);
+    }
+
+    /// <summary>
+    /// Records an action whose forward operation has already been applied by
+    /// an external system, such as the renderer. This keeps the history
+    /// universal without applying a terrain stroke twice when it ends.
+    /// </summary>
+    public void RecordExecuted(IEditorCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
         _redo.Clear();
 
         if (_transaction != null)
@@ -135,4 +154,15 @@ public sealed class UndoService
                 commands[index].Undo();
         }
     }
+}
+
+public sealed class DelegateEditorCommand(
+    string description,
+    Action execute,
+    Action undo) : IEditorCommand
+{
+    public string Description { get; } = description;
+
+    public void Execute() => execute();
+    public void Undo() => undo();
 }

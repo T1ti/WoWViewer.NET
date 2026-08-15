@@ -6,7 +6,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WTEditor.Application;
 using WTEditor.Application.Models;
+using WTEditor.Application.Services;
+using WoWRenderLib.DX11.Editing;
 using WTEditor.Avalonia.Rendering;
+using WoWRenderLib.DX11;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -37,6 +40,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
     public event EventHandler<ObjectTransform>? SelectedObjectTransformRequested;
     public event EventHandler<WmoPlacementSelection>? SelectedWmoPlacementRequested;
+    public UndoService UndoService { get; }
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
@@ -108,6 +112,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         "Choose a visibility preset, keep the camera still, then capture.";
     [ObservableProperty] private string? _performanceCaptureFilePath;
     [ObservableProperty] private EditorObjectSnapshot? _selectedObject;
+    [ObservableProperty] private bool _hasUnsavedTerrainChanges;
+    [ObservableProperty] private IReadOnlyList<ModifiedTerrainTile> _modifiedTerrainTiles = [];
 
     // Viewport input state. This remains view-facing state while editor/session
     // configuration is owned centrally by EditorSession.
@@ -124,10 +130,19 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _rightMouseDown;
     [ObservableProperty] private float _mouseWheel;
     [ObservableProperty] private Vector2 _mousePosition;
+    [ObservableProperty] private EditorModeId _editorMode = EditorModeId.Selection;
+    [ObservableProperty] private double _terrainBrushSize = 50;
+    [ObservableProperty] private double _terrainBrushInnerRadius = 0.35;
+    [ObservableProperty] private int _terrainBrushToolMode;
+    [ObservableProperty] private double _terrainBrushSpeed = 5;
+    [ObservableProperty] private double _terrainFlattenHeight;
+    [ObservableProperty] private int _terrainSmoothIterations = 1;
 
-    public Editor3DViewModel(EditorSession session)
+
+    public Editor3DViewModel(EditorSession session, UndoService? undoService = null)
     {
         _session = session;
+        UndoService = undoService ?? new UndoService();
         _moveSpeed = session.Current.Rendering.MovementSpeed;
         _mouseSensitivity = session.Current.Rendering.MouseSensitivity;
         _renderTerrain = session.Current.Rendering.RenderADT;
@@ -150,6 +165,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         session.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
         session.KeyboardLayoutChanged += OnKeyboardLayoutChanged;
     }
+
+    public IUndoTransaction BeginEditAction(string description) =>
+        UndoService.BeginTransaction(description);
+
+    public void RecordAppliedEdit(IEditorCommand command) =>
+        UndoService.RecordExecuted(command);
 
     partial void OnMoveSpeedChanged(float value)
     {
@@ -232,11 +253,51 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             SelectedObject = selection;
     }
 
+    public void UpdateTerrainDirtyState(
+        bool hasUnsavedChanges,
+        IReadOnlyList<ModifiedTerrainTile> modifiedTiles)
+    {
+        HasUnsavedTerrainChanges = hasUnsavedChanges;
+        ModifiedTerrainTiles = modifiedTiles;
+    }
+
     public void RequestSelectedObjectTransform(ObjectTransform transform) =>
         SelectedObjectTransformRequested?.Invoke(this, transform);
 
     public void RequestSelectedWmoPlacement(WmoPlacementSelection selection) =>
         SelectedWmoPlacementRequested?.Invoke(this, selection);
+
+    partial void OnTerrainBrushSizeChanged(double value)
+    {
+        var normalized = Math.Clamp(value, 1, 1000);
+        if (normalized != value)
+        {
+            TerrainBrushSize = normalized;
+            return;
+        }
+
+    }
+
+    partial void OnTerrainBrushSpeedChanged(double value)
+    {
+        var normalized = Math.Clamp(value, 0.1, 50);
+        if (normalized != value)
+        {
+            TerrainBrushSpeed = normalized;
+            return;
+        }
+    }
+
+    partial void OnTerrainBrushInnerRadiusChanged(double value)
+    {
+        var normalized = Math.Clamp(value, 0, 1);
+        if (normalized != value)
+        {
+            TerrainBrushInnerRadius = normalized;
+            return;
+        }
+
+    }
 
     public void UpdatePerformanceProfile(FrameProfileSnapshot snapshot)
     {

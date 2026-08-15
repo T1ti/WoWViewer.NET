@@ -3,113 +3,189 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using System.ComponentModel;
+using WTEditor.Avalonia.ViewModels;
 
 namespace WTEditor.Avalonia.Views;
 
 public partial class MainView : UserControl
 {
-    private enum InspectorDock { Left, Right, Floating }
+    private enum PanelDock { Left, Right, Floating }
 
-    private InspectorDock _inspectorDock = InspectorDock.Right;
+    private PanelDock _panelDock = PanelDock.Right;
+    private Border? _draggingPanel;
     private Point _dragOffset;
-    private bool _draggingInspector;
+    private ViewModels.MainViewModel? _viewModel;
 
     public MainView()
     {
         InitializeComponent();
-        SizeChanged += (_, _) => ArrangeInspector();
+        SizeChanged += (_, _) => ArrangePanels();
+        DataContextChanged += MainView_OnDataContextChanged;
+        KeyDown += MainView_OnKeyDown;
     }
 
-    private void InspectorDragHandle_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void MainView_OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (!e.GetCurrentPoint(InspectorDragHandle).Properties.IsLeftButtonPressed)
+        if (_viewModel != null)
+            _viewModel.PropertyChanged -= MainViewModel_OnPropertyChanged;
+
+        _viewModel = DataContext as ViewModels.MainViewModel;
+        if (_viewModel != null)
+            _viewModel.PropertyChanged += MainViewModel_OnPropertyChanged;
+
+        Dispatcher.UIThread.Post(ArrangePanels);
+    }
+
+    private void MainViewModel_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.IsSelectionPanelVisible)
+            or nameof(ViewModels.MainViewModel.IsTerrainToolsPanelVisible))
+        {
+            Dispatcher.UIThread.Post(ArrangePanels);
+        }
+    }
+
+    private void MainView_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel viewModel)
             return;
 
-        var pointer = e.GetPosition(PanelCanvas);
-        _dragOffset = new Point(pointer.X - Canvas.GetLeft(InspectorPanel), pointer.Y - Canvas.GetTop(InspectorPanel));
-        _draggingInspector = true;
-        _inspectorDock = InspectorDock.Floating;
-        InspectorPanel.Height = Math.Min(620, Math.Max(260, PanelCanvas.Bounds.Height - 20));
-        e.Pointer.Capture(InspectorDragHandle);
+        var mode = e.Key switch
+        {
+            Key.D1 => viewModel.Modes.FirstOrDefault(mode => mode.Id == EditorModeDefinitions.SelectionId),
+            Key.D2 => viewModel.Modes.FirstOrDefault(mode => mode.Id == EditorModeDefinitions.TerrainId),
+            _ => null
+        };
+        if (mode == null)
+            return;
+
+        viewModel.ActiveMode = mode;
         e.Handled = true;
     }
 
-    private void InspectorDragHandle_OnPointerMoved(object? sender, PointerEventArgs e)
+    private void PanelDragHandle_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!_draggingInspector)
+        if (sender is not Control handle || !e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
+            return;
+
+        var panel = GetPanel(handle);
+        if (panel == null)
             return;
 
         var pointer = e.GetPosition(PanelCanvas);
-        SetFloatingPosition(pointer.X - _dragOffset.X, pointer.Y - _dragOffset.Y);
+        var left = GetCanvasCoordinate(Canvas.GetLeft(panel));
+        var top = GetCanvasCoordinate(Canvas.GetTop(panel));
+        _dragOffset = new Point(pointer.X - left, pointer.Y - top);
+        _draggingPanel = panel;
+        _panelDock = PanelDock.Floating;
+        e.Pointer.Capture(handle);
         e.Handled = true;
     }
 
-    private void InspectorDragHandle_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    private void PanelDragHandle_OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (!_draggingInspector)
+        if (_draggingPanel == null)
             return;
 
-        _draggingInspector = false;
+        var pointer = e.GetPosition(PanelCanvas);
+        SetFloatingPosition(_draggingPanel, pointer.X - _dragOffset.X, pointer.Y - _dragOffset.Y);
+        e.Handled = true;
+    }
+
+    private void PanelDragHandle_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_draggingPanel == null)
+            return;
+
+        var panel = _draggingPanel;
+        _draggingPanel = null;
         e.Pointer.Capture(null);
-        var left = Canvas.GetLeft(InspectorPanel);
+        var left = GetCanvasCoordinate(Canvas.GetLeft(panel));
         const double snapDistance = 28;
         if (left <= snapDistance)
-            _inspectorDock = InspectorDock.Left;
-        else if (PanelCanvas.Bounds.Width - left - InspectorPanel.Width <= snapDistance)
-            _inspectorDock = InspectorDock.Right;
-        ArrangeInspector();
+            _panelDock = PanelDock.Left;
+        else if (PanelCanvas.Bounds.Width - left - panel.Width <= snapDistance)
+            _panelDock = PanelDock.Right;
+        ArrangePanel(panel);
         e.Handled = true;
     }
 
-    private void InspectorHorizontalResize_OnDragDelta(object? sender, VectorEventArgs e)
+    private void PanelHorizontalResize_OnDragDelta(object? sender, VectorEventArgs e)
     {
-        var oldWidth = InspectorPanel.Width;
-        var resizingLeftEdge = ReferenceEquals(sender, InspectorLeftResizeHandle);
-        var widthDelta = resizingLeftEdge ? -e.Vector.X : e.Vector.X;
-        InspectorPanel.Width = Math.Clamp(oldWidth + widthDelta, 260, Math.Max(260, PanelCanvas.Bounds.Width - 20));
-        if (_inspectorDock == InspectorDock.Floating && resizingLeftEdge)
-            Canvas.SetLeft(InspectorPanel, Canvas.GetLeft(InspectorPanel) + oldWidth - InspectorPanel.Width);
-        ArrangeInspector();
-    }
-
-    private void InspectorBottomResize_OnDragDelta(object? sender, VectorEventArgs e)
-    {
-        if (_inspectorDock != InspectorDock.Floating)
+        var panel = sender is Control control ? GetPanel(control) : null;
+        if (panel == null)
             return;
-        InspectorPanel.Height = Math.Clamp(
-            InspectorPanel.Height + e.Vector.Y,
-            260,
-            Math.Max(260, PanelCanvas.Bounds.Height - Canvas.GetTop(InspectorPanel)));
-        ArrangeInspector();
+
+        var oldWidth = panel.Width;
+        var resizingLeftEdge = sender is Control handle && handle.Name?.Contains("Left", StringComparison.Ordinal) == true;
+        var widthDelta = resizingLeftEdge ? -e.Vector.X : e.Vector.X;
+        panel.Width = Math.Clamp(oldWidth + widthDelta, 260, Math.Max(260, PanelCanvas.Bounds.Width - 20));
+        if (resizingLeftEdge)
+            Canvas.SetLeft(panel, GetCanvasCoordinate(Canvas.GetLeft(panel)) + oldWidth - panel.Width);
+        ArrangePanel(panel);
     }
 
-    private void ArrangeInspector()
+    private void PanelBottomResize_OnDragDelta(object? sender, VectorEventArgs e)
+    {
+        var panel = sender is Control control ? GetPanel(control) : null;
+        if (panel == null)
+            return;
+
+        panel.Height = Math.Clamp(
+            panel.Height + e.Vector.Y,
+            260,
+            Math.Max(260, PanelCanvas.Bounds.Height - GetCanvasCoordinate(Canvas.GetTop(panel))));
+        ArrangePanel(panel);
+    }
+
+    private void ArrangePanels()
     {
         if (PanelCanvas.Bounds.Width <= 0 || PanelCanvas.Bounds.Height <= 0)
             return;
 
-        InspectorPanel.Width = Math.Min(InspectorPanel.Width, Math.Max(260, PanelCanvas.Bounds.Width));
-        if (_inspectorDock == InspectorDock.Left)
+        ArrangePanel(InspectorPanel);
+        ArrangePanel(TerrainPanel);
+    }
+
+    private void ArrangePanel(Border panel)
+    {
+        if (PanelCanvas.Bounds.Width <= 0 || PanelCanvas.Bounds.Height <= 0 || !panel.IsVisible)
+            return;
+
+        panel.Width = Math.Min(panel.Width, Math.Max(260, PanelCanvas.Bounds.Width));
+        panel.Height = Math.Clamp(panel.Height, 260, Math.Max(260, PanelCanvas.Bounds.Height - 20));
+        if (_panelDock == PanelDock.Left)
         {
-            Canvas.SetLeft(InspectorPanel, 0);
-            Canvas.SetTop(InspectorPanel, 0);
-            InspectorPanel.Height = PanelCanvas.Bounds.Height;
+            Canvas.SetLeft(panel, 10);
+            Canvas.SetTop(panel, 10);
         }
-        else if (_inspectorDock == InspectorDock.Right)
+        else if (_panelDock == PanelDock.Right)
         {
-            Canvas.SetLeft(InspectorPanel, Math.Max(0, PanelCanvas.Bounds.Width - InspectorPanel.Width));
-            Canvas.SetTop(InspectorPanel, 0);
-            InspectorPanel.Height = PanelCanvas.Bounds.Height;
+            Canvas.SetLeft(panel, Math.Max(0, PanelCanvas.Bounds.Width - panel.Width - 10));
+            Canvas.SetTop(panel, 10);
         }
         else
         {
-            SetFloatingPosition(Canvas.GetLeft(InspectorPanel), Canvas.GetTop(InspectorPanel));
+            SetFloatingPosition(panel, GetCanvasCoordinate(Canvas.GetLeft(panel)), GetCanvasCoordinate(Canvas.GetTop(panel)));
         }
     }
 
-    private void SetFloatingPosition(double left, double top)
+    private static double GetCanvasCoordinate(double coordinate) => double.IsNaN(coordinate) ? 0 : coordinate;
+
+    private void SetFloatingPosition(Border panel, double left, double top)
     {
-        Canvas.SetLeft(InspectorPanel, Math.Clamp(left, 0, Math.Max(0, PanelCanvas.Bounds.Width - InspectorPanel.Width)));
-        Canvas.SetTop(InspectorPanel, Math.Clamp(top, 0, Math.Max(0, PanelCanvas.Bounds.Height - InspectorPanel.Height)));
+        Canvas.SetLeft(panel, Math.Clamp(left, 0, Math.Max(0, PanelCanvas.Bounds.Width - panel.Width)));
+        Canvas.SetTop(panel, Math.Clamp(top, 0, Math.Max(0, PanelCanvas.Bounds.Height - panel.Height)));
+    }
+
+    private Border? GetPanel(Control source)
+    {
+        if (source.Name?.Contains("Inspector", StringComparison.Ordinal) == true)
+            return InspectorPanel;
+        if (source.Name?.Contains("Terrain", StringComparison.Ordinal) == true)
+            return TerrainPanel;
+        return null;
     }
 }

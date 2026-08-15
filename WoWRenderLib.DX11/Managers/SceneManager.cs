@@ -8,6 +8,8 @@ using System.Runtime.InteropServices;
 using WoWFormatLib.Structs.WDT;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11;
+using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
@@ -43,6 +45,7 @@ namespace WoWRenderLib.DX11.Managers
         private WDT? currentWDT;
         public uint CurrentWDTFileDataID { get; private set; } = 775971;
         public Container3D? SelectedObject { get; set; } = null;
+        public bool SelectionVisualsEnabled { get; set; } = true;
         public bool ShowBoundingBoxes { get; set; } = false;
         public bool ShowBoundingSpheres { get; set; } = false;
 
@@ -55,6 +58,19 @@ namespace WoWRenderLib.DX11.Managers
         public float ModelRenderDistance { get; set; } = 20_000f;
         public float MinimumModelScreenSizePixels { get; set; } = 1f;
         public float TerrainLodTransitionPixels { get; set; } = 32f;
+        public Vector3? TerrainBrushWorldPosition { get; private set; }
+        public float TerrainBrushRadius { get; private set; }
+        public float TerrainBrushInnerRadius { get; private set; }
+        public Vector4 TerrainBrushColor { get; private set; } = new(0.2f, 0.85f, 1f, 1f);
+        private Vector3[] _terrainBrushOuterPoints = [];
+        private Vector3[] _terrainBrushInnerPoints = [];
+        private Vector3 _lastTerrainBrushCenter;
+        private float _lastTerrainBrushRadius;
+        private float _lastTerrainBrushInnerRadius;
+        private bool _terrainBrushProjectionDirty = true;
+        private ComPtr<ID3D11Buffer> _terrainBrushOuterVertexBuffer = default;
+        private ComPtr<ID3D11Buffer> _terrainBrushInnerVertexBuffer = default;
+        private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
 
         // World-space light from north-west at a 45° elevation. WoW's world
         // axes map north/west to the negative X/Y directions in this renderer.
@@ -656,7 +672,9 @@ namespace WoWRenderLib.DX11.Managers
 
             foreach (var tile in loadedTiles)
             {
-                if (!desiredTiles.Contains(tile) && tilesQueuedForUnload.Add(tile))
+                    if (!desiredTiles.Contains(tile) &&
+                        !IsTerrainTileModified(tile) &&
+                        tilesQueuedForUnload.Add(tile))
                     tilesToUnload.Enqueue(tile);
             }
         }
@@ -692,6 +710,15 @@ namespace WoWRenderLib.DX11.Managers
 
                     if (adtToRemove == null)
                         continue;
+
+                    // Keep edited tiles resident until a save operation clears
+                    // their dirty state; unloading would otherwise discard the
+                    // in-memory edit before a writer can consume it.
+                    if (adtToRemove.IsModified)
+                    {
+                        loadedTiles.Add(tile);
+                        continue;
+                    }
 
                     // remove callback so it cant finish loading, nyehehe
                     adtToRemove.LoadCallback -= OnADTContainerLoaded;
@@ -1082,6 +1109,105 @@ namespace WoWRenderLib.DX11.Managers
                 bounds.MarkDirty();
         }
 
+        public bool IsTerrainTileModified(MapTile tile)
+        {
+            var container = adtContainers.FirstOrDefault(adt => adt.mapTile == tile);
+            return container?.IsModified == true;
+        }
+
+        public bool HasUnsavedTerrainChanges =>
+            adtContainers.Any(adt => adt.IsModified);
+
+        public IReadOnlyList<ModifiedTerrainTile> GetModifiedTerrainTiles()
+        {
+            return adtContainers
+                .Where(adt => adt.IsModified && adt.Terrain.vertices is { Length: > 0 })
+                .Select(adt => new ModifiedTerrainTile(
+                    TerrainTileId.From(adt.mapTile),
+                    adt.Terrain.rootADTFileDataID,
+                    adt.Terrain.vertices.ToArray()))
+                .ToArray();
+        }
+
+        public void MarkTerrainChangesSaved()
+        {
+            foreach (var adt in adtContainers.Where(adt => adt.IsModified))
+                adt.MarkSaved();
+        }
+
+        public void BeginTerrainStroke()
+        {
+            lock (SceneObjectLock)
+                _activeTerrainStrokeBefore = [];
+        }
+
+        public TerrainStrokeDelta? EndTerrainStroke()
+        {
+            lock (SceneObjectLock)
+            {
+                if (_activeTerrainStrokeBefore == null)
+                    return null;
+
+                var edits = new List<TerrainTileEdit>(_activeTerrainStrokeBefore.Count);
+                foreach (var (tile, before) in _activeTerrainStrokeBefore)
+                {
+                    var adt = adtContainers.FirstOrDefault(candidate =>
+                        TerrainTileId.From(candidate.mapTile) == tile);
+                    if (adt?.Terrain.vertices is not { Length: > 0 } after ||
+                        HaveSamePositions(before, after))
+                    {
+                        continue;
+                    }
+
+                    edits.Add(new TerrainTileEdit(
+                        tile,
+                        adt.Terrain.rootADTFileDataID,
+                        before,
+                        after.ToArray()));
+                }
+
+                _activeTerrainStrokeBefore = null;
+                return edits.Count == 0 ? null : new TerrainStrokeDelta(edits);
+            }
+        }
+
+        public void ApplyTerrainStroke(TerrainStrokeDelta delta, bool useAfter)
+        {
+            ArgumentNullException.ThrowIfNull(delta);
+            lock (SceneObjectLock)
+            {
+                foreach (var edit in delta.Tiles)
+                {
+                    var adt = adtContainers.FirstOrDefault(candidate =>
+                        TerrainTileId.From(candidate.mapTile) == edit.Tile);
+                    if (adt?.Terrain.vertices is not { Length: > 0 })
+                        continue;
+
+                    var terrain = adt.Terrain;
+                    terrain.vertices = (useAfter ? edit.After : edit.Before).ToArray();
+                    RebuildTerrainBounds(ref terrain);
+                    UploadTerrainVertices(terrain);
+                    adt.UpdateTerrain(terrain);
+                    adt.RefreshModifiedState();
+                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
+                }
+            }
+        }
+
+        private static bool HaveSamePositions(ADTVertex[] left, ADTVertex[] right)
+        {
+            if (left.Length != right.Length)
+                return false;
+
+            for (var index = 0; index < left.Length; index++)
+            {
+                if (left[index].Position != right[index].Position)
+                    return false;
+            }
+
+            return true;
+        }
+
         public void PerformRaycast(float mouseX, float mouseY, Camera camera, int windowWidth, int windowHeight)
         {
             var ray = camera.GetRayFromScreen(mouseX, mouseY, windowWidth, windowHeight);
@@ -1137,6 +1263,453 @@ namespace WoWRenderLib.DX11.Managers
             SelectedObject = closestObject;
             SelectedObject?.IsSelected = true;
         }
+
+        public void ClearTerrainBrush()
+        {
+            TerrainBrushWorldPosition = null;
+            TerrainBrushRadius = 0f;
+            TerrainBrushInnerRadius = 0f;
+            _terrainBrushOuterPoints = [];
+            _terrainBrushInnerPoints = [];
+            _terrainBrushProjectionDirty = true;
+        }
+
+        public void UpdateTerrainBrush(
+            Vector2 mousePosition,
+            Camera camera,
+            int windowWidth,
+            int windowHeight,
+            TerrainBrushInput input,
+            bool apply,
+            float deltaTime)
+        {
+            var ray = camera.GetRayFromScreen(
+                mousePosition.X,
+                mousePosition.Y,
+                windowWidth,
+                windowHeight);
+
+            if (!TryRaycastTerrain(ray, out var hit))
+            {
+                ClearTerrainBrush();
+                return;
+            }
+
+            TerrainBrushWorldPosition = hit.WorldPosition;
+            TerrainBrushRadius = Math.Clamp(input.Radius, 1f, 1000f);
+            TerrainBrushInnerRadius = Math.Clamp(input.InnerRadius, 0f, 1f);
+            TerrainBrushColor = TerrainBrushTools.Get(input.ToolMode).PreviewColor;
+
+            if (apply)
+                ApplyTerrainBrush(hit, input, Math.Clamp(deltaTime, 0f, 0.1f));
+
+            var deltaX = _lastTerrainBrushCenter.X - hit.WorldPosition.X;
+            var deltaY = _lastTerrainBrushCenter.Y - hit.WorldPosition.Y;
+            var horizontalMovementSquared = (deltaX * deltaX) + (deltaY * deltaY);
+            var centerMoved = horizontalMovementSquared > 0.25f;
+            var accumulatedHeightChange =
+                MathF.Abs(_lastTerrainBrushCenter.Z - hit.WorldPosition.Z) > 0.25f;
+            var radiusChanged = MathF.Abs(_lastTerrainBrushRadius - TerrainBrushRadius) > 0.0001f;
+            var innerRadiusChanged = MathF.Abs(_lastTerrainBrushInnerRadius - TerrainBrushInnerRadius) > 0.0001f;
+            if (_terrainBrushProjectionDirty ||
+                centerMoved ||
+                accumulatedHeightChange ||
+                radiusChanged ||
+                innerRadiusChanged)
+            {
+                var projection = ProjectTerrainBrush(
+                    hit.WorldPosition,
+                    TerrainBrushRadius,
+                    TerrainBrushRadius * TerrainBrushInnerRadius);
+                _terrainBrushOuterPoints = projection.Outer;
+                _terrainBrushInnerPoints = projection.Inner;
+                _lastTerrainBrushCenter = hit.WorldPosition;
+                _lastTerrainBrushRadius = TerrainBrushRadius;
+                _lastTerrainBrushInnerRadius = TerrainBrushInnerRadius;
+                _terrainBrushProjectionDirty = false;
+            }
+        }
+
+        private bool TryRaycastTerrain(Ray ray, out TerrainRayHit closestHit)
+        {
+            lock (SceneObjectLock)
+                return TryRaycastTerrainLocked(ray, out closestHit);
+        }
+
+        private bool TryRaycastTerrainLocked(Ray ray, out TerrainRayHit closestHit)
+        {
+            closestHit = default;
+            var closestDistance = float.MaxValue;
+
+            foreach (var adt in adtContainers)
+            {
+                if (!adt.IsLoaded || adt.Terrain.vertices == null || adt.Terrain.indices == null)
+                    continue;
+
+                if (!Matrix4x4.Invert(adt.GetModelMatrix(), out var inverseModel))
+                    continue;
+
+                var modelMatrix = adt.GetModelMatrix();
+                var localRay = new Ray(
+                    Vector3.Transform(ray.Origin, inverseModel),
+                    Vector3.Normalize(Vector3.TransformNormal(ray.Direction, inverseModel)));
+                var terrain = adt.Terrain;
+                if (!IntersectionTests.RayIntersectsBox(localRay, terrain.terrainBounds, out _))
+                    continue;
+                var candidate = new TerrainRaycastChunk(adt, modelMatrix, inverseModel, -1);
+
+                for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
+                    TryRaycastTerrainChunk(
+                        candidate,
+                        ray,
+                        chunkIndex,
+                        ref closestDistance,
+                        ref closestHit);
+            }
+
+            return closestDistance < float.MaxValue;
+        }
+
+        private static void TryRaycastTerrainChunk(
+            TerrainRaycastChunk candidate,
+            Ray worldRay,
+            int chunkIndex,
+            ref float closestDistance,
+            ref TerrainRayHit closestHit)
+        {
+            var terrain = candidate.Container.Terrain;
+            var localRay = new Ray(
+                Vector3.Transform(worldRay.Origin, candidate.InverseModel),
+                Vector3.Normalize(Vector3.TransformNormal(worldRay.Direction, candidate.InverseModel)));
+            if (!IntersectionTests.RayIntersectsBox(
+                    localRay,
+                    terrain.chunkBounds[chunkIndex],
+                    out _))
+            {
+                return;
+            }
+
+            var indexStart = chunkIndex * 768;
+            var indexEnd = Math.Min(indexStart + 768, terrain.indices.Length);
+            for (var index = indexStart; index < indexEnd; index += 3)
+            {
+                var i0 = terrain.indices[index];
+                var i1 = terrain.indices[index + 1];
+                var i2 = terrain.indices[index + 2];
+                if (i0 == i1 || i1 == i2 || i0 == i2 ||
+                    i0 < 0 || i1 < 0 || i2 < 0 ||
+                    i0 >= terrain.vertices.Length ||
+                    i1 >= terrain.vertices.Length ||
+                    i2 >= terrain.vertices.Length)
+                {
+                    continue;
+                }
+
+                if (!RayIntersectsTriangle(
+                        localRay,
+                        terrain.vertices[i0].Position,
+                        terrain.vertices[i1].Position,
+                        terrain.vertices[i2].Position,
+                        out var distance,
+                        out var localPosition) ||
+                    distance >= closestDistance)
+                {
+                    continue;
+                }
+
+                var worldPosition = Vector3.Transform(localPosition, candidate.ModelMatrix);
+                var localNormal = Vector3.Normalize(Vector3.Cross(
+                    terrain.vertices[i1].Position - terrain.vertices[i0].Position,
+                    terrain.vertices[i2].Position - terrain.vertices[i0].Position));
+                var worldNormal = Vector3.Normalize(Vector3.TransformNormal(
+                    localNormal,
+                    Matrix4x4.Transpose(candidate.InverseModel)));
+                if (worldNormal.Z < 0f)
+                    worldNormal = -worldNormal;
+
+                closestDistance = Vector3.Distance(worldRay.Origin, worldPosition);
+                closestHit = new TerrainRayHit(
+                    candidate.Container,
+                    localPosition,
+                    worldPosition,
+                    worldNormal);
+            }
+        }
+
+        private List<TerrainRaycastChunk> BuildTerrainRaycastCandidatesLocked(
+            Vector3 center,
+            float radius)
+        {
+            var candidates = new List<TerrainRaycastChunk>();
+
+            WorldChunkRange.ForEachChunkInRange(
+                adtContainers,
+                center,
+                radius,
+                static adt => adt.IsLoaded &&
+                              adt.Terrain.vertices is { Length: > 0 } &&
+                              adt.Terrain.indices is { Length: > 0 },
+                static adt => adt.GetModelMatrix(),
+                static adt => adt.Terrain.terrainBounds,
+                static adt => adt.Terrain.chunkBounds,
+                static bounds => bounds,
+                context =>
+                {
+                    candidates.Add(new TerrainRaycastChunk(
+                        context.Tile,
+                        context.ModelMatrix,
+                        context.InverseModelMatrix,
+                        context.ChunkIndex));
+                    return false;
+                });
+
+            return candidates;
+        }
+
+        private void ApplyTerrainBrush(TerrainRayHit hit, TerrainBrushInput input, float deltaTime)
+        {
+            var radius = Math.Clamp(input.Radius, 1f, 1000f);
+            var speed = Math.Clamp(input.Speed, 0.1f, 50f);
+            var tool = TerrainBrushTools.Get(input.ToolMode);
+            lock (SceneObjectLock)
+            {
+                ADTContainer? activeAdt = null;
+                Terrain activeTerrain = default;
+                var activeChanged = false;
+
+                WorldChunkRange.ForEachChunkInRange(
+                    adtContainers,
+                    hit.WorldPosition,
+                    radius,
+                    static adt => adt.IsLoaded && adt.Terrain.vertices is { Length: > 0 },
+                    static adt => adt.GetModelMatrix(),
+                    static adt => adt.Terrain.terrainBounds,
+                    static adt => adt.Terrain.chunkBounds,
+                    static bounds => bounds,
+                    context =>
+                    {
+                        if (!ReferenceEquals(activeAdt, context.Tile))
+                        {
+                            activeAdt = context.Tile;
+                            activeTerrain = context.Tile.Terrain;
+                            activeChanged = false;
+                        }
+
+                        if (_activeTerrainStrokeBefore is { } strokeBefore)
+                        {
+                            var tileId = TerrainTileId.From(context.Tile.mapTile);
+                            if (!strokeBefore.ContainsKey(tileId))
+                            {
+                                strokeBefore[tileId] = activeTerrain.vertices?.ToArray() ?? [];
+                            }
+                        }
+
+                        var changed = ApplyTerrainChunk(
+                            ref activeTerrain,
+                            context.ChunkIndex,
+                            context.LocalCenter,
+                            context.LocalRadius,
+                            Math.Clamp(input.InnerRadius, 0f, 1f),
+                            speed,
+                            tool,
+                            input,
+                            deltaTime);
+                        activeChanged |= changed;
+                        return changed;
+                    },
+                    tile =>
+                    {
+                        if (!ReferenceEquals(activeAdt, tile))
+                            return;
+
+                        if (activeChanged)
+                        {
+                            RebuildTerrainAggregateBounds(ref activeTerrain);
+                            UploadTerrainVertices(activeTerrain);
+                            tile.UpdateTerrain(activeTerrain);
+                            tile.RefreshModifiedState();
+                            MarkTileBoundsDirty(activeTerrain.rootADTFileDataID);
+                        }
+
+                        activeAdt = null;
+                        activeChanged = false;
+                    });
+            }
+        }
+
+        private bool ApplyTerrainChunk(
+            ref Terrain terrain,
+            int chunkIndex,
+            Vector3 localCenter,
+            float radius,
+            float innerRadiusRatio,
+            float speed,
+            TerrainBrushTool tool,
+            TerrainBrushInput input,
+            float deltaTime)
+        {
+            var passes = tool.GetPassCount(input.SmoothIterations);
+            var radiusSquared = radius * radius;
+            var innerRadius = radius * innerRadiusRatio;
+            var changed = false;
+
+            for (var pass = 0; pass < passes; pass++)
+            {
+                var chunkChanged = false;
+                var start = chunkIndex * 145;
+                var end = Math.Min(start + 145, terrain.vertices.Length);
+                for (var vertexIndex = start; vertexIndex < end; vertexIndex++)
+                {
+                    var vertex = terrain.vertices[vertexIndex];
+                    var deltaX = vertex.Position.X - localCenter.X;
+                    var deltaY = vertex.Position.Y - localCenter.Y;
+                    var distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+                    if (distanceSquared > radiusSquared)
+                        continue;
+
+                    var distance = MathF.Sqrt(distanceSquared);
+                    var falloff = BrushMath.CalculateFalloff(distance, radius, innerRadius);
+                    var amount = speed * deltaTime * falloff;
+                    var height = vertex.Position.Z;
+                    var nextHeight = tool.Apply(new TerrainBrushSample(
+                        terrain.vertices,
+                        vertexIndex,
+                        height,
+                        amount,
+                        radius,
+                        input.FlattenHeight,
+                        input.Action));
+
+                    if (MathF.Abs(nextHeight - height) < 0.0001f)
+                        continue;
+
+                    vertex.Position.Z = nextHeight;
+                    terrain.vertices[vertexIndex] = vertex;
+                    changed = true;
+                    chunkChanged = true;
+                }
+
+                if (chunkChanged)
+                    RebuildTerrainChunkBounds(ref terrain, chunkIndex);
+            }
+
+            return changed;
+        }
+
+        private unsafe void UploadTerrainVertices(Terrain terrain)
+        {
+            if (terrain.vertexBuffer.Handle == null || terrain.vertices == null)
+                return;
+
+            MappedSubresource mapped = default;
+            SilkMarshal.ThrowHResult(deviceContext.Map(
+                terrain.vertexBuffer,
+                0,
+                Map.WriteDiscard,
+                0,
+                ref mapped));
+            var destination = new Span<ADTVertex>(mapped.PData, terrain.vertices.Length);
+            terrain.vertices.AsSpan().CopyTo(destination);
+            deviceContext.Unmap(terrain.vertexBuffer, 0);
+        }
+
+        private static void RebuildTerrainBounds(ref Terrain terrain)
+        {
+            for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
+                RebuildTerrainChunkBounds(ref terrain, chunkIndex);
+
+            RebuildTerrainAggregateBounds(ref terrain);
+        }
+
+        private static void RebuildTerrainChunkBounds(ref Terrain terrain, int chunkIndex)
+        {
+            var start = chunkIndex * 145;
+            var end = Math.Min(start + 145, terrain.vertices.Length);
+            if (start >= end || chunkIndex >= terrain.chunkBounds.Length)
+                return;
+
+            var min = terrain.vertices[start].Position;
+            var max = min;
+            for (var index = start + 1; index < end; index++)
+            {
+                min = Vector3.Min(min, terrain.vertices[index].Position);
+                max = Vector3.Max(max, terrain.vertices[index].Position);
+            }
+
+            terrain.chunkBounds[chunkIndex] = new BoundingBox { Min = min, Max = max };
+            var center = (min + max) * 0.5f;
+            terrain.chunkBoundingSpheres[chunkIndex] = new BoundingSphere(
+                center,
+                Vector3.Distance(center, max));
+        }
+
+        private static void RebuildTerrainAggregateBounds(ref Terrain terrain)
+        {
+            if (terrain.chunkBounds.Length == 0)
+                return;
+
+            var terrainMin = terrain.chunkBounds[0].Min;
+            var terrainMax = terrain.chunkBounds[0].Max;
+            for (var index = 1; index < terrain.chunkBounds.Length; index++)
+            {
+                terrainMin = Vector3.Min(terrainMin, terrain.chunkBounds[index].Min);
+                terrainMax = Vector3.Max(terrainMax, terrain.chunkBounds[index].Max);
+            }
+            terrain.terrainBounds = new BoundingBox { Min = terrainMin, Max = terrainMax };
+            var terrainCenter = (terrainMin + terrainMax) * 0.5f;
+            terrain.terrainBoundingSphere = new BoundingSphere(
+                terrainCenter,
+                Vector3.Distance(terrainCenter, terrainMax));
+        }
+
+        private static bool RayIntersectsTriangle(
+            Ray ray,
+            Vector3 v0,
+            Vector3 v1,
+            Vector3 v2,
+            out float distance,
+            out Vector3 hit)
+        {
+            const float epsilon = 0.000001f;
+            distance = 0f;
+            hit = default;
+            var edge1 = v1 - v0;
+            var edge2 = v2 - v0;
+            var p = Vector3.Cross(ray.Direction, edge2);
+            var determinant = Vector3.Dot(edge1, p);
+            if (MathF.Abs(determinant) < epsilon)
+                return false;
+
+            var inverse = 1f / determinant;
+            var t = ray.Origin - v0;
+            var u = Vector3.Dot(t, p) * inverse;
+            if (u < 0f || u > 1f)
+                return false;
+
+            var q = Vector3.Cross(t, edge1);
+            var v = Vector3.Dot(ray.Direction, q) * inverse;
+            if (v < 0f || u + v > 1f)
+                return false;
+
+            distance = Vector3.Dot(edge2, q) * inverse;
+            if (distance < 0f)
+                return false;
+
+            hit = ray.GetPoint(distance);
+            return true;
+        }
+
+        private readonly record struct TerrainRayHit(
+            ADTContainer Container,
+            Vector3 LocalPosition,
+            Vector3 WorldPosition,
+            Vector3 WorldNormal);
+
+        private readonly record struct TerrainRaycastChunk(
+            ADTContainer Container,
+            Matrix4x4 ModelMatrix,
+            Matrix4x4 InverseModel,
+            int ChunkIndex);
 
         public (uint drawCalls, ulong submittedIndices) RenderScene(Camera camera, out bool gizmoWasUsing, out bool gizmoWasOver) =>
             RenderScene(camera, out gizmoWasUsing, out gizmoWasOver, null);
@@ -1857,7 +2430,7 @@ namespace WoWRenderLib.DX11.Managers
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginDebug();
             var drawCallsBeforeDebug = drawCalls;
-            if (ShowBoundingBoxes || ShowBoundingSpheres || SelectedObject != null)
+            if (ShowBoundingBoxes || ShowBoundingSpheres || (SelectionVisualsEnabled && SelectedObject != null) || TerrainBrushWorldPosition.HasValue)
             {
                 deviceContext.RSSetState(wireframeRasterizerState);
                 deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
@@ -1871,11 +2444,15 @@ namespace WoWRenderLib.DX11.Managers
                     foreach (var sceneObject in SceneObjects)
                     {
                         if (sceneObject is ADTContainer) continue;
-                        if (!ShowBoundingBoxes && !ShowBoundingSpheres && !sceneObject.IsSelected) continue;
+                        if (!SelectionVisualsEnabled && sceneObject.IsSelected) continue;
+                        if (!ShowBoundingBoxes && !ShowBoundingSpheres &&
+                            !(SelectionVisualsEnabled && sceneObject.IsSelected)) continue;
 
-                        var color = sceneObject.IsSelected ? new Vector4(0, 1, 0, 1) : new Vector4(1, 1, 0, 1);
+                        var color = SelectionVisualsEnabled && sceneObject.IsSelected
+                            ? new Vector4(0, 1, 0, 1)
+                            : new Vector4(1, 1, 0, 1);
 
-                        if (ShowBoundingBoxes || sceneObject.IsSelected)
+                        if (ShowBoundingBoxes || (SelectionVisualsEnabled && sceneObject.IsSelected))
                         {
                             var box = sceneObject.GetBoundingBox();
                             if (box.HasValue && float.IsFinite(box.Value.Min.X) && float.IsFinite(box.Value.Max.X))
@@ -1900,7 +2477,7 @@ namespace WoWRenderLib.DX11.Managers
                             }
                         }
 
-                        if (ShowBoundingSpheres || sceneObject.IsSelected)
+                        if (ShowBoundingSpheres || (SelectionVisualsEnabled && sceneObject.IsSelected))
                         {
                             var sphere = sceneObject.GetBoundingSphere();
                             if (sphere.HasValue)
@@ -1910,6 +2487,27 @@ namespace WoWRenderLib.DX11.Managers
                             }
                         }
                     }
+                }
+
+                if (TerrainBrushWorldPosition.HasValue &&
+                    TerrainBrushRadius > 0f &&
+                    _terrainBrushOuterPoints.Length > 0)
+                {
+                    var outerBrush = DrawTerrainBrushCircle(
+                        _terrainBrushOuterPoints,
+                        TerrainBrushColor,
+                        projectionMatrix,
+                        cameraMatrix,
+                        ref _terrainBrushOuterVertexBuffer);
+                    var innerBrush = _terrainBrushInnerPoints.Length > 0
+                        ? DrawTerrainBrushCircle(
+                            _terrainBrushInnerPoints,
+                            new Vector4(TerrainBrushColor.X, TerrainBrushColor.Y, TerrainBrushColor.Z, 0.8f),
+                            projectionMatrix,
+                            cameraMatrix,
+                            ref _terrainBrushInnerVertexBuffer)
+                        : (0u, 0u);
+                    drawCalls += outerBrush.drawCalls + innerBrush.Item1;
                 }
 
                 deviceContext.RSSetState(rasterizerState);
@@ -2033,6 +2631,120 @@ namespace WoWRenderLib.DX11.Managers
             return (drawCalls, verticeCount);
         }
 
+        private (Vector3[] Outer, Vector3[] Inner) ProjectTerrainBrush(
+            Vector3 center,
+            float outerRadius,
+            float innerRadius)
+        {
+            lock (SceneObjectLock)
+            {
+                var candidates = BuildTerrainRaycastCandidatesLocked(center, outerRadius);
+                var outer = ProjectTerrainCircleLocked(center, outerRadius, candidates);
+                var inner = innerRadius > 0.01f
+                    ? ProjectTerrainCircleLocked(center, innerRadius, candidates)
+                    : [];
+                return (outer, inner);
+            }
+        }
+
+        private static Vector3[] ProjectTerrainCircleLocked(
+            Vector3 center,
+            float radius,
+            IReadOnlyList<TerrainRaycastChunk> candidates)
+        {
+            const int segments = 64;
+            var points = new Vector3[segments];
+            for (var index = 0; index < segments; index++)
+            {
+                var angle = MathF.Tau * index / segments;
+                var position = new Vector3(
+                    center.X + MathF.Cos(angle) * radius,
+                    center.Y + MathF.Sin(angle) * radius,
+                    center.Z + 10_000f);
+                var ray = new Ray(position, -Vector3.UnitZ);
+                points[index] = TryRaycastTerrainCandidates(
+                        ray,
+                        candidates,
+                        out var hit)
+                    ? hit.WorldPosition + hit.WorldNormal * 0.08f
+                    : new Vector3(position.X, position.Y, center.Z + 0.08f);
+            }
+
+            return points;
+        }
+
+        private static bool TryRaycastTerrainCandidates(
+            Ray ray,
+            IReadOnlyList<TerrainRaycastChunk> candidates,
+            out TerrainRayHit closestHit)
+        {
+            closestHit = default;
+            var closestDistance = float.MaxValue;
+            foreach (var candidate in candidates)
+            {
+                TryRaycastTerrainChunk(
+                    candidate,
+                    ray,
+                    candidate.ChunkIndex,
+                    ref closestDistance,
+                    ref closestHit);
+            }
+
+            return closestDistance < float.MaxValue;
+        }
+
+        private unsafe (uint drawCalls, uint verticeCount) DrawTerrainBrushCircle(
+            Vector3[] points,
+            Vector4 color,
+            Matrix4x4 projection,
+            Matrix4x4 view,
+            ref ComPtr<ID3D11Buffer> vertexBuffer)
+        {
+            Span<Vector3> vertices = stackalloc Vector3[points.Length * 2];
+            for (var index = 0; index < points.Length; index++)
+            {
+                vertices[index * 2] = points[index];
+                vertices[index * 2 + 1] = points[(index + 1) % points.Length];
+            }
+
+            if (vertexBuffer.Handle == null)
+            {
+                var bufferDesc = new BufferDesc
+                {
+                    ByteWidth = (uint)(vertices.Length * sizeof(Vector3)),
+                    Usage = Usage.Dynamic,
+                    BindFlags = (uint)BindFlag.VertexBuffer,
+                    CPUAccessFlags = (uint)CpuAccessFlag.Write
+                };
+                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref vertexBuffer));
+            }
+
+            MappedSubresource mapped = default;
+            SilkMarshal.ThrowHResult(deviceContext.Map(vertexBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+            vertices.CopyTo(new Span<Vector3>(mapped.PData, vertices.Length));
+            deviceContext.Unmap(vertexBuffer, 0);
+
+            var constantBuffer = new BBoxCB
+            {
+                projection_matrix = projection,
+                view_matrix = view,
+                model_matrix = Matrix4x4.Identity,
+                color = color
+            };
+            MappedSubresource mappedCB = default;
+            SilkMarshal.ThrowHResult(deviceContext.Map(bboxConstantBuffer, 0, Map.WriteDiscard, 0, ref mappedCB));
+            *(BBoxCB*)mappedCB.PData = constantBuffer;
+            deviceContext.Unmap(bboxConstantBuffer, 0);
+
+            uint stride = (uint)sizeof(Vector3);
+            uint offset = 0;
+            deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in stride, in offset);
+            deviceContext.VSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
+            deviceContext.PSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
+            deviceContext.Draw((uint)vertices.Length, 0);
+            return (1, (uint)vertices.Length);
+        }
+
         private unsafe (uint drawCalls, uint verticeCount) DrawBoundingBox(BoundingBox localBox, Matrix4x4 modelMatrix, Vector4 color, Matrix4x4 projection, Matrix4x4 view)
         {
             uint drawCalls = 0;
@@ -2147,6 +2859,8 @@ namespace WoWRenderLib.DX11.Managers
                 bboxDepthStencilState.Dispose();
                 bboxConstantBuffer.Dispose();
                 bboxVertexBuffer.Dispose();
+                _terrainBrushOuterVertexBuffer.Dispose();
+                _terrainBrushInnerVertexBuffer.Dispose();
                 rasterizerState.Dispose();
                 wmoRasterizerState.Dispose();
                 wireframeRasterizerState.Dispose();

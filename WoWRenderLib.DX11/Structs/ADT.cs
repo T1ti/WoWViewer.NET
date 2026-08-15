@@ -25,6 +25,10 @@ namespace WoWRenderLib.DX11.Structs
         public Vector4 heights;
         public Vector4 weights;
         public BoundingBox[] chunkBounds;
+        // CPU-side terrain data is retained for editor raycasts and brush
+        // edits. The same vertices are uploaded to the dynamic GPU buffer.
+        public ADTVertex[] vertices;
+        public int[] indices;
         public BoundingSphere[] chunkBoundingSpheres;
         public BoundingBox terrainBounds;
         public BoundingSphere terrainBoundingSphere;

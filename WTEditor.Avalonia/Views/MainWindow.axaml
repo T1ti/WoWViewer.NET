@@ -17,6 +17,9 @@
             <MenuItem Header="_Exit"/>
           </MenuItem>
           <MenuItem Header="_Edit">
+            <MenuItem Header="{Binding UndoLabel}" Command="{Binding UndoCommand}"/>
+            <MenuItem Header="{Binding RedoLabel}" Command="{Binding RedoCommand}"/>
+            <Separator/>
             <MenuItem Header="Copy"/>
             <MenuItem Header="Paste"/>
           </MenuItem>

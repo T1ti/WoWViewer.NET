@@ -29,46 +29,94 @@
     <Border HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0"
             Padding="4" CornerRadius="6" Background="#E61A2027"
             BorderBrush="#526170" BorderThickness="1" ZIndex="40">
-      <ListBox Classes="mode-list" ItemsSource="{Binding Modes}" SelectedItem="{Binding ActiveMode}">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:EditorModeViewModel">
-            <StackPanel Orientation="Horizontal" Spacing="7" ToolTip.Tip="{Binding Description}">
-              <TextBlock Text="{Binding DisplayName}" Foreground="#EDF4F8" FontSize="12"/>
-              <Border Background="#31404C" CornerRadius="3" Padding="4,1">
-                <TextBlock Text="{Binding Shortcut}" Foreground="#AFC0CD" FontSize="10"/>
+      <StackPanel Spacing="4">
+        <ListBox Classes="mode-list" ItemsSource="{Binding Modes}" SelectedItem="{Binding ActiveMode}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:EditorModeViewModel">
+              <TextBlock Text="{Binding Icon}" Foreground="#EDF4F8" FontSize="20"
+                         HorizontalAlignment="Center" ToolTip.Tip="{Binding DisplayName} · {Binding Description} · Shortcut {Binding Shortcut}"/>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Button Content="?" Width="30" Height="28" Padding="0"
+                Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
+                ToolTip.Tip="Editor controls">
+          <Button.Flyout>
+            <Flyout>
+              <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" Padding="12">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="EDITOR CONTROLS" Foreground="#F3F7FA" FontSize="11" FontWeight="Bold"/>
+                  <TextBlock Text="1  Select mode" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="2  Terrain mode" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="RMB + drag  Orbit camera" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="WASD / QE  Move camera" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="Shift  Move faster / positive tool action" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="Control  Negative tool action" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="LMB  Select or edit" Foreground="#DCE7ED" FontSize="11"/>
+                </StackPanel>
               </Border>
-            </StackPanel>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+      </StackPanel>
     </Border>
 
     <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
-            Content="Inspector" Command="{Binding Inspector.TogglePanelCommand}"/>
+            Content="Inspector" Command="{Binding Inspector.TogglePanelCommand}"
+            IsVisible="{Binding IsSelectionModeActive}"/>
 
-    <!-- Drag the inspector header to float it or snap it to either edge. -->
+    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
+            Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
+            BorderBrush="#526170" BorderThickness="1" ZIndex="45"
+            Content="Terrain tools" Command="{Binding TerrainEditor.TogglePanelCommand}"
+            IsVisible="{Binding IsTerrainModeActive}"/>
+
+    <!-- The active mode owns the visible panel. Both panels share the same
+         drag/resize behavior and remain independent of document state. -->
     <Canvas x:Name="PanelCanvas" ZIndex="50">
       <Border x:Name="InspectorPanel" Width="330" Height="620"
-              IsVisible="{Binding Inspector.IsPanelVisible}">
+              IsVisible="{Binding IsSelectionPanelVisible}">
         <Grid>
           <local:SelectionInspectorView DataContext="{Binding Inspector}"/>
           <Border x:Name="InspectorDragHandle" Height="52" Margin="0,0,36,0"
                   HorizontalAlignment="Stretch" VerticalAlignment="Top"
                   Background="#01000000" Cursor="SizeAll"
-                  PointerPressed="InspectorDragHandle_OnPointerPressed"
-                  PointerMoved="InspectorDragHandle_OnPointerMoved"
-                  PointerReleased="InspectorDragHandle_OnPointerReleased"/>
+                  PointerPressed="PanelDragHandle_OnPointerPressed"
+                  PointerMoved="PanelDragHandle_OnPointerMoved"
+                  PointerReleased="PanelDragHandle_OnPointerReleased"/>
           <Thumb x:Name="InspectorLeftResizeHandle" Width="7" HorizontalAlignment="Left"
                  Background="#35526170" Cursor="SizeWestEast"
-                 DragDelta="InspectorHorizontalResize_OnDragDelta"/>
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="InspectorRightResizeHandle" Width="7" HorizontalAlignment="Right"
                  Background="#35526170" Cursor="SizeWestEast"
-                 DragDelta="InspectorHorizontalResize_OnDragDelta"/>
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="InspectorBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
                  VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
-                 DragDelta="InspectorBottomResize_OnDragDelta"/>
+                 DragDelta="PanelBottomResize_OnDragDelta"/>
+        </Grid>
+      </Border>
+
+      <Border x:Name="TerrainPanel" Width="292" Height="640"
+              IsVisible="{Binding IsTerrainToolsPanelVisible}">
+        <Grid>
+          <local:TerrainEditingPanel DataContext="{Binding TerrainEditor}"/>
+          <Border x:Name="TerrainDragHandle" Height="52" Margin="0,0,36,0"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                  Background="#01000000" Cursor="SizeAll"
+                  PointerPressed="PanelDragHandle_OnPointerPressed"
+                  PointerMoved="PanelDragHandle_OnPointerMoved"
+                  PointerReleased="PanelDragHandle_OnPointerReleased"/>
+          <Thumb x:Name="TerrainLeftResizeHandle" Width="7" HorizontalAlignment="Left"
+                 Background="#35526170" Cursor="SizeWestEast"
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
+          <Thumb x:Name="TerrainRightResizeHandle" Width="7" HorizontalAlignment="Right"
+                 Background="#35526170" Cursor="SizeWestEast"
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
+          <Thumb x:Name="TerrainBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
+                 VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
+                 DragDelta="PanelBottomResize_OnDragDelta"/>
         </Grid>
       </Border>
     </Canvas>
