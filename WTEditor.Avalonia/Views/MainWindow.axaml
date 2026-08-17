@@ -23,6 +23,9 @@
             <MenuItem Header="Copy"/>
             <MenuItem Header="Paste"/>
           </MenuItem>
+          <MenuItem Header="_Project">
+            <MenuItem Header="Select project..." Command="{Binding SelectProjectCommand}" />
+          </MenuItem>
           <MenuItem Header="_Settings" Command="{Binding OpenSettingsCommand}"/>
         </Menu>
 

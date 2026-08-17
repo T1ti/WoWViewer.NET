@@ -111,15 +111,15 @@ jobs:
       with:
         dotnet-version: 10.0.x
     - name: Restore dependencies
-      run: dotnet restore WTEditor/WTEditor.csproj
+      run: dotnet restore WTEditor.WPF/WTEditor.WPF.csproj
     - name: Build
-      run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true --self-contained false -f net10.0-windows WTEditor/WTEditor.csproj
+      run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true --self-contained false -f net10.0-windows WTEditor.WPF/WTEditor.WPF.csproj
     - name: Test
-      run: dotnet test --no-build --verbosity normal WTEditor/WTEditor.csproj
+      run: dotnet test --no-build --verbosity normal WTEditor.WPF/WTEditor.WPF.csproj
     - name: Archive Release
       uses: thedoctor0/zip-release@main
       with:
-        directory: ${{ github.workspace }}/WTEditor/bin/Release/net10.0-windows/win-x64/publish
+        directory: ${{ github.workspace }}/WTEditor.WPF/bin/Release/net10.0-windows/win-x64/publish
         type: 'zip'
         filename: ${{ github.workspace }}/Editor-Release-win-x64.zip
     - name: Release

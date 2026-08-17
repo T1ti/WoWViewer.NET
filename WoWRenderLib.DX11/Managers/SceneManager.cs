@@ -15,6 +15,7 @@ using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Persistence;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Structs;
@@ -44,6 +45,7 @@ namespace WoWRenderLib.DX11.Managers
 
         private WDT? currentWDT;
         public uint CurrentWDTFileDataID { get; private set; } = 775971;
+        public uint CurrentMapHighestUniqueId { get; private set; }
         public Container3D? SelectedObject { get; set; } = null;
         public bool SelectionVisualsEnabled { get; set; } = true;
         public bool ShowBoundingBoxes { get; set; } = false;
@@ -585,6 +587,7 @@ namespace WoWRenderLib.DX11.Managers
 
                 CurrentWDTFileDataID = wdtFileDataID;
                 currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
+                UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
             }
         }
@@ -604,9 +607,16 @@ namespace WoWRenderLib.DX11.Managers
             if (currentWDT == null)
             {
                 currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
+                UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
             }
             return currentWDT;
+        }
+
+        private void UpdateMapHighestUniqueId()
+        {
+            if (currentWDT.HasValue)
+                CurrentMapHighestUniqueId = MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT.Value);
         }
 
         private void RebuildAvailableTileIndex()

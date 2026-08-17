@@ -26,7 +26,11 @@ internal static class Program
     {
         var services = new ServiceCollection();
 
-        services.AddSingleton<IEditorSettingsStore, JsonEditorSettingsStore>();
+        services.AddSingleton<IProjectStore, JsonProjectStore>();
+        services.AddSingleton<IProjectService, ProjectService>();
+        services.AddSingleton<IFileExplorerService, FileExplorerService>();
+        services.AddSingleton<IProjectSelectionDialogService, ProjectSelectionDialogService>();
+        services.AddSingleton<IEditorSettingsStore, ProjectEditorSettingsStore>();
         services.AddSingleton<UndoService>();
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
@@ -37,7 +41,9 @@ internal static class Program
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindowViewModel>();
+        services.AddTransient<ProjectSelectionViewModel>();
         services.AddTransient<MainWindow>();
+        services.AddTransient<ProjectSelectionWindow>();
 
         return services;
     }

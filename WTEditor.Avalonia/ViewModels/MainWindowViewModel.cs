@@ -3,16 +3,22 @@ using CommunityToolkit.Mvvm.Input;
 using WTEditor.Application;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.Services;
+using WTEditor.Application.Models;
 
 namespace WTEditor.Avalonia.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly ISettingsDialogService _settingsDialogService;
+    private readonly IProjectSelectionDialogService _projectSelectionDialogService;
+    private readonly IProjectService _projectService;
     public UndoService UndoService { get; }
 
-    public string Title { get; } = "WoW.Tools Editor";
+    public string Title => _projectService.CurrentProject is { } project
+        ? $"WoW.Tools Editor - {project.Name}"
+        : "WoW.Tools Editor";
     public EditorSession Session { get; }
+    public ProjectDefinition? CurrentProject => _projectService.CurrentProject;
 
     [ObservableProperty]
     private ViewModelBase _currentView;
@@ -21,13 +27,27 @@ public partial class MainWindowViewModel : ViewModelBase
         MainViewModel mainView,
         EditorSession session,
         ISettingsDialogService settingsDialogService,
-        UndoService undoService)
+        IProjectSelectionDialogService projectSelectionDialogService,
+        UndoService undoService,
+        IProjectService projectService)
     {
         _currentView = mainView;
         Session = session;
         _settingsDialogService = settingsDialogService;
+        _projectSelectionDialogService = projectSelectionDialogService;
+        _projectService = projectService;
         UndoService = undoService;
         UndoService.HistoryChanged += OnHistoryChanged;
+        _projectService.CurrentProjectChanged += OnCurrentProjectChanged;
+    }
+
+    private void OnCurrentProjectChanged(object? sender, ProjectDefinition? project)
+    {
+        if (project != null)
+            Session.Reload(_projectService.CurrentSettings);
+
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(CurrentProject));
     }
 
     public bool CanUndo => UndoService.CanUndo;
@@ -61,5 +81,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var updated = await _settingsDialogService.ShowAsync(Session.Current);
         if (updated != null)
             Session.Apply(updated, save: true);
+    }
+
+    [RelayCommand]
+    private async Task SelectProjectAsync()
+    {
+        Session.Save();
+        await _projectSelectionDialogService.ShowAsync();
     }
 }

@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+        x:Class="WTEditor.Avalonia.Views.NewProjectWindow"
+        x:DataType="vm:NewProjectViewModel"
+        Title="Add project" Width="700" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="14">
+    <TextBlock Text="Add project" FontSize="21" FontWeight="SemiBold" />
+    <TextBlock Text="Choose a project folder and a WoW client folder. The client must contain .build.info. Project settings are stored in project.json."
+               TextWrapping="Wrap" Opacity="0.75" />
+    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+      <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Name" />
+      <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectName}" />
+      <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Project folder" />
+      <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProjectFolder}" PlaceholderText="Project folder" />
+      <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="BrowseProjectFolder_OnClick" />
+      <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="WoW client" />
+      <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientFolder}" PlaceholderText="C:\World of Warcraft" />
+      <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Click="BrowseClientFolder_OnClick" />
+      <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Product type" />
+      <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ProductType}" PlaceholderText="wow_classic_era" />
+    </Grid>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button Content="Cancel" MinWidth="90" Click="Cancel_OnClick" />
+      <Button Content="Add" MinWidth="90" IsDefault="True" Click="Add_OnClick" />
+    </StackPanel>
+  </StackPanel>
+</Window>

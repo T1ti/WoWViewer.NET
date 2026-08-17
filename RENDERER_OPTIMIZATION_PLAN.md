@@ -109,6 +109,9 @@ rendered image or increasing steady-state GPU time.
 
 - Specialize ADT shaders by active layer count so unused diffuse and height textures are not
   sampled.
+- Compute static ADT vertex positions in the shader from the base tile position and each
+  vertex's fixed local-grid offset, avoiding per-vertex X/Y uploads. Validate the near/far LOD
+  layouts and tile-boundary results before relying on the reduced vertex bandwidth.
 - Specialize WMO/M2 material combiners so textures are sampled only when the combiner uses
   them.
 - Move inverse-transpose normal-matrix construction out of the vertex shader; use a cached

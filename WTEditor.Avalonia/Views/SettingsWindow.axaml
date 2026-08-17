@@ -3,27 +3,11 @@
         xmlns:vm="using:WTEditor.Avalonia.ViewModels"
         x:Class="WTEditor.Avalonia.Views.SettingsWindow"
         x:DataType="vm:ClientSettingsViewModel"
-        Title="Client settings" Width="620" SizeToContent="Height"
+        Title="Editor settings" Width="620" SizeToContent="Height"
         CanResize="False" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="24" Spacing="14">
     <TextBlock FontSize="20" FontWeight="SemiBold" Text="WoW.Tools settings" />
     <TabControl MinHeight="360">
-      <TabItem Header="Client">
-        <StackPanel Margin="8" Spacing="10">
-          <TextBlock TextWrapping="Wrap" Opacity="0.75"
-                     Text="Configure the client files used by the renderer. Build and CDN config values are optional when .build.info contains them." />
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
-            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Client directory" />
-            <TextBox Grid.Row="0" Grid.Column="1" PlaceholderText="C:\World of Warcraft" Text="{Binding WowDirectory}" />
-            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Product" />
-            <TextBox Grid.Row="1" Grid.Column="1" PlaceholderText="wow_classic_era" Text="{Binding WowProduct}" />
-            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Build config" />
-            <TextBox Grid.Row="2" Grid.Column="1" PlaceholderText="Optional" Text="{Binding BuildConfig}" />
-            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="CDN config" />
-            <TextBox Grid.Row="3" Grid.Column="1" PlaceholderText="Optional" Text="{Binding CdnConfig}" />
-          </Grid>
-        </StackPanel>
-      </TabItem>
       <TabItem Header="Rendering">
         <StackPanel Margin="8" Spacing="10">
           <TextBlock TextWrapping="Wrap" Opacity="0.75"

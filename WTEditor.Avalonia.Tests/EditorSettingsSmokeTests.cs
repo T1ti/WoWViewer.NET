@@ -129,6 +129,18 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void EditorSession_ProjectReloadRaisesClientRestartEventWhenConfigurationIsUnchanged()
+    {
+        var session = new EditorSession(new MemorySettingsStore(new EditorSettingsSnapshot()));
+        var clientChanges = 0;
+        session.ClientConfigurationChanged += (_, _) => clientChanges++;
+
+        session.Reload(session.Current);
+
+        Assert.AreEqual(1, clientChanges);
+    }
+
+    [TestMethod]
     public void ViewportSpeedUpdatesAuthoritativeEditorSession()
     {
         var session = new EditorSession(new MemorySettingsStore(new EditorSettingsSnapshot()));

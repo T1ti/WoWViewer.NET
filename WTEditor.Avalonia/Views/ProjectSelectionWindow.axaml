@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+        x:Class="WTEditor.Avalonia.Views.ProjectSelectionWindow"
+        x:DataType="vm:ProjectSelectionViewModel"
+        Title="Select a project" Width="720" Height="500"
+        KeyDown="ProjectSelectionWindow_OnKeyDown"
+        WindowStartupLocation="CenterScreen">
+  <Grid Margin="24" RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="14">
+    <StackPanel Spacing="4">
+      <TextBlock Text="WoW.Tools Editor" FontSize="25" FontWeight="SemiBold" />
+      <TextBlock Text="Select a project to open, or create a new project folder." Opacity="0.75" />
+    </StackPanel>
+
+    <ListBox Grid.Row="1" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:ProjectEntryViewModel">
+          <Border Padding="12" Margin="0,0,0,6" BorderBrush="#526170" BorderThickness="1" CornerRadius="4"
+                  PointerPressed="ProjectEntry_OnPointerPressed">
+            <Border.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Open project directory" Command="{Binding OpenProjectDirectoryCommand}" />
+                <MenuItem Header="Open WoW client directory" Command="{Binding OpenWowClientDirectoryCommand}" />
+              </ContextMenu>
+            </Border.ContextMenu>
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding FolderPath}" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding ProductType, StringFormat='Product: {0}'}" Opacity="0.7" />
+              <TextBlock Text="{Binding BuildVersion, StringFormat='Build: {0}'}" Opacity="0.7" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <TextBlock Grid.Row="2" Text="{Binding ErrorMessage}" Foreground="#D9534F" TextWrapping="Wrap" />
+
+    <CheckBox Grid.Row="3" Content="Automatically load the last project on startup"
+              IsChecked="{Binding AutoLoadLastProject}" />
+
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+      <Button Content="Remove from list" Command="{Binding DeleteProjectCommand}" MinWidth="125"
+              ToolTip.Tip="Removes the project registration only; project files are kept." />
+      <Button Content="Add project..." Command="{Binding RequestAddProjectCommand}" MinWidth="110" />
+      <Button Content="Open project" Command="{Binding OpenProjectCommand}" MinWidth="110" IsDefault="True" />
+    </StackPanel>
+  </Grid>
+</Window>

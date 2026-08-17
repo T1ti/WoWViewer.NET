@@ -43,6 +43,15 @@ public sealed class EditorSession
     }
 
     public void Apply(EditorSettingsSnapshot settings, bool save = false)
+        => ApplyCore(settings, save, forceClientReload: false);
+
+    public void Reload(EditorSettingsSnapshot settings, bool save = false)
+        => ApplyCore(settings, save, forceClientReload: true);
+
+    private void ApplyCore(
+        EditorSettingsSnapshot settings,
+        bool save,
+        bool forceClientReload)
     {
         var next = settings.Normalize();
         var previous = Current;
@@ -52,7 +61,7 @@ public sealed class EditorSession
         _cameraDirection = next.Camera?.Direction ?? Vector3.Zero;
         _cameraDirty = false;
 
-        if (previous.Client != next.Client)
+        if (forceClientReload || previous.Client != next.Client)
             ClientConfigurationChanged?.Invoke(this, next.Client);
 
         if (previous.Rendering != next.Rendering)

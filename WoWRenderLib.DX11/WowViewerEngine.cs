@@ -190,6 +190,7 @@ namespace WoWRenderLib.DX11
         }
         public Vector3? InitialCameraPosition { get; set; }
         public Vector3? InitialCameraDirection { get; set; }
+        public uint CurrentMapHighestUniqueId => sceneManager?.CurrentMapHighestUniqueId ?? 0;
         public WowViewerEngineStatus Status { get; private set; } =
             new(WowViewerEngineState.Created, "Renderer created.");
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;

@@ -19,6 +19,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     private static readonly TimeSpan CaptureWarmupDuration = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan CaptureSampleDuration = TimeSpan.FromSeconds(10);
     private readonly EditorSession _session;
+    private readonly IProjectService? _projectService;
     private readonly Queue<FrameProfileSnapshot> _performanceSamples = [];
     private readonly Stopwatch _performancePublishTimer = Stopwatch.StartNew();
     private readonly Process _currentProcess = Process.GetCurrentProcess();
@@ -139,9 +140,13 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private int _terrainSmoothIterations = 1;
 
 
-    public Editor3DViewModel(EditorSession session, UndoService? undoService = null)
+    public Editor3DViewModel(
+        EditorSession session,
+        UndoService? undoService = null,
+        IProjectService? projectService = null)
     {
         _session = session;
+        _projectService = projectService;
         UndoService = undoService ?? new UndoService();
         _moveSpeed = session.Current.Rendering.MovementSpeed;
         _mouseSensitivity = session.Current.Rendering.MouseSensitivity;
@@ -520,7 +525,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            var captureDirectory = Path.Combine(
+            var captureDirectory = _projectService?.GetPath("PerformanceCaptures") ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "WTEditor",
                 "PerformanceCaptures");

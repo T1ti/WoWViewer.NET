@@ -8,10 +8,6 @@ public partial class ClientSettingsViewModel : ViewModelBase
 {
     public IReadOnlyList<string> KeyboardLayouts { get; } = ["Auto", "QWERTY", "AZERTY"];
 
-    [ObservableProperty] private string _wowDirectory;
-    [ObservableProperty] private string _wowProduct;
-    [ObservableProperty] private string _buildConfig;
-    [ObservableProperty] private string _cdnConfig;
     [ObservableProperty] private string _keyboardLayout;
     [ObservableProperty] private float _terrainRenderDistance;
     [ObservableProperty] private float _modelRenderDistance;
@@ -31,12 +27,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
-        var config = settings.Client;
         var rendererSettings = settings.Rendering;
-        _wowDirectory = config.WowDirectory;
-        _wowProduct = config.WowProduct;
-        _buildConfig = config.BuildConfig;
-        _cdnConfig = config.CdnConfig;
         _keyboardLayout = ToDisplayName(settings.KeyboardLayout);
         _terrainRenderDistance = rendererSettings.TerrainRenderDistance;
         _modelRenderDistance = rendererSettings.ModelRenderDistance;
@@ -57,13 +48,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
     {
-        Client = new ClientConfiguration
-        {
-            WowDirectory = WowDirectory,
-            WowProduct = WowProduct,
-            BuildConfig = BuildConfig,
-            CdnConfig = CdnConfig
-        },
+        Client = original.Client,
         Rendering = new RenderingConfiguration
         {
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
