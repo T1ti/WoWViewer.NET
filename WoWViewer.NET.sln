@@ -7,8 +7,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WoWRenderLib.OpenGL", "WoWR
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SceneScriptLib", "SceneScriptLib\SceneScriptLib.csproj", "{EB7D3E95-5C31-487E-B745-24F6FE36920C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWFormatLib", "WoWFormatLib\WoWFormatLib\WoWFormatLib.csproj", "{4DC144C5-4189-C759-9151-361FE9F4BE92}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BLPSharp", "BLPSharp\BLPSharp\BLPSharp.csproj", "{DCF935AE-5B7D-95C4-6F95-E1EAF0E1A4D5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CascLib", "CascLib\CascLib\CascLib.csproj", "{B887A21D-9E61-8471-1164-067358772EE6}"

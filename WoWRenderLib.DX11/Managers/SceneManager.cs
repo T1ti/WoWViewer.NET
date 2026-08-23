@@ -38,9 +38,17 @@ namespace WoWRenderLib.DX11.Managers
         private readonly HashSet<MapTile> loadedTiles = [];
         private readonly List<ADTContainer> adtContainers = [];
         private readonly HashSet<(byte X, byte Y)> availableWdtTiles = [];
-        private readonly Dictionary<MapTile, TileSceneBounds> tileSceneBounds = [];
+        // The components of MapTile fit exactly in 48 bits. The packed key
+        // avoids repeatedly hashing/comparing the struct for bounds lookups;
+        // the full MapTile remains stored by TileSceneBounds for diagnostics.
+        private readonly Dictionary<ulong, TileSceneBounds> tileSceneBounds = [];
         private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
         private readonly HashSet<uint> coarseCulledTileRoots = [];
+
+        private static ulong GetTileBoundsKey(MapTile tile) =>
+            ((ulong)tile.wdtFileDataID << 16) |
+            ((ulong)tile.tileX << 8) |
+            tile.tileY;
 
         private WdtFile? currentWDT;
         public uint CurrentWDTFileDataID { get; private set; } = 775971;
@@ -767,7 +775,7 @@ namespace WoWRenderLib.DX11.Managers
 
                     adtToRemove.Unload();
 
-                    if (tileSceneBounds.Remove(tile, out var bounds))
+                    if (tileSceneBounds.Remove(GetTileBoundsKey(tile), out var bounds))
                     {
                         tileSceneBoundsByRoot.Remove(rootId);
                         bounds.Dispose();
@@ -992,10 +1000,11 @@ namespace WoWRenderLib.DX11.Managers
             // unregister the callback, adts only load once, probably
             adtContainer.LoadCallback -= OnADTContainerLoaded;
 
-            if (!tileSceneBounds.TryGetValue(adtContainer.mapTile, out var owningTileBounds))
+            var tileBoundsKey = GetTileBoundsKey(adtContainer.mapTile);
+            if (!tileSceneBounds.TryGetValue(tileBoundsKey, out var owningTileBounds))
             {
                 owningTileBounds = new TileSceneBounds(adtContainer.mapTile);
-                tileSceneBounds.Add(adtContainer.mapTile, owningTileBounds);
+                tileSceneBounds.Add(tileBoundsKey, owningTileBounds);
             }
             owningTileBounds.SetTerrain(terrain.rootADTFileDataID, terrain.terrainBounds);
             tileSceneBoundsByRoot[terrain.rootADTFileDataID] = owningTileBounds;
@@ -1922,6 +1931,12 @@ namespace WoWRenderLib.DX11.Managers
 
                         visibleWMOs++;
                         var enabledGroups = instance.EnabledGroups;
+                        if (!EnableWmoPortalCulling)
+                        {
+                            GetWmoVisibilityBatch(enabledGroups).InstanceIndices.Add(i);
+                            continue;
+                        }
+
                         instance.GetPortalVisibilityBuffers(
                             wmo,
                             out var portalVisibleGroups,
@@ -2111,7 +2126,8 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
-                    if (instance.ParentWMO != null &&
+                    if (EnableWmoPortalCulling &&
+                        instance.ParentWMO != null &&
                         !instance.ParentWMO.IsDoodadPortalVisible(
                             instance.WmoDoodadIndex,
                             _renderFrameNumber))

@@ -14,7 +14,13 @@ namespace WoWRenderLib.Structs
         }
 
         public override bool Equals(object? obj) => obj is MapTile other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(tileX, tileY, wdtFileDataID);
+        // MapTile is used as a high-frequency key by the scene tile queues,
+        // sets, and bounds cache. HashCode.Combine is deliberately general
+        // purpose but does considerably more work than this fixed-width key
+        // requires. Keep the WDT id mixed with both coordinates while using
+        // a small, allocation-free hash suitable for these internal keys.
+        public override int GetHashCode() =>
+            unchecked((int)((wdtFileDataID * 397u) ^ ((uint)tileX << 8) ^ tileY));
 
         public static bool operator ==(MapTile left, MapTile right) => left.Equals(right);
         public static bool operator !=(MapTile left, MapTile right) => !left.Equals(right);

@@ -292,7 +292,10 @@ public static class ADTLoader
         Array.Fill(heightScales, 1f);
         Array.Fill(heightOffsets, 1f);
 
-        var alphaLayers = new Dictionary<int, byte[]>();
+        // An ADT has at most eight texture layers. Keep the selected alpha
+        // maps in a fixed array so conversion does not hash a layer index for
+        // every output byte.
+        var alphaLayers = new byte[]?[8];
         for (var layerIndex = 0; layerIndex < Math.Min(layers.Length, 8); layerIndex++)
         {
             var layer = layers[layerIndex];
@@ -319,21 +322,18 @@ public static class ADTLoader
         for (var group = 0; group < 2; group++)
         {
             var baseLayer = group * 4;
-            if (!alphaLayers.ContainsKey(baseLayer) && !alphaLayers.ContainsKey(baseLayer + 1) &&
-                !alphaLayers.ContainsKey(baseLayer + 2) && !alphaLayers.ContainsKey(baseLayer + 3))
+            var layer0 = alphaLayers[baseLayer];
+            var layer1 = alphaLayers[baseLayer + 1];
+            var layer2 = alphaLayers[baseLayer + 2];
+            var layer3 = alphaLayers[baseLayer + 3];
+            if (layer0 is null && layer1 is null && layer2 is null && layer3 is null)
                 continue;
 
             var alphaData = new byte[64 * 64 * 4];
-            for (var y = 0; y < 64; y++)
-            for (var x = 0; x < 64; x++)
-            {
-                var index = (y * 64 + x) * 4;
-                for (var channel = 0; channel < 4; channel++)
-                {
-                    if (alphaLayers.TryGetValue(baseLayer + channel, out var source) && source.Length > y * 64 + x)
-                        alphaData[index + channel] = source[y * 64 + x];
-                }
-            }
+            CopyAlphaChannel(layer0, alphaData, 0);
+            CopyAlphaChannel(layer1, alphaData, 1);
+            CopyAlphaChannel(layer2, alphaData, 2);
+            CopyAlphaChannel(layer3, alphaData, 3);
             alphaMaterials[group] = alphaData;
         }
 
@@ -346,6 +346,17 @@ public static class ADTLoader
             heightScales = heightScales,
             heightOffsets = heightOffsets
         };
+    }
+
+    private static void CopyAlphaChannel(byte[]? source, byte[] destination, int channel)
+    {
+        if (source is null)
+            return;
+
+        var count = Math.Min(source.Length, 64 * 64);
+        var destinationIndex = channel;
+        for (var sourceIndex = 0; sourceIndex < count; sourceIndex++, destinationIndex += 4)
+            destination[destinationIndex] = source[sourceIndex];
     }
 
     private static Doodad[] BuildDoodads(
