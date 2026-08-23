@@ -1912,19 +1912,23 @@ namespace WoWRenderLib.DX11.Managers
                 {
                     var instance = instances[i];
                     var sphere = instance.CachedBoundingSphere ?? instance.GetBoundingSphere();
-                    if (sphere.HasValue &&
-                        IsWithinRenderDistance(camera.Position, sphere.Value.Center, sphere.Value.Radius, ModelRenderDistance) &&
-                        frustum.IsSphereVisible(sphere.Value.Center, sphere.Value.Radius))
+                    var cameraSphere = sphere.GetValueOrDefault();
+                    var cameraVisible = sphere.HasValue &&
+                        IsWithinRenderDistance(camera.Position, cameraSphere.Center, cameraSphere.Radius, ModelRenderDistance) &&
+                        frustum.IsSphereVisible(cameraSphere.Center, cameraSphere.Radius);
+                    instance.SetCameraVisibilityFrame(_renderFrameNumber, cameraVisible);
+                    if (cameraVisible)
                     {
                         if (!instance.IsSelected && ScreenSpaceCulling.IsBelowPixelThresholdNormalized(
                                 camera.Position,
                                 normalizedCameraForward,
-                                sphere.Value.Center,
-                                sphere.Value.Radius,
+                                cameraSphere.Center,
+                                cameraSphere.Radius,
                                 verticalProjectionScale,
                                 _renderHeight,
                                 MinimumModelScreenSizePixels))
                         {
+                            instance.SetCameraVisibilityFrame(_renderFrameNumber, false);
                             sizeCulledWMOs++;
                             continue;
                         }
@@ -2126,8 +2130,13 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
+                    if (RenderWMO &&
+                        instance.ParentWMO is { } parentWmo &&
+                        !parentWmo.IsCameraVisibleForFrame(_renderFrameNumber))
+                        continue;
+
                     if (EnableWmoPortalCulling &&
-                        instance.ParentWMO != null &&
+                        instance.ParentWMO is { } &&
                         !instance.ParentWMO.IsDoodadPortalVisible(
                             instance.WmoDoodadIndex,
                             _renderFrameNumber))

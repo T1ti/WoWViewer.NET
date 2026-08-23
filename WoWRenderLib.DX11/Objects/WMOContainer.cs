@@ -16,6 +16,8 @@ namespace WoWRenderLib.DX11.Objects
         private bool[]? _portalVisibleDoodads;
         private readonly WmoPortalVisibilityScratch _portalVisibilityScratch = new();
         private long _portalVisibilityFrame = -1;
+        private long _cameraVisibilityFrame = -1;
+        private bool _cameraVisible;
 
         public bool DoodadsSpawned = false;
 
@@ -181,6 +183,15 @@ namespace WoWRenderLib.DX11.Objects
             _portalVisibleDoodads == null ||
             (uint)doodadIndex >= (uint)_portalVisibleDoodads.Length ||
             _portalVisibleDoodads[doodadIndex];
+
+        internal void SetCameraVisibilityFrame(long frameNumber, bool visible)
+        {
+            _cameraVisibilityFrame = frameNumber;
+            _cameraVisible = visible;
+        }
+
+        internal bool IsCameraVisibleForFrame(long frameNumber) =>
+            _cameraVisibilityFrame != frameNumber || _cameraVisible;
 
         public override BoundingSphere? GetBoundingSphere()
         {
