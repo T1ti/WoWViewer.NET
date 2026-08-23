@@ -1,303 +1,421 @@
-﻿using System.Numerics;
-using WoWFormatLib.FileReaders;
-using WoWFormatLib.Structs.WMO;
+using System.Buffers.Binary;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using WoWLib;
+using Formats = WoWLib.Formats;
+using Fs = WoWLib.Filesystem;
 using WoWRenderLib.Renderer;
+using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
-namespace WoWRenderLib.Loaders
+namespace WoWRenderLib.Loaders;
+
+public static class WMOLoader
 {
-    public class WMOLoader
+    public static PreppedWMO ParseWMO(uint fileDataId, string fileName = "")
     {
-        public static unsafe PreppedWMO ParseWMO(uint fileDataID, string fileName = "")
+        var fileSystem = WowlibFileSystem.Current;
+        if (!fileSystem.Exists(new FileDataId(fileDataId)))
+            throw new FileNotFoundException($"WMO {fileDataId} does not exist!");
+
+        using var wmo = Formats.WMO.WMO.ForVersion(fileSystem.Version);
+        wmo.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+        var root = wmo.Root;
+        var rootData = ReadRootData(root);
+        var groups = wmo.Groups;
+        var groupInfos = root.GroupInfos.AsSpan();
+        var groupNames = root.GroupNames;
+        var preppedGroups = new List<PreppedWMOGroup>();
+
+        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
-            WMO wmo = new WMOReader().LoadWMO(fileDataID, 0, fileName);
+            var group = groups[groupIndex];
+            var body = group.Body;
+            var header = body.Header;
+            var groupInfo = groupIndex < groupInfos.Length ? groupInfos[groupIndex] : default;
+            var nameOffset = groupInfo?.NameOffset ?? 0;
+            if (nameOffset == 0)
+                nameOffset = checked((int)header.GroupName);
+            var groupName = GetString(groupNames, (uint)Math.Max(0, nameOffset)).Replace(" ", "_");
+            if (string.Equals(groupName, "antiportal", StringComparison.OrdinalIgnoreCase))
+                continue;
 
-            var groupBatches = new List<PreppedWMOGroup>();
-            for (var g = 0; g < wmo.group.Length; g++)
+            var bodyVertices = body.Vertices.AsDataSpan();
+            var bodyNormals = body.Normals.AsDataSpan();
+            var bodyColors = body.VertexColors2.AsDataSpan();
+            var vertices = new WMOVertex[bodyVertices.Length];
+            var textureCoordinates = ReadTextureCoordinates(
+                fileSystem,
+                groupIndex < rootData.GroupFileDataIds.Length ? rootData.GroupFileDataIds[groupIndex] : 0,
+                vertices.Length);
+            for (var i = 0; i < vertices.Length; i++)
             {
-                var group = wmo.group[g];
-
-                MOGI? mogi = wmo.groupInfo is { } groupInfo && g < groupInfo.Length
-                    ? groupInfo[g]
-                    : null;
-                var mogiGroupName = ResolveGroupName(
-                    wmo.groupNames,
-                    mogi?.nameIndex ?? (int)group.mogp.nameOffset);
-                var groupName = ResolveGroupName(wmo.groupNames, (int)group.mogp.nameOffset);
-
-                if (groupName == "antiportal")
-                    continue;
-
-                if (group.mogp.vertices == null)
-                    continue;
-
-                var wmovertices = new WMOVertex[group.mogp.vertices.Length];
-
-                for (var i = 0; i < group.mogp.vertices.Length; i++)
+                vertices[i] = new WMOVertex
                 {
-                    wmovertices[i].Position = new Vector3(group.mogp.vertices[i].vector.X, group.mogp.vertices[i].vector.Y, group.mogp.vertices[i].vector.Z);
-                    wmovertices[i].Normal = new Vector3(group.mogp.normals[i].normal.X, group.mogp.normals[i].normal.Y, group.mogp.normals[i].normal.Z);
-                    if (group.mogp.textureCoords[0] == null)
-                        wmovertices[i].TexCoord = new Vector2(0.0f, 0.0f);
-                    else
-                        wmovertices[i].TexCoord = new Vector2(group.mogp.textureCoords[0][i].X, group.mogp.textureCoords[0][i].Y);
-
-                    if (group.mogp.textureCoords[1] == null)
-                        wmovertices[i].TexCoord2 = new Vector2(0.0f, 0.0f);
-                    else
-                        wmovertices[i].TexCoord2 = new Vector2(group.mogp.textureCoords[1][i].X, group.mogp.textureCoords[1][i].Y);
-
-                    if (group.mogp.textureCoords[2] == null)
-                        wmovertices[i].TexCoord3 = new Vector2(0.0f, 0.0f);
-                    else
-                        wmovertices[i].TexCoord3 = new Vector2(group.mogp.textureCoords[2][i].X, group.mogp.textureCoords[2][i].Y);
-
-                    if (group.mogp.textureCoords[3] == null)
-                        wmovertices[i].TexCoord4 = new Vector2(0.0f, 0.0f);
-                    else
-                        wmovertices[i].TexCoord4 = new Vector2(group.mogp.textureCoords[3][i].X, group.mogp.textureCoords[3][i].Y);
-
-                    if (group.mogp.colors != null)
-                        wmovertices[i].Color = new Vector4(group.mogp.colors[i].X, group.mogp.colors[i].Y, group.mogp.colors[i].Z, group.mogp.colors[i].W);
-                    else
-                        wmovertices[i].Color = new Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-                    if (group.mogp.colors2 != null)
-                        wmovertices[i].Color2 = new Vector4(group.mogp.colors2[i].X, group.mogp.colors2[i].Y, group.mogp.colors2[i].Z, group.mogp.colors2[i].W);
-                    else
-                        wmovertices[i].Color2 = new Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-                    if (group.mogp.colors3 != null)
-                        wmovertices[i].Color3 = new Vector4(group.mogp.colors3[i].X, group.mogp.colors3[i].Y, group.mogp.colors3[i].Z, group.mogp.colors3[i].W);
-                    else
-                        wmovertices[i].Color3 = new Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-                }
-
-                var vertexBytes = new byte[wmovertices.Length * sizeof(WMOVertex)];
-                fixed (WMOVertex* src = wmovertices)
-                fixed (byte* dst = vertexBytes)
-                    System.Buffer.MemoryCopy(src, dst, vertexBytes.Length, vertexBytes.Length);
-
-                var indiceBytes = new byte[group.mogp.indices.Length * sizeof(ushort)];
-                fixed (ushort* src = group.mogp.indices)
-                fixed (byte* dst = indiceBytes)
-                    System.Buffer.MemoryCopy(src, dst, indiceBytes.Length, indiceBytes.Length);
-
-                var renderBatches = new List<PreppedWMOGroupBatch>();
-
-                if (group.mogp.renderBatches != null)
-                {
-                    for (var i = 0; i < group.mogp.renderBatches.Length; i++)
-                    {
-                        int matID = 0;
-
-                        if ((group.mogp.renderBatches[i].flags & 2) == 2)
-                            matID = group.mogp.renderBatches[i].possibleBox2_3;
-                        else
-                            matID = group.mogp.renderBatches[i].materialID;
-
-                        var renderBatch = new PreppedWMOGroupBatch()
-                        {
-                            FirstFace = group.mogp.renderBatches[i].firstFace,
-                            NumFaces = group.mogp.renderBatches[i].numFaces,
-                            MaterialID = matID
-                        };
-
-                        renderBatches.Add(renderBatch);
-                    }
-                }
-
-                groupBatches.Add(new PreppedWMOGroup()
-                {
-                    sourceGroupIndex = g,
-                    groupID = group.mogp.groupID,
-                    groupName = groupName,
-                    mogiGroupName = mogiGroupName,
-                    mogiFlags = mogi is { } groupInfoEntry ? (uint)groupInfoEntry.flags : 0,
-                    // Rendering classification comes from the group's MOGP
-                    // header. Do not merge the root MOGI copy: those flags can
-                    // disagree and incorrectly classify outdoor geometry as
-                    // portal-cullable interior geometry.
-                    flags = (uint)group.mogp.flags,
-                    portalStart = group.mogp.ofsPortals,
-                    portalCount = group.mogp.numPortals,
-                    doodadReferences = group.mogp.doodadReferences ?? [],
-                    boundingBox = new BoundingBox()
-                    {
-                        Min = new Vector3(wmo.group[g].mogp.boundingBox1.X, wmo.group[g].mogp.boundingBox1.Y, wmo.group[g].mogp.boundingBox1.Z),
-                        Max = new Vector3(wmo.group[g].mogp.boundingBox2.X, wmo.group[g].mogp.boundingBox2.Y, wmo.group[g].mogp.boundingBox2.Z)
-                    },
-                    vertexBuffer = vertexBytes,
-                    indiceBuffer = indiceBytes,
-                    groupBatches = [.. renderBatches]
-                });
-            }
-
-            var mats = new PreppedWMOMaterial[wmo.materials.Length];
-            for (var i = 0; i < wmo.materials.Length; i++)
-            {
-                var texFileDataID0 = wmo.materials[i].texture1 == 0 ? -1 : (int)wmo.materials[i].texture1;
-                var texFileDataID1 = wmo.materials[i].texture2 == 0 ? -1 : (int)wmo.materials[i].texture2;
-                var texFileDataID2 = wmo.materials[i].texture3 == 0 ? -1 : (int)wmo.materials[i].texture3;
-                var texFileDataID3 = -1;
-                var texFileDataID4 = -1;
-                var texFileDataID5 = -1;
-                var texFileDataID6 = -1;
-                var texFileDataID7 = -1;
-                var texFileDataID8 = -1;
-
-                var (vertexShader, pixelShader) = ShaderEnums.WMOShaders[(int)wmo.materials[i].shader];
-
-                if (pixelShader == ShaderEnums.WMOPixelShader.MapObjLod)
-                    continue;
-
-                if (pixelShader == ShaderEnums.WMOPixelShader.MapObjParallax)
-                {
-                    if ((int)wmo.materials[i].color3 != 0)
-                        texFileDataID3 = (int)wmo.materials[i].color3;
-
-                    if ((int)wmo.materials[i].flags3 != 0)
-                        texFileDataID4 = (int)wmo.materials[i].flags3;
-
-                    if ((int)wmo.materials[i].runtimeData0 != 0)
-                        texFileDataID5 = (int)wmo.materials[i].runtimeData0;
-                }
-                else if (pixelShader == ShaderEnums.WMOPixelShader.MapObjUnkShader)
-                {
-                    if ((int)wmo.materials[i].color3 != 0)
-                        texFileDataID3 = (int)wmo.materials[i].color3;
-
-                    if ((int)wmo.materials[i].flags3 != 0)
-                        texFileDataID4 = (int)wmo.materials[i].flags3;
-
-                    if ((int)wmo.materials[i].runtimeData0 != 0)
-                        texFileDataID5 = (int)wmo.materials[i].runtimeData0;
-
-                    if ((int)wmo.materials[i].runtimeData1 != 0)
-                        texFileDataID6 = (int)wmo.materials[i].runtimeData1;
-
-                    if ((int)wmo.materials[i].runtimeData2 != 0)
-                        texFileDataID7 = (int)wmo.materials[i].runtimeData2;
-
-                    if ((int)wmo.materials[i].runtimeData3 != 0)
-                        texFileDataID8 = (int)wmo.materials[i].runtimeData3;
-                }
-
-                mats[i] = new PreppedWMOMaterial()
-                {
-                    Shader = (int)wmo.materials[i].shader,
-                    VertexShader = vertexShader,
-                    PixelShader = pixelShader,
-                    BlendMode = wmo.materials[i].blendMode,
-                    Flags = (uint)wmo.materials[i].flags,
-                    Color1 = wmo.materials[i].color1,
-                    Color1B = wmo.materials[i].color1b,
-                    Color2 = wmo.materials[i].color2,
-                    Color3 = wmo.materials[i].color3,
-                    GroundType = wmo.materials[i].groundType,
-                    Flags3 = wmo.materials[i].flags3,
-                    TexFileDataID0 = (uint)texFileDataID0,
-                    TexFileDataID1 = (uint)texFileDataID1,
-                    TexFileDataID2 = (uint)texFileDataID2,
-                    TexFileDataID3 = (uint)texFileDataID3,
-                    TexFileDataID4 = (uint)texFileDataID4,
-                    TexFileDataID5 = (uint)texFileDataID5,
-                    TexFileDataID6 = (uint)texFileDataID6,
-                    TexFileDataID7 = (uint)texFileDataID7,
-                    TexFileDataID8 = (uint)texFileDataID8
+                    Position = ToVector3(bodyVertices[i]),
+                    Normal = i < bodyNormals.Length ? ToVector3(bodyNormals[i]) : Vector3.UnitZ,
+                    TexCoord = GetTextureCoordinate(textureCoordinates, 0, i),
+                    TexCoord2 = GetTextureCoordinate(textureCoordinates, 1, i),
+                    TexCoord3 = GetTextureCoordinate(textureCoordinates, 2, i),
+                    TexCoord4 = GetTextureCoordinate(textureCoordinates, 3, i),
+                    Color = Vector4.Zero,
+                    Color2 = i < bodyColors.Length ? ColorVector(bodyColors[i]) : Vector4.Zero,
+                    Color3 = Vector4.Zero
                 };
             }
 
-            var doodadSets = new string[wmo.doodadSets.Length];
-            for (uint i = 0; i < wmo.doodadSets.Length; i++)
-                doodadSets[i] = wmo.doodadSets[i].setName;
-
-            var doodads = new WMODoodad[wmo.doodadDefinitions.Length];
-            for (var i = 0; i < wmo.doodadDefinitions.Length; i++)
+            var indices = body.Indices.ToArray();
+            var renderBatches = new List<PreppedWMOGroupBatch>(body.Batches.Count);
+            for (var batchIndex = 0; batchIndex < body.Batches.Count; batchIndex++)
             {
-                if (wmo.doodadNames != null)
+                var batch = body.Batches[batchIndex];
+                var materialId = batch is Formats.WMO.Group.Chunks.WMOBatchLegionPlus modern && (batch.Flags & 2) != 0
+                    ? modern.MaterialIdLarge
+                    : batch.MaterialId;
+                renderBatches.Add(new PreppedWMOGroupBatch
                 {
-                    for (var j = 0; j < wmo.doodadNames.Length; j++)
-                        if (wmo.doodadDefinitions[i].offsetOrIndex == wmo.doodadNames[j].startOffset)
-                        {
-                            doodads[i].filename = wmo.doodadNames[j].filename;
-                            if (Listfile.TryGetFileDataID(doodads[i].filename, out var fileDataId))
-                                doodads[i].filedataid = fileDataId;
-                            break;
-                        }
-                }
-                else if (wmo.doodadDefinitions[i].offsetOrIndex < wmo.doodadIds.Length)
-                {
-                    doodads[i].filedataid = wmo.doodadIds[wmo.doodadDefinitions[i].offsetOrIndex];
-                }
-
-                doodads[i].flags = wmo.doodadDefinitions[i].flags;
-                doodads[i].position = new Vector3(wmo.doodadDefinitions[i].position.X, wmo.doodadDefinitions[i].position.Y, wmo.doodadDefinitions[i].position.Z);
-                doodads[i].rotation = new Quaternion(wmo.doodadDefinitions[i].rotation.X, wmo.doodadDefinitions[i].rotation.Y, wmo.doodadDefinitions[i].rotation.Z, wmo.doodadDefinitions[i].rotation.W);
-                doodads[i].scale = wmo.doodadDefinitions[i].scale;
-                doodads[i].color = new Vector4(wmo.doodadDefinitions[i].color[0], wmo.doodadDefinitions[i].color[1], wmo.doodadDefinitions[i].color[2], wmo.doodadDefinitions[i].color[3]);
-                doodads[i].doodadSet = 0; // Default to 0.
-
-                // Search all the doodadSets to see which one this doodad falls into.
-                for (uint j = 0; j < wmo.doodadSets.Length; j++)
-                {
-                    var doodadSet = wmo.doodadSets[j];
-                    if (i >= doodadSet.firstInstanceIndex && i < doodadSet.firstInstanceIndex + doodadSet.numDoodads)
-                    {
-                        doodads[i].doodadSet = j;
-                        break; // Assumingly, a doodad cannot be in more than one doodadSet.
-                    }
-                }
+                    FirstFace = batch.StartIndex,
+                    NumFaces = batch.Count,
+                    MaterialID = materialId
+                });
             }
 
-
-            return new PreppedWMO()
+            var bounds = header.BoundingBox;
+            var doodadRefs = body.DoodadRefs.ToArray();
+            preppedGroups.Add(new PreppedWMOGroup
             {
-                BoundingBox = new BoundingBox()
-                {
-                    Min = new Vector3(wmo.header.boundingBox1.X, wmo.header.boundingBox1.Y, wmo.header.boundingBox1.Z),
-                    Max = new Vector3(wmo.header.boundingBox2.X, wmo.header.boundingBox2.Y, wmo.header.boundingBox2.Z)
-                },
-                FileDataID = fileDataID,
-                AmbientColor = wmo.header.ambientColor,
-                Flags = (ushort)wmo.header.flags,
-                Materials = [.. mats],
-                Doodads = doodads,
-                DoodadSets = doodadSets,
-                PreppedWMOGroups = [.. groupBatches],
-                PortalVertices = wmo.portalVertices ?? [],
-                Portals = wmo.portals?.Select(portal => new PreppedWMOPortal
-                {
-                    StartVertex = portal.startVertex,
-                    VertexCount = portal.vertexCount,
-                    Normal = portal.normal,
-                    Distance = portal.distance
-                }).ToArray() ?? [],
-                PortalReferences = wmo.portalReferences?.Select(reference => new PreppedWMOPortalReference
-                {
-                    PortalIndex = reference.portalIndex,
-                    GroupIndex = reference.groupIndex,
-                    Side = reference.side
-                }).ToArray() ?? [],
-                SourceGroupCount = wmo.group.Length
-            };
+                sourceGroupIndex = groupIndex,
+                groupID = (uint)preppedGroups.Count,
+                groupName = groupName,
+                mogiGroupName = groupName,
+                mogiFlags = groupInfo?.Flags ?? 0,
+                flags = header.Flags,
+                portalStart = header.PortalStart,
+                portalCount = header.PortalCount,
+                doodadReferences = doodadRefs,
+                boundingBox = new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
+                vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(),
+                indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray(),
+                groupBatches = [.. renderBatches]
+            });
         }
 
-        private static float CalculateBoundingRadius(Vector3 min, Vector3 max)
+        var materials = ReadMaterials(fileSystem, rootData);
+        var doodadSets = ReadDoodadSets(root);
+        var doodads = ReadDoodads(fileSystem, rootData, doodadSets);
+        var rootHeader = root.Header;
+        var rootBounds = rootHeader.BoundingBox;
+
+        return new PreppedWMO
         {
-            var center = (min + max) * 0.5f;
-            return Vector3.Distance(center, max);
+            FileDataID = fileDataId,
+            AmbientColor = PackColor(rootHeader.AmbientColor),
+            Flags = rootHeader.Flags,
+            BoundingBox = new BoundingBox(ToVector3(rootBounds.Min), ToVector3(rootBounds.Max)),
+            Doodads = doodads,
+            DoodadSets = doodadSets,
+            Materials = materials,
+            PreppedWMOGroups = [.. preppedGroups],
+            PortalVertices = ReadVector3Array(root.PortalVertices),
+            Portals = ReadPortals(root.Portals),
+            PortalReferences = ReadPortalReferences(root.PortalRefs),
+            SourceGroupCount = groups.Count
+        };
+    }
+
+    private sealed record RootData(
+        Formats.StringBlock? Textures,
+        Formats.StringBlock? DoodadNames,
+        uint[] GroupFileDataIds,
+        uint[] DoodadFileDataIds,
+        WoWLib.Vector<Formats.WMO.Root.Chunks.SmoMaterial> Materials,
+        WoWLib.Vector<Formats.WMO.Root.Chunks.SmoDoodadDef> DoodadDefinitions,
+        WoWLib.Vector<Formats.WMO.Root.Chunks.SmoDoodadSet> DoodadSets);
+
+    private static RootData ReadRootData(Formats.WMO.Root.WMORoot root)
+    {
+        return root switch
+        {
+            Formats.WMO.Root.WMORootVanillaToWod value => new(
+                value.Textures,
+                value.DoodadNames,
+                [],
+                [],
+                value.Materials,
+                value.DoodadDefs,
+                value.DoodadSets),
+            Formats.WMO.Root.WMORootBfa value => new(
+                null,
+                null,
+                value.GroupFdids.ToArray(),
+                value.DoodadFdids.ToArray(),
+                value.Materials,
+                value.DoodadDefs,
+                value.DoodadSets),
+            Formats.WMO.Root.WMORootLegion value => new(
+                value.Textures,
+                value.DoodadNames,
+                value.GroupFdids.ToArray(),
+                [],
+                value.Materials,
+                value.DoodadDefs,
+                value.DoodadSets),
+            Formats.WMO.Root.WMORootShadowlandsToDragonflight value => new(
+                null,
+                null,
+                value.GroupFdids.ToArray(),
+                value.DoodadFdids.ToArray(),
+                value.Materials,
+                value.DoodadDefs,
+                value.DoodadSets),
+            Formats.WMO.Root.WMORootTheWarWithin value => new(
+                null,
+                null,
+                value.GroupFdids.ToArray(),
+                value.DoodadFdids.ToArray(),
+                value.Materials,
+                value.DoodadDefs,
+                value.DoodadSets),
+            _ => throw new InvalidDataException($"Unsupported wowlib WMO root type {root.GetType().Name}.")
+        };
+    }
+
+    private static Vector2[][] ReadTextureCoordinates(
+        Fs.FileSystem fileSystem,
+        uint groupFileDataId,
+        int vertexCount)
+    {
+        if (groupFileDataId == 0 || vertexCount == 0)
+            return [[], [], [], []];
+
+        try
+        {
+            var bytes = fileSystem.ReadFile(new FileDataId(groupFileDataId));
+            return ReadTextureCoordinateChunks(bytes, vertexCount);
         }
-
-        private static string ResolveGroupName(MOGN[] groupNames, int nameOffset)
+        catch
         {
-            for (var index = 0; index < groupNames.Length; index++)
-            {
-                if (groupNames[index].offset == nameOffset)
-                    return groupNames[index].name.Replace(" ", "_");
-            }
-
-            return "";
+            // Some older WMO lineages do not expose group FileDataIDs. Keep
+            // geometry usable and use the shader's zero-UV fallback.
+            return [[], [], [], []];
         }
     }
+
+    internal static Vector2[][] ReadTextureCoordinateChunks(ReadOnlySpan<byte> bytes, int vertexCount)
+    {
+        var result = new Vector2[4][];
+        if (vertexCount <= 0)
+            return result;
+
+        var chunkSize = checked(vertexCount * sizeof(float) * 2);
+        var coordinateSet = 0;
+        const uint motv = ('M' << 24) | ('O' << 16) | ('T' << 8) | 'V';
+        for (var offset = 0; offset + 8 <= bytes.Length && coordinateSet < result.Length; offset += 4)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4)) != motv)
+                continue;
+
+            var size = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(offset + 4, 4));
+            if (size != chunkSize || size < 0 || offset + 8 + size > bytes.Length)
+                continue;
+
+            var coordinates = new Vector2[vertexCount];
+            for (var i = 0; i < coordinates.Length; i++)
+            {
+                var coordinateOffset = offset + 8 + i * 8;
+                coordinates[i] = new Vector2(
+                    BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset, 4))),
+                    BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset + 4, 4))));
+            }
+
+            result[coordinateSet++] = coordinates;
+        }
+
+        return result;
+    }
+
+    private static Vector2 GetTextureCoordinate(Vector2[][] coordinateSets, int set, int vertex) =>
+        set < coordinateSets.Length && coordinateSets[set] is { Length: > 0 } coordinates && vertex < coordinates.Length
+            ? coordinates[vertex]
+            : Vector2.Zero;
+
+    private static PreppedWMOMaterial[] ReadMaterials(Fs.FileSystem fileSystem, RootData root)
+    {
+        var materials = root.Materials.AsSpan();
+        var result = new PreppedWMOMaterial[materials.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var material = materials[i];
+            var shader = (int)material.Shader;
+            var shaderPair = shader >= 0 && shader < ShaderEnums.WMOShaders.Count
+                ? ShaderEnums.WMOShaders[shader]
+                : (ShaderEnums.WMOVertexShader.None, ShaderEnums.WMOPixelShader.None);
+            var runtime = material.RunTimeData;
+            result[i] = new PreppedWMOMaterial
+            {
+                Shader = shader,
+                VertexShader = shaderPair.Item1,
+                PixelShader = shaderPair.Item2,
+                BlendMode = material.BlendMode,
+                Flags = material.Flags,
+                Color1 = PackColor(material.SidnColor),
+                Color1B = PackColor(material.FrameSidnColor),
+                Color2 = material.Color2,
+                Color3 = PackColor(material.DiffColor),
+                GroundType = material.GroundType,
+                Flags3 = material.Flags2,
+                TexFileDataID0 = ResolveTexture(fileSystem, root.Textures, material.Texture1),
+                TexFileDataID1 = ResolveTexture(fileSystem, root.Textures, material.Texture2),
+                TexFileDataID2 = ResolveTexture(fileSystem, root.Textures, material.Texture3),
+                TexFileDataID3 = runtime.Count > 0 ? runtime[0] : 0,
+                TexFileDataID4 = runtime.Count > 1 ? runtime[1] : 0,
+                TexFileDataID5 = runtime.Count > 2 ? runtime[2] : 0,
+                TexFileDataID6 = runtime.Count > 3 ? runtime[3] : 0
+            };
+        }
+        return result;
+    }
+
+    private static string[] ReadDoodadSets(Formats.WMO.Root.WMORoot root)
+    {
+        var doodadSets = root.DoodadSets.AsSpan();
+        var result = new string[doodadSets.Length];
+        for (var i = 0; i < result.Length; i++)
+            result[i] = doodadSets[i].name;
+        return result;
+    }
+
+    private static WMODoodad[] ReadDoodads(Fs.FileSystem fileSystem, RootData root, string[] doodadSets)
+    {
+        var doodadDefinitions = root.DoodadDefinitions.AsSpan();
+        var doodadSetRecords = root.DoodadSets.AsSpan();
+        var result = new WMODoodad[doodadDefinitions.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var doodad = doodadDefinitions[i];
+            var nameIndex = doodad.NameIndex;
+            var fileDataId = nameIndex < root.DoodadFileDataIds.Length ? root.DoodadFileDataIds[nameIndex] : 0;
+            var filename = string.Empty;
+            if (fileDataId == 0)
+            {
+                filename = GetString(root.DoodadNames, nameIndex);
+                fileDataId = ResolvePath(fileSystem, filename);
+            }
+
+            var setIndex = 0u;
+            for (var set = 0; set < doodadSetRecords.Length; set++)
+            {
+                var record = doodadSetRecords[set];
+                if ((uint)i >= record.StartIndex && (uint)i < record.StartIndex + record.Count)
+                {
+                    setIndex = (uint)set;
+                    break;
+                }
+            }
+
+            var nameAndFlags = doodad.NameAndFlags;
+            var orientation = doodad.Orientation;
+            result[i] = new WMODoodad
+            {
+                filename = filename,
+                filedataid = fileDataId,
+                flags = (short)(nameAndFlags >> 24),
+                position = ToVector3(doodad.Position),
+                rotation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W),
+                scale = doodad.Scale,
+                color = ColorVector(doodad.Color),
+                doodadSet = setIndex
+            };
+        }
+        return result;
+    }
+
+    private static Vector3[] ReadVector3Array(WoWLib.Vector<Formats.Common.C3Vector> source)
+    {
+        var sourceData = source.AsDataSpan();
+        var result = new Vector3[sourceData.Length];
+        for (var i = 0; i < result.Length; i++)
+            result[i] = ToVector3(sourceData[i]);
+        return result;
+    }
+
+    private static PreppedWMOPortal[] ReadPortals(WoWLib.Vector<Formats.WMO.Root.Chunks.SmoPortal> source)
+    {
+        var sourceData = source.AsDataSpan();
+        var result = new PreppedWMOPortal[sourceData.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var portal = sourceData[i];
+            result[i] = new PreppedWMOPortal
+            {
+                StartVertex = portal.StartVertex,
+                VertexCount = portal.Count,
+                Normal = ToVector3(portal.Plane.Normal),
+                Distance = portal.Plane.Distance
+            };
+        }
+        return result;
+    }
+
+    private static PreppedWMOPortalReference[] ReadPortalReferences(WoWLib.Vector<Formats.WMO.Root.Chunks.SmoPortalRef> source)
+    {
+        var sourceData = source.AsDataSpan();
+        var result = new PreppedWMOPortalReference[sourceData.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var reference = sourceData[i];
+            result[i] = new PreppedWMOPortalReference
+            {
+                PortalIndex = reference.PortalIndex,
+                GroupIndex = reference.GroupIndex,
+                Side = reference.Side
+            };
+        }
+        return result;
+    }
+
+    private static uint ResolveTexture(Fs.FileSystem fileSystem, Formats.StringBlock? textures, uint value)
+    {
+        if (value != 0 && fileSystem.Exists(new FileDataId(value)))
+            return value;
+        return ResolvePath(fileSystem, GetString(textures, value));
+    }
+
+    private static uint ResolvePath(Fs.FileSystem fileSystem, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return 0;
+        try { return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0; }
+        catch { return 0; }
+    }
+
+    private static string GetString(Formats.StringBlock? block, uint offset)
+    {
+        if (block == null || block.Empty)
+            return string.Empty;
+        try { return block.At(offset); }
+        catch { return string.Empty; }
+    }
+
+    private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
+
+    private static Vector3 ToVector3(Formats.Common.C3Vector.Data value) => new(value.X, value.Y, value.Z);
+
+    private static Vector4 ColorVector(Formats.Common.CImVector color) => new(
+        color.R / 255f,
+        color.G / 255f,
+        color.B / 255f,
+        color.A / 255f);
+
+    private static Vector4 ColorVector(Formats.Common.CImVector.Data color) => new(
+        color.R / 255f,
+        color.G / 255f,
+        color.B / 255f,
+        color.A / 255f);
+
+    private static uint PackColor(Formats.Common.CArgb color) =>
+        (uint)(color.A << 24 | color.R << 16 | color.G << 8 | color.B);
+
+    private static uint PackColor(Formats.Common.CImVector color) =>
+        (uint)(color.A << 24 | color.R << 16 | color.G << 8 | color.B);
 }

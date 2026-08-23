@@ -1,5 +1,5 @@
+using System.Buffers.Binary;
 using System.Numerics;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Avalonia;
@@ -22,10 +22,10 @@ using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Structs;
-using WoWFormatLib.Structs.M2;
-using WoWFormatLib.Structs.ADT;
+using WoWRenderLib.Loaders;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Services;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -352,9 +352,9 @@ public sealed class EditorSettingsSmokeTests
     {
         var vertices = new[]
         {
-            new Vertice { position = new Vector3(-2, -3, -4) },
-            new Vertice { position = new Vector3(10, 5, 6) },
-            new Vertice { position = new Vector3(1, 20, 2) }
+            new Vector3(-2, -3, -4),
+            new Vector3(10, 5, 6),
+            new Vector3(1, 20, 2)
         };
 
         var (box, radius) = WoWRenderLib.Loaders.M2Loader.CalculateRenderBounds(vertices);
@@ -364,8 +364,8 @@ public sealed class EditorSettingsSmokeTests
         foreach (var vertex in vertices)
         {
             Assert.IsTrue(
-                Vector3.Distance(box.Center, vertex.position) <= radius + 0.0001f,
-                $"Render vertex {vertex.position} escaped the calculated sphere.");
+                Vector3.Distance(box.Center, vertex) <= radius + 0.0001f,
+                $"Render vertex {vertex} escaped the calculated sphere.");
         }
     }
 
@@ -701,8 +701,8 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual("Textures (3)", model.TexturesHeader);
         Assert.AreEqual("Materials (1)", model.MaterialsHeader);
         Assert.AreEqual("Render batches (1)", model.BatchesHeader);
-        Assert.AreEqual(3, model.SelectedMaterial.TextureSlots!.Count);
-        Assert.AreEqual(4, model.SelectedMaterial.Colors!.Count);
+        Assert.AreEqual(3, model.SelectedMaterial!.TextureSlots!.Count);
+        Assert.AreEqual(4, model.SelectedMaterial!.Colors!.Count);
         var modelView = new ModelInformationView { DataContext = model };
         modelView.Measure(new global::Avalonia.Size(400, 1200));
         var groupsList = modelView.FindControl<ListBox>("WmoGroupsList");
@@ -730,30 +730,142 @@ public sealed class EditorSettingsSmokeTests
     public void WmoModnParser_PreservesOffsetsWhenConvertingMdxNames()
     {
         var bytes = Encoding.ASCII.GetBytes("world\\a.mdx\0world\\longer.mdx\0");
-        using var stream = new MemoryStream(bytes);
-        using var reader = new BinaryReader(stream);
-        var method = typeof(WoWFormatLib.FileReaders.WMOReader).GetMethod(
-            "ReadMODNChunk",
-            BindingFlags.NonPublic | BindingFlags.Static);
+        var names = ReadMdxNames(bytes);
 
-        Assert.IsNotNull(method);
-        var names = (WoWFormatLib.Structs.WMO.MODN[])method.Invoke(null, [(uint)bytes.Length, reader])!;
+        Assert.AreEqual(2, names.Count);
+        Assert.AreEqual("world\\a.m2", names[0].Name);
+        Assert.AreEqual(0u, names[0].Offset);
+        Assert.AreEqual((uint)"world\\a.mdx".Length + 1u, names[1].Offset);
+    }
 
-        Assert.AreEqual(2, names.Length);
-        Assert.AreEqual("world\\a.m2", names[0].filename);
-        Assert.AreEqual(0u, names[0].startOffset);
-        Assert.AreEqual((uint)"world\\a.mdx".Length + 1u, names[1].startOffset);
+    [TestMethod]
+    public void Wowlib_UsesModernFormatLineageForClassicEra115()
+    {
+        var version = new WoWLib.ClientVersion(1, 15, 9, 69109, WoWLib.ClientFlavor.ClassicEra);
+        var wmo = WoWLib.Formats.WMO.WMO.ForVersion(version);
+
+        Assert.IsTrue(version.IsClassic);
+        Assert.AreNotEqual("WMO", wmo.GetType().Name);
+        Assert.IsFalse(wmo.GetType().Name.Contains("Vanilla", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WmoMotvChunksAreMappedToVertexTextureCoordinateSets()
+    {
+        var bytes = new byte[2 * (8 + 16)];
+        WriteMotvChunk(bytes, 0, (0.1f, 0.2f), (0.3f, 0.4f));
+        WriteMotvChunk(bytes, 24, (0.5f, 0.6f), (0.7f, 0.8f));
+
+        var sets = WMOLoader.ReadTextureCoordinateChunks(bytes, 2);
+
+        Assert.AreEqual(new Vector2(0.1f, 0.2f), sets[0][0]);
+        Assert.AreEqual(new Vector2(0.3f, 0.4f), sets[0][1]);
+        Assert.AreEqual(new Vector2(0.5f, 0.6f), sets[1][0]);
+        Assert.AreEqual(new Vector2(0.7f, 0.8f), sets[1][1]);
+    }
+
+    private static void WriteMotvChunk(
+        byte[] bytes,
+        int offset,
+        (float X, float Y) first,
+        (float X, float Y) second)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), 0x4D4F5456);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 4, 4), 16);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 8, 4), BitConverter.SingleToInt32Bits(first.X));
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 12, 4), BitConverter.SingleToInt32Bits(first.Y));
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 16, 4), BitConverter.SingleToInt32Bits(second.X));
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset + 20, 4), BitConverter.SingleToInt32Bits(second.Y));
+    }
+
+    [TestMethod]
+    public void Wowlib_ClassicEraDirectPlacementIdsAreNotTreatedAsNameIndexes()
+    {
+        const uint modelFileDataId = 204129;
+        const uint doodadEntryIsFileDataId = 0x40;
+        const uint wmoEntryIsFileDataId = 0x8;
+
+        Assert.AreEqual(
+            modelFileDataId,
+            ADTLoader.ResolvePlacementFileDataId(
+                null!, null, null, modelFileDataId, doodadEntryIsFileDataId, doodadEntryIsFileDataId));
+        Assert.AreEqual(
+            modelFileDataId,
+            ADTLoader.ResolvePlacementFileDataId(
+                null!, null, null, modelFileDataId, wmoEntryIsFileDataId, wmoEntryIsFileDataId));
+    }
+
+    [TestMethod]
+    public void AdtVertexRowsUseTheNonOverlappingDiamondLayout()
+    {
+        Assert.AreEqual(0, ADTLoader.GetVertexIndex(0, 0));
+        Assert.AreEqual(9, ADTLoader.GetVertexIndex(1, 0));
+        Assert.AreEqual(17, ADTLoader.GetVertexIndex(2, 0));
+        Assert.AreEqual(26, ADTLoader.GetVertexIndex(3, 0));
+        Assert.AreEqual(144, ADTLoader.GetVertexIndex(16, 8));
+    }
+
+    [TestMethod]
+    public void Wowlib_FileSystemPreparationProvidesNonEmptyOptionalPaths()
+    {
+        var projectDirectory = WowlibFileSystem.GetProjectDirectory("wow_classic_era");
+        var listfilePath = WowlibFileSystem.GetListfilePath();
+
+        Assert.IsTrue(Directory.Exists(projectDirectory));
+        Assert.IsTrue(File.Exists(listfilePath));
+
+        using var settings = new WoWLib.Filesystem.FileSystemSettings(
+            "unused-client-path",
+            new WoWLib.ClientVersion(1, 15, 9, 69109, WoWLib.ClientFlavor.ClassicEra),
+            WoWLib.Locale.enUS,
+            projectDirectory,
+            listfilePath,
+            new WoWLib.FileDataId(),
+            "wow_classic_era");
+
+        Assert.AreEqual(projectDirectory, settings.ProjectDirectory);
+        Assert.AreEqual(listfilePath, settings.ListfileCsv);
+    }
+
+    private static List<(string Name, uint Offset)> ReadMdxNames(byte[] bytes)
+    {
+        var result = new List<(string Name, uint Offset)>();
+        var offset = 0u;
+        var start = 0;
+        while (start < bytes.Length)
+        {
+            var end = Array.IndexOf(bytes, (byte)0, start);
+            if (end < 0)
+                end = bytes.Length;
+            var name = Encoding.ASCII.GetString(bytes, start, end - start);
+            if (name.EndsWith(".mdx", StringComparison.OrdinalIgnoreCase))
+                name = name[..^4] + ".m2";
+            result.Add((name, offset));
+            start = end + 1;
+            offset = (uint)start;
+        }
+        return result;
     }
 
     [TestMethod]
     public void FlagsField_UsesEnumNamesAndPreservesUnknownBits()
     {
-        var field = FlagsFieldViewModel.FromEnum<MDDFFlags>("Flags", 0x421);
+        var field = FlagsFieldViewModel.FromEnum<WoWLib.Formats.Common.DoodadDefFlags>("Flags", 0x421);
 
         CollectionAssert.AreEqual(
             new[] { "Biodome", "Liquid Known", "Unknown (0x400)" },
             field.ActiveFlags.ToArray());
         Assert.AreEqual("Raw value: 0x421", field.ToolTip);
+    }
+
+    [TestMethod]
+    public void FlagsField_UsesWowlibNamesWithoutDroppingMeaningfulPrefixes()
+    {
+        var field = FlagsFieldViewModel.FromEnum<WoWLib.Formats.WMO.Group.Chunks.GroupFlags>("Flags", 0x4 | 0x80000000);
+
+        CollectionAssert.AreEqual(
+            new[] { "Has Vertex Colors", "Unknown (0x80000000)" },
+            field.ActiveFlags.ToArray());
     }
 
     [TestMethod]

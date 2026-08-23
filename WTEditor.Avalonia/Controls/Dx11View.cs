@@ -18,6 +18,7 @@ using Silk.NET.Maths;
 using WTEditor.Application.Models;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.Rendering;
+using WTEditor.Avalonia.ViewModels;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
@@ -741,7 +742,7 @@ namespace WTEditor.Avalonia.Controls
                     index,
                     material.BlendMode,
                     material.Flags,
-                    EnumName<WoWFormatLib.Structs.WMO.MOMTShader>((uint)material.Shader),
+                    EnumName<MOMTShader>((uint)material.Shader),
                     material.VertexShader.ToString(),
                     material.PixelShader.ToString(),
                     SafeAssets(() => GetWmoTextureIds(material)),
@@ -761,7 +762,7 @@ namespace WTEditor.Avalonia.Controls
                     batch.numFaces,
                     batch.blendType,
                     0,
-                    EnumName<WoWFormatLib.Structs.WMO.MOMTShader>(batch.shader),
+                    EnumName<MOMTShader>(batch.shader),
                     batch.materialIndex >= 0 && batch.materialIndex < preppedMaterials.Length
                         ? preppedMaterials[batch.materialIndex].VertexShader.ToString()
                         : string.Empty,

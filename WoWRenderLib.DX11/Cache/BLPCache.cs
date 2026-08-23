@@ -4,8 +4,11 @@ using Silk.NET.DXGI;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using WoWLib;
+using Formats = WoWLib.Formats;
 using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Services;
 
 namespace WoWRenderLib.DX11.Cache
 {
@@ -13,10 +16,18 @@ namespace WoWRenderLib.DX11.Cache
     {
         private static ComPtr<ID3D11Device>? cachedDevice = null;
 
-        private static readonly HashSet<uint> inFlight = new();
+        private static readonly ConcurrentDictionary<uint, byte> inFlight = new();
 
         private static readonly ConcurrentDictionary<uint, ComPtr<ID3D11ShaderResourceView>> Cache = new();
         private static readonly ConcurrentDictionary<uint, List<uint>> Users = new();
+
+        // The old TEX cache supplied an immediate low-resolution texture for
+        // many BLPs.  wowlib does not expose that blob cache, so allocating a
+        // new D3D texture/SRV for every pending BLP would add two synchronous
+        // resource creations to every tile load.  Keep one shared fallback
+        // instead; the real BLP is inserted into Cache after the worker has
+        // decoded and uploaded it.
+        private static ComPtr<ID3D11ShaderResourceView>? pendingTexture;
 
         private static readonly ConcurrentQueue<uint> decodeQueue = new();
         private static readonly ConcurrentQueue<DecodedBLP> uploadQueue = new();
@@ -39,34 +50,12 @@ namespace WoWRenderLib.DX11.Cache
             if (Cache.TryGetValue(fileDataId, out var value))
                 return value;
 
-            ComPtr<ID3D11ShaderResourceView> placeholderTexture = default;
-            var loadedPlaceholder = false;
+            pendingTexture ??= BLPLoader.CreatePlaceholderTexture(cachedDevice.Value);
 
-            if (TEXCache.cachedTEX != null && TEXCache.cachedTEX.Value.blobTextures.TryGetValue((int)fileDataId, out var blobTex))
-            {
-                try
-                {
-                    placeholderTexture = BLPLoader.CreateTextureFromBlob(cachedDevice.Value, blobTex, TEXCache.cachedTEX.Value.mipMapData[TEXCache.cachedTEX.Value.txmdOffsetsToIndex[(int)blobTex.txmdOffset]]);
-                    loadedPlaceholder = true;
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"Failed to create texture from BLP blob {fileDataId}: {e.Message}");
-                }
-            }
+            if (inFlight.TryAdd(fileDataId, 0))
+                decodeQueue.Enqueue(fileDataId);
 
-            if (!loadedPlaceholder)
-                placeholderTexture = BLPLoader.CreatePlaceholderTexture(cachedDevice.Value);
-
-            Cache.TryAdd(fileDataId, placeholderTexture);
-
-            if (inFlight.Contains(fileDataId))
-                return placeholderTexture;
-
-            inFlight.Add(fileDataId);
-            decodeQueue.Enqueue(fileDataId);
-
-            return placeholderTexture;
+            return pendingTexture.Value;
         }
 
         private static void StartWorker()
@@ -96,38 +85,40 @@ namespace WoWRenderLib.DX11.Cache
 
                 try
                 {
-                    using var blp = new BLPSharp.BLPFile(WoWFormatLib.FileProviders.FileProvider.OpenFile(fileDataId));
+                    using var blp = new Formats.BLP.BLP();
+                    blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
 
                     DecodedBLP decoded;
 
-                    if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1 || blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt3 || blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt5)
+                    if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1 ||
+                        blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3 ||
+                        blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt5)
                     {
                         Format compressedFormat;
 
-                        if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt1)
+                        if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1)
                             compressedFormat = Format.FormatBC1Unorm;
-                        else if (blp.preferredFormat == BLPSharp.BlpPixelFormat.Dxt3)
+                        else if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3)
                             compressedFormat = Format.FormatBC2Unorm;
                         else
                             compressedFormat = Format.FormatBC3Unorm;
-                        var mipmaps = new List<MipLevel>(blp.MipMapCount);
+                        var mipmaps = new List<MipLevel>((int)blp.MipCount);
 
-                        for (int i = 0; i < blp.MipMapCount; i++)
+                        for (uint i = 0; i < blp.MipCount; i++)
                         {
-                            int scale = (int)Math.Pow(2, i);
-                            var width = blp.width / scale;
-                            var height = blp.height / scale;
+                            var width = (int)blp.MipWidth(i);
+                            var height = (int)blp.MipHeight(i);
 
                             if (width == 0 || height == 0)
                                 break;
 
-                            var bytes = blp.GetPictureData(i, width, height);
+                            var bytes = blp.Mip(i);
                             mipmaps.Add(new MipLevel
                             {
                                 Data = bytes,
                                 Width = width,
                                 Height = height,
-                                Level = i
+                                Level = (int)i
                             });
                         }
 
@@ -141,13 +132,14 @@ namespace WoWRenderLib.DX11.Cache
                     }
                     else
                     {
-                        var pixels = blp.GetPixels(0, out int width, out int height) ?? throw new Exception("BLP pixel data is null!");
+                        using var image = blp.Decode(0);
+                        var pixels = image.Pixels.ToArray();
                         decoded = new DecodedBLP
                         {
                             FileDataId = fileDataId,
                             PixelData = pixels,
-                            Width = width,
-                            Height = height,
+                            Width = (int)image.Width,
+                            Height = (int)image.Height,
                             IsCompressed = false
                         };
                     }
@@ -157,6 +149,7 @@ namespace WoWRenderLib.DX11.Cache
                 catch (Exception e)
                 {
                     Console.WriteLine($"Failed to decode BLP {fileDataId}: {e.Message}");
+                    inFlight.TryRemove(fileDataId, out _);
                 }
             }
         }
@@ -165,6 +158,9 @@ namespace WoWRenderLib.DX11.Cache
         {
             if (Cache.TryGetValue(fileDataId, out var srv))
                 return srv;
+
+            if (pendingTexture.HasValue)
+                return pendingTexture.Value;
 
             return fallback;
         }
@@ -179,6 +175,17 @@ namespace WoWRenderLib.DX11.Cache
             {
                 if (!uploadQueue.TryDequeue(out var decoded))
                     break;
+
+                // A tile may have been evicted while the worker was decoding
+                // its textures.  Do not submit GPU work for an asset that no
+                // longer has users; it will be requested again if needed.
+                if (ShouldDiscardDecodedTexture(
+                        Users.ContainsKey(decoded.FileDataId),
+                        Cache.ContainsKey(decoded.FileDataId)))
+                {
+                    inFlight.TryRemove(decoded.FileDataId, out _);
+                    continue;
+                }
 
                 try
                 {
@@ -272,7 +279,7 @@ namespace WoWRenderLib.DX11.Cache
                     Console.WriteLine($"Failed to upload BLP {decoded.FileDataId}: {e.Message}");
                 }
 
-                inFlight.Remove(decoded.FileDataId);
+                inFlight.TryRemove(decoded.FileDataId, out _);
             }
 
             return uploaded;
@@ -312,6 +319,9 @@ namespace WoWRenderLib.DX11.Cache
         {
             return decodeQueue.Count + uploadQueue.Count;
         }
+
+        internal static bool ShouldDiscardDecodedTexture(bool hasUsers, bool hasCachedTexture) =>
+            !hasUsers || hasCachedTexture;
 
         public static void Release(uint fileDataId, uint parent)
         {
@@ -366,6 +376,11 @@ namespace WoWRenderLib.DX11.Cache
             inFlight.Clear();
             while (decodeQueue.TryDequeue(out _)) { }
             while (uploadQueue.TryDequeue(out _)) { }
+            if (pendingTexture.HasValue)
+            {
+                pendingTexture.Value.Dispose();
+                pendingTexture = null;
+            }
             cachedDevice = null;
         }
     }

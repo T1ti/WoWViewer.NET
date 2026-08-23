@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using WoWFormatLib.Structs.ADT;
 using WTEditor.Application.Models;
+using DoodadDefFlags = WoWLib.Formats.Common.DoodadDefFlags;
+using MapObjDefFlags = WoWLib.Formats.Common.MapObjDefFlags;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -52,14 +53,14 @@ public partial class PlacementInformationViewModel : ViewModelBase
                 new("Name set", placement.NameSet?.ToString() ?? "—")
             ];
         Flags = placement.Kind == MapPlacementKind.Mddf
-            ? FlagsFieldViewModel.FromEnum<MDDFFlags>("Flags", placement.Flags)
-            : FlagsFieldViewModel.FromEnum<MODFFlags>("Flags", placement.Flags);
+            ? FlagsFieldViewModel.FromEnum<DoodadDefFlags>("Flags", placement.Flags)
+            : FlagsFieldViewModel.FromEnum<MapObjDefFlags>("Flags", placement.Flags);
 
         _synchronizing = true;
         try
         {
             HasWorldModelPlacement = placement.Kind == MapPlacementKind.Modf;
-            CanEditDoodadSet = (placement.Flags & (ushort)MODFFlags.modf_use_sets_from_mwds) == 0;
+            CanEditDoodadSet = (placement.Flags & (ushort)MapObjDefFlags.use_sets_from_mwds) == 0;
             DoodadSetOptions = doodadSets?.Select((name, index) =>
                 new PlacementOptionViewModel(
                     (ushort)index,

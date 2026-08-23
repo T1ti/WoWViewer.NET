@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using System.Numerics;
+using WoWLib;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Renderer;
@@ -129,7 +130,7 @@ namespace WoWRenderLib.DX11.Loaders
                     // Preload BLPs, only do this once here so that we track users properly
                     foreach (var id in renderBatch.materialFDIDs)
                     {
-                        if (id != 0 && CASC.FileExists(id))
+                        if (HasTexture(id))
                             BLPCache.GetOrLoad(device, id, preppedWMO.FileDataID);
                     }
 
@@ -280,25 +281,40 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 foreach (var mat in wmo.preppedMats)
                 {
-                    if (CASC.FileExists(mat.TexFileDataID0))
+                    if (HasTexture(mat.TexFileDataID0))
                         BLPCache.Release(mat.TexFileDataID0, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID1))
+                    if (HasTexture(mat.TexFileDataID1))
                         BLPCache.Release(mat.TexFileDataID1, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID2))
+                    if (HasTexture(mat.TexFileDataID2))
                         BLPCache.Release(mat.TexFileDataID2, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID3))
+                    if (HasTexture(mat.TexFileDataID3))
                         BLPCache.Release(mat.TexFileDataID3, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID4))
+                    if (HasTexture(mat.TexFileDataID4))
                         BLPCache.Release(mat.TexFileDataID4, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID5))
+                    if (HasTexture(mat.TexFileDataID5))
                         BLPCache.Release(mat.TexFileDataID5, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID6))
+                    if (HasTexture(mat.TexFileDataID6))
                         BLPCache.Release(mat.TexFileDataID6, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID7))
+                    if (HasTexture(mat.TexFileDataID7))
                         BLPCache.Release(mat.TexFileDataID7, wmo.rootWMOFileDataID);
-                    if (CASC.FileExists(mat.TexFileDataID8))
+                    if (HasTexture(mat.TexFileDataID8))
                         BLPCache.Release(mat.TexFileDataID8, wmo.rootWMOFileDataID);
                 }
+            }
+        }
+
+        private static bool HasTexture(uint fileDataId)
+        {
+            if (fileDataId == 0)
+                return false;
+
+            try
+            {
+                return WowlibFileSystem.Current.Exists(new FileDataId(fileDataId));
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
             }
         }
     }

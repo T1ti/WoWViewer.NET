@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
-using System.IO;
-using WoWFormatLib.FileProviders;
-using WoWFormatLib.Structs.ADT;
-using WoWFormatLib.Structs.WDT;
+using WoWLib;
+using WoWRenderLib.Services;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Loaders;
 
@@ -15,27 +14,27 @@ public static class MapUniqueIdScanner
     private const int ModfRecordSize = 64;
     private const int UniqueIdOffset = 4;
 
-    public static uint ScanMap(WDT map)
+    private static readonly uint Mddf = FourCc("MDDF");
+    private static readonly uint Modf = FourCc("MODF");
+
+    public static uint ScanMap(WdtFile map)
     {
-        var maximum = GetMaximumUniqueId(map.modf.entries);
+        ArgumentNullException.ThrowIfNull(map);
 
-        if (map.tiles == null || map.tileFiles == null)
-            return maximum;
-
+        var maximum = 0u;
+        var fileSystem = WowlibFileSystem.Current;
         var scannedFiles = new HashSet<uint>();
-        var hasSplitAdts = map.mphd.flags.HasFlag(MPHDFlags.wdt_has_maid);
 
-        foreach (var tile in map.tiles)
+        foreach (var tile in map.Tiles)
         {
-            if (!map.tileFiles.TryGetValue(tile, out var files))
+            if (!map.TryGetTile(tile.tileX, tile.tileY, out var files))
                 continue;
 
-            // Split ADTs keep MDDF/MODF in OBJ0. Older, unsplit ADTs keep them in the root ADT.
-            var objectFileDataId = hasSplitAdts ? files.obj0ADT : files.rootADT;
+            var objectFileDataId = map.HasSplitAdts ? files.Obj0Adt : files.RootAdt;
             if (objectFileDataId == 0 || !scannedFiles.Add(objectFileDataId))
                 continue;
 
-            if (!FileProvider.FileExists(objectFileDataId))
+            if (!fileSystem.Exists(new FileKey(new FileDataId(objectFileDataId))))
                 continue;
 
             maximum = Math.Max(maximum, ScanFile(objectFileDataId));
@@ -46,13 +45,15 @@ public static class MapUniqueIdScanner
 
     public static uint ScanFile(uint fileDataId)
     {
-        using var stream = FileProvider.OpenFile(fileDataId);
+        using var stream = new MemoryStream(
+            WowlibFileSystem.Current.ReadFile(new FileKey(new FileDataId(fileDataId))),
+            writable: false);
         return ScanStream(stream);
     }
 
     /// <summary>
-    /// Scans an ADT stream. This is public so callers with their own file provider can reuse the
-    /// allocation-light chunk scanner without constructing a full ADTReader result.
+    /// Scans an ADT stream. This is public so callers with their own stream can reuse the
+    /// allocation-light chunk scanner without constructing a full wowlib ADT result.
     /// </summary>
     public static uint ScanStream(Stream stream)
     {
@@ -64,15 +65,15 @@ public static class MapUniqueIdScanner
 
         while (TryReadChunkHeader(stream, header))
         {
-            var chunkName = (ADTChunks)BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
+            var chunkName = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
             var chunkSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4, 4));
 
             switch (chunkName)
             {
-                case ADTChunks.MDDF:
+                case var value when value == Mddf:
                     maximum = Math.Max(maximum, ScanPlacementChunk(stream, chunkSize, MddfRecordSize, discard));
                     break;
-                case ADTChunks.MODF:
+                case var value when value == Modf:
                     maximum = Math.Max(maximum, ScanPlacementChunk(stream, chunkSize, ModfRecordSize, discard));
                     break;
                 default:
@@ -104,17 +105,8 @@ public static class MapUniqueIdScanner
         return maximum;
     }
 
-    private static uint GetMaximumUniqueId(MODFEntry[]? entries)
-    {
-        var maximum = 0u;
-        if (entries == null)
-            return maximum;
-
-        foreach (var entry in entries)
-            maximum = Math.Max(maximum, entry.uniqueId);
-
-        return maximum;
-    }
+    private static uint FourCc(string value) =>
+        BinaryPrimitives.ReadUInt32LittleEndian(System.Text.Encoding.ASCII.GetBytes(value));
 
     private static bool TryReadChunkHeader(Stream stream, byte[] header)
     {
@@ -151,8 +143,5 @@ public static class MapUniqueIdScanner
         }
     }
 
-    private static void ReadExactly(Stream stream, Span<byte> buffer)
-    {
-        stream.ReadExactly(buffer);
-    }
+    private static void ReadExactly(Stream stream, Span<byte> buffer) => stream.ReadExactly(buffer);
 }

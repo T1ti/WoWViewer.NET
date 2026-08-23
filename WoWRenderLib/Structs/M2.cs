@@ -57,7 +57,7 @@ namespace WoWRenderLib.Structs
     {
         public uint fileDataID;
         public uint blendMode;
-        public WoWFormatLib.Structs.M2.TextureFlags flags;
+        public uint flags;
     }
 
     public readonly struct M2Geoset

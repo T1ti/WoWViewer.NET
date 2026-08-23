@@ -30,13 +30,13 @@ public sealed record FlagsFieldViewModel(string Label, ulong Value, IReadOnlyLis
 
     private static string Humanize(string name)
     {
-        var withoutFlagMask = Regex.Replace(
-            name,
-            "^Flag_0x[0-9a-f]+_",
-            string.Empty,
-            RegexOptions.IgnoreCase);
-        var withoutPrefix = Regex.Replace(withoutFlagMask, "^[a-z0-9]+_", string.Empty);
-        var words = Regex.Replace(withoutPrefix, "(?<=[a-z])(?=[A-Z])", " ");
+        var flagMask = Regex.Match(name, "^Flag_(?<mask>0x[0-9a-f]+)(?:_(?<label>.*))?$", RegexOptions.IgnoreCase);
+        if (flagMask.Success)
+            name = flagMask.Groups["label"].Success
+                ? flagMask.Groups["label"].Value
+                : $"Unknown {flagMask.Groups["mask"].Value}";
+
+        var words = Regex.Replace(name, "(?<=[a-z])(?=[A-Z])", " ");
         return string.Join(' ', words.Split(['_', ' '], StringSplitOptions.RemoveEmptyEntries)
             .Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
     }

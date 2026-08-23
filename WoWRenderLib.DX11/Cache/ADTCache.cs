@@ -95,12 +95,15 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Failed to parse ADT {key}: {e.Message}");
+                    Console.WriteLine($"Failed to parse ADT {key}: {e}");
                     
                     lock(inFlightLock)
                         inFlight.Remove(key);
                     
                     Callbacks.TryRemove(key, out _);
+
+                    if (!Users.ContainsKey(key))
+                        Cache.TryRemove(key, out _);
                 }
             }
         }
@@ -120,6 +123,22 @@ namespace WoWRenderLib.DX11.Cache
                     lock(inFlightLock)
                         inFlight.Remove(key);
                     
+                    Callbacks.TryRemove(key, out _);
+                    continue;
+                }
+
+                // The tile may have been evicted after parsing started. Do
+                // not create GPU buffers for a tile that no scene object owns
+                // anymore. A pending placeholder is retained by Release so a
+                // tile that re-enters the view can reuse this parse result.
+                if (ShouldDiscardParsedTile(Users.ContainsKey(key)))
+                {
+                    if (Cache.TryRemove(key, out var staleTerrain) && staleTerrain.renderBatches != null)
+                        ADTLoader.UnloadTerrain(staleTerrain);
+
+                    lock (inFlightLock)
+                        inFlight.Remove(key);
+
                     Callbacks.TryRemove(key, out _);
                     continue;
                 }
@@ -189,11 +208,23 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     Users.TryRemove(key, out _);
                     Callbacks.TryRemove(key, out _);
-                    if (Cache.TryRemove(key, out var terrain))
+
+                    bool isPending;
+                    lock (inFlightLock)
+                        isPending = inFlight.Contains(key);
+
+                    // Keep an in-flight placeholder alive until its parsed
+                    // result reaches Upload. This avoids a key-not-found race
+                    // when the tile is requested again before the worker
+                    // finishes, while Upload will discard it if it remains
+                    // unused.
+                    if (!isPending && Cache.TryRemove(key, out var terrain))
                         ADTLoader.UnloadTerrain(terrain);
                 }
             }
         }
+
+        internal static bool ShouldDiscardParsedTile(bool hasUsers) => !hasUsers;
 
         public static int GetCacheCount() => Cache.Count;
 

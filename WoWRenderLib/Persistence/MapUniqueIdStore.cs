@@ -1,6 +1,6 @@
 using System.Text.Json;
-using WoWFormatLib.Structs.WDT;
 using WoWRenderLib.Loaders;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Persistence;
 
@@ -16,11 +16,19 @@ public static class MapUniqueIdStore
     private static string? loadedPath;
     private static Dictionary<uint, uint> entries = [];
 
-    public static uint GetOrScan(uint mapId, WDT map) => GetOrScan(mapId, map, DefaultPath);
+    public static uint GetOrScan(uint mapId, WdtFile map) => GetOrScan(mapId, map, DefaultPath);
 
-    public static uint GetOrScan(uint mapId, WDT map, string path)
+    public static uint GetOrScan(uint mapId, WdtFile map, string path) =>
+        GetOrScan(mapId, map, path, MapUniqueIdScanner.ScanMap);
+
+    public static uint GetOrScan(
+        uint mapId,
+        WdtFile map,
+        string path,
+        Func<WdtFile, uint> scanner)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(scanner);
 
         lock (Sync)
         {
@@ -28,7 +36,7 @@ public static class MapUniqueIdStore
             if (entries.TryGetValue(mapId, out var maximum))
                 return maximum;
 
-            maximum = MapUniqueIdScanner.ScanMap(map);
+            maximum = scanner(map);
             entries[mapId] = maximum;
             Save(path);
             return maximum;

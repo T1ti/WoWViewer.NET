@@ -39,16 +39,11 @@ namespace WoWRenderLib.DX11.Cache
             if (Cache.TryGetValue(fileDataId, out ParsedDoodadBatch value))
                 return value;
 
-            ParsedDoodadBatch placeholder;
-            try
-            {
-                placeholder = M2Loader.LoadM2(device, WoWRenderLib.Loaders.M2Loader.ParseM2(166046));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("!!! Error loading placeholder M2: " + e.Message);
-                placeholder = new ParsedDoodadBatch();
-            }
+            // Do not parse/upload a complete placeholder for every pending M2.
+            // The renderer already treats fileDataID == 0 as not ready, so an
+            // empty value avoids doing synchronous GPU work while the real M2
+            // is parsed by the worker.
+            var placeholder = CreatePlaceholder();
 
             Cache.Add(fileDataId, placeholder);
 
@@ -109,7 +104,9 @@ namespace WoWRenderLib.DX11.Cache
                 if (!Cache.TryGetValue(originalFileDataId, out var oldBatch))
                 {
                     inFlight.Remove(originalFileDataId);
-                    return uploaded;
+                    // A tile can be evicted while its M2 is being parsed. Do
+                    // not let that stale item block all later uploads.
+                    continue;
                 }
 
                 try
@@ -193,6 +190,13 @@ namespace WoWRenderLib.DX11.Cache
         {
             return Cache.Count;
         }
+
+        private static ParsedDoodadBatch CreatePlaceholder() => new()
+        {
+            submeshes = [],
+            mats = [],
+            geosets = []
+        };
 
         public static void CheckUsers()
         {

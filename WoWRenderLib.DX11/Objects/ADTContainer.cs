@@ -15,6 +15,7 @@ namespace WoWRenderLib.DX11.Objects
         public bool IsLoaded { get; private set; }
         public bool IsModified { get; private set; }
         private ADTVertex[] _originalVertices = [];
+        private bool _cacheReferenceHeld;
 
         public ADTContainer(ComPtr<ID3D11Device> device, MapTile mapTile) : base(device, mapTile.wdtFileDataID, mapTile.wdtFileDataID)
         {
@@ -25,6 +26,11 @@ namespace WoWRenderLib.DX11.Objects
         public void UpdateTerrain(Terrain terrain)
         {
             Terrain = terrain;
+        }
+
+        internal void MarkCacheReferenceHeld()
+        {
+            _cacheReferenceHeld = true;
         }
 
         public void OnLoaded(Terrain terrain)
@@ -39,8 +45,11 @@ namespace WoWRenderLib.DX11.Objects
 
         public void Unload()
         {
-            if (IsLoaded)
+            if (_cacheReferenceHeld)
+            {
                 ADTCache.Release(mapTile, mapTile.wdtFileDataID);
+                _cacheReferenceHeld = false;
+            }
 
             IsLoaded = false;
             IsModified = false;

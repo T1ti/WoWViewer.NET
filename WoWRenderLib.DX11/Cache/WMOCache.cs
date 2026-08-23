@@ -41,18 +41,11 @@ namespace WoWRenderLib.DX11.Cache
             if (Cache.TryGetValue(fileDataId, out WorldModel value))
                 return value;
 
-            WorldModel placeholderWMO;
-
-            try
-            {
-                var preppedWMO = WoWRenderLib.Loaders.WMOLoader.ParseWMO(112521);
-                placeholderWMO = WMOLoader.LoadWMO(preppedWMO, device); // missingwmo.wmo
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("!!! Error loading placeholder WMO: " + e.Message);
-                placeholderWMO = new WorldModel();
-            }
+            // Pending WMOs are not rendered until IsLoaded becomes true. Keep
+            // the placeholder allocation-only; parsing and uploading the full
+            // missing-WMO asset here used to block the render thread once per
+            // placement.
+            var placeholderWMO = CreatePlaceholder();
 
             Cache.Add(fileDataId, placeholderWMO);
 
@@ -123,7 +116,9 @@ namespace WoWRenderLib.DX11.Cache
                 if (!Cache.TryGetValue(originalFileDataId, out var oldWMO))
                 {
                     inFlight.Remove(originalFileDataId);
-                    return uploaded;
+                    // A tile may have been evicted while this item was being
+                    // parsed. Skip it and continue with the remaining queue.
+                    continue;
                 }
 
                 try
@@ -224,6 +219,17 @@ namespace WoWRenderLib.DX11.Cache
         {
             return Cache.Count;
         }
+
+        private static WorldModel CreatePlaceholder() => new()
+        {
+            groupBatches = [],
+            preppedMats = [],
+            wmoRenderBatches = [],
+            doodads = [],
+            doodadSets = [],
+            portals = [],
+            doodadsReferencedByGroups = []
+        };
 
         public static void ReleaseAll()
         {

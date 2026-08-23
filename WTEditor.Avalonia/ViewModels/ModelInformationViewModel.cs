@@ -1,7 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using WoWFormatLib.Structs.WMO;
-using WoWFormatLib.Structs.M2;
 using WTEditor.Application.Models;
+using M2MaterialFlags = WoWLib.Formats.M2.Root.Record.MaterialFlags;
+using WmoGroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
+using WmoHeaderFlags = WoWLib.Formats.WMO.Root.Chunks.HeaderFlags;
+using WmoMaterialFlags = WoWLib.Formats.WMO.Root.Chunks.MaterialFlags;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -116,7 +118,7 @@ public partial class ModelInformationViewModel : ViewModelBase
                 RootAmbientColor = wmo.Root?.AmbientColor ?? 0;
                 RootFlags = wmo.Root == null
                     ? null
-                    : FlagsFieldViewModel.FromEnum<MOHDFlags>("Root flags", wmo.Root.Flags);
+                    : FlagsFieldViewModel.FromEnum<WmoHeaderFlags>("Root flags", wmo.Root.Flags);
                 HasRootInformation = wmo.Root != null;
                 Textures = CreateTextureItems(wmo.Textures, null);
                 Groups = wmo.Groups ?? [];
@@ -151,7 +153,7 @@ public partial class ModelInformationViewModel : ViewModelBase
             ];
         SelectedGroupFlags = value == null
             ? null
-            : FlagsFieldViewModel.FromEnum<MOGPFlags>("Flags", value.Flags);
+            : FlagsFieldViewModel.FromEnum<WmoGroupFlags>("Flags", value.Flags);
     }
 
     private static IReadOnlyList<FilePathViewModel> ToFiles(IReadOnlyList<AssetReference>? assets) =>
@@ -219,8 +221,8 @@ public partial class ModelInformationViewModel : ViewModelBase
                 : material.Textures.FirstOrDefault()?.Name ?? $"Material {material.Index}",
             CreateMaterialProperties(material),
             isWmo
-                ? FlagsFieldViewModel.FromEnum<MOMTFlags>("Flags", material.Flags)
-                : FlagsFieldViewModel.FromEnum<RenderFlags>("Render flags", material.Flags),
+                ? FlagsFieldViewModel.FromEnum<WmoMaterialFlags>("Flags", material.Flags)
+                : FlagsFieldViewModel.FromEnum<M2MaterialFlags>("Render flags", material.Flags),
             ToFiles(material.Textures),
             CreateTextureSlots(material),
             CreateMaterialColors(material))).ToArray() ?? [];
@@ -270,7 +272,7 @@ public partial class ModelInformationViewModel : ViewModelBase
         IReadOnlyList<MaterialDetailsViewModel> materials) => batches?.Select(batch => new ModelDetailItemViewModel(
             isWmo ? $"Batch {batch.Index} · Group {batch.GroupIndex}" : $"Batch {batch.Index}",
             CreateBatchProperties(batch, batch.MaterialIndex.HasValue),
-            batch.MaterialIndex.HasValue ? null : FlagsFieldViewModel.FromEnum<RenderFlags>("Render flags", batch.Flags),
+            batch.MaterialIndex.HasValue ? null : FlagsFieldViewModel.FromEnum<M2MaterialFlags>("Render flags", batch.Flags),
             batch.MaterialIndex.HasValue ? [] : ToFiles(batch.Textures),
             Material: batch.MaterialIndex.HasValue
                 ? materials.FirstOrDefault(material => material.SourceIndex == batch.MaterialIndex.Value)

@@ -1,219 +1,156 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
-using WoWFormatLib.FileProviders;
-using WoWFormatLib.FileReaders;
-using WoWFormatLib.Structs.ADT;
+using WoWLib;
+using Formats = WoWLib.Formats;
+using Fs = WoWLib.Filesystem;
 using WoWRenderLib.Cache;
+using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
-namespace WoWRenderLib.Loaders
+namespace WoWRenderLib.Loaders;
+
+public static class ADTLoader
 {
-    public class ADTLoader
+    public static unsafe ParsedADT ParseADT(MapTile mapTile)
     {
-        public static ParsedADT ParseADT(MapTile mapTile)
+        var wdt = WDTCache.GetOrLoad(mapTile.wdtFileDataID);
+        if (!wdt.TryGetTile(mapTile.tileX, mapTile.tileY, out var files) || files.RootAdt == 0)
+            throw new FileNotFoundException($"ADT tile {mapTile.tileX}_{mapTile.tileY} is not present in WDT {mapTile.wdtFileDataID}.");
+
+        var fileSystem = WowlibFileSystem.Current;
+        using var adt = Formats.ADT.ADT.ForVersion(fileSystem.Version);
+        var alphaFormat = (wdt.Flags & (0x4u | 0x80u)) != 0
+            ? Formats.ADT.AlphaFormat.highres_8bit
+            : Formats.ADT.AlphaFormat.lowres_4bit;
+        adt.Read(fileSystem, ResolveFileKey(fileSystem, files.RootAdt), alphaFormat);
+
+        var parsed = new ParsedADT
         {
-            ParsedADT parsedADT = new();
-            ADTReader adtReader = new();
+            rootADTFileDataID = files.RootAdt
+        };
 
-            var wdt = WDTCache.GetOrLoad(mapTile.wdtFileDataID);
+        // ADT itself exposes the placement, string, and terrain-chunk fields
+        // common to every era in wowlib 0.0.8.  Texture FileDataID tables are
+        // still version-specific because older clients store texture names.
+        var textureData = ReadTextureData(adt);
+        var chunks = adt.Chunks;
+        var chunkCount = Math.Min(chunks.Count, 256);
+        if (chunkCount == 0)
+            return parsed;
 
-            var rootADTFileDataID = adtReader.LoadADT(wdt, mapTile.tileX, mapTile.tileY, true, "");
-            var adt = adtReader.adtfile;
+        var modelFilenames = adt.ModelFilenames;
+        var modelNameOffsets = adt.ModelNameOffsets;
+        var wmoFilenames = adt.WmoFilenames;
+        var wmoNameOffsets = adt.WmoNameOffsets;
+        var fileIds = new HashSet<uint>();
+        var materials = BuildMaterials(
+            fileSystem,
+            textureData.DiffuseTextureIds,
+            textureData.HeightTextureIds,
+            textureData.TextureParams,
+            adt.Textures,
+            fileIds);
 
-            var TileSize = 1600.0f / 3.0f; //533.333
-            var ChunkSize = TileSize / 16.0f; //33.333
-            var UnitSize = ChunkSize / 8.0f; //4.166666
-            var MapMidPoint = 32.0f / ChunkSize;
+        var vertices = new ADTVertex[256 * 145];
+        var indices = new int[256 * 768];
+        var farLodIndices = new int[256 * 384];
+        var chunkBounds = new BoundingBox[256];
+        var renderBatches = new ParsedADTRenderBatch[256];
+        var indicesOffset = 0;
+        var farLodIndicesOffset = 0;
+        const float tileSize = 1600.0f / 3.0f;
+        const float unitSize = tileSize / 16.0f / 8.0f;
+        var defaultVertexColor = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
 
-            List<uint> usedBLPFileDataIDs = [];
+        for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++)
+        {
+            var chunk = chunks[chunkIndex];
+            var header = chunk.Header;
+            var heights = chunk.Heights.AsSpan();
+            var normals = chunk.Normals.AsDataSpan();
+            Span<Formats.Common.CImVector.Data> vertexColors = default;
+            if (chunk is Formats.ADT.MapChunkCataPlus cata)
+                vertexColors = cata.VertexColors.AsDataSpan();
+            else if (chunk is Formats.ADT.MapChunkWotlk wotlk)
+                vertexColors = wotlk.VertexColors.AsDataSpan();
+            var flags = header.Flags;
+            var position = ToVector3(header.Position);
+            var chunkMin = new Vector3(float.MaxValue);
+            var chunkMax = new Vector3(float.MinValue);
 
-            var materials = new Dictionary<uint, ADTMaterial>();
-
-            if (adt.textures.filenames == null)
+            for (var row = 0; row < 17; row++)
             {
-                for (var ti = 0; ti < adt.diffuseTextureFileDataIDs.Length; ti++)
+                var inner = (row & 1) != 0;
+                var halfHeight = row * 0.5f;
+                var rowWidth = inner ? 8 : 9;
+                for (var column = 0; column < rowWidth; column++)
                 {
-                    var diffuseTextureFDID = adt.diffuseTextureFileDataIDs[ti];
-
-                    var material = new ADTMaterial
+                    var vertexIndex = GetVertexIndex(row, column);
+                    var normal = normals[vertexIndex];
+                    var vertex = new ADTVertex
                     {
-                        texture = (int)diffuseTextureFDID
+                        Normal = new Vector3(
+                            normal.Normal[0] / 127f,
+                            normal.Normal[1] / 127f,
+                            normal.Normal[2] / 127f),
+                        Color = GetVertexColor(vertexColors, vertexIndex, defaultVertexColor),
+                        TexCoord = new Vector2((column + (inner ? 0.5f : 0f)) / 8f, halfHeight / 8f),
+                        Position = new Vector3(
+                            position.X - halfHeight * unitSize,
+                            position.Y - column * unitSize,
+                            vertexIndex < heights.Length ? heights[vertexIndex] + position.Z : position.Z)
                     };
 
-                    usedBLPFileDataIDs.Add(diffuseTextureFDID);
+                    if (inner)
+                        vertex.Position.Y -= 0.5f * unitSize;
 
-                    if (adt.texParams != null && adt.texParams.Length > ti)
-                    {
-                        material.scale = (float)Math.Pow(2, (adt.texParams[ti].flags & 0xF0) >> 4);
-                        if (adt.texParams[ti].height != 0.0 || adt.texParams[ti].offset != 1.0)
-                        {
-                            material.heightScale = adt.texParams[ti].height;
-                            material.heightOffset = adt.texParams[ti].offset;
-
-                            if (!FileProvider.FileExists(adt.heightTextureFileDataIDs[ti]))
-                            {
-                                material.heightTexture = (int)diffuseTextureFDID;
-                                usedBLPFileDataIDs.Add(diffuseTextureFDID);
-                            }
-                            else
-                            {
-                                var heightTextureFDID = adt.heightTextureFileDataIDs[ti];
-                                material.heightTexture = (int)heightTextureFDID;
-                                usedBLPFileDataIDs.Add(heightTextureFDID);
-                            }
-                        }
-                        else
-                        {
-                            material.heightScale = 0.0f;
-                            material.heightOffset = 1.0f;
-                        }
-                    }
-                    else
-                    {
-                        material.heightScale = 0.0f;
-                        material.heightOffset = 1.0f;
-                        material.scale = 1.0f;
-                    }
-                    materials.Add(diffuseTextureFDID, material);
+                    chunkMin = Vector3.Min(chunkMin, vertex.Position);
+                    chunkMax = Vector3.Max(chunkMax, vertex.Position);
+                    vertices[chunkIndex * 145 + vertexIndex] = vertex;
                 }
             }
-            else
+
+            if (chunkIndex == 0)
+                parsed.startPos = vertices[0].Position;
+
+            var highResolutionHoles = (flags & 0x10000) != 0;
+            var vertexBase = chunkIndex * 145;
+            for (var holeRow = 0; holeRow < 8; holeRow++)
             {
-                throw new Exception("Filename-based loading yeeted");
-            }
-
-            var initialChunkY = adt.chunks[0].header.position.Y;
-            var initialChunkX = adt.chunks[0].header.position.X;
-
-            var renderBatches = new ParsedADTRenderBatch[256];
-
-            var vertices = new ADTVertex[256 * 145];
-            var indices = new int[256 * 768];
-            var farLodIndices = new int[256 * 384];
-            var verticesOffset = 0;
-            var indicesOffset = 0;
-            var farLodIndicesOffset = 0;
-
-            var chunkBounds = new BoundingBox[256];
-            var holesHighRes = new byte[8];
-            var defaultVertexColor = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
-            for (int c = 0; c < adt.chunks.Length; c++)
-            {
-                var batch = new ParsedADTRenderBatch();
-
-                var chunk = adt.chunks[c];
-
-                var chunkMinBounds = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
-                var chunkMaxBounds = new Vector3(float.MinValue, float.MinValue, float.MinValue);
-
-                bool hasMCCV = chunk.header.flags.HasFlag(MCNKFlags.mcnk_has_mccv);
-                for (int i = 0, idx = 0; i < 17; i++)
+                for (var holeColumn = 0; holeColumn < 8; holeColumn++)
                 {
-                    var isInnerVertice = (i % 2) != 0;
-                    var halfHeight = i * 0.5f;
-                    for (var j = 0; j < (isInnerVertice ? 8 : 9); j++)
-                    {
-                        var v = new ADTVertex
-                        {
-                            Normal = new Vector3(chunk.normals.normal_0[idx], chunk.normals.normal_1[idx], chunk.normals.normal_2[idx]),
-                            Color = hasMCCV ? new Vector4(chunk.vertexShading.blue[idx] / 255.0f, chunk.vertexShading.green[idx] / 255.0f, chunk.vertexShading.red[idx] / 255.0f, chunk.vertexShading.alpha[idx] / 255.0f) : defaultVertexColor,
-                            TexCoord = new Vector2((j + (isInnerVertice ? 0.5f : 0f)) / 8f, (halfHeight) / 8f),
-                            Position = new Vector3(chunk.header.position.X - (halfHeight * UnitSize), chunk.header.position.Y - (j * UnitSize), chunk.vertices.vertices[idx++] + chunk.header.position.Z)
-                        };
-
-                        if (isInnerVertice)
-                            v.Position.Y -= 0.5f * UnitSize;
-
-                        chunkMinBounds = Vector3.Min(chunkMinBounds, v.Position);
-                        chunkMaxBounds = Vector3.Max(chunkMaxBounds, v.Position);
-
-                        vertices[verticesOffset++] = v;
-                    }
-                }
-
-                if (c == 0)
-                    parsedADT.startPos = vertices[0].Position;
-
-                holesHighRes[0] = chunk.header.holesHighRes_0;
-                holesHighRes[1] = chunk.header.holesHighRes_1;
-                holesHighRes[2] = chunk.header.holesHighRes_2;
-                holesHighRes[3] = chunk.header.holesHighRes_3;
-                holesHighRes[4] = chunk.header.holesHighRes_4;
-                holesHighRes[5] = chunk.header.holesHighRes_5;
-                holesHighRes[6] = chunk.header.holesHighRes_6;
-                holesHighRes[7] = chunk.header.holesHighRes_7;
-
-                bool isHighResHoles = chunk.header.flags.HasFlag(MCNKFlags.mcnk_high_res_holes);
-
-                int off = c * 145;
-                for (int j = 9, xx = 0, yy = 0; j < 145; j++, xx++)
-                {
-                    if (xx >= 8) { xx = 0; ++yy; }
-                    var isHole = true;
-
-                    // Check if chunk is using low-res holes
-                    if (!isHighResHoles)
-                    {
-                        // Calculate current hole number
-                        var currentHole = 1 << ((xx / 2) + (yy / 2) * 4);
-
-                        // Check if current hole number should be a hole
-                        if ((chunk.header.holesLowRes & currentHole) == 0)
-                        {
-                            isHole = false;
-                        }
-                    }
-                    else
-                    {
-                        // Check if current section is a hole
-                        if (((holesHighRes[yy] >> xx) & 1) == 0)
-                        {
-                            isHole = false;
-                        }
-                    }
+                    var j = 9 + holeRow * 17 + holeColumn;
+                    var xx = holeColumn;
+                    var yy = holeRow;
+                    var isHole = highResolutionHoles
+                        ? ((header.HolesHighRes >> (yy * 8 + xx)) & 1) != 0
+                        : (header.HolesLowRes & (1 << ((xx / 2) + (yy / 2) * 4))) != 0;
 
                     if (isHole)
                     {
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-                        indices[indicesOffset++] = 0;
-
-                        for (var triangleIndex = 0; triangleIndex < 6; triangleIndex++)
+                        for (var i = 0; i < 12; i++)
+                            indices[indicesOffset++] = 0;
+                        for (var i = 0; i < 6; i++)
                             farLodIndices[farLodIndicesOffset++] = 0;
                     }
                     else
                     {
-                        indices[indicesOffset++] = off + j + 8;
-                        indices[indicesOffset++] = off + j - 9;
-                        indices[indicesOffset++] = off + j;
+                        indices[indicesOffset++] = vertexBase + j + 8;
+                        indices[indicesOffset++] = vertexBase + j - 9;
+                        indices[indicesOffset++] = vertexBase + j;
+                        indices[indicesOffset++] = vertexBase + j - 9;
+                        indices[indicesOffset++] = vertexBase + j - 8;
+                        indices[indicesOffset++] = vertexBase + j;
+                        indices[indicesOffset++] = vertexBase + j - 8;
+                        indices[indicesOffset++] = vertexBase + j + 9;
+                        indices[indicesOffset++] = vertexBase + j;
+                        indices[indicesOffset++] = vertexBase + j + 9;
+                        indices[indicesOffset++] = vertexBase + j + 8;
+                        indices[indicesOffset++] = vertexBase + j;
 
-                        indices[indicesOffset++] = off + j - 9;
-                        indices[indicesOffset++] = off + j - 8;
-                        indices[indicesOffset++] = off + j;
-
-                        indices[indicesOffset++] = off + j - 8;
-                        indices[indicesOffset++] = off + j + 9;
-                        indices[indicesOffset++] = off + j;
-
-                        indices[indicesOffset++] = off + j + 9;
-                        indices[indicesOffset++] = off + j + 8;
-                        indices[indicesOffset++] = off + j;
-
-                        var topLeft = off + yy * 17 + xx;
+                        var topLeft = vertexBase + yy * 17 + xx;
                         var topRight = topLeft + 1;
-                        var bottomLeft = off + (yy + 1) * 17 + xx;
+                        var bottomLeft = vertexBase + (yy + 1) * 17 + xx;
                         var bottomRight = bottomLeft + 1;
                         farLodIndices[farLodIndicesOffset++] = bottomLeft;
                         farLodIndices[farLodIndicesOffset++] = topLeft;
@@ -222,159 +159,342 @@ namespace WoWRenderLib.Loaders
                         farLodIndices[farLodIndicesOffset++] = bottomRight;
                         farLodIndices[farLodIndicesOffset++] = bottomLeft;
                     }
-
-                    if ((j + 1) % (9 + 8) == 0) j += 9;
                 }
-
-                var layerMaterials = new int[8];
-                Array.Fill(layerMaterials, -1);
-
-                var layerHeights = new int[8];
-                Array.Fill(layerHeights, -1);
-
-                var layerScales = new float[8];
-                Array.Fill(layerScales, 1.0f);
-
-                var heightScales = new float[8];
-                Array.Fill(heightScales, 1.0f);
-
-                var heightOffsets = new float[8];
-                Array.Fill(heightOffsets, 1.0f);
-
-                var alphaLayers = new Dictionary<int, byte[]>(chunk.layers?.Length ?? 4);
-
-                if (adt.diffuseTextureFileDataIDs == null)
-                    continue;
-
-                for (byte li = 0; li < chunk.layers!.Length; li++)
-                {
-                    var diffuseTextureID = adt.diffuseTextureFileDataIDs[chunk.layers[li].textureId];
-
-                    if (chunk.alphaLayer != null)
-                        alphaLayers.Add(li, chunk.alphaLayer[li]);
-
-                    ADTMaterial curMat = materials[diffuseTextureID];
-                    layerMaterials[li] = (int)diffuseTextureID;
-                    usedBLPFileDataIDs.Add(diffuseTextureID);
-
-                    layerHeights[li] = curMat.heightTexture;
-                    layerScales[li] = curMat.scale;
-                    heightScales[li] = curMat.heightScale;
-                    heightOffsets[li] = curMat.heightOffset;
-                }
-
-                var alphaLayerMats = new byte[2][];
-
-                for (int li = 0; li < 2; li++)
-                {
-                    int baseLayer = li * 4;
-                    alphaLayers.TryGetValue(baseLayer, out var l0);
-                    alphaLayers.TryGetValue(baseLayer + 1, out var l1);
-                    alphaLayers.TryGetValue(baseLayer + 2, out var l2);
-                    alphaLayers.TryGetValue(baseLayer + 3, out var l3);
-
-                    if (l0 == null && l1 == null && l2 == null && l3 == null) continue;
-
-                    var alphaData = new byte[64 * 64 * 4];
-                    for (int y = 0; y < 64; y++)
-                    {
-                        for (int x = 0; x < 64; x++)
-                        {
-                            var idx = (y * 64 + x) * 4;
-                            alphaData[idx] = l0 != null ? l0[y * 64 + x] : (byte)0;
-                            alphaData[idx + 1] = l1 != null ? l1[y * 64 + x] : (byte)0;
-                            alphaData[idx + 2] = l2 != null ? l2[y * 64 + x] : (byte)0;
-                            alphaData[idx + 3] = l3 != null ? l3[y * 64 + x] : (byte)0;
-                        }
-                    }
-
-                    alphaLayerMats[li] = alphaData;
-                }
-
-                batch.heightScales = heightScales;
-                batch.heightOffsets = heightOffsets;
-                batch.materialFDIDs = layerMaterials;
-                batch.heightMaterialFDIDs = layerHeights;
-                batch.alphaMaterials = alphaLayerMats;
-                batch.scales = layerScales;
-                renderBatches[c] = batch;
-
-                chunkBounds[c] = new BoundingBox
-                {
-                    Min = chunkMinBounds,
-                    Max = chunkMaxBounds
-                };
             }
 
-            parsedADT.vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray();
-            parsedADT.indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray();
-            parsedADT.farLodIndiceBuffer = MemoryMarshal.AsBytes(farLodIndices.AsSpan()).ToArray();
-
-            var doodads = new Doodad[adt.objects.models.entries.Length];
-            for (var mi = 0; mi < adt.objects.models.entries.Length; mi++)
-            {
-                var modelentry = adt.objects.models.entries[mi];
-
-                doodads[mi] = new Doodad
-                {
-                    position = new Vector3(-(modelentry.position.X - 17066.666f), modelentry.position.Y, (modelentry.position.Z - 17066.666f)),
-                    rotation = new Vector3(modelentry.rotation.X, modelentry.rotation.Y, modelentry.rotation.Z),
-                    scale = modelentry.scale / 1024.0f,
-                    fileDataID = modelentry.mmidEntry,
-                    uniqueID = modelentry.uniqueId,
-                    flags = (ushort)modelentry.flags
-                };
-            }
-
-            var worldModelBatches = new WorldModelBatch[adt.objects.worldModels.entries.Length];
-            for (var wmi = 0; wmi < adt.objects.worldModels.entries.Length; wmi++)
-            {
-                var wmodelentry = adt.objects.worldModels.entries[wmi];
-                var wmoFDID = wmodelentry.mwidEntry;
-
-                var doodadSets = new List<uint>();
-
-                if (!wmodelentry.flags.HasFlag(MODFFlags.modf_use_sets_from_mwds))
-                {
-                    doodadSets.Add(wmodelentry.doodadSet);
-                }
-                else
-                {
-                    if (wmodelentry.doodadSet < adt.objects.worldModelDoodadRefs.Length)
-                    {
-                        var mwdrEntry = adt.objects.worldModelDoodadRefs[wmodelentry.doodadSet];
-                        for (var i = mwdrEntry.begin; i < mwdrEntry.end; i++)
-                        {
-                            if (i >= adt.objects.worldModelDoodadSets.Length)
-                                break;
-
-                            doodadSets.Add(adt.objects.worldModelDoodadSets[i]);
-                        }
-                    }
-                }
-
-                worldModelBatches[wmi] = new WorldModelBatch
-                {
-                    position = new Vector3(-(wmodelentry.position.X - 17066.666f), wmodelentry.position.Y, (wmodelentry.position.Z - 17066.666f)),
-                    rotation = new Vector3(wmodelentry.rotation.X, wmodelentry.rotation.Y, wmodelentry.rotation.Z),
-                    fileDataID = wmoFDID,
-                    uniqueID = wmodelentry.uniqueId,
-                    flags = (ushort)wmodelentry.flags,
-                    doodadSet = wmodelentry.doodadSet,
-                    nameSet = wmodelentry.nameSet,
-                    scale = wmodelentry.scale / 1024.0f,
-                    doodadSetIDs = [.. doodadSets]
-                };
-            }
-
-            parsedADT.renderBatches = renderBatches;
-            parsedADT.doodads = doodads;
-            parsedADT.worldModelBatches = worldModelBatches;
-            parsedADT.rootADTFileDataID = rootADTFileDataID;
-            parsedADT.chunkBounds = chunkBounds;
-            parsedADT.blpFileDataIDs = [.. usedBLPFileDataIDs];
-
-            return parsedADT;
+            renderBatches[chunkIndex] = BuildRenderBatch(
+                fileSystem,
+                chunk,
+                textureData.DiffuseTextureIds,
+                materials,
+                fileIds,
+                adt.Textures);
+            chunkBounds[chunkIndex] = new BoundingBox(chunkMin, chunkMax);
         }
+
+        parsed.vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray();
+        parsed.indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray();
+        parsed.farLodIndiceBuffer = MemoryMarshal.AsBytes(farLodIndices.AsSpan()).ToArray();
+        parsed.renderBatches = renderBatches;
+        parsed.chunkBounds = chunkBounds;
+        parsed.doodads = BuildDoodads(
+            fileSystem,
+            adt.DoodadPlacements.AsSpan(),
+            modelFilenames,
+            modelNameOffsets.AsSpan());
+        parsed.worldModelBatches = BuildWmos(
+            fileSystem,
+            adt.WmoPlacements.AsSpan(),
+            wmoFilenames,
+            wmoNameOffsets.AsSpan());
+        parsed.blpFileDataIDs = [.. fileIds];
+        return parsed;
+    }
+
+    private sealed record TextureData(
+        uint[] DiffuseTextureIds,
+        uint[] HeightTextureIds,
+        WoWLib.Vector<Formats.ADT.Chunks.SMTextureParams>? TextureParams);
+
+    private static TextureData ReadTextureData(Formats.ADT.ADT adt)
+    {
+        return adt switch
+        {
+            Formats.ADT.ADTBfaPlus modern => new TextureData(
+                modern.DiffuseTextureIds.ToArray(),
+                modern.HeightTextureIds.ToArray(),
+                modern.TextureParams),
+            _ => new TextureData([], [], null)
+        };
+    }
+
+    private static Vector4 GetVertexColor(
+        ReadOnlySpan<Formats.Common.CImVector.Data> vertexColors,
+        int index,
+        Vector4 fallback)
+    {
+        if (index < vertexColors.Length)
+        {
+            var color = vertexColors[index];
+            return new Vector4(color.B / 255f, color.G / 255f, color.R / 255f, color.A / 255f);
+        }
+
+        return fallback;
+    }
+
+    private static Dictionary<uint, ADTMaterial> BuildMaterials(
+        Fs.FileSystem fileSystem,
+        uint[] textureIds,
+        uint[] heightTextureIds,
+        WoWLib.Vector<Formats.ADT.Chunks.SMTextureParams>? textureParams,
+        Formats.StringBlock textures,
+        HashSet<uint> usedIds)
+    {
+        var materials = new Dictionary<uint, ADTMaterial>();
+        var stringCount = textures.Empty ? 0 : textures.Entries().Count;
+        for (var i = 0; i < textureIds.Length || i < stringCount; i++)
+        {
+            var diffuse = i < textureIds.Length ? textureIds[i] : 0;
+            if (diffuse == 0)
+                diffuse = ResolvePath(fileSystem, GetString(textures, (uint)i));
+
+            var material = new ADTMaterial
+            {
+                texture = (int)diffuse,
+                scale = 1f,
+                heightScale = 0f,
+                heightOffset = 1f
+            };
+
+            if (textureParams != null && i < textureParams.Count)
+            {
+                var parameter = textureParams[i];
+                material.scale = MathF.Pow(2f, (parameter.Flags & 0xF0) >> 4);
+                material.heightScale = parameter.HeightScale;
+                material.heightOffset = parameter.HeightOffset;
+                if (i < heightTextureIds.Length && heightTextureIds[i] != 0 &&
+                    fileSystem.Exists(new FileDataId(heightTextureIds[i])))
+                    material.heightTexture = (int)heightTextureIds[i];
+                else
+                    material.heightTexture = (int)diffuse;
+            }
+
+            materials[diffuse] = material;
+            if (diffuse != 0)
+                usedIds.Add(diffuse);
+            if (material.heightTexture != 0)
+                usedIds.Add((uint)material.heightTexture);
+        }
+
+        return materials;
+    }
+
+    private static ParsedADTRenderBatch BuildRenderBatch(
+        Fs.FileSystem fileSystem,
+        Formats.ADT.MapChunk chunk,
+        uint[] textureIds,
+        Dictionary<uint, ADTMaterial> materials,
+        HashSet<uint> usedIds,
+        Formats.StringBlock textures)
+    {
+        var layers = chunk.Layers.AsSpan();
+        var alphaMaps = chunk.AlphaMaps.AsSpan();
+        var materialIds = new int[8];
+        var heightIds = new int[8];
+        var scales = new float[8];
+        var heightScales = new float[8];
+        var heightOffsets = new float[8];
+        Array.Fill(materialIds, -1);
+        Array.Fill(heightIds, -1);
+        Array.Fill(scales, 1f);
+        Array.Fill(heightScales, 1f);
+        Array.Fill(heightOffsets, 1f);
+
+        var alphaLayers = new Dictionary<int, byte[]>();
+        for (var layerIndex = 0; layerIndex < Math.Min(layers.Length, 8); layerIndex++)
+        {
+            var layer = layers[layerIndex];
+            var textureIndex = layer.TextureId;
+            var diffuse = textureIndex < textureIds.Length
+                ? textureIds[textureIndex]
+                : ResolvePath(fileSystem, GetString(textures, textureIndex));
+            materialIds[layerIndex] = (int)diffuse;
+            if (materials.TryGetValue(diffuse, out var material))
+            {
+                heightIds[layerIndex] = material.heightTexture;
+                scales[layerIndex] = material.scale;
+                heightScales[layerIndex] = material.heightScale;
+                heightOffsets[layerIndex] = material.heightOffset;
+            }
+            if (diffuse != 0)
+                usedIds.Add(diffuse);
+
+            if (layerIndex < alphaMaps.Length)
+                alphaLayers[layerIndex] = alphaMaps[layerIndex].ToArray();
+        }
+
+        var alphaMaterials = new byte[2][];
+        for (var group = 0; group < 2; group++)
+        {
+            var baseLayer = group * 4;
+            if (!alphaLayers.ContainsKey(baseLayer) && !alphaLayers.ContainsKey(baseLayer + 1) &&
+                !alphaLayers.ContainsKey(baseLayer + 2) && !alphaLayers.ContainsKey(baseLayer + 3))
+                continue;
+
+            var alphaData = new byte[64 * 64 * 4];
+            for (var y = 0; y < 64; y++)
+            for (var x = 0; x < 64; x++)
+            {
+                var index = (y * 64 + x) * 4;
+                for (var channel = 0; channel < 4; channel++)
+                {
+                    if (alphaLayers.TryGetValue(baseLayer + channel, out var source) && source.Length > y * 64 + x)
+                        alphaData[index + channel] = source[y * 64 + x];
+                }
+            }
+            alphaMaterials[group] = alphaData;
+        }
+
+        return new ParsedADTRenderBatch
+        {
+            materialFDIDs = materialIds,
+            heightMaterialFDIDs = heightIds,
+            alphaMaterials = alphaMaterials,
+            scales = scales,
+            heightScales = heightScales,
+            heightOffsets = heightOffsets
+        };
+    }
+
+    private static Doodad[] BuildDoodads(
+        Fs.FileSystem fileSystem,
+        ReadOnlySpan<Formats.Common.SmDoodadDef> placements,
+        Formats.StringBlock modelFilenames,
+        ReadOnlySpan<uint> modelNameOffsets)
+    {
+        var result = new Doodad[placements.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var placement = placements[i];
+            var fileDataId = ResolvePlacementFileDataIdSpan(
+                fileSystem,
+                modelFilenames,
+                modelNameOffsets,
+                placement.NameId,
+                placement.Flags,
+                0x40);
+            var position = ToVector3(placement.Position);
+            var rotation = ToVector3(placement.Rotation);
+            result[i] = new Doodad
+            {
+                position = new Vector3(-(position.X - 17066.666f), position.Y, position.Z - 17066.666f),
+                rotation = rotation,
+                scale = placement.Scale / 1024f,
+                fileDataID = fileDataId,
+                uniqueID = placement.UniqueId,
+                flags = placement.Flags
+            };
+        }
+        return result;
+    }
+
+    private static WorldModelBatch[] BuildWmos(
+        Fs.FileSystem fileSystem,
+        ReadOnlySpan<Formats.Common.SmMapObjDef> placements,
+        Formats.StringBlock wmoFilenames,
+        ReadOnlySpan<uint> wmoNameOffsets)
+    {
+        var result = new WorldModelBatch[placements.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var placement = placements[i];
+            var fileDataId = ResolvePlacementFileDataIdSpan(
+                fileSystem,
+                wmoFilenames,
+                wmoNameOffsets,
+                placement.NameId,
+                placement.Flags,
+                0x8);
+            var position = ToVector3(placement.Position);
+            var rotation = ToVector3(placement.Rotation);
+            result[i] = new WorldModelBatch
+            {
+                position = new Vector3(-(position.X - 17066.666f), position.Y, position.Z - 17066.666f),
+                rotation = rotation,
+                fileDataID = fileDataId,
+                uniqueID = placement.UniqueId,
+                flags = placement.Flags,
+                doodadSet = placement.DoodadSet,
+                nameSet = placement.NameSet,
+                scale = placement.Scale / 1024f,
+                doodadSetIDs = [placement.DoodadSet]
+            };
+        }
+        return result;
+    }
+
+    private static uint ResolveIndexedPath(
+        Fs.FileSystem fileSystem,
+        Formats.StringBlock? stringBlock,
+        ReadOnlySpan<uint> offsets,
+        uint index)
+    {
+        if (stringBlock == null)
+            return 0;
+        var offset = index < offsets.Length ? offsets[(int)index] : index;
+        return ResolvePath(fileSystem, GetString(stringBlock, offset));
+    }
+
+    private static uint ResolvePlacementFileDataIdSpan(
+        Fs.FileSystem fileSystem,
+        Formats.StringBlock? stringBlock,
+        ReadOnlySpan<uint> offsets,
+        uint nameId,
+        uint flags,
+        uint entryIsFdidFlag)
+    {
+        return (flags & entryIsFdidFlag) != 0
+            ? nameId
+            : ResolveIndexedPath(fileSystem, stringBlock, offsets, nameId);
+    }
+
+    internal static uint ResolvePlacementFileDataId(
+        Fs.FileSystem fileSystem,
+        Formats.StringBlock? stringBlock,
+        WoWLib.Vector<uint>? offsets,
+        uint nameId,
+        uint flags,
+        uint entryIsFdidFlag)
+    {
+        ReadOnlySpan<uint> offsetSpan = offsets is null ? default : offsets.AsSpan();
+        return ResolvePlacementFileDataIdSpan(
+            fileSystem,
+            stringBlock,
+            offsetSpan,
+            nameId,
+            flags,
+            entryIsFdidFlag);
+    }
+
+    // ADT's 17 rows alternate between nine outer and eight inner vertices.
+    // This computes the packed source/destination offset for those rows.
+    internal static int GetVertexIndex(int row, int column) => row * 9 - row / 2 + column;
+
+    private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
+
+    private static string GetString(Formats.StringBlock block, uint offset)
+    {
+        if (block.Empty)
+            return string.Empty;
+        try
+        {
+            return block.At(offset);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static uint ResolvePath(Fs.FileSystem? fileSystem, string path)
+    {
+        if (fileSystem == null || string.IsNullOrWhiteSpace(path))
+            return 0;
+        try
+        {
+            return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static FileKey ResolveFileKey(Fs.FileSystem fileSystem, uint fileDataId)
+    {
+        var key = fileSystem.Resolve(new FileKey(new FileDataId(fileDataId)));
+        return string.IsNullOrWhiteSpace(key.Path)
+            ? new FileKey(new FileDataId(fileDataId))
+            : key;
     }
 }

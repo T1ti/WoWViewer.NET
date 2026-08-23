@@ -1,289 +1,370 @@
-﻿using System.Numerics;
-using WoWFormatLib.FileProviders;
-using WoWFormatLib.FileReaders;
-using WoWFormatLib.Structs.M2;
-using WoWFormatLib.Structs.SKIN;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using WoWLib;
+using Formats = WoWLib.Formats;
+using Fs = WoWLib.Filesystem;
+using WoWRenderLib.Renderer;
+using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 using static WoWRenderLib.Renderer.ShaderEnums;
 
-namespace WoWRenderLib.Loaders
+namespace WoWRenderLib.Loaders;
+
+public static class M2Loader
 {
-    public class M2Loader
+    private const uint DefaultTextureId = 186184;
+
+    public static ParsedM2 ParseM2(uint fileDataId)
     {
-        private static uint DEFAULT_TEXTURE_ID = 186184; // dungeons/textures/testing/color_01.blp
+        var fileSystem = WowlibFileSystem.Current;
+        if (!fileSystem.Exists(new FileDataId(fileDataId)))
+            throw new FileNotFoundException($"Model {fileDataId} does not exist!");
 
-        public static ParsedM2 ParseM2(uint fileDataID)
+        using var model = Formats.M2.M2.ForVersion(fileSystem.Version);
+        model.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+        var root = model.Root;
+        var vertices = ReadVertices(root.Vertices);
+        var (renderBoundingBox, renderBoundingRadius) = CalculateRenderBounds(vertices.Select(v => v.Position).ToArray());
+        var counts = ReadCounts(root);
+
+        var parsed = new ParsedM2
         {
-            M2Model model = new();
+            boundingBox = renderBoundingBox,
+            boundingRadius = renderBoundingRadius,
+            fileDataID = fileDataId,
+            vertexCount = vertices.Length,
+            animationCount = counts.AnimationCount,
+            particleEmitterCount = counts.ParticleEmitterCount,
+            boneCount = counts.BoneCount,
+            attachmentCount = counts.AttachmentCount
+        };
 
-            if (FileProvider.FileExists(fileDataID))
+        var textures = root.Textures.AsSpan();
+        var rootMaterials = root.Materials.AsSpan();
+        var textureFileDataIds = ResolveTextureFileDataIds(fileSystem, model, textures);
+        parsed.mats = new M2Material[textures.Length];
+        for (var i = 0; i < parsed.mats.Length; i++)
+        {
+            var texture = textures[i];
+            var material = i < rootMaterials.Length ? rootMaterials[i] : default;
+            parsed.mats[i] = new M2Material
             {
-                var modelReader = new M2Reader();
-                modelReader.LoadM2(fileDataID);
-                model = modelReader.model;
-            }
-            else
-            {
-                throw new FileNotFoundException("Model " + fileDataID + " does not exist!");
-            }
-
-            // Header bounds are often collision-oriented and are not guaranteed to
-            // contain foliage or every vertex uploaded by this renderer. Culling must
-            // describe the complete render geometry rather than collision geometry.
-            var (renderBoundingBox, renderBoundingRadius) = CalculateRenderBounds(model.vertices);
-
-            var doodadBatch = new ParsedM2()
-            {
-                boundingBox = renderBoundingBox,
-                boundingRadius = renderBoundingRadius,
-                fileDataID = fileDataID,
-                vertexCount = model.vertices?.Length ?? 0,
-                animationCount = model.animations?.Length ?? 0,
-                particleEmitterCount = model.particleemitters?.Length ?? 0,
-                boneCount = model.bones?.Length ?? 0,
-                attachmentCount = model.attachments?.Length ?? 0
+                fileDataID = textureFileDataIds[i],
+                flags = texture.Flags,
+                blendMode = material?.BlendingMode ?? 0
             };
-
-            if (model.textures == null)
-                throw new Exception("Model does not contain textures: " + fileDataID);
-
-            if (model.skins == null)
-                throw new Exception("Model does not contain skins: " + fileDataID);
-
-            doodadBatch.geosets = model.skins[0].submeshes.Select(section => new M2Geoset
-            {
-                id = section.submeshID,
-                level = section.level,
-                firstVertex = section.startVertex,
-                vertexCount = section.nVertices,
-                firstIndex = section.startTriangle,
-                indexCount = section.nTriangles
-            }).ToArray();
-
-            // Textures
-            doodadBatch.mats = new M2Material[model.textures.Length];
-            for (var i = 0; i < model.textures.Length; i++)
-            {
-                uint textureFileDataID = DEFAULT_TEXTURE_ID;
-                doodadBatch.mats[i].flags = model.textures[i].flags;
-
-                // TODO: Classic Era still has some M2s that use filename-based texturing
-                if (model.textureFileDataIDs != null)
-                {
-                    switch (model.textures[i].type)
-                    {
-                        case 0: // NONE
-                            textureFileDataID = model.textureFileDataIDs[i];
-                            break;
-                        case 1: // TEX_COMPONENT_SKIN
-                        case 2: // TEX_COMPONENT_OBJECT_SKIN
-                        case 11: // TEX_COMPONENT_MONSTER_1
-                            break;
-                    }
-                }
-
-                // Not set in TXID
-                if (textureFileDataID == 0)
-                    textureFileDataID = DEFAULT_TEXTURE_ID;
-
-                doodadBatch.mats[i].fileDataID = textureFileDataID;
-            }
-
-            // Submeshes
-            var submeshes = new List<Structs.Submesh>();
-            for (int i = 0; i < model.skins[0].textureunit.Length; i++)
-            {
-                var batch = model.skins[0].textureunit[i];
-                var skinSection = model.skins[0].submeshes[batch.submeshIndex];
-
-                // TODO: Support
-                if (batch.flags.HasFlag(TextureUnitFlags.ProjectedTexture))
-                    continue;
-
-                var materials = new uint[batch.textureCount];
-                var textureIndices = new int[batch.textureCount];
-                var firstFace = skinSection.startTriangle;
-                var numFaces = skinSection.nTriangles;
-                var blendType = model.renderflags[batch.renderFlagsIndex].blendingMode;
-                var vertexShaderID = (uint)GetVertexShaderID(batch.textureCount, batch.shaderID);
-                var pixelShaderID = (uint)GetPixelShaderID(batch.textureCount, batch.shaderID);
-
-                for (var tm = 0; tm < batch.textureCount; tm++)
-                {
-                    var textureID = model.texlookup[batch.texture + tm].textureID;
-                    textureIndices[tm] = textureID;
-                    materials[tm] = doodadBatch.mats[textureID].fileDataID;
-                }
-
-                submeshes.Add(new Structs.Submesh()
-                {
-                    firstFace = firstFace,
-                    numFaces = numFaces,
-                    material = materials,
-                    textureIndices = textureIndices,
-                    blendType = blendType,
-                    renderFlags = (ushort)model.renderflags[batch.renderFlagsIndex].flags,
-                    geosetId = skinSection.submeshID,
-                    index = i,
-                    vertexShaderID = vertexShaderID,
-                    pixelShaderID = pixelShaderID
-                });
-            }
-
-            doodadBatch.submeshes = [.. submeshes];
-
-            var modelvertices = new M2Vertex[model.vertices.Length];
-
-            for (var i = 0; i < model.vertices.Length; i++)
-            {
-                modelvertices[i].Position = new Vector3(model.vertices[i].position.X, model.vertices[i].position.Y, model.vertices[i].position.Z);
-                modelvertices[i].Normal = new Vector3(model.vertices[i].normal.X, model.vertices[i].normal.Y, model.vertices[i].normal.Z);
-                modelvertices[i].TexCoord1 = new Vector2(model.vertices[i].textureCoordX, model.vertices[i].textureCoordY);
-                modelvertices[i].TexCoord2 = new Vector2(model.vertices[i].textureCoordX2, model.vertices[i].textureCoordY2);
-            }
-
-            unsafe
-            {
-                fixed (M2Vertex* ptr = modelvertices)
-                {
-                    doodadBatch.vertexBytes = new byte[modelvertices.Length * sizeof(M2Vertex)];
-                    fixed (byte* dst = doodadBatch.vertexBytes)
-                        Buffer.MemoryCopy(ptr, dst, doodadBatch.vertexBytes.Length, doodadBatch.vertexBytes.Length);
-                }
-            }
-
-            var modelindices = new ushort[model.skins[0].triangles.Length * 3];
-            doodadBatch.indexCount = modelindices.Length;
-
-            for (var i = 0; i < model.skins[0].triangles.Length; i++)
-            {
-                modelindices[i * 3] = model.skins[0].triangles[i].pt1;
-                modelindices[i * 3 + 1] = model.skins[0].triangles[i].pt2;
-                modelindices[i * 3 + 2] = model.skins[0].triangles[i].pt3;
-            }
-
-            unsafe
-            {
-                fixed (ushort* ptr = modelindices)
-                {
-                    doodadBatch.indiceBytes = new byte[modelindices.Length * sizeof(ushort)];
-                    fixed (byte* dst = doodadBatch.indiceBytes)
-                        Buffer.MemoryCopy(ptr, dst, doodadBatch.indiceBytes.Length, doodadBatch.indiceBytes.Length);
-                }
-            }
-
-            return doodadBatch;
         }
 
-        public static (BoundingBox BoundingBox, float Radius) CalculateRenderBounds(
-            ReadOnlySpan<Vertice> vertices)
+        var profile = ReadProfile(model);
+        if (profile == null || profile.Vertices.Length == 0)
+            throw new InvalidDataException($"Model {fileDataId} does not contain a skin profile.");
+
+        parsed.vertexCount = profile.Vertices.Length;
+        parsed.indexCount = profile.Indices.Length;
+        parsed.geosets = ReadGeosets(profile);
+        parsed.submeshes = ReadSubmeshes(root, profile, parsed.mats);
+
+        var renderVertices = new M2Vertex[profile.Vertices.Length];
+        for (var i = 0; i < renderVertices.Length; i++)
         {
-            if (vertices.IsEmpty)
-                return (new BoundingBox(Vector3.Zero, Vector3.Zero), 0f);
-
-            var min = vertices[0].position;
-            var max = vertices[0].position;
-            for (var index = 1; index < vertices.Length; index++)
-            {
-                min = Vector3.Min(min, vertices[index].position);
-                max = Vector3.Max(max, vertices[index].position);
-            }
-
-            var center = (min + max) * 0.5f;
-            var maximumDistanceSquared = 0f;
-            for (var index = 0; index < vertices.Length; index++)
-            {
-                maximumDistanceSquared = MathF.Max(
-                    maximumDistanceSquared,
-                    Vector3.DistanceSquared(center, vertices[index].position));
-            }
-
-            return (new BoundingBox(min, max), MathF.Sqrt(maximumDistanceSquared));
+            var rootVertexIndex = profile.Vertices[i];
+            renderVertices[i] = rootVertexIndex < vertices.Length ? vertices[rootVertexIndex] : default;
         }
 
-        // Based on previously reverse engineerd logic by Deamon: https://github.com/Deamon87/WebWowViewerCpp/blob/master/wowViewerLib/src/engine/objects/m2/m2Object.cpp#L146
-        private static int GetVertexShaderID(int textureCount, ushort shaderID)
+        parsed.vertexBytes = MemoryMarshal.AsBytes(renderVertices.AsSpan()).ToArray();
+        parsed.indiceBytes = MemoryMarshal.AsBytes(profile.Indices.AsSpan()).ToArray();
+        return parsed;
+    }
+
+    private readonly record struct ModelCounts(
+        int AnimationCount,
+        int ParticleEmitterCount,
+        int BoneCount,
+        int AttachmentCount);
+
+    private static ModelCounts ReadCounts(Formats.M2.Root.M2Root root)
+    {
+        return root switch
         {
-            int result = 0;
-            if (shaderID >= 0)
-            {
-                if (textureCount == 1)
-                {
-                    if ((shaderID & 0x80u) == 0)
-                        return ((shaderID & 0x4000) != 0 ? 10 : 0);
-                    else
-                        result = 1;
-                }
-                else if ((shaderID & 0x80u) == 0)
-                {
-                    if ((shaderID & 8) != 0)
-                        return 3;
-                    else
-                        result = 7;
-                    if ((shaderID & 0x4000) != 0)
-                        return 2;
-                }
-                else if ((shaderID & 8) != 0)
-                    return 5;
-                else
-                    return 4;
-            }
-            else if (shaderID < 0)
-            {
-                int vertexShaderId = shaderID & 0x7FFF;
-                if (vertexShaderId >= M2Shaders.Count)
-                    throw new Exception("Shader ID " + vertexShaderId + " is out of bounds for M2 shader list (" + M2Shaders.Count + ")");
+            Formats.M2.Root.M2RootVanilla value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            Formats.M2.Root.M2RootTbc value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            Formats.M2.Root.M2RootWotlk value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            Formats.M2.Root.M2RootCataToMop value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            Formats.M2.Root.M2RootWod value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            Formats.M2.Root.M2RootLegionPlus value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
+            _ => default
+        };
+    }
 
-                result = (int)M2Shaders[vertexShaderId].VertexShader;
-            }
+    private sealed record ProfileData(
+        ushort[] Vertices,
+        ushort[] Indices,
+        SectionData[] Sections,
+        BatchData[] Batches);
 
-            return result;
-        }
+    private readonly record struct SectionData(
+        ushort Id,
+        ushort Level,
+        ushort FirstVertex,
+        ushort VertexCount,
+        ushort FirstIndex,
+        ushort IndexCount);
 
-        private static int GetPixelShaderID(int textureCount, ushort shaderID)
+    private readonly record struct BatchData(
+        ushort ShaderId,
+        ushort SectionIndex,
+        ushort TextureCount,
+        ushort TextureComboIndex,
+        ushort MaterialIndex);
+
+    private static ProfileData? ReadProfile(Formats.M2.M2 model)
+    {
+        return model switch
         {
-            int result;
-            if ((shaderID & 0x8000) > 0)
-            {
-                int pixelShaderId = shaderID & 0x7FFF;
-                if (pixelShaderId >= M2Shaders.Count)
-                    throw new Exception("Shader ID " + pixelShaderId + " is out of bounds for M2 shader list (" + M2Shaders.Count + ")");
+            Formats.M2.M2Vanilla value when value.Root.SkinProfiles.Count > 0 => ToProfile(value.Root.SkinProfiles[0]),
+            Formats.M2.M2Tbc value when value.Root.SkinProfiles.Count > 0 => ToProfile(value.Root.SkinProfiles[0]),
+            Formats.M2.M2Wotlk value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2CataToMop value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Wod value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Legion value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Bfa value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Shadowlands value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Dragonflight value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2TheWarWithin value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            _ => null
+        };
+    }
 
-                result = (int)M2Shaders[shaderID & 0x7FFF].PixelShader;
-            }
-            else if (textureCount == 1)
+    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileVanilla profile) => new(
+        profile.Vertices.ToArray(),
+        profile.Indices.ToArray(),
+        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
+        profile.Batches.ToArray().Select(ToBatch).ToArray());
+
+    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileTbcToWotlk profile) => new(
+        profile.Vertices.ToArray(),
+        profile.Indices.ToArray(),
+        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
+        profile.Batches.ToArray().Select(ToBatch).ToArray());
+
+    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileCataPlus profile) => new(
+        profile.Vertices.ToArray(),
+        profile.Indices.ToArray(),
+        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
+        profile.Batches.ToArray().Select(ToBatch).ToArray());
+
+    private static SectionData ToSection(Formats.M2.Skin.M2SkinSectionVanilla section) => new(
+        section.SkinSectionId,
+        section.Level,
+        section.VertexStart,
+        section.VertexCount,
+        section.IndexStart,
+        section.IndexCount);
+
+    private static SectionData ToSection(Formats.M2.Skin.M2SkinSectionTbcPlus section) => new(
+        section.SkinSectionId,
+        section.Level,
+        section.VertexStart,
+        section.VertexCount,
+        section.IndexStart,
+        section.IndexCount);
+
+    private static BatchData ToBatch(Formats.M2.Skin.M2Batch batch) => new(
+        batch.ShaderId,
+        batch.SkinSectionIndex,
+        batch.TextureCount,
+        batch.TextureComboIndex,
+        batch.MaterialIndex);
+
+    private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
+    {
+        // Keep the native vector as a live typed span. M2Vertex is not a
+        // blittable Data mirror in wowlib 0.0.8, so its nested position,
+        // normal, and UV views still use the typed wrapper API.
+        var sourceVertices = vertices.AsSpan();
+        var result = new M2Vertex[sourceVertices.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var source = sourceVertices[i];
+            result[i] = new M2Vertex
             {
-                result = (shaderID & 0x70) != 0 ? (int)M2PixelShader.Combiners_Mod : (int)M2PixelShader.Combiners_Opaque;
-            }
-            else
-            {
-                if ((shaderID & 0x70) != 0)
-                {
-                    result = (shaderID & 7) switch
-                    {
-                        0 => (int)M2PixelShader.Combiners_Mod_Opaque,
-                        1 or 2 or 5 => (int)M2PixelShader.Combiners_Mod_Mod,
-                        3 => (int)M2PixelShader.Combiners_Mod_Add,
-                        4 => (int)M2PixelShader.Combiners_Mod_Mod2x,
-                        6 => (int)M2PixelShader.Combiners_Mod_Mod2xNA,
-                        7 => (int)M2PixelShader.Combiners_Mod_AddNA,
-                        _ => (int)M2PixelShader.Combiners_Mod_Mod,
-                    };
-                }
-                else
-                {
-                    result = (shaderID & 7) switch
-                    {
-                        0 => (int)M2PixelShader.Combiners_Opaque_Opaque,
-                        1 or 2 or 5 => (int)M2PixelShader.Combiners_Opaque_Mod,
-                        3 or 7 => (int)M2PixelShader.Combiners_Opaque_AddAlpha,
-                        4 => (int)M2PixelShader.Combiners_Opaque_Mod2x,
-                        6 => (int)M2PixelShader.Combiners_Opaque_Mod2xNA,
-                        _ => (int)M2PixelShader.Combiners_Opaque_Mod,
-                    };
-                }
-            }
-            return result;
+                Position = ToVector3(source.Pos),
+                Normal = ToVector3(source.Normal),
+                TexCoord1 = ToVector2(source.TexCoords[0]),
+                TexCoord2 = ToVector2(source.TexCoords[1])
+            };
         }
+        return result;
+    }
+
+    private static uint[] ResolveTextureFileDataIds(
+        Fs.FileSystem fileSystem,
+        Formats.M2.M2 model,
+        ReadOnlySpan<Formats.M2.Root.Record.M2Texture> textures)
+    {
+        var chunkIds = GetChunkTextureIds(model);
+        var result = new uint[textures.Length];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var texture = textures[i];
+            var id = texture.Type == 0 && i < chunkIds.Length ? chunkIds[i] : 0;
+            if (id == 0)
+                id = ResolvePath(fileSystem, texture.Filename);
+            result[i] = id == 0 ? DefaultTextureId : id;
+        }
+        return result;
+    }
+
+    private static uint[] GetChunkTextureIds(Formats.M2.M2 model)
+    {
+        return model switch
+        {
+            Formats.M2.M2Legion value => value.Chunks.TextureFdids.ToArray(),
+            Formats.M2.M2Bfa value => value.Chunks.TextureFdids.ToArray(),
+            Formats.M2.M2Shadowlands value => value.Chunks.TextureFdids.ToArray(),
+            Formats.M2.M2Dragonflight value => value.Chunks.TextureFdids.ToArray(),
+            Formats.M2.M2TheWarWithin value => value.Chunks.TextureFdids.ToArray(),
+            _ => []
+        };
+    }
+
+    private static M2Geoset[] ReadGeosets(ProfileData profile)
+    {
+        return profile.Sections.Select(section => new M2Geoset
+        {
+            id = section.Id,
+            level = section.Level,
+            firstVertex = section.FirstVertex,
+            vertexCount = section.VertexCount,
+            firstIndex = section.FirstIndex,
+            indexCount = section.IndexCount
+        }).ToArray();
+    }
+
+    private static Submesh[] ReadSubmeshes(
+        Formats.M2.Root.M2Root root,
+        ProfileData profile,
+        M2Material[] materials)
+    {
+        var textureLookupTable = root.TextureLookupTable.AsSpan();
+        var result = new List<Submesh>(profile.Batches.Length);
+        for (var i = 0; i < profile.Batches.Length; i++)
+        {
+            var batch = profile.Batches[i];
+            if (batch.SectionIndex >= profile.Sections.Length)
+                continue;
+
+            var section = profile.Sections[batch.SectionIndex];
+            var textureIndices = new int[batch.TextureCount];
+            var materialIds = new uint[batch.TextureCount];
+            for (var texture = 0; texture < batch.TextureCount; texture++)
+            {
+                var lookupIndex = batch.TextureComboIndex + texture;
+                var textureIndex = lookupIndex < textureLookupTable.Length
+                    ? textureLookupTable[lookupIndex]
+                    : (ushort)0;
+                textureIndices[texture] = textureIndex;
+                materialIds[texture] = textureIndex < materials.Length
+                    ? materials[textureIndex].fileDataID
+                    : DefaultTextureId;
+            }
+
+            var blendType = batch.MaterialIndex < materials.Length ? materials[batch.MaterialIndex].blendMode : 0;
+            result.Add(new Submesh
+            {
+                firstFace = section.FirstIndex,
+                numFaces = section.IndexCount,
+                material = materialIds,
+                textureIndices = textureIndices,
+                blendType = blendType,
+                renderFlags = batch.MaterialIndex < materials.Length ? (ushort)materials[batch.MaterialIndex].flags : (ushort)0,
+                geosetId = section.Id,
+                index = i,
+                vertexShaderID = (uint)GetVertexShaderID(batch.TextureCount, batch.ShaderId),
+                pixelShaderID = (uint)GetPixelShaderID(batch.TextureCount, batch.ShaderId)
+            });
+        }
+
+        return [.. result];
+    }
+
+    public static (BoundingBox BoundingBox, float Radius) CalculateRenderBounds(ReadOnlySpan<Vector3> vertices)
+    {
+        if (vertices.IsEmpty)
+            return (new BoundingBox(Vector3.Zero, Vector3.Zero), 0f);
+
+        var min = vertices[0];
+        var max = vertices[0];
+        for (var i = 1; i < vertices.Length; i++)
+        {
+            min = Vector3.Min(min, vertices[i]);
+            max = Vector3.Max(max, vertices[i]);
+        }
+
+        var center = (min + max) * 0.5f;
+        var maximumDistanceSquared = 0f;
+        for (var i = 0; i < vertices.Length; i++)
+            maximumDistanceSquared = MathF.Max(maximumDistanceSquared, Vector3.DistanceSquared(center, vertices[i]));
+
+        return (new BoundingBox(min, max), MathF.Sqrt(maximumDistanceSquared));
+    }
+
+    private static Vector2 ToVector2(Formats.Common.C2Vector value) => new(value.X, value.Y);
+
+    private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
+
+    private static uint ResolvePath(Fs.FileSystem fileSystem, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return 0;
+        try { return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0; }
+        catch { return 0; }
+    }
+
+    private static int GetVertexShaderID(int textureCount, ushort shaderID)
+    {
+        if (textureCount == 1)
+            return (shaderID & 0x80) == 0 ? ((shaderID & 0x4000) != 0 ? 10 : 0) : 1;
+        if ((shaderID & 0x80) == 0)
+        {
+            var result = (shaderID & 8) != 0 ? 3 : 7;
+            return (shaderID & 0x4000) != 0 ? 2 : result;
+        }
+        return (shaderID & 8) != 0 ? 5 : 4;
+    }
+
+    private static int GetPixelShaderID(int textureCount, ushort shaderID)
+    {
+        if ((shaderID & 0x8000) > 0)
+        {
+            var pixelShaderId = shaderID & 0x7FFF;
+            if (pixelShaderId >= M2Shaders.Count)
+                throw new InvalidDataException($"M2 pixel shader {pixelShaderId} is out of bounds.");
+            return (int)M2Shaders[pixelShaderId].PixelShader;
+        }
+
+        if (textureCount == 1)
+            return (shaderID & 0x70) != 0 ? (int)M2PixelShader.Combiners_Mod : (int)M2PixelShader.Combiners_Opaque;
+
+        return (shaderID & 0x70) != 0
+            ? (shaderID & 7) switch
+            {
+                0 => (int)M2PixelShader.Combiners_Mod_Opaque,
+                1 or 2 or 5 => (int)M2PixelShader.Combiners_Mod_Mod,
+                3 => (int)M2PixelShader.Combiners_Mod_Add,
+                4 => (int)M2PixelShader.Combiners_Mod_Mod2x,
+                6 => (int)M2PixelShader.Combiners_Mod_Mod2xNA,
+                7 => (int)M2PixelShader.Combiners_Mod_AddNA,
+                _ => (int)M2PixelShader.Combiners_Mod_Mod
+            }
+            : (shaderID & 7) switch
+            {
+                0 => (int)M2PixelShader.Combiners_Opaque_Opaque,
+                1 or 2 or 5 => (int)M2PixelShader.Combiners_Opaque_Mod,
+                3 or 7 => (int)M2PixelShader.Combiners_Opaque_AddAlpha,
+                4 => (int)M2PixelShader.Combiners_Opaque_Mod2x,
+                6 => (int)M2PixelShader.Combiners_Opaque_Mod2xNA,
+                _ => (int)M2PixelShader.Combiners_Opaque_Mod
+            };
     }
 }

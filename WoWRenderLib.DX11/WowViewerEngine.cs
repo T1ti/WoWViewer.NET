@@ -6,14 +6,12 @@ using Silk.NET.Maths;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using WoWFormatLib.FileProviders;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
-using WoWRenderLib.Managers;
-using WoWRenderLib.Providers;
+using WoWRenderLib.Services;
 
 namespace WoWRenderLib.DX11
 {
@@ -267,8 +265,6 @@ namespace WoWRenderLib.DX11
                     StringComparison.OrdinalIgnoreCase));
         public void UpdateSelectedWmoPlacement(ushort doodadSet, ushort nameSet) =>
             sceneManager?.UpdateSelectedWmoPlacement(doodadSet, nameSet);
-        private DBCManager? dbcManager;
-
         // private ImGuiController imGuiController = null;
 
         private uint frameDelta = 0;
@@ -783,22 +779,14 @@ namespace WoWRenderLib.DX11
 
                     Services.CASC.Activate(result);
 
-                    var tactFileProvider = new TACTSharpFileProvider();
-                    tactFileProvider.InitTACT(result.BuildInstance);
+                    WowlibFileSystem.OpenForClient(_wowConfig.wowDir, _wowConfig.wowProduct);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
-                    FileProvider.SetDefaultBuild(TACTSharpFileProvider.BuildName);
-                    FileProvider.SetProvider(tactFileProvider, TACTSharpFileProvider.BuildName);
-
                     sceneManager.GetCurrentWDT();
                     sceneManager.PreloadTEX();
 
-                    var dbcProvider = new DBCProvider();
-                    var dbdProvider = new DBDProvider();
-
-                    dbcManager = new DBCManager(dbdProvider, dbcProvider);
                     SetStatus(WowViewerEngineState.Ready, $"{result.BuildName} ready.");
                 }
                 catch (OperationCanceledException)
@@ -818,6 +806,7 @@ namespace WoWRenderLib.DX11
 
         private void SetStatus(WowViewerEngineState state, string message, Exception? exception = null)
         {
+            Console.WriteLine($"Renderer status: {state} - {message}");
             Status = new WowViewerEngineStatus(state, message, exception);
             StatusChanged?.Invoke(this, Status);
         }

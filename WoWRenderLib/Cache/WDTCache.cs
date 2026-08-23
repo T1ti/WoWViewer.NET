@@ -1,33 +1,106 @@
-﻿using WoWFormatLib.FileReaders;
-using WoWFormatLib.Structs.WDT;
+using WoWLib;
+using Formats = WoWLib.Formats;
+using WoWRenderLib.Services;
+using WoWRenderLib.Structs;
 
-namespace WoWRenderLib.Cache
+namespace WoWRenderLib.Cache;
+
+public static class WDTCache
 {
-    public static class WDTCache
+    private static readonly Dictionary<uint, WdtFile> Cache = [];
+
+    public static WdtFile GetOrLoad(uint fileDataId)
     {
-        private static Dictionary<uint, WDT> Cache = [];
+        if (Cache.TryGetValue(fileDataId, out var value))
+            return value;
 
-        public static WDT GetOrLoad(uint fileDataID)
+        var fileSystem = WowlibFileSystem.Current;
+        var format = Formats.WDT.WDT.ForVersion(fileSystem.Version);
+        format.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+
+        var root = format.Root;
+        var header = root.Header;
+        var mapFileDataIds = GetMapFileDataIds(root);
+        var hasSplitAdts = mapFileDataIds.Length > 0;
+
+        var wdt = new WdtFile
         {
-            if (Cache.TryGetValue(fileDataID, out WDT value))
-                return value;
+            FileDataId = fileDataId,
+            Flags = header.Flags,
+            TexFileDataId = GetTextureFileDataId(header),
+            HasSplitAdts = hasSplitAdts,
+            Format = format
+        };
 
-            var wdtReader = new WDTReader();
-            wdtReader.LoadWDT(fileDataID);
-            Cache.Add(fileDataID, wdtReader.wdtfile);
+        if (hasSplitAdts)
+        {
+            for (var index = 0; index < mapFileDataIds.Length; index++)
+            {
+                var files = mapFileDataIds[index];
+                var x = (byte)(index % 64);
+                var y = (byte)(index / 64);
+                var ids = new MapFileDataIds(
+                    files.RootAdt,
+                    files.Obj0Adt,
+                    files.Obj1Adt,
+                    files.Tex0Adt,
+                    files.LodAdt,
+                    files.MapTexture,
+                    files.MapTextureN,
+                    files.MinimapTexture);
 
-            return Cache[fileDataID];
+                wdt.TileFiles[(x, y)] = ids;
+                if (ids.RootAdt != 0 || ids.Obj0Adt != 0)
+                {
+                    wdt.Tiles.Add(new MapTile
+                    {
+                        wdtFileDataID = fileDataId,
+                        tileX = x,
+                        tileY = y
+                    });
+                }
+            }
+        }
+        else
+        {
+            for (var index = 0; index < root.Tiles.Count; index++)
+            {
+                if (root.Tiles[index].Flags == 0)
+                    continue;
+
+                var x = (byte)(index % 64);
+                var y = (byte)(index / 64);
+                wdt.Tiles.Add(new MapTile { wdtFileDataID = fileDataId, tileX = x, tileY = y });
+            }
         }
 
-        public static void ReleaseWDT(uint fileDataID)
-        {
-            // TODO: Do we also want to automatically remove ADTs?
-            Cache.Remove(fileDataID);
-        }
+        Cache.Add(fileDataId, wdt);
+        return wdt;
+    }
 
-        public static void ReleaseAll()
+    private static Formats.WDT.Root.Chunks.MapFileDataIDs[] GetMapFileDataIds(Formats.WDT.Root.WDTRoot root)
+    {
+        return root switch
         {
-            Cache.Clear();
-        }
+            Formats.WDT.Root.WDTRootBfa value => value.MapFdids.ToArray(),
+            Formats.WDT.Root.WDTRootShadowlandsPlus value => value.MapFdids.ToArray(),
+            _ => []
+        };
+    }
+
+    private static uint GetTextureFileDataId(Formats.WDT.Root.Chunks.WDTHeader header) =>
+        header is Formats.WDT.Root.Chunks.WDTHeaderBfaPlus modern ? modern.TexFdid : 0;
+
+    public static void ReleaseWDT(uint fileDataId)
+    {
+        if (Cache.Remove(fileDataId, out var wdt))
+            wdt.Dispose();
+    }
+
+    public static void ReleaseAll()
+    {
+        foreach (var wdt in Cache.Values)
+            wdt.Dispose();
+        Cache.Clear();
     }
 }

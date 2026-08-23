@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using WoWFormatLib.Structs.WDT;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11;
@@ -43,7 +42,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
         private readonly HashSet<uint> coarseCulledTileRoots = [];
 
-        private WDT? currentWDT;
+        private WdtFile? currentWDT;
         public uint CurrentWDTFileDataID { get; private set; } = 775971;
         public uint CurrentMapHighestUniqueId { get; private set; }
         public Container3D? SelectedObject { get; set; } = null;
@@ -597,12 +596,12 @@ namespace WoWRenderLib.DX11.Managers
             if (currentWDT == null)
                 return;
 
-            var texFileDataID = currentWDT.Value.mphd.texFDID;
+            var texFileDataID = currentWDT.TexFileDataId;
             if (texFileDataID != 0)
                 TEXCache.Preload(texFileDataID);
         }
 
-        public WDT? GetCurrentWDT()
+        public WdtFile? GetCurrentWDT()
         {
             if (currentWDT == null)
             {
@@ -615,8 +614,8 @@ namespace WoWRenderLib.DX11.Managers
 
         private void UpdateMapHighestUniqueId()
         {
-            if (currentWDT.HasValue)
-                CurrentMapHighestUniqueId = MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT.Value);
+            if (currentWDT != null)
+                CurrentMapHighestUniqueId = MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT);
         }
 
         private void RebuildAvailableTileIndex()
@@ -625,16 +624,17 @@ namespace WoWRenderLib.DX11.Managers
             if (currentWDT == null)
                 return;
 
-            foreach (var tile in currentWDT.Value.tiles)
-                availableWdtTiles.Add(tile);
+            foreach (var tile in currentWDT.Tiles)
+                availableWdtTiles.Add((tile.tileX, tile.tileY));
         }
 
         public (byte x, byte y) GetFirstMapTile()
         {
-            if (currentWDT == null || currentWDT.Value.tiles.Count == 0)
+            if (currentWDT == null || currentWDT.Tiles.Count == 0)
                 return (0, 0);
 
-            return currentWDT.Value.tiles[0];
+            var tile = currentWDT.Tiles[0];
+            return (tile.tileX, tile.tileY);
         }
 
         public void UpdateTilesByCameraPos(Vector3 cameraPosition)
@@ -959,6 +959,7 @@ namespace WoWRenderLib.DX11.Managers
                     adtContainer.LoadCallback += OnADTContainerLoaded;
 
                     ADTCache.GetOrLoad(mapTile, mapTile.wdtFileDataID, adtContainer.OnLoaded);
+                    adtContainer.MarkCacheReferenceHeld();
 
                     lock (SceneObjectLock)
                     {
