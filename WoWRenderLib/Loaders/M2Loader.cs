@@ -39,10 +39,13 @@ public static class M2Loader
             attachmentCount = counts.AttachmentCount
         };
 
-        var textures = root.Textures.AsSpan();
-        var rootMaterials = root.Materials.AsSpan();
+        // M2Texture and M2Vertex do not have blittable Data mirrors in
+        // wowlib 0.0.8, so their vectors must stay on the typed wrapper path.
+        // M2Material does expose a Data mirror and can use a live data span.
+        var textures = root.Textures;
+        var rootMaterials = root.Materials.AsDataSpan();
         var textureFileDataIds = ResolveTextureFileDataIds(fileSystem, model, textures);
-        parsed.mats = new M2Material[textures.Length];
+        parsed.mats = new M2Material[textures.Count];
         for (var i = 0; i < parsed.mats.Length; i++)
         {
             var texture = textures[i];
@@ -51,7 +54,7 @@ public static class M2Loader
             {
                 fileDataID = textureFileDataIds[i],
                 flags = texture.Flags,
-                blendMode = material?.BlendingMode ?? 0
+                blendMode = material.BlendingMode
             };
         }
 
@@ -178,14 +181,13 @@ public static class M2Loader
 
     private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
     {
-        // Keep the native vector as a live typed span. M2Vertex is not a
-        // blittable Data mirror in wowlib 0.0.8, so its nested position,
-        // normal, and UV views still use the typed wrapper API.
-        var sourceVertices = vertices.AsSpan();
-        var result = new M2Vertex[sourceVertices.Length];
+        // M2Vertex is not a blittable Data mirror in wowlib 0.0.8. Indexing
+        // the typed vector keeps the nested position, normal, and UV views
+        // valid without asking Vector.AsSpan() for an unsupported record span.
+        var result = new M2Vertex[vertices.Count];
         for (var i = 0; i < result.Length; i++)
         {
-            var source = sourceVertices[i];
+            var source = vertices[i];
             result[i] = new M2Vertex
             {
                 Position = ToVector3(source.Pos),
@@ -200,10 +202,10 @@ public static class M2Loader
     private static uint[] ResolveTextureFileDataIds(
         Fs.FileSystem fileSystem,
         Formats.M2.M2 model,
-        ReadOnlySpan<Formats.M2.Root.Record.M2Texture> textures)
+        WoWLib.Vector<Formats.M2.Root.Record.M2Texture> textures)
     {
         var chunkIds = GetChunkTextureIds(model);
-        var result = new uint[textures.Length];
+        var result = new uint[textures.Count];
         for (var i = 0; i < result.Length; i++)
         {
             var texture = textures[i];

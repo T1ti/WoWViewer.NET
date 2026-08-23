@@ -23,7 +23,7 @@ public static class WMOLoader
         var root = wmo.Root;
         var rootData = ReadRootData(root);
         var groups = wmo.Groups;
-        var groupInfos = root.GroupInfos.AsSpan();
+        var groupInfos = root.GroupInfos.AsDataSpan();
         var groupNames = root.GroupNames;
         var preppedGroups = new List<PreppedWMOGroup>();
 
@@ -33,7 +33,7 @@ public static class WMOLoader
             var body = group.Body;
             var header = body.Header;
             var groupInfo = groupIndex < groupInfos.Length ? groupInfos[groupIndex] : default;
-            var nameOffset = groupInfo?.NameOffset ?? 0;
+            var nameOffset = groupInfo.NameOffset;
             if (nameOffset == 0)
                 nameOffset = checked((int)header.GroupName);
             var groupName = GetString(groupNames, (uint)Math.Max(0, nameOffset)).Replace(" ", "_");
@@ -88,7 +88,7 @@ public static class WMOLoader
                 groupID = (uint)preppedGroups.Count,
                 groupName = groupName,
                 mogiGroupName = groupName,
-                mogiFlags = groupInfo?.Flags ?? 0,
+                mogiFlags = groupInfo.Flags,
                 flags = header.Flags,
                 portalStart = header.PortalStart,
                 portalCount = header.PortalCount,
@@ -241,8 +241,10 @@ public static class WMOLoader
 
     private static PreppedWMOMaterial[] ReadMaterials(Fs.FileSystem fileSystem, RootData root)
     {
-        var materials = root.Materials.AsSpan();
-        var result = new PreppedWMOMaterial[materials.Length];
+        // SmoMaterial.Data exposes the fixed RunTimeData buffer directly,
+        // while the typed wrapper provides the safe live view used here.
+        var materials = root.Materials;
+        var result = new PreppedWMOMaterial[materials.Count];
         for (var i = 0; i < result.Length; i++)
         {
             var material = materials[i];
@@ -278,8 +280,10 @@ public static class WMOLoader
 
     private static string[] ReadDoodadSets(Formats.WMO.Root.WMORoot root)
     {
-        var doodadSets = root.DoodadSets.AsSpan();
-        var result = new string[doodadSets.Length];
+        // Doodad set names are exposed by the typed wrapper; the Data mirror
+        // only contains the fixed wire bytes and has no name helper.
+        var doodadSets = root.DoodadSets;
+        var result = new string[doodadSets.Count];
         for (var i = 0; i < result.Length; i++)
             result[i] = doodadSets[i].name;
         return result;
@@ -287,9 +291,11 @@ public static class WMOLoader
 
     private static WMODoodad[] ReadDoodads(Fs.FileSystem fileSystem, RootData root, string[] doodadSets)
     {
-        var doodadDefinitions = root.DoodadDefinitions.AsSpan();
-        var doodadSetRecords = root.DoodadSets.AsSpan();
-        var result = new WMODoodad[doodadDefinitions.Length];
+        // The typed view supplies derived NameIndex/Orientation accessors;
+        // the raw Data mirror stores NameAndFlags and fixed wire fields.
+        var doodadDefinitions = root.DoodadDefinitions;
+        var doodadSetRecords = root.DoodadSets;
+        var result = new WMODoodad[doodadDefinitions.Count];
         for (var i = 0; i < result.Length; i++)
         {
             var doodad = doodadDefinitions[i];
@@ -303,7 +309,7 @@ public static class WMOLoader
             }
 
             var setIndex = 0u;
-            for (var set = 0; set < doodadSetRecords.Length; set++)
+            for (var set = 0; set < doodadSetRecords.Count; set++)
             {
                 var record = doodadSetRecords[set];
                 if ((uint)i >= record.StartIndex && (uint)i < record.StartIndex + record.Count)

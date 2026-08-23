@@ -179,12 +179,12 @@ public static class ADTLoader
         parsed.chunkBounds = chunkBounds;
         parsed.doodads = BuildDoodads(
             fileSystem,
-            adt.DoodadPlacements.AsSpan(),
+            adt.DoodadPlacements.AsDataSpan(),
             modelFilenames,
             modelNameOffsets.AsSpan());
         parsed.worldModelBatches = BuildWmos(
             fileSystem,
-            adt.WmoPlacements.AsSpan(),
+            adt.WmoPlacements.AsDataSpan(),
             wmoFilenames,
             wmoNameOffsets.AsSpan());
         parsed.blpFileDataIDs = [.. fileIds];
@@ -277,8 +277,10 @@ public static class ADTLoader
         HashSet<uint> usedIds,
         Formats.StringBlock textures)
     {
-        var layers = chunk.Layers.AsSpan();
-        var alphaMaps = chunk.AlphaMaps.AsSpan();
+        var layers = chunk.Layers.AsDataSpan();
+        // AlphaMaps is a vector of byte vectors, not a scalar vector. Keep
+        // the outer vector typed and only materialize each selected map.
+        var alphaMaps = chunk.AlphaMaps;
         var materialIds = new int[8];
         var heightIds = new int[8];
         var scales = new float[8];
@@ -309,7 +311,7 @@ public static class ADTLoader
             if (diffuse != 0)
                 usedIds.Add(diffuse);
 
-            if (layerIndex < alphaMaps.Length)
+            if (layerIndex < alphaMaps.Count)
                 alphaLayers[layerIndex] = alphaMaps[layerIndex].ToArray();
         }
 
@@ -348,7 +350,7 @@ public static class ADTLoader
 
     private static Doodad[] BuildDoodads(
         Fs.FileSystem fileSystem,
-        ReadOnlySpan<Formats.Common.SmDoodadDef> placements,
+        ReadOnlySpan<Formats.Common.SmDoodadDef.Data> placements,
         Formats.StringBlock modelFilenames,
         ReadOnlySpan<uint> modelNameOffsets)
     {
@@ -380,7 +382,7 @@ public static class ADTLoader
 
     private static WorldModelBatch[] BuildWmos(
         Fs.FileSystem fileSystem,
-        ReadOnlySpan<Formats.Common.SmMapObjDef> placements,
+        ReadOnlySpan<Formats.Common.SmMapObjDef.Data> placements,
         Formats.StringBlock wmoFilenames,
         ReadOnlySpan<uint> wmoNameOffsets)
     {
@@ -461,6 +463,8 @@ public static class ADTLoader
     internal static int GetVertexIndex(int row, int column) => row * 9 - row / 2 + column;
 
     private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
+
+    private static Vector3 ToVector3(Formats.Common.C3Vector.Data value) => new(value.X, value.Y, value.Z);
 
     private static string GetString(Formats.StringBlock block, uint offset)
     {
