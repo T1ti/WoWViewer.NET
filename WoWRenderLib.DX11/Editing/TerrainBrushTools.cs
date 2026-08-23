@@ -39,17 +39,22 @@ public sealed class SculptTerrainBrushTool : TerrainBrushTool
 
 public sealed class SmoothTerrainBrushTool : TerrainBrushTool
 {
+    private const int VerticesPerTerrainChunk = 145;
+    private const int MaximumSmoothIterations = 8;
+    private const float MaximumNeighborhoodRadius = 12f;
+
     public override TerrainBrushMode Mode => TerrainBrushMode.Smooth;
     public override Vector4 PreviewColor => new(0.35f, 1f, 0.55f, 1f);
 
-    public override int GetPassCount(int requestedIterations) => Math.Clamp(requestedIterations, 1, 8);
+    public override int GetPassCount(int requestedIterations) =>
+        Math.Clamp(requestedIterations, 1, MaximumSmoothIterations);
 
     public override float Apply(in TerrainBrushSample sample)
     {
-        var chunkStart = sample.VertexIndex / 145 * 145;
-        var chunkEnd = Math.Min(chunkStart + 145, sample.Vertices.Length);
+        var chunkStart = sample.VertexIndex / VerticesPerTerrainChunk * VerticesPerTerrainChunk;
+        var chunkEnd = Math.Min(chunkStart + VerticesPerTerrainChunk, sample.Vertices.Length);
         var center = sample.Vertices[sample.VertexIndex].Position;
-        var neighborhoodRadius = MathF.Min(sample.Radius, 12f);
+        var neighborhoodRadius = MathF.Min(sample.Radius, MaximumNeighborhoodRadius);
         var neighborhoodRadiusSquared = neighborhoodRadius * neighborhoodRadius;
         var total = 0f;
         var count = 0;

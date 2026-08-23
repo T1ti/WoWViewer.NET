@@ -1,4 +1,5 @@
 using System.Numerics;
+using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
 
@@ -12,9 +13,9 @@ namespace WoWRenderLib.DX11.Renderer;
 /// </summary>
 public static class WmoPortalVisibility
 {
-    private const uint ExteriorFlag = 0x8;
-    private const uint InteriorFlag = 0x2000;
-    private const uint AlwaysDrawFlag = 0x10000;
+    private const uint ExteriorFlag = (uint)GroupFlags.exterior;
+    private const uint InteriorFlag = (uint)GroupFlags.interior;
+    private const uint AlwaysDrawFlag = (uint)GroupFlags.always_draw;
     private const float PlaneEpsilon = 0.001f;
 
     public static bool TryCompute(

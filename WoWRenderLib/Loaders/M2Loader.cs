@@ -12,7 +12,17 @@ namespace WoWRenderLib.Loaders;
 
 public static class M2Loader
 {
-    private const uint DefaultTextureId = 186184;
+    // Blizzard's built-in missing-texture FileDataID; wowlib does not define
+    // renderer fallback assets.
+    private const uint FallbackTextureFileDataId = 186184;
+    // Legacy M2 shader IDs are compact bitfields rather than a wowlib enum.
+    private const ushort ShaderBlendModeBit = 0x0008;
+    private const ushort ShaderCombinerMask = 0x0070;
+    private const ushort ShaderCombinerIdMask = 0x0007;
+    private const ushort ShaderUsesEnvironmentBit = 0x4000;
+    private const ushort ShaderUsesVertexShaderBit = 0x0080;
+    private const ushort ShaderUsesPixelShaderTableBit = 0x8000;
+    private const ushort ShaderPixelShaderIndexMask = 0x7FFF;
 
     public static ParsedM2 ParseM2(uint fileDataId)
     {
@@ -208,7 +218,7 @@ public static class M2Loader
             var id = texture.Type == 0 && i < chunkIds.Length ? chunkIds[i] : 0;
             if (id == 0)
                 id = ResolvePath(fileSystem, texture.Filename);
-            result[i] = id == 0 ? DefaultTextureId : id;
+            result[i] = id == 0 ? FallbackTextureFileDataId : id;
         }
         return result;
     }
@@ -269,7 +279,7 @@ public static class M2Loader
                 textureIndices[texture] = textureIndex;
                 materialIds[texture] = textureIndex < materials.Length
                     ? materials[textureIndex].fileDataID
-                    : DefaultTextureId;
+                    : FallbackTextureFileDataId;
             }
 
             var blendType = batch.MaterialIndex < materials.Length ? materials[batch.MaterialIndex].blendMode : 0;
@@ -327,30 +337,42 @@ public static class M2Loader
     private static int GetVertexShaderID(int textureCount, ushort shaderID)
     {
         if (textureCount == 1)
-            return (shaderID & 0x80) == 0 ? ((shaderID & 0x4000) != 0 ? 10 : 0) : 1;
-        if ((shaderID & 0x80) == 0)
+            return (shaderID & ShaderUsesVertexShaderBit) == 0
+                ? (shaderID & ShaderUsesEnvironmentBit) != 0
+                    ? (int)M2VertexShader.Diffuse_T2
+                    : (int)M2VertexShader.Diffuse_T1
+                : (int)M2VertexShader.Diffuse_Env;
+        if ((shaderID & ShaderUsesVertexShaderBit) == 0)
         {
-            var result = (shaderID & 8) != 0 ? 3 : 7;
-            return (shaderID & 0x4000) != 0 ? 2 : result;
+            var result = (shaderID & ShaderBlendModeBit) != 0
+                ? M2VertexShader.Diffuse_T1_Env
+                : M2VertexShader.Diffuse_T1_T1;
+            return (shaderID & ShaderUsesEnvironmentBit) != 0
+                ? (int)M2VertexShader.Diffuse_T1_T2
+                : (int)result;
         }
-        return (shaderID & 8) != 0 ? 5 : 4;
+        return (int)((shaderID & ShaderBlendModeBit) != 0
+            ? M2VertexShader.Diffuse_Env_Env
+            : M2VertexShader.Diffuse_Env_T1);
     }
 
     private static int GetPixelShaderID(int textureCount, ushort shaderID)
     {
-        if ((shaderID & 0x8000) > 0)
+        if ((shaderID & ShaderUsesPixelShaderTableBit) != 0)
         {
-            var pixelShaderId = shaderID & 0x7FFF;
+            var pixelShaderId = shaderID & ShaderPixelShaderIndexMask;
             if (pixelShaderId >= M2Shaders.Count)
                 throw new InvalidDataException($"M2 pixel shader {pixelShaderId} is out of bounds.");
             return (int)M2Shaders[pixelShaderId].PixelShader;
         }
 
         if (textureCount == 1)
-            return (shaderID & 0x70) != 0 ? (int)M2PixelShader.Combiners_Mod : (int)M2PixelShader.Combiners_Opaque;
+            return (shaderID & ShaderCombinerMask) != 0
+                ? (int)M2PixelShader.Combiners_Mod
+                : (int)M2PixelShader.Combiners_Opaque;
 
-        return (shaderID & 0x70) != 0
-            ? (shaderID & 7) switch
+        return (shaderID & ShaderCombinerMask) != 0
+            ? (shaderID & ShaderCombinerIdMask) switch
             {
                 0 => (int)M2PixelShader.Combiners_Mod_Opaque,
                 1 or 2 or 5 => (int)M2PixelShader.Combiners_Mod_Mod,
@@ -360,7 +382,7 @@ public static class M2Loader
                 7 => (int)M2PixelShader.Combiners_Mod_AddNA,
                 _ => (int)M2PixelShader.Combiners_Mod_Mod
             }
-            : (shaderID & 7) switch
+            : (shaderID & ShaderCombinerIdMask) switch
             {
                 0 => (int)M2PixelShader.Combiners_Opaque_Opaque,
                 1 or 2 or 5 => (int)M2PixelShader.Combiners_Opaque_Mod,

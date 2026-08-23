@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using MapObjDefFlags = WoWLib.Formats.Common.MapObjDefFlags;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11;
@@ -88,9 +89,17 @@ namespace WoWRenderLib.DX11.Managers
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
 
         private const int MaxInstancesPerBatch = 1024;
+        private const int MaxTerrainChunksPerTile = 256;
+        private const int TerrainVerticesPerChunk = 145;
+        private const uint TerrainIndicesPerChunk = 768;
+        private const uint TerrainFarLodIndicesPerChunk = 384;
+        private const int MaxTerrainLayers = 8;
+        private const int TerrainHeightTextureSlot = 8;
+        private const int TerrainAlphaTextureSlot = 16;
+        private const int ShaderResourceSlotCount = 16;
 
         private CompiledShader adtShaderProgram;
-        private readonly CompiledShader[] adtLayerShaderPrograms = new CompiledShader[8];
+        private readonly CompiledShader[] adtLayerShaderPrograms = new CompiledShader[MaxTerrainLayers];
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private CompiledShader debugShaderProgram;
@@ -121,10 +130,11 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> bboxVertexBuffer = default;
         private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
 
-        private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch = new ComPtr<ID3D11ShaderResourceView>[16];
+        private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch =
+            new ComPtr<ID3D11ShaderResourceView>[ShaderResourceSlotCount];
         private readonly Dictionary<uint, ComPtr<ID3D11ShaderResourceView>> _frameTextureSrvs = [];
         private readonly List<int> _visibleIndices = new(64);
-        private readonly List<bool> _visibleTerrainFarLod = new(256);
+        private readonly List<bool> _visibleTerrainFarLod = new(MaxTerrainChunksPerTile);
         private readonly List<WmoVisibilityBatch> _wmoVisibilityBatches = [];
         private readonly string? _wmoGroupTraceFilter =
             Environment.GetEnvironmentVariable("WTEDITOR_TRACE_WMO_GROUP");
@@ -1114,7 +1124,7 @@ namespace WoWRenderLib.DX11.Managers
 
             worldModel.PlacementDoodadSet = doodadSet;
             worldModel.PlacementNameSet = nameSet;
-            if ((worldModel.PlacementFlags & 0x80) == 0)
+            if ((worldModel.PlacementFlags & (uint)MapObjDefFlags.use_sets_from_mwds) == 0)
                 worldModel.SetDoodadSetsToEnable([doodadSet]);
         }
 
@@ -1409,8 +1419,8 @@ namespace WoWRenderLib.DX11.Managers
                 return;
             }
 
-            var indexStart = chunkIndex * 768;
-            var indexEnd = Math.Min(indexStart + 768, terrain.indices.Length);
+            var indexStart = chunkIndex * (int)TerrainIndicesPerChunk;
+            var indexEnd = Math.Min(indexStart + (int)TerrainIndicesPerChunk, terrain.indices.Length);
             for (var index = indexStart; index < indexEnd; index += 3)
             {
                 var i0 = terrain.indices[index];
@@ -1576,8 +1586,8 @@ namespace WoWRenderLib.DX11.Managers
             for (var pass = 0; pass < passes; pass++)
             {
                 var chunkChanged = false;
-                var start = chunkIndex * 145;
-                var end = Math.Min(start + 145, terrain.vertices.Length);
+                var start = chunkIndex * TerrainVerticesPerChunk;
+                var end = Math.Min(start + TerrainVerticesPerChunk, terrain.vertices.Length);
                 for (var vertexIndex = start; vertexIndex < end; vertexIndex++)
                 {
                     var vertex = terrain.vertices[vertexIndex];
@@ -1643,8 +1653,8 @@ namespace WoWRenderLib.DX11.Managers
 
         private static void RebuildTerrainChunkBounds(ref Terrain terrain, int chunkIndex)
         {
-            var start = chunkIndex * 145;
-            var end = Math.Min(start + 145, terrain.vertices.Length);
+            var start = chunkIndex * TerrainVerticesPerChunk;
+            var end = Math.Min(start + TerrainVerticesPerChunk, terrain.vertices.Length);
             if (start >= end || chunkIndex >= terrain.chunkBounds.Length)
                 return;
 
@@ -2281,7 +2291,7 @@ namespace WoWRenderLib.DX11.Managers
                     0,
                     0);
                 ConstantBufferUpdates++;
-                var currentAdtShaderLayerCount = 8;
+                var currentAdtShaderLayerCount = MaxTerrainLayers;
                 var currentAdtUsesHeightTextures = true;
 
                 foreach (var adt in adtContainers)
@@ -2375,7 +2385,7 @@ namespace WoWRenderLib.DX11.Managers
                     deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in adtVertexStride, in adtVertexOffset);
                     VertexBufferBindings++;
                     var alphaMaterialArray = adt.Terrain.alphaMaterialArray;
-                    deviceContext.PSSetShaderResources(16, 1, ref alphaMaterialArray);
+                    deviceContext.PSSetShaderResources(TerrainAlphaTextureSlot, 1, ref alphaMaterialArray);
                     var alphaSliceBuffer = adt.Terrain.alphaSliceBuffer;
                     deviceContext.PSSetConstantBuffers(2, 1, ref alphaSliceBuffer);
                     var chunkLayerDataBuffer = adt.Terrain.chunkLayerDataBuffer;
@@ -2438,11 +2448,16 @@ namespace WoWRenderLib.DX11.Managers
                                 _srvScratch[s] = s < batch.heightMaterialFDIDs.Length
                                     ? ResolveFrameTexture((uint)batch.heightMaterialFDIDs[s])
                                     : defaultTexture;
-                            deviceContext.PSSetShaderResources(8, (uint)shaderLayerCount, ref _srvScratch[0]);
+                            deviceContext.PSSetShaderResources(
+                                TerrainHeightTextureSlot,
+                                (uint)shaderLayerCount,
+                                ref _srvScratch[0]);
                             TextureBindingCalls++;
                         }
 
-                        var indexCount = useFarLod ? 384u : 768u;
+                        var indexCount = useFarLod
+                            ? TerrainFarLodIndicesPerChunk
+                            : TerrainIndicesPerChunk;
                         deviceContext.DrawIndexed(
                             indexCount * (uint)compatibleChunkCount,
                             (uint)c * indexCount,

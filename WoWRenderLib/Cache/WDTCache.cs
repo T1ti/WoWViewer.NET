@@ -7,6 +7,7 @@ namespace WoWRenderLib.Cache;
 
 public static class WDTCache
 {
+    private const int TilesPerAxis = 64;
     private static readonly Dictionary<uint, WdtFile> Cache = [];
 
     public static WdtFile GetOrLoad(uint fileDataId)
@@ -37,8 +38,8 @@ public static class WDTCache
             for (var index = 0; index < mapFileDataIds.Length; index++)
             {
                 var files = mapFileDataIds[index];
-                var x = (byte)(index % 64);
-                var y = (byte)(index / 64);
+                var x = (byte)(index % TilesPerAxis);
+                var y = (byte)(index / TilesPerAxis);
                 var ids = new MapFileDataIds(
                     files.RootAdt,
                     files.Obj0Adt,
@@ -68,8 +69,8 @@ public static class WDTCache
                 if (root.Tiles[index].Flags == 0)
                     continue;
 
-                var x = (byte)(index % 64);
-                var y = (byte)(index / 64);
+                var x = (byte)(index % TilesPerAxis);
+                var y = (byte)(index / TilesPerAxis);
                 wdt.Tiles.Add(new MapTile { wdtFileDataID = fileDataId, tileX = x, tileY = y });
             }
         }

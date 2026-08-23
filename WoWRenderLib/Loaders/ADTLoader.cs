@@ -11,6 +11,31 @@ namespace WoWRenderLib.Loaders;
 
 public static class ADTLoader
 {
+    private const int MaxChunksPerTile = 256;
+    private const int VerticesPerChunk = 145;
+    private const int IndicesPerChunk = 768;
+    private const int FarLodIndicesPerChunk = 384;
+    private const int TerrainGridRows = 17;
+    private const int TerrainGridRowStride = TerrainGridRows;
+    private const int TerrainOuterRowWidth = 9;
+    private const int TerrainInnerRowWidth = 8;
+    private const int TerrainSubdivisionsPerSide = 8;
+    private const int HoleRows = 8;
+    private const int HoleColumns = 8;
+    private const int LowResolutionHoleColumns = 4;
+    private const int IndicesPerHole = 12;
+    private const int FarLodIndicesPerHole = 6;
+    private const int MaxTextureLayers = 8;
+    private const int AlphaMapSize = 64;
+    private const int AlphaChannelCount = 4;
+    private const float NormalComponentScale = 127f;
+    private const float TileSize = 1600f / 3f;
+    private const int TileSubdivisionsPerSide = 16;
+    private const float WorldOriginOffset = 17066.666f;
+    private const float PlacementScaleDenominator = 1024f;
+    private const int TextureScaleMask = 0xF0;
+    private const int TextureScaleShift = 4;
+
     public static unsafe ParsedADT ParseADT(MapTile mapTile)
     {
         var wdt = WDTCache.GetOrLoad(mapTile.wdtFileDataID);
@@ -37,7 +62,7 @@ public static class ADTLoader
         // are still version-specific because older clients store texture names.
         var textureData = ReadTextureData(adt);
         var chunks = adt.Chunks;
-        var chunkCount = Math.Min(chunks.Count, 256);
+        var chunkCount = Math.Min(chunks.Count, MaxChunksPerTile);
         if (chunkCount == 0)
             return parsed;
 
@@ -54,15 +79,14 @@ public static class ADTLoader
             adt.Textures,
             fileIds);
 
-        var vertices = new ADTVertex[256 * 145];
-        var indices = new int[256 * 768];
-        var farLodIndices = new int[256 * 384];
-        var chunkBounds = new BoundingBox[256];
-        var renderBatches = new ParsedADTRenderBatch[256];
+        var vertices = new ADTVertex[MaxChunksPerTile * VerticesPerChunk];
+        var indices = new int[MaxChunksPerTile * IndicesPerChunk];
+        var farLodIndices = new int[MaxChunksPerTile * FarLodIndicesPerChunk];
+        var chunkBounds = new BoundingBox[MaxChunksPerTile];
+        var renderBatches = new ParsedADTRenderBatch[MaxChunksPerTile];
         var indicesOffset = 0;
         var farLodIndicesOffset = 0;
-        const float tileSize = 1600.0f / 3.0f;
-        const float unitSize = tileSize / 16.0f / 8.0f;
+        const float unitSize = TileSize / TileSubdivisionsPerSide / TerrainSubdivisionsPerSide;
         var defaultVertexColor = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
 
         for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++)
@@ -81,11 +105,11 @@ public static class ADTLoader
             var chunkMin = new Vector3(float.MaxValue);
             var chunkMax = new Vector3(float.MinValue);
 
-            for (var row = 0; row < 17; row++)
+            for (var row = 0; row < TerrainGridRows; row++)
             {
                 var inner = (row & 1) != 0;
                 var halfHeight = row * 0.5f;
-                var rowWidth = inner ? 8 : 9;
+                var rowWidth = inner ? TerrainInnerRowWidth : TerrainOuterRowWidth;
                 for (var column = 0; column < rowWidth; column++)
                 {
                     var vertexIndex = GetVertexIndex(row, column);
@@ -93,11 +117,13 @@ public static class ADTLoader
                     var vertex = new ADTVertex
                     {
                         Normal = new Vector3(
-                            normal.Normal[0] / 127f,
-                            normal.Normal[1] / 127f,
-                            normal.Normal[2] / 127f),
+                            normal.Normal[0] / NormalComponentScale,
+                            normal.Normal[1] / NormalComponentScale,
+                            normal.Normal[2] / NormalComponentScale),
                         Color = GetVertexColor(vertexColors, vertexIndex, defaultVertexColor),
-                        TexCoord = new Vector2((column + (inner ? 0.5f : 0f)) / 8f, halfHeight / 8f),
+                        TexCoord = new Vector2(
+                            (column + (inner ? 0.5f : 0f)) / TerrainSubdivisionsPerSide,
+                            halfHeight / TerrainSubdivisionsPerSide),
                         Position = new Vector3(
                             position.X - halfHeight * unitSize,
                             position.Y - column * unitSize,
@@ -109,7 +135,7 @@ public static class ADTLoader
 
                     chunkMin = Vector3.Min(chunkMin, vertex.Position);
                     chunkMax = Vector3.Max(chunkMax, vertex.Position);
-                    vertices[chunkIndex * 145 + vertexIndex] = vertex;
+                    vertices[chunkIndex * VerticesPerChunk + vertexIndex] = vertex;
                 }
             }
 
@@ -118,43 +144,43 @@ public static class ADTLoader
 
             var chunkFlags = (Formats.ADT.Chunks.MapChunkFlags)flags;
             var highResolutionHoles = (chunkFlags & Formats.ADT.Chunks.MapChunkFlags.high_res_holes) != 0;
-            var vertexBase = chunkIndex * 145;
-            for (var holeRow = 0; holeRow < 8; holeRow++)
+            var vertexBase = chunkIndex * VerticesPerChunk;
+            for (var holeRow = 0; holeRow < HoleRows; holeRow++)
             {
-                for (var holeColumn = 0; holeColumn < 8; holeColumn++)
+                for (var holeColumn = 0; holeColumn < HoleColumns; holeColumn++)
                 {
-                    var j = 9 + holeRow * 17 + holeColumn;
+                    var j = TerrainOuterRowWidth + holeRow * TerrainGridRowStride + holeColumn;
                     var xx = holeColumn;
                     var yy = holeRow;
                     var isHole = highResolutionHoles
-                        ? ((header.HolesHighRes >> (yy * 8 + xx)) & 1) != 0
-                        : (header.HolesLowRes & (1 << ((xx / 2) + (yy / 2) * 4))) != 0;
+                        ? ((header.HolesHighRes >> (yy * HoleColumns + xx)) & 1) != 0
+                        : (header.HolesLowRes & (1 << ((xx / 2) + (yy / 2) * LowResolutionHoleColumns))) != 0;
 
                     if (isHole)
                     {
-                        for (var i = 0; i < 12; i++)
+                        for (var i = 0; i < IndicesPerHole; i++)
                             indices[indicesOffset++] = 0;
-                        for (var i = 0; i < 6; i++)
+                        for (var i = 0; i < FarLodIndicesPerHole; i++)
                             farLodIndices[farLodIndicesOffset++] = 0;
                     }
                     else
                     {
-                        indices[indicesOffset++] = vertexBase + j + 8;
-                        indices[indicesOffset++] = vertexBase + j - 9;
+                        indices[indicesOffset++] = vertexBase + j + TerrainInnerRowWidth;
+                        indices[indicesOffset++] = vertexBase + j - TerrainOuterRowWidth;
                         indices[indicesOffset++] = vertexBase + j;
-                        indices[indicesOffset++] = vertexBase + j - 9;
-                        indices[indicesOffset++] = vertexBase + j - 8;
+                        indices[indicesOffset++] = vertexBase + j - TerrainOuterRowWidth;
+                        indices[indicesOffset++] = vertexBase + j - TerrainInnerRowWidth;
                         indices[indicesOffset++] = vertexBase + j;
-                        indices[indicesOffset++] = vertexBase + j - 8;
-                        indices[indicesOffset++] = vertexBase + j + 9;
+                        indices[indicesOffset++] = vertexBase + j - TerrainInnerRowWidth;
+                        indices[indicesOffset++] = vertexBase + j + TerrainOuterRowWidth;
                         indices[indicesOffset++] = vertexBase + j;
-                        indices[indicesOffset++] = vertexBase + j + 9;
-                        indices[indicesOffset++] = vertexBase + j + 8;
+                        indices[indicesOffset++] = vertexBase + j + TerrainOuterRowWidth;
+                        indices[indicesOffset++] = vertexBase + j + TerrainInnerRowWidth;
                         indices[indicesOffset++] = vertexBase + j;
 
-                        var topLeft = vertexBase + yy * 17 + xx;
+                        var topLeft = vertexBase + yy * TerrainGridRowStride + xx;
                         var topRight = topLeft + 1;
-                        var bottomLeft = vertexBase + (yy + 1) * 17 + xx;
+                        var bottomLeft = vertexBase + (yy + 1) * TerrainGridRowStride + xx;
                         var bottomRight = bottomLeft + 1;
                         farLodIndices[farLodIndicesOffset++] = bottomLeft;
                         farLodIndices[farLodIndicesOffset++] = topLeft;
@@ -253,7 +279,9 @@ public static class ADTLoader
             if (textureParams != null && i < textureParams.Count)
             {
                 var parameter = textureParams[i];
-                material.scale = MathF.Pow(2f, (parameter.Flags & 0xF0) >> 4);
+                material.scale = MathF.Pow(
+                    2f,
+                    (parameter.Flags & TextureScaleMask) >> TextureScaleShift);
                 material.heightScale = parameter.HeightScale;
                 material.heightOffset = parameter.HeightOffset;
                 if (i < heightTextureIds.Length && heightTextureIds[i] != 0 &&
@@ -285,11 +313,11 @@ public static class ADTLoader
         // AlphaMaps is a vector of byte vectors, not a scalar vector. Keep
         // the outer vector typed and only materialize each selected map.
         var alphaMaps = chunk.AlphaMaps;
-        var materialIds = new int[8];
-        var heightIds = new int[8];
-        var scales = new float[8];
-        var heightScales = new float[8];
-        var heightOffsets = new float[8];
+        var materialIds = new int[MaxTextureLayers];
+        var heightIds = new int[MaxTextureLayers];
+        var scales = new float[MaxTextureLayers];
+        var heightScales = new float[MaxTextureLayers];
+        var heightOffsets = new float[MaxTextureLayers];
         Array.Fill(materialIds, -1);
         Array.Fill(heightIds, -1);
         Array.Fill(scales, 1f);
@@ -299,8 +327,8 @@ public static class ADTLoader
         // An ADT has at most eight texture layers. Keep the selected alpha
         // maps in a fixed array so conversion does not hash a layer index for
         // every output byte.
-        var alphaLayers = new byte[]?[8];
-        for (var layerIndex = 0; layerIndex < Math.Min(layers.Length, 8); layerIndex++)
+        var alphaLayers = new byte[]?[MaxTextureLayers];
+        for (var layerIndex = 0; layerIndex < Math.Min(layers.Length, MaxTextureLayers); layerIndex++)
         {
             var layer = layers[layerIndex];
             var textureIndex = layer.TextureId;
@@ -333,7 +361,7 @@ public static class ADTLoader
             if (layer0 is null && layer1 is null && layer2 is null && layer3 is null)
                 continue;
 
-            var alphaData = new byte[64 * 64 * 4];
+            var alphaData = new byte[AlphaMapSize * AlphaMapSize * AlphaChannelCount];
             CopyAlphaChannel(layer0, alphaData, 0);
             CopyAlphaChannel(layer1, alphaData, 1);
             CopyAlphaChannel(layer2, alphaData, 2);
@@ -357,7 +385,7 @@ public static class ADTLoader
         if (source is null)
             return;
 
-        var count = Math.Min(source.Length, 64 * 64);
+        var count = Math.Min(source.Length, AlphaMapSize * AlphaMapSize);
         var destinationIndex = channel;
         for (var sourceIndex = 0; sourceIndex < count; sourceIndex++, destinationIndex += 4)
             destination[destinationIndex] = source[sourceIndex];
@@ -384,9 +412,9 @@ public static class ADTLoader
             var rotation = ToVector3(placement.Rotation);
             result[i] = new Doodad
             {
-                position = new Vector3(-(position.X - 17066.666f), position.Y, position.Z - 17066.666f),
+                position = new Vector3(-(position.X - WorldOriginOffset), position.Y, position.Z - WorldOriginOffset),
                 rotation = rotation,
-                scale = placement.Scale / 1024f,
+                scale = placement.Scale / PlacementScaleDenominator,
                 fileDataID = fileDataId,
                 uniqueID = placement.UniqueId,
                 flags = placement.Flags
@@ -416,14 +444,14 @@ public static class ADTLoader
             var rotation = ToVector3(placement.Rotation);
             result[i] = new WorldModelBatch
             {
-                position = new Vector3(-(position.X - 17066.666f), position.Y, position.Z - 17066.666f),
+                position = new Vector3(-(position.X - WorldOriginOffset), position.Y, position.Z - WorldOriginOffset),
                 rotation = rotation,
                 fileDataID = fileDataId,
                 uniqueID = placement.UniqueId,
                 flags = placement.Flags,
                 doodadSet = placement.DoodadSet,
                 nameSet = placement.NameSet,
-                scale = placement.Scale / 1024f,
+                scale = placement.Scale / PlacementScaleDenominator,
                 doodadSetIDs = [placement.DoodadSet]
             };
         }
@@ -475,7 +503,8 @@ public static class ADTLoader
 
     // ADT's 17 rows alternate between nine outer and eight inner vertices.
     // This computes the packed source/destination offset for those rows.
-    internal static int GetVertexIndex(int row, int column) => row * 9 - row / 2 + column;
+    internal static int GetVertexIndex(int row, int column) =>
+        row * TerrainOuterRowWidth - row / 2 + column;
 
     private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
 

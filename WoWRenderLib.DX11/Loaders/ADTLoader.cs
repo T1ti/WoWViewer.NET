@@ -13,11 +13,17 @@ namespace WoWRenderLib.DX11.Loaders
 {
     class ADTLoader
     {
+        private const int MaxTextureLayers = 8;
+        private const int AlphaMapSize = 64;
+        private const int AlphaChannelCount = 4;
+        private const int AlphaMaterialLayerCount = 2;
+        private const int LayerVectorWidth = 4;
+
         public static unsafe Terrain LoadADT(ComPtr<ID3D11Device> device, ParsedADT parsedADT)
         {
             Terrain result = new();
 
-            var renderBatches = new ADTRenderBatch[256];
+            var renderBatches = new ADTRenderBatch[parsedADT.renderBatches.Length];
 
             for (var c = 0; c < parsedADT.renderBatches.Length; c++)
             {
@@ -26,7 +32,7 @@ namespace WoWRenderLib.DX11.Loaders
                 batch.layerCount = Math.Clamp(
                     Array.FindLastIndex(renderBatch.materialFDIDs, fileDataId => fileDataId > 0) + 1,
                     1,
-                    8);
+                    MaxTextureLayers);
                 batch.usesHeightTextures = TerrainBatching.UsesHeightTextures(
                     batch.layerCount,
                     renderBatch.heightMaterialFDIDs);
@@ -171,14 +177,14 @@ namespace WoWRenderLib.DX11.Loaders
             ComPtr<ID3D11Device> device,
             ParsedADTRenderBatch[] renderBatches)
         {
-            const int width = 64;
-            const int height = 64;
-            const int bytesPerPixel = 4;
-            const int layersPerChunk = 2;
-            const int bytesPerSlice = width * height * bytesPerPixel;
+            const int width = AlphaMapSize;
+            const int height = AlphaMapSize;
+            const int bytesPerPixel = AlphaChannelCount;
+            const int layersPerChunk = AlphaMaterialLayerCount;
+            const int bytesPerSlice = AlphaMapSize * AlphaMapSize * AlphaChannelCount;
 
             var slices = new List<byte[]> { new byte[bytesPerSlice] };
-            var sliceIndices = new uint[256 * layersPerChunk];
+            var sliceIndices = new uint[renderBatches.Length * layersPerChunk];
             for (var chunkIndex = 0; chunkIndex < renderBatches.Length; chunkIndex++)
             {
                 var alphaMaterials = renderBatches[chunkIndex].alphaMaterials;
@@ -280,11 +286,11 @@ namespace WoWRenderLib.DX11.Loaders
                 data[index] = new ADTChunkLayerData
                 {
                     heightScales0 = ReadVector(batch.heightScales, 0, Vector4.Zero),
-                    heightScales1 = ReadVector(batch.heightScales, 4, Vector4.Zero),
+                    heightScales1 = ReadVector(batch.heightScales, LayerVectorWidth, Vector4.Zero),
                     heightOffsets0 = ReadVector(batch.heightOffsets, 0, Vector4.One),
-                    heightOffsets1 = ReadVector(batch.heightOffsets, 4, Vector4.One),
+                    heightOffsets1 = ReadVector(batch.heightOffsets, LayerVectorWidth, Vector4.One),
                     layerScales0 = ReadVector(batch.scales, 0, Vector4.One),
-                    layerScales1 = ReadVector(batch.scales, 4, Vector4.One)
+                    layerScales1 = ReadVector(batch.scales, LayerVectorWidth, Vector4.One)
                 };
             }
 
@@ -307,7 +313,7 @@ namespace WoWRenderLib.DX11.Loaders
         }
 
         private static Vector4 ReadVector(float[]? values, int start, Vector4 fallback) =>
-            values is { Length: >= 8 }
+            values is { Length: >= MaxTextureLayers }
                 ? new Vector4(values[start], values[start + 1], values[start + 2], values[start + 3])
                 : fallback;
     }
