@@ -82,10 +82,33 @@ public static class WDTCache
     {
         return root switch
         {
-            Formats.WDT.Root.WDTRootBfa value => value.MapFdids.ToArray(),
-            Formats.WDT.Root.WDTRootShadowlandsPlus value => value.MapFdids.ToArray(),
+            Formats.WDT.Root.WDTRootBfa value => CopyMapFileDataIds(value.MapFdids.AsDataSpan()),
+            Formats.WDT.Root.WDTRootShadowlandsPlus value => CopyMapFileDataIds(value.MapFdids.AsDataSpan()),
             _ => []
         };
+    }
+
+    private static Formats.WDT.Root.Chunks.MapFileDataIDs[] CopyMapFileDataIds(
+        ReadOnlySpan<Formats.WDT.Root.Chunks.MapFileDataIDs.Data> source)
+    {
+        var result = new Formats.WDT.Root.Chunks.MapFileDataIDs[source.Length];
+        for (var i = 0; i < source.Length; i++)
+        {
+            var value = source[i];
+            result[i] = new Formats.WDT.Root.Chunks.MapFileDataIDs
+            {
+                RootAdt = value.RootAdt,
+                Obj0Adt = value.Obj0Adt,
+                Obj1Adt = value.Obj1Adt,
+                Tex0Adt = value.Tex0Adt,
+                LodAdt = value.LodAdt,
+                MapTexture = value.MapTexture,
+                MapTextureN = value.MapTextureN,
+                MinimapTexture = value.MinimapTexture
+            };
+        }
+
+        return result;
     }
 
     private static uint GetTextureFileDataId(Formats.WDT.Root.Chunks.WDTHeader header) =>

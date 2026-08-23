@@ -39,9 +39,10 @@ public static class M2Loader
             attachmentCount = counts.AttachmentCount
         };
 
-        // M2Texture and M2Vertex do not have blittable Data mirrors in
-        // wowlib 0.0.8, so their vectors must stay on the typed wrapper path.
-        // M2Material does expose a Data mirror and can use a live data span.
+        // M2Texture and M2Vertex are reference records in wowlib 0.0.9 and
+        // therefore do not expose blittable Data mirrors. Keep those vectors
+        // on the typed wrapper path; M2Material has a Data mirror and can use
+        // a live data span.
         var textures = root.Textures;
         var rootMaterials = root.Materials.AsDataSpan();
         var textureFileDataIds = ResolveTextureFileDataIds(fileSystem, model, textures);
@@ -87,16 +88,13 @@ public static class M2Loader
 
     private static ModelCounts ReadCounts(Formats.M2.Root.M2Root root)
     {
-        return root switch
-        {
-            Formats.M2.Root.M2RootVanilla value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            Formats.M2.Root.M2RootTbc value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            Formats.M2.Root.M2RootWotlk value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            Formats.M2.Root.M2RootCataToMop value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            Formats.M2.Root.M2RootWod value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            Formats.M2.Root.M2RootLegionPlus value => new(value.Sequences.Count, value.ParticleEmitters.Count, value.Bones.Count, value.Attachments.Count),
-            _ => default
-        };
+        // The 0.0.9 M2Root is the common record-family base. These
+        // collections are live views for every era, including Classic clients.
+        return new(
+            root.Sequences.Count,
+            root.ParticleEmitters.Count,
+            root.Bones.Count,
+            root.Attachments.Count);
     }
 
     private sealed record ProfileData(
@@ -122,41 +120,47 @@ public static class M2Loader
 
     private static ProfileData? ReadProfile(Formats.M2.M2 model)
     {
-        return model switch
+        Formats.M2.Skin.M2SkinProfile? profile = model switch
         {
-            Formats.M2.M2Vanilla value when value.Root.SkinProfiles.Count > 0 => ToProfile(value.Root.SkinProfiles[0]),
-            Formats.M2.M2Tbc value when value.Root.SkinProfiles.Count > 0 => ToProfile(value.Root.SkinProfiles[0]),
-            Formats.M2.M2Wotlk value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2CataToMop value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2Wod value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2Legion value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2Bfa value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2Shadowlands value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2Dragonflight value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
-            Formats.M2.M2TheWarWithin value when value.Skins.Count > 0 => ToProfile(value.Skins[0].Profile),
+            Formats.M2.M2Vanilla value when value.Root.SkinProfiles.Count > 0 => value.Root.SkinProfiles[0],
+            Formats.M2.M2Tbc value when value.Root.SkinProfiles.Count > 0 => value.Root.SkinProfiles[0],
+            Formats.M2.M2Wotlk value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2CataToMop value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2Wod value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2Legion value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2Bfa value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2Shadowlands value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2Dragonflight value when value.Skins.Count > 0 => value.Skins[0].Profile,
+            Formats.M2.M2TheWarWithin value when value.Skins.Count > 0 => value.Skins[0].Profile,
             _ => null
         };
+
+        return profile is null ? null : ToProfile(profile);
     }
 
-    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileVanilla profile) => new(
-        profile.Vertices.ToArray(),
-        profile.Indices.ToArray(),
-        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
-        profile.Batches.ToArray().Select(ToBatch).ToArray());
+    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfile profile)
+    {
+        var vertices = profile.Vertices.AsSpan().ToArray();
+        var indices = profile.Indices.AsSpan().ToArray();
+        var sections = ReadSections(profile.Submeshes);
+        var sourceBatches = profile.Batches.AsDataSpan();
+        var batches = new BatchData[sourceBatches.Length];
+        for (var i = 0; i < batches.Length; i++)
+            batches[i] = ToBatch(sourceBatches[i]);
 
-    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileTbcToWotlk profile) => new(
-        profile.Vertices.ToArray(),
-        profile.Indices.ToArray(),
-        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
-        profile.Batches.ToArray().Select(ToBatch).ToArray());
+        return new ProfileData(vertices, indices, sections, batches);
+    }
 
-    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfileCataPlus profile) => new(
-        profile.Vertices.ToArray(),
-        profile.Indices.ToArray(),
-        profile.Submeshes.ToArray().Select(ToSection).ToArray(),
-        profile.Batches.ToArray().Select(ToBatch).ToArray());
+    private static SectionData[] ReadSections(
+        WoWLib.FamilyVector<Formats.M2.Skin.M2SkinSection> sections)
+    {
+        var result = new SectionData[sections.Count];
+        for (var i = 0; i < result.Length; i++)
+            result[i] = ToSection(sections[i]);
+        return result;
+    }
 
-    private static SectionData ToSection(Formats.M2.Skin.M2SkinSectionVanilla section) => new(
+    private static SectionData ToSection(Formats.M2.Skin.M2SkinSection section) => new(
         section.SkinSectionId,
         section.Level,
         section.VertexStart,
@@ -164,15 +168,7 @@ public static class M2Loader
         section.IndexStart,
         section.IndexCount);
 
-    private static SectionData ToSection(Formats.M2.Skin.M2SkinSectionTbcPlus section) => new(
-        section.SkinSectionId,
-        section.Level,
-        section.VertexStart,
-        section.VertexCount,
-        section.IndexStart,
-        section.IndexCount);
-
-    private static BatchData ToBatch(Formats.M2.Skin.M2Batch batch) => new(
+    private static BatchData ToBatch(Formats.M2.Skin.M2Batch.Data batch) => new(
         batch.ShaderId,
         batch.SkinSectionIndex,
         batch.TextureCount,
@@ -181,9 +177,9 @@ public static class M2Loader
 
     private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
     {
-        // M2Vertex is not a blittable Data mirror in wowlib 0.0.8. Indexing
-        // the typed vector keeps the nested position, normal, and UV views
-        // valid without asking Vector.AsSpan() for an unsupported record span.
+        // M2Vertex remains a reference record in wowlib 0.0.9. Indexing the
+        // typed vector keeps the nested position, normal, and UV views valid;
+        // the unmanaged AsSpan extension intentionally cannot be used here.
         var result = new M2Vertex[vertices.Count];
         for (var i = 0; i < result.Length; i++)
         {
@@ -219,15 +215,20 @@ public static class M2Loader
 
     private static uint[] GetChunkTextureIds(Formats.M2.M2 model)
     {
-        return model switch
+        // All chunked M2 eras now share M2ChunkedFile. Only selecting the
+        // version-specific owner remains era-dependent; the data access is
+        // common and uses the zero-copy scalar span API.
+        Formats.M2.Chunked.M2ChunkedFile? chunks = model switch
         {
-            Formats.M2.M2Legion value => value.Chunks.TextureFdids.ToArray(),
-            Formats.M2.M2Bfa value => value.Chunks.TextureFdids.ToArray(),
-            Formats.M2.M2Shadowlands value => value.Chunks.TextureFdids.ToArray(),
-            Formats.M2.M2Dragonflight value => value.Chunks.TextureFdids.ToArray(),
-            Formats.M2.M2TheWarWithin value => value.Chunks.TextureFdids.ToArray(),
-            _ => []
+            Formats.M2.M2Legion value => value.Chunks,
+            Formats.M2.M2Bfa value => value.Chunks,
+            Formats.M2.M2Shadowlands value => value.Chunks,
+            Formats.M2.M2Dragonflight value => value.Chunks,
+            Formats.M2.M2TheWarWithin value => value.Chunks,
+            _ => null
         };
+
+        return chunks?.TextureFdids.AsSpan().ToArray() ?? [];
     }
 
     private static M2Geoset[] ReadGeosets(ProfileData profile)

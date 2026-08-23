@@ -19,7 +19,10 @@ public static class ADTLoader
 
         var fileSystem = WowlibFileSystem.Current;
         using var adt = Formats.ADT.ADT.ForVersion(fileSystem.Version);
-        var alphaFormat = (wdt.Flags & (0x4u | 0x80u)) != 0
+        var wdtFlags = (Formats.WDT.Root.Chunks.MapHeaderFlags)wdt.Flags;
+        var alphaFormat = (wdtFlags &
+            (Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_big_alpha |
+             Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_height_texturing)) != 0
             ? Formats.ADT.AlphaFormat.highres_8bit
             : Formats.ADT.AlphaFormat.lowres_4bit;
         adt.Read(fileSystem, ResolveFileKey(fileSystem, files.RootAdt), alphaFormat);
@@ -29,9 +32,9 @@ public static class ADTLoader
             rootADTFileDataID = files.RootAdt
         };
 
-        // ADT itself exposes the placement, string, and terrain-chunk fields
-        // common to every era in wowlib 0.0.8.  Texture FileDataID tables are
-        // still version-specific because older clients store texture names.
+        // ADT itself exposes placement, string, and terrain-chunk fields
+        // through the version-agnostic 0.0.9 base. Texture FileDataID tables
+        // are still version-specific because older clients store texture names.
         var textureData = ReadTextureData(adt);
         var chunks = adt.Chunks;
         var chunkCount = Math.Min(chunks.Count, 256);
@@ -113,7 +116,8 @@ public static class ADTLoader
             if (chunkIndex == 0)
                 parsed.startPos = vertices[0].Position;
 
-            var highResolutionHoles = (flags & 0x10000) != 0;
+            var chunkFlags = (Formats.ADT.Chunks.MapChunkFlags)flags;
+            var highResolutionHoles = (chunkFlags & Formats.ADT.Chunks.MapChunkFlags.high_res_holes) != 0;
             var vertexBase = chunkIndex * 145;
             for (var holeRow = 0; holeRow < 8; holeRow++)
             {
@@ -201,8 +205,8 @@ public static class ADTLoader
         return adt switch
         {
             Formats.ADT.ADTBfaPlus modern => new TextureData(
-                modern.DiffuseTextureIds.ToArray(),
-                modern.HeightTextureIds.ToArray(),
+                modern.DiffuseTextureIds.AsSpan().ToArray(),
+                modern.HeightTextureIds.AsSpan().ToArray(),
                 modern.TextureParams),
             _ => new TextureData([], [], null)
         };
@@ -315,7 +319,7 @@ public static class ADTLoader
                 usedIds.Add(diffuse);
 
             if (layerIndex < alphaMaps.Count)
-                alphaLayers[layerIndex] = alphaMaps[layerIndex].ToArray();
+                alphaLayers[layerIndex] = alphaMaps[layerIndex].AsSpan().ToArray();
         }
 
         var alphaMaterials = new byte[2][];
@@ -375,7 +379,7 @@ public static class ADTLoader
                 modelNameOffsets,
                 placement.NameId,
                 placement.Flags,
-                0x40);
+                (uint)Formats.Common.DoodadDefFlags.entry_is_fdid);
             var position = ToVector3(placement.Position);
             var rotation = ToVector3(placement.Rotation);
             result[i] = new Doodad
@@ -407,7 +411,7 @@ public static class ADTLoader
                 wmoNameOffsets,
                 placement.NameId,
                 placement.Flags,
-                0x8);
+                (uint)Formats.Common.MapObjDefFlags.entry_is_fdid);
             var position = ToVector3(placement.Position);
             var rotation = ToVector3(placement.Rotation);
             result[i] = new WorldModelBatch

@@ -133,7 +133,7 @@ namespace WoWRenderLib.DX11.Cache
                     else
                     {
                         using var image = blp.Decode(0);
-                        var pixels = image.Pixels.ToArray();
+                        var pixels = image.Pixels.AsSpan().ToArray();
                         decoded = new DecodedBLP
                         {
                             FileDataId = fileDataId,

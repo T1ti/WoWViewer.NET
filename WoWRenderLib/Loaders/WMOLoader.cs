@@ -64,7 +64,7 @@ public static class WMOLoader
                 };
             }
 
-            var indices = body.Indices.ToArray();
+            var indices = body.Indices.AsSpan().ToArray();
             var renderBatches = new List<PreppedWMOGroupBatch>(body.Batches.Count);
             for (var batchIndex = 0; batchIndex < body.Batches.Count; batchIndex++)
             {
@@ -81,7 +81,7 @@ public static class WMOLoader
             }
 
             var bounds = header.BoundingBox;
-            var doodadRefs = body.DoodadRefs.ToArray();
+            var doodadRefs = body.DoodadRefs.AsSpan().ToArray();
             preppedGroups.Add(new PreppedWMOGroup
             {
                 sourceGroupIndex = groupIndex,
@@ -147,15 +147,15 @@ public static class WMOLoader
             Formats.WMO.Root.WMORootBfa value => new(
                 null,
                 null,
-                value.GroupFdids.ToArray(),
-                value.DoodadFdids.ToArray(),
+                value.GroupFdids.AsSpan().ToArray(),
+                value.DoodadFdids.AsSpan().ToArray(),
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
             Formats.WMO.Root.WMORootLegion value => new(
                 value.Textures,
                 value.DoodadNames,
-                value.GroupFdids.ToArray(),
+                value.GroupFdids.AsSpan().ToArray(),
                 [],
                 value.Materials,
                 value.DoodadDefs,
@@ -163,16 +163,16 @@ public static class WMOLoader
             Formats.WMO.Root.WMORootShadowlandsToDragonflight value => new(
                 null,
                 null,
-                value.GroupFdids.ToArray(),
-                value.DoodadFdids.ToArray(),
+                value.GroupFdids.AsSpan().ToArray(),
+                value.DoodadFdids.AsSpan().ToArray(),
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
             Formats.WMO.Root.WMORootTheWarWithin value => new(
                 null,
                 null,
-                value.GroupFdids.ToArray(),
-                value.DoodadFdids.ToArray(),
+                value.GroupFdids.AsSpan().ToArray(),
+                value.DoodadFdids.AsSpan().ToArray(),
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
