@@ -45,6 +45,7 @@
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
             <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />
             <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" />
+            <CheckBox Content="Show terrain grid" IsChecked="{Binding ShowTerrainGrid}" />
           </WrapPanel>
         </StackPanel>
       </TabItem>

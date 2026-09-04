@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Avalonia;
@@ -78,7 +79,8 @@ public sealed class EditorSettingsSmokeTests
                 RenderM2 = false,
                 EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
-                ShowBoundingSpheres = true
+                ShowBoundingSpheres = true,
+                ShowTerrainGrid = true
             },
             KeyboardLayout = KeyboardLayoutMode.Azerty,
             Camera = new CameraState(
@@ -163,7 +165,8 @@ public sealed class EditorSettingsSmokeTests
                 RenderADT = true,
                 RenderWMO = true,
                 RenderM2 = true,
-                EnableWmoPortalCulling = false
+                EnableWmoPortalCulling = false,
+                ShowTerrainGrid = false
             }
         };
         var store = new MemorySettingsStore(initial);
@@ -176,18 +179,22 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.RenderTerrain = false;
         firstViewport.RenderDoodads = false;
         firstViewport.WmoPortalCullingEnabled = true;
+        firstViewport.ShowTerrainGrid = true;
 
         Assert.IsNotNull(published);
         Assert.IsFalse(published.RenderADT);
         Assert.IsFalse(published.RenderM2);
         Assert.IsTrue(published.RenderWMO);
         Assert.IsTrue(published.EnableWmoPortalCulling);
+        Assert.IsTrue(published.ShowTerrainGrid);
         Assert.IsTrue(secondViewport.RenderTerrain);
         Assert.IsTrue(secondViewport.RenderDoodads);
         Assert.IsFalse(secondViewport.WmoPortalCullingEnabled);
+        Assert.IsFalse(secondViewport.ShowTerrainGrid);
         Assert.IsTrue(session.Current.Rendering.RenderADT);
         Assert.IsTrue(session.Current.Rendering.RenderM2);
         Assert.IsFalse(session.Current.Rendering.EnableWmoPortalCulling);
+        Assert.IsFalse(session.Current.Rendering.ShowTerrainGrid);
         Assert.AreEqual(0, store.SaveCount);
     }
 
@@ -803,6 +810,26 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(17, ADTLoader.GetVertexIndex(2, 0));
         Assert.AreEqual(26, ADTLoader.GetVertexIndex(3, 0));
         Assert.AreEqual(144, ADTLoader.GetVertexIndex(16, 8));
+    }
+
+    [TestMethod]
+    public void AdtGpuVertexFormat_RetainsDynamicAttributesAndOmitsStaticLayout()
+    {
+        var cpuVertex = new ADTVertex
+        {
+            Position = new Vector3(11f, -7f, 23f),
+            Normal = new Vector3(0.25f, 0.5f, 0.75f),
+            TexCoord = new Vector2(0.25f, 0.75f),
+            Color = new Vector4(0.5f, 0.6f, 0.7f, 1f)
+        };
+
+        var gpuVertex = ADTGpuVertex.FromCpu(cpuVertex);
+
+        Assert.AreEqual(48, Marshal.SizeOf<ADTVertex>());
+        Assert.AreEqual(32, Marshal.SizeOf<ADTGpuVertex>());
+        Assert.AreEqual(cpuVertex.Position.Z, gpuVertex.Height);
+        Assert.AreEqual(cpuVertex.Normal, gpuVertex.Normal);
+        Assert.AreEqual(cpuVertex.Color, gpuVertex.Color);
     }
 
     [TestMethod]

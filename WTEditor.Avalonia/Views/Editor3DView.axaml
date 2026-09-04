@@ -90,6 +90,13 @@
             <TextBlock Text="M2"/>
           </StackPanel>
         </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainGrid}"
+                      ToolTip.Tip="Show terrain chunk boundaries in white and ADT boundaries in red">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M3,3 L21,3 L21,21 L3,21 Z M9,3 L9,21 M15,3 L15,21 M3,9 L21,9 M3,15 L21,15"/>
+            <TextBlock Text="Terrain grid"/>
+          </StackPanel>
+        </ToggleButton>
         <Border Width="1" Margin="3,3" Background="#526170"/>
         <Button Classes="viewport-tool" ToolTip.Tip="Advanced rendering settings for this world viewport">
           <StackPanel Orientation="Horizontal" Spacing="6">

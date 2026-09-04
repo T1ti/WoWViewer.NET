@@ -42,6 +42,7 @@ public sealed record RenderingConfiguration
     public bool EnableWmoPortalCulling { get; init; }
     public bool ShowBoundingBoxes { get; init; }
     public bool ShowBoundingSpheres { get; init; }
+    public bool ShowTerrainGrid { get; init; }
 
     public RenderingConfiguration Normalize() => this with
     {

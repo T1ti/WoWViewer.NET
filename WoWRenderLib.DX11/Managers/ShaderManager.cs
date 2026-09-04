@@ -255,7 +255,6 @@ namespace WoWRenderLib.DX11.Managers
                 fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
                 fixed (byte* normalName = SilkMarshal.StringToMemory("NORMAL"))
                 fixed (byte* colorName = SilkMarshal.StringToMemory("COLOR"))
-                fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
                 {
                     var inputElements = new InputElementDesc[]
                     {
@@ -263,7 +262,7 @@ namespace WoWRenderLib.DX11.Managers
                     {
                         SemanticName = posName,
                         SemanticIndex = 0,
-                        Format = Format.FormatR32G32B32Float,
+                        Format = Format.FormatR32Float,
                         InputSlot = 0,
                         AlignedByteOffset = 0,
                         InputSlotClass = InputClassification.PerVertexData,
@@ -274,16 +273,6 @@ namespace WoWRenderLib.DX11.Managers
                         SemanticName = normalName,
                         SemanticIndex = 0,
                         Format = Format.FormatR32G32B32Float,
-                        InputSlot = 0,
-                        AlignedByteOffset = uint.MaxValue, // AUTO
-                        InputSlotClass = InputClassification.PerVertexData,
-                        InstanceDataStepRate = 0
-                    },
-                    new()
-                    {
-                        SemanticName = texCoordName,
-                        SemanticIndex = 0, // TEXCOORD0
-                        Format = Format.FormatR32G32Float,
                         InputSlot = 0,
                         AlignedByteOffset = uint.MaxValue, // AUTO
                         InputSlotClass = InputClassification.PerVertexData,

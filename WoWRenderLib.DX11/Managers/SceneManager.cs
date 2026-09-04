@@ -58,6 +58,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool SelectionVisualsEnabled { get; set; } = true;
         public bool ShowBoundingBoxes { get; set; } = false;
         public bool ShowBoundingSpheres { get; set; } = false;
+        public bool ShowTerrainGrid { get; set; }
 
         public bool RenderADT { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
@@ -72,14 +73,6 @@ namespace WoWRenderLib.DX11.Managers
         public float TerrainBrushRadius { get; private set; }
         public float TerrainBrushInnerRadius { get; private set; }
         public Vector4 TerrainBrushColor { get; private set; } = new(0.2f, 0.85f, 1f, 1f);
-        private Vector3[] _terrainBrushOuterPoints = [];
-        private Vector3[] _terrainBrushInnerPoints = [];
-        private Vector3 _lastTerrainBrushCenter;
-        private float _lastTerrainBrushRadius;
-        private float _lastTerrainBrushInnerRadius;
-        private bool _terrainBrushProjectionDirty = true;
-        private ComPtr<ID3D11Buffer> _terrainBrushOuterVertexBuffer = default;
-        private ComPtr<ID3D11Buffer> _terrainBrushInnerVertexBuffer = default;
         private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
 
         // World-space light from north-west at a 45° elevation. WoW's world
@@ -92,6 +85,8 @@ namespace WoWRenderLib.DX11.Managers
         private const int MaxTerrainChunksPerTile = 256;
         private const int TerrainVerticesPerChunk = 145;
         private const uint TerrainIndicesPerChunk = 768;
+        private const float TerrainChunkGridHalfWidthInCell = 0.005f;
+        private const float TerrainAdtGridHalfWidthInCell = 0.008f;
         private const uint TerrainFarLodIndicesPerChunk = 384;
         private const int MaxTerrainLayers = 8;
         private const int TerrainHeightTextureSlot = 8;
@@ -1299,9 +1294,6 @@ namespace WoWRenderLib.DX11.Managers
             TerrainBrushWorldPosition = null;
             TerrainBrushRadius = 0f;
             TerrainBrushInnerRadius = 0f;
-            _terrainBrushOuterPoints = [];
-            _terrainBrushInnerPoints = [];
-            _terrainBrushProjectionDirty = true;
         }
 
         public void UpdateTerrainBrush(
@@ -1332,32 +1324,6 @@ namespace WoWRenderLib.DX11.Managers
 
             if (apply)
                 ApplyTerrainBrush(hit, input, Math.Clamp(deltaTime, 0f, 0.1f));
-
-            var deltaX = _lastTerrainBrushCenter.X - hit.WorldPosition.X;
-            var deltaY = _lastTerrainBrushCenter.Y - hit.WorldPosition.Y;
-            var horizontalMovementSquared = (deltaX * deltaX) + (deltaY * deltaY);
-            var centerMoved = horizontalMovementSquared > 0.25f;
-            var accumulatedHeightChange =
-                MathF.Abs(_lastTerrainBrushCenter.Z - hit.WorldPosition.Z) > 0.25f;
-            var radiusChanged = MathF.Abs(_lastTerrainBrushRadius - TerrainBrushRadius) > 0.0001f;
-            var innerRadiusChanged = MathF.Abs(_lastTerrainBrushInnerRadius - TerrainBrushInnerRadius) > 0.0001f;
-            if (_terrainBrushProjectionDirty ||
-                centerMoved ||
-                accumulatedHeightChange ||
-                radiusChanged ||
-                innerRadiusChanged)
-            {
-                var projection = ProjectTerrainBrush(
-                    hit.WorldPosition,
-                    TerrainBrushRadius,
-                    TerrainBrushRadius * TerrainBrushInnerRadius);
-                _terrainBrushOuterPoints = projection.Outer;
-                _terrainBrushInnerPoints = projection.Inner;
-                _lastTerrainBrushCenter = hit.WorldPosition;
-                _lastTerrainBrushRadius = TerrainBrushRadius;
-                _lastTerrainBrushInnerRadius = TerrainBrushInnerRadius;
-                _terrainBrushProjectionDirty = false;
-            }
         }
 
         private bool TryRaycastTerrain(Ray ray, out TerrainRayHit closestHit)
@@ -1464,36 +1430,6 @@ namespace WoWRenderLib.DX11.Managers
                     worldPosition,
                     worldNormal);
             }
-        }
-
-        private List<TerrainRaycastChunk> BuildTerrainRaycastCandidatesLocked(
-            Vector3 center,
-            float radius)
-        {
-            var candidates = new List<TerrainRaycastChunk>();
-
-            WorldChunkRange.ForEachChunkInRange(
-                adtContainers,
-                center,
-                radius,
-                static adt => adt.IsLoaded &&
-                              adt.Terrain.vertices is { Length: > 0 } &&
-                              adt.Terrain.indices is { Length: > 0 },
-                static adt => adt.GetModelMatrix(),
-                static adt => adt.Terrain.terrainBounds,
-                static adt => adt.Terrain.chunkBounds,
-                static bounds => bounds,
-                context =>
-                {
-                    candidates.Add(new TerrainRaycastChunk(
-                        context.Tile,
-                        context.ModelMatrix,
-                        context.InverseModelMatrix,
-                        context.ChunkIndex));
-                    return false;
-                });
-
-            return candidates;
         }
 
         private void ApplyTerrainBrush(TerrainRayHit hit, TerrainBrushInput input, float deltaTime)
@@ -1638,8 +1574,9 @@ namespace WoWRenderLib.DX11.Managers
                 Map.WriteDiscard,
                 0,
                 ref mapped));
-            var destination = new Span<ADTVertex>(mapped.PData, terrain.vertices.Length);
-            terrain.vertices.AsSpan().CopyTo(destination);
+            var destination = new Span<ADTGpuVertex>(mapped.PData, terrain.vertices.Length);
+            for (var index = 0; index < terrain.vertices.Length; index++)
+                destination[index] = ADTGpuVertex.FromCpu(terrain.vertices[index]);
             deviceContext.Unmap(terrain.vertexBuffer, 0);
         }
 
@@ -1838,7 +1775,7 @@ namespace WoWRenderLib.DX11.Managers
 
             deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
 
-            var adtVertexStride = (uint)Marshal.SizeOf<ADTVertex>();
+            var adtVertexStride = (uint)Marshal.SizeOf<ADTGpuVertex>();
             var adtVertexOffset = 0U;
 
             uint wmoVertexStride = (uint)Marshal.SizeOf<WMOVertex>();
@@ -2371,13 +2308,38 @@ namespace WoWRenderLib.DX11.Managers
                         continue;
 
                     var vertexBuffer = adt.Terrain.vertexBuffer;
+                    var modelMatrix = adt.GetModelMatrix();
+                    var terrainBrushWorldPosition = TerrainBrushWorldPosition;
+                    var terrainBrushCenter = Vector3.Zero;
+                    var renderTerrainBrush = 0u;
+                    if (terrainBrushWorldPosition.HasValue &&
+                        TerrainBrushRadius > 0f &&
+                        Matrix4x4.Invert(modelMatrix, out var inverseTerrainModel))
+                    {
+                        terrainBrushCenter = Vector3.Transform(
+                            terrainBrushWorldPosition.Value,
+                            inverseTerrainModel);
+                        renderTerrainBrush = 1u;
+                    }
+
                     var cb = new ADTPerObjectCB
                     {
-                        model_matrix = adt.GetModelMatrix(),
+                        model_matrix = modelMatrix,
                         projection_matrix = projectionMatrix,
                         rotation_matrix = cameraMatrix,
                         firstPos = adt.Terrain.startPos,
-                        _pad0 = 0f
+                        renderTerrainGrid = ShowTerrainGrid ? 1u : 0u,
+                        terrainGridSettings = new Vector4(
+                            TerrainChunkGridHalfWidthInCell,
+                            TerrainAdtGridHalfWidthInCell,
+                            0f,
+                            0f),
+                        terrainBrushCenter = terrainBrushCenter,
+                        terrainBrushOuterRadius = TerrainBrushRadius,
+                        terrainBrushInnerRadius = TerrainBrushRadius * TerrainBrushInnerRadius,
+                        renderTerrainBrush = renderTerrainBrush,
+                        terrainBrushPadding = Vector2.Zero,
+                        terrainBrushColor = TerrainBrushColor
                     };
 
                     deviceContext.UpdateSubresource(adtPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref cb, 0, 0);
@@ -2481,7 +2443,8 @@ namespace WoWRenderLib.DX11.Managers
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginDebug();
             var drawCallsBeforeDebug = drawCalls;
-            if (ShowBoundingBoxes || ShowBoundingSpheres || (SelectionVisualsEnabled && SelectedObject != null) || TerrainBrushWorldPosition.HasValue)
+            if (ShowBoundingBoxes || ShowBoundingSpheres ||
+                (SelectionVisualsEnabled && SelectedObject != null))
             {
                 deviceContext.RSSetState(wireframeRasterizerState);
                 deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
@@ -2538,27 +2501,6 @@ namespace WoWRenderLib.DX11.Managers
                             }
                         }
                     }
-                }
-
-                if (TerrainBrushWorldPosition.HasValue &&
-                    TerrainBrushRadius > 0f &&
-                    _terrainBrushOuterPoints.Length > 0)
-                {
-                    var outerBrush = DrawTerrainBrushCircle(
-                        _terrainBrushOuterPoints,
-                        TerrainBrushColor,
-                        projectionMatrix,
-                        cameraMatrix,
-                        ref _terrainBrushOuterVertexBuffer);
-                    var innerBrush = _terrainBrushInnerPoints.Length > 0
-                        ? DrawTerrainBrushCircle(
-                            _terrainBrushInnerPoints,
-                            new Vector4(TerrainBrushColor.X, TerrainBrushColor.Y, TerrainBrushColor.Z, 0.8f),
-                            projectionMatrix,
-                            cameraMatrix,
-                            ref _terrainBrushInnerVertexBuffer)
-                        : (0u, 0u);
-                    drawCalls += outerBrush.drawCalls + innerBrush.Item1;
                 }
 
                 deviceContext.RSSetState(rasterizerState);
@@ -2682,120 +2624,6 @@ namespace WoWRenderLib.DX11.Managers
             return (drawCalls, verticeCount);
         }
 
-        private (Vector3[] Outer, Vector3[] Inner) ProjectTerrainBrush(
-            Vector3 center,
-            float outerRadius,
-            float innerRadius)
-        {
-            lock (SceneObjectLock)
-            {
-                var candidates = BuildTerrainRaycastCandidatesLocked(center, outerRadius);
-                var outer = ProjectTerrainCircleLocked(center, outerRadius, candidates);
-                var inner = innerRadius > 0.01f
-                    ? ProjectTerrainCircleLocked(center, innerRadius, candidates)
-                    : [];
-                return (outer, inner);
-            }
-        }
-
-        private static Vector3[] ProjectTerrainCircleLocked(
-            Vector3 center,
-            float radius,
-            IReadOnlyList<TerrainRaycastChunk> candidates)
-        {
-            const int segments = 64;
-            var points = new Vector3[segments];
-            for (var index = 0; index < segments; index++)
-            {
-                var angle = MathF.Tau * index / segments;
-                var position = new Vector3(
-                    center.X + MathF.Cos(angle) * radius,
-                    center.Y + MathF.Sin(angle) * radius,
-                    center.Z + 10_000f);
-                var ray = new Ray(position, -Vector3.UnitZ);
-                points[index] = TryRaycastTerrainCandidates(
-                        ray,
-                        candidates,
-                        out var hit)
-                    ? hit.WorldPosition + hit.WorldNormal * 0.08f
-                    : new Vector3(position.X, position.Y, center.Z + 0.08f);
-            }
-
-            return points;
-        }
-
-        private static bool TryRaycastTerrainCandidates(
-            Ray ray,
-            IReadOnlyList<TerrainRaycastChunk> candidates,
-            out TerrainRayHit closestHit)
-        {
-            closestHit = default;
-            var closestDistance = float.MaxValue;
-            foreach (var candidate in candidates)
-            {
-                TryRaycastTerrainChunk(
-                    candidate,
-                    ray,
-                    candidate.ChunkIndex,
-                    ref closestDistance,
-                    ref closestHit);
-            }
-
-            return closestDistance < float.MaxValue;
-        }
-
-        private unsafe (uint drawCalls, uint verticeCount) DrawTerrainBrushCircle(
-            Vector3[] points,
-            Vector4 color,
-            Matrix4x4 projection,
-            Matrix4x4 view,
-            ref ComPtr<ID3D11Buffer> vertexBuffer)
-        {
-            Span<Vector3> vertices = stackalloc Vector3[points.Length * 2];
-            for (var index = 0; index < points.Length; index++)
-            {
-                vertices[index * 2] = points[index];
-                vertices[index * 2 + 1] = points[(index + 1) % points.Length];
-            }
-
-            if (vertexBuffer.Handle == null)
-            {
-                var bufferDesc = new BufferDesc
-                {
-                    ByteWidth = (uint)(vertices.Length * sizeof(Vector3)),
-                    Usage = Usage.Dynamic,
-                    BindFlags = (uint)BindFlag.VertexBuffer,
-                    CPUAccessFlags = (uint)CpuAccessFlag.Write
-                };
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref vertexBuffer));
-            }
-
-            MappedSubresource mapped = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(vertexBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-            vertices.CopyTo(new Span<Vector3>(mapped.PData, vertices.Length));
-            deviceContext.Unmap(vertexBuffer, 0);
-
-            var constantBuffer = new BBoxCB
-            {
-                projection_matrix = projection,
-                view_matrix = view,
-                model_matrix = Matrix4x4.Identity,
-                color = color
-            };
-            MappedSubresource mappedCB = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(bboxConstantBuffer, 0, Map.WriteDiscard, 0, ref mappedCB));
-            *(BBoxCB*)mappedCB.PData = constantBuffer;
-            deviceContext.Unmap(bboxConstantBuffer, 0);
-
-            uint stride = (uint)sizeof(Vector3);
-            uint offset = 0;
-            deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in stride, in offset);
-            deviceContext.VSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-            deviceContext.PSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-            deviceContext.Draw((uint)vertices.Length, 0);
-            return (1, (uint)vertices.Length);
-        }
-
         private unsafe (uint drawCalls, uint verticeCount) DrawBoundingBox(BoundingBox localBox, Matrix4x4 modelMatrix, Vector4 color, Matrix4x4 projection, Matrix4x4 view)
         {
             uint drawCalls = 0;
@@ -2910,8 +2738,6 @@ namespace WoWRenderLib.DX11.Managers
                 bboxDepthStencilState.Dispose();
                 bboxConstantBuffer.Dispose();
                 bboxVertexBuffer.Dispose();
-                _terrainBrushOuterVertexBuffer.Dispose();
-                _terrainBrushInnerVertexBuffer.Dispose();
                 rasterizerState.Dispose();
                 wmoRasterizerState.Dispose();
                 wireframeRasterizerState.Dispose();

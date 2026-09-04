@@ -11,7 +11,14 @@ namespace WoWRenderLib.Structs
         public Matrix4x4 projection_matrix;
         public Matrix4x4 rotation_matrix;
         public Vector3 firstPos;
-        public float _pad0; // pad to 16 byte boundary
+        public uint renderTerrainGrid;
+        public Vector4 terrainGridSettings;
+        public Vector3 terrainBrushCenter;
+        public float terrainBrushOuterRadius;
+        public float terrainBrushInnerRadius;
+        public uint renderTerrainBrush;
+        public Vector2 terrainBrushPadding;
+        public Vector4 terrainBrushColor;
     }
 
     public struct ParsedADT

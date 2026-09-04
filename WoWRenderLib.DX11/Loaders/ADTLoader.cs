@@ -48,15 +48,20 @@ namespace WoWRenderLib.DX11.Loaders
                 CreateAlphaMaterials(device, parsedADT.renderBatches);
             result.chunkLayerDataBuffer = CreateChunkLayerDataBuffer(device, renderBatches);
 
+            var cpuVertices = MemoryMarshal.Cast<byte, ADTVertex>(parsedADT.vertexBuffer).ToArray();
+            var gpuVertices = new ADTGpuVertex[cpuVertices.Length];
+            for (var index = 0; index < cpuVertices.Length; index++)
+                gpuVertices[index] = ADTGpuVertex.FromCpu(cpuVertices[index]);
+
             var bufferDesc = new BufferDesc
             {
-                ByteWidth = (uint)parsedADT.vertexBuffer.Length,
+                ByteWidth = (uint)(gpuVertices.Length * sizeof(ADTGpuVertex)),
                 Usage = Usage.Dynamic,
                 BindFlags = (uint)BindFlag.VertexBuffer,
                 CPUAccessFlags = (uint)CpuAccessFlag.Write
             };
 
-            fixed (byte* vertexData = parsedADT.vertexBuffer)
+            fixed (ADTGpuVertex* vertexData = gpuVertices)
             {
                 var subresourceData = new SubresourceData
                 {
@@ -102,8 +107,9 @@ namespace WoWRenderLib.DX11.Loaders
             result.renderBatches = renderBatches;
             result.compatibleRenderRunLengths = TerrainBatching.BuildCompatibleRunLengths(renderBatches);
             result.rootADTFileDataID = parsedADT.rootADTFileDataID;
+            result.startPos = parsedADT.startPos;
             result.chunkBounds = parsedADT.chunkBounds;
-            result.vertices = MemoryMarshal.Cast<byte, ADTVertex>(parsedADT.vertexBuffer).ToArray();
+            result.vertices = cpuVertices;
             result.indices = MemoryMarshal.Cast<byte, int>(parsedADT.indiceBuffer).ToArray();
             result.chunkBoundingSpheres = CreateChunkBoundingSpheres(parsedADT.chunkBounds);
             (result.terrainBounds, result.terrainBoundingSphere) =

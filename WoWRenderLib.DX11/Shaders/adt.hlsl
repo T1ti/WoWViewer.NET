@@ -12,7 +12,14 @@ cbuffer PerObject : register(b0)
     float4x4 projection_matrix;
     float4x4 rotation_matrix;
     float3 firstPos;
-    float _adtObjectPad;
+    uint renderTerrainGrid;
+    float4 terrainGridSettings;
+    float3 terrainBrushCenter;
+    float terrainBrushOuterRadius;
+    float terrainBrushInnerRadius;
+    uint renderTerrainBrush;
+    float2 terrainBrushPadding;
+    float4 terrainBrushColor;
 }
 
 cbuffer LayerData : register(b1)
@@ -65,9 +72,8 @@ float Get8(float4 arr[2], uint i)
 
 struct VSIn
 {
-    float3 position : POSITION;
+    float height    : POSITION;
     float3 normal   : NORMAL;
-    float2 texCoord : TEXCOORD0;
     float4 color    : COLOR0;
 };
 
@@ -78,21 +84,140 @@ struct VSOut
     float4 VColor  : COLOR0;
     float3 Normal  : NORMAL;
     nointerpolation uint ChunkIndex : TEXCOORD1;
+    float3 TerrainPosition : TEXCOORD2;
 };
+
+float2 TerrainTexCoordFromVertexId(uint vertexId)
+{
+    const uint VerticesPerChunk = 145;
+    const uint VerticesPerRowPair = 17;
+    const uint OuterRowWidth = 9;
+    const uint InnerRowWidth = 8;
+
+    uint localVertexId = vertexId % VerticesPerChunk;
+    uint rowPair = localVertexId / VerticesPerRowPair;
+    uint vertexWithinPair = localVertexId % VerticesPerRowPair;
+    bool isInnerRow = rowPair < InnerRowWidth && vertexWithinPair >= OuterRowWidth;
+    uint row = rowPair * 2 + (isInnerRow ? 1 : 0);
+    uint column = isInnerRow ? vertexWithinPair - OuterRowWidth : vertexWithinPair;
+
+    return float2(
+        (column + (isInnerRow ? 0.5f : 0.0f)) / 8.0f,
+        row / 16.0f);
+}
+
+float2 TerrainPositionFromVertexId(uint vertexId, float2 texCoord)
+{
+    const float ChunkSize = (1600.0f / 3.0f) / 16.0f;
+    uint chunkIndex = vertexId / 145;
+    uint chunkRow = chunkIndex / 16;
+    uint chunkColumn = chunkIndex % 16;
+    float2 chunkStart = firstPos.xy - float2(chunkRow, chunkColumn) * ChunkSize;
+    return chunkStart - float2(texCoord.y, texCoord.x) * ChunkSize;
+}
 
 VSOut VS_Main(VSIn input, uint vertexId : SV_VertexID)
 {
     VSOut o;
-    float3 posOffset = input.position;
+    float2 texCoord = TerrainTexCoordFromVertexId(vertexId);
+    float2 terrainPosition = TerrainPositionFromVertexId(vertexId, texCoord);
+    float3 posOffset = float3(terrainPosition, input.height);
     float4 worldPos = mul(rotation_matrix, float4(posOffset, 1.0f));
     worldPos = mul(model_matrix, worldPos);
     o.pos = mul(projection_matrix, worldPos);
-    o.TexCoord = input.texCoord;
+    o.TexCoord = texCoord;
     float3x3 normalMatrix = (float3x3) model_matrix;
     o.Normal = normalize(mul(normalMatrix, input.normal));
     o.VColor = input.color;
     o.ChunkIndex = vertexId / 145;
+    o.TerrainPosition = posOffset;
     return o;
+}
+
+float TerrainGeometricEdgeMask(
+    float distanceToEdge,
+    float pixelFootprint,
+    float halfWidthInCell)
+{
+    // This is a fixed terrain-space width. Pixel derivatives only smooth its
+    // edge; they never attenuate the line based on camera distance.
+    float antiAliasedEdge = 1.0f - smoothstep(
+        halfWidthInCell,
+        halfWidthInCell + pixelFootprint,
+        distanceToEdge);
+    return antiAliasedEdge;
+}
+
+float TerrainChunkGridMask(
+    float2 coordinate,
+    uint chunkIndex,
+    float halfWidthInCell)
+{
+    float2 pixelFootprint = max(fwidth(coordinate), 0.000001f);
+    float uMin = TerrainGeometricEdgeMask(
+        coordinate.x, pixelFootprint.x, halfWidthInCell);
+    float uMax = TerrainGeometricEdgeMask(
+        1.0f - coordinate.x, pixelFootprint.x, halfWidthInCell);
+    float vMin = TerrainGeometricEdgeMask(
+        coordinate.y, pixelFootprint.y, halfWidthInCell);
+    float vMax = TerrainGeometricEdgeMask(
+        1.0f - coordinate.y, pixelFootprint.y, halfWidthInCell);
+
+    uint chunkRow = chunkIndex / 16;
+    uint chunkColumn = chunkIndex % 16;
+
+    // The ADT perimeter belongs exclusively to the red ADT grid. Remove the
+    // corresponding white chunk edge before the masks are composed.
+    if (chunkColumn == 0) uMin = 0.0f;
+    if (chunkColumn == 15) uMax = 0.0f;
+    if (chunkRow == 0) vMin = 0.0f;
+    if (chunkRow == 15) vMax = 0.0f;
+
+    return max(max(uMin, uMax), max(vMin, vMax));
+}
+
+float TerrainAdtBoundaryMask(
+    float2 coordinate,
+    uint chunkIndex,
+    float halfWidthInCell)
+{
+    float2 pixelFootprint = max(fwidth(coordinate), 0.000001f);
+    uint chunkRow = chunkIndex / 16;
+    uint chunkColumn = chunkIndex % 16;
+
+    float uMin = chunkColumn == 0
+        ? TerrainGeometricEdgeMask(coordinate.x, pixelFootprint.x, halfWidthInCell)
+        : 0.0f;
+    float uMax = chunkColumn == 15
+        ? TerrainGeometricEdgeMask(1.0f - coordinate.x, pixelFootprint.x, halfWidthInCell)
+        : 0.0f;
+    float vMin = chunkRow == 0
+        ? TerrainGeometricEdgeMask(coordinate.y, pixelFootprint.y, halfWidthInCell)
+        : 0.0f;
+    float vMax = chunkRow == 15
+        ? TerrainGeometricEdgeMask(1.0f - coordinate.y, pixelFootprint.y, halfWidthInCell)
+        : 0.0f;
+    return max(max(uMin, uMax), max(vMin, vMax));
+}
+
+float TerrainBrushRingMask(float2 terrainPosition, float radius)
+{
+    float2 brushOffset = terrainPosition - terrainBrushCenter.xy;
+    float distanceToBrushCenter = length(brushOffset);
+    float radialPixelFootprint = max(fwidth(distanceToBrushCenter), 0.0001f);
+    float ringMask = 1.0f - smoothstep(
+        radialPixelFootprint,
+        radialPixelFootprint * 2.0f,
+        abs(distanceToBrushCenter - radius));
+
+    // A fixed marking count keeps the brush legible at every radius: larger
+    // brushes make each dash and gap proportionally larger instead of adding
+    // more segments. Both rings use the same count to stay visually aligned.
+    const float MarkingCount = 24.0f;
+    float markingWave = sin(atan2(brushOffset.y, brushOffset.x) * MarkingCount);
+    float markingEdge = max(fwidth(markingWave), 0.01f);
+    float markingMask = smoothstep(0.2f - markingEdge, 0.2f + markingEdge, markingWave);
+    return ringMask * markingMask;
 }
 
 float GetChunk8(float4 first, float4 second, uint i)
@@ -198,5 +323,34 @@ float4 PS_Main(VSOut i) : SV_Target
 
     float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
     float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
-    return float4(final_color * in_vertexColor.rgb * 2.0f * lighting, 1.0f);
+    float3 shadedColor = final_color * in_vertexColor.rgb * 2.0f * lighting;
+    if (renderTerrainGrid != 0)
+    {
+        float chunkMask = TerrainChunkGridMask(
+            i.TexCoord,
+            i.ChunkIndex,
+            terrainGridSettings.x);
+        float adtMask = TerrainAdtBoundaryMask(
+            i.TexCoord,
+            i.ChunkIndex,
+            terrainGridSettings.y);
+        bool hasAdtLine = adtMask > 0.0001f;
+        float3 gridColor = hasAdtLine
+            ? float3(1.0f, 0.0f, 0.0f)
+            : float3(1.0f, 1.0f, 1.0f);
+        float gridMask = hasAdtLine ? adtMask : chunkMask;
+        shadedColor = lerp(shadedColor, gridColor, gridMask);
+    }
+
+    if (renderTerrainBrush != 0)
+    {
+        float outerBrushMask = TerrainBrushRingMask(i.TerrainPosition.xy, terrainBrushOuterRadius);
+        float innerBrushMask = terrainBrushInnerRadius > 0.01f
+            ? TerrainBrushRingMask(i.TerrainPosition.xy, terrainBrushInnerRadius)
+            : 0.0f;
+        float brushMask = max(outerBrushMask, innerBrushMask) * terrainBrushColor.a;
+        shadedColor = lerp(shadedColor, terrainBrushColor.rgb, brushMask);
+    }
+
+    return float4(shadedColor, 1.0f);
 }

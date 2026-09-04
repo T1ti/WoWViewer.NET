@@ -867,6 +867,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.DiffuseColor = Settings.DiffuseColor;
                 sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;
                 sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
+                sceneManager.ShowTerrainGrid = Settings.ShowTerrainGrid;
             }
         }
 

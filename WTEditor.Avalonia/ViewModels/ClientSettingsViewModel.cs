@@ -24,6 +24,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private float _diffuseColorB;
     [ObservableProperty] private bool _showBoundingBoxes;
     [ObservableProperty] private bool _showBoundingSpheres;
+    [ObservableProperty] private bool _showTerrainGrid;
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
@@ -44,6 +45,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _diffuseColorB = rendererSettings.DiffuseColor.Z;
         _showBoundingBoxes = rendererSettings.ShowBoundingBoxes;
         _showBoundingSpheres = rendererSettings.ShowBoundingSpheres;
+        _showTerrainGrid = rendererSettings.ShowTerrainGrid;
     }
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
@@ -65,7 +67,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
             RenderM2 = original.Rendering.RenderM2,
             EnableWmoPortalCulling = original.Rendering.EnableWmoPortalCulling,
             ShowBoundingBoxes = ShowBoundingBoxes,
-            ShowBoundingSpheres = ShowBoundingSpheres
+            ShowBoundingSpheres = ShowBoundingSpheres,
+            ShowTerrainGrid = ShowTerrainGrid
         },
         KeyboardLayout = ParseKeyboardLayout(KeyboardLayout)
     };

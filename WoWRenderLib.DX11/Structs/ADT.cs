@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
@@ -26,7 +27,7 @@ namespace WoWRenderLib.DX11.Structs
         public Vector4 weights;
         public BoundingBox[] chunkBounds;
         // CPU-side terrain data is retained for editor raycasts and brush
-        // edits. The same vertices are uploaded to the dynamic GPU buffer.
+        // edits. The GPU buffer holds a compact projection of these vertices.
         public ADTVertex[] vertices;
         public int[] indices;
         public BoundingSphere[] chunkBoundingSpheres;
@@ -53,5 +54,23 @@ namespace WoWRenderLib.DX11.Structs
         public Vector4 heightOffsets1;
         public Vector4 layerScales0;
         public Vector4 layerScales1;
+    }
+
+    // CPU terrain vertices retain their full position for editing, culling,
+    // and raycasts. The GPU receives only the dynamic attributes; the regular
+    // X/Y terrain layout is reconstructed from the vertex and chunk IDs.
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct ADTGpuVertex
+    {
+        public float Height;
+        public Vector3 Normal;
+        public Vector4 Color;
+
+        public static ADTGpuVertex FromCpu(ADTVertex vertex) => new()
+        {
+            Height = vertex.Position.Z,
+            Normal = vertex.Normal,
+            Color = vertex.Color
+        };
     }
 }

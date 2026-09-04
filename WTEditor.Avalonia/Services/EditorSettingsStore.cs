@@ -26,6 +26,7 @@ public sealed class PersistedRenderingSettings
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
     public bool ShowBoundingSpheres { get; set; }
+    public bool ShowTerrainGrid { get; set; }
 
     public RenderingConfiguration ToModel() => new()
     {
@@ -43,7 +44,8 @@ public sealed class PersistedRenderingSettings
         RenderM2 = RenderM2,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
-        ShowBoundingSpheres = ShowBoundingSpheres
+        ShowBoundingSpheres = ShowBoundingSpheres,
+        ShowTerrainGrid = ShowTerrainGrid
     };
 
     public static PersistedRenderingSettings From(RenderingConfiguration rendering) => new()
@@ -66,7 +68,8 @@ public sealed class PersistedRenderingSettings
         RenderM2 = rendering.RenderM2,
         EnableWmoPortalCulling = rendering.EnableWmoPortalCulling,
         ShowBoundingBoxes = rendering.ShowBoundingBoxes,
-        ShowBoundingSpheres = rendering.ShowBoundingSpheres
+        ShowBoundingSpheres = rendering.ShowBoundingSpheres,
+        ShowTerrainGrid = rendering.ShowTerrainGrid
     };
 }
 
