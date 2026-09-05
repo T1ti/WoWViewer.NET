@@ -574,6 +574,16 @@ namespace WoWRenderLib.DX11.Managers
             CreateSizeDependentResources(width, height, rtv);
         }
 
+        /// <summary>
+        /// Changes only the render target used by the next frame. The depth buffer and
+        /// viewport remain size-dependent resources and are intentionally left intact.
+        /// The caller owns <paramref name="rtv"/> and must keep it alive while rendering.
+        /// </summary>
+        public void SetRenderTarget(ComPtr<ID3D11RenderTargetView> rtv)
+        {
+            renderTargetView = rtv;
+        }
+
         public void LoadWDT(uint wdtFileDataID)
         {
             if (CurrentWDTFileDataID != wdtFileDataID)

@@ -52,7 +52,8 @@
       <StackPanel Spacing="2">
 
         <TextBlock Foreground="White" Text="{Binding Fps, StringFormat='FPS: {0:F1}'}" />
-        <TextBlock Foreground="White" Text="{Binding FrameTime, StringFormat='Frame: {0:F2} ms'}"/>
+        <TextBlock Foreground="White" Text="{Binding FrameTime, StringFormat='Engine CPU: {0:F2} ms'}"/>
+        <TextBlock Foreground="White" Text="{Binding PresentationInterval, StringFormat='Viewport interval: {0:F2} ms'}"/>
 
         <TextBlock Foreground="White" Text="{Binding DrawCalls, StringFormat='Draw Calls: {0}'}"/>
         <TextBlock Foreground="White" Text="{Binding SubmittedTriangleCount, StringFormat='Triangles submitted: {0:N0}'}"/>

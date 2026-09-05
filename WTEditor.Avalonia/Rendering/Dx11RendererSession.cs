@@ -36,6 +36,7 @@ public sealed class Dx11RendererSession : IAsyncDisposable
         var engine = new WowViewerEngine(client.ToDx11(), null, false)
         {
             UseKeyedMutex = true,
+            UsesExternalRenderTarget = true,
             InitialCameraPosition = cameraPosition,
             InitialCameraDirection = cameraDirection
         };

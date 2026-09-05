@@ -70,6 +70,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty] private double _fps;
     [ObservableProperty] private double _frameTime;
+    [ObservableProperty] private double _presentationInterval;
     [ObservableProperty] private Vector3 _cameraPosition;
     [ObservableProperty] private Vector3 _cameraDirection;
     [ObservableProperty] private int _drawCalls;
@@ -241,6 +242,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     {
         Fps = telemetry.FramesPerSecond;
         FrameTime = telemetry.FrameTimeMilliseconds;
+        PresentationInterval = telemetry.PresentationIntervalMilliseconds;
         CameraPosition = telemetry.CameraPosition;
         CameraDirection = telemetry.CameraDirection;
         DrawCalls = telemetry.DrawCalls;

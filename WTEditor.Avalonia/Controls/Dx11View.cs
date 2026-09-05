@@ -40,20 +40,23 @@ namespace WTEditor.Avalonia.Controls
         private CompositionSurfaceVisual? _surfaceVisual;
         private CompositionDrawingSurface? _surface;
         private ICompositionGpuInterop? _interop;
-        private ICompositionImportedGpuImage? _importedImage;
+        private D3D11PresentationBufferPool? _presentationPool;
 
         private int _lastWidth;
         private int _lastHeight;
-        private IntPtr _lastSharedHandle;
 
         private bool _initialized;
 
         private readonly Stopwatch _sw = Stopwatch.StartNew();
+        private readonly Stopwatch _telemetryWatch = Stopwatch.StartNew();
         private double _last;
 
         private ViewModels.Editor3DViewModel? _vm;
         private RenderingConfiguration _renderingConfiguration = new();
-        private bool _renderFrameInProgress;
+        private int _renderFrameInProgress;
+        private int _compositionUpdateQueued;
+        private int _compositionUpdateGeneration = -1;
+        private int _resizeInProgress;
         private bool _restartPending;
         private bool _cleanupPending;
         private bool _attached;
@@ -186,6 +189,13 @@ namespace WTEditor.Avalonia.Controls
                 _surfaceVisual.Scale = new Vector3(1, -1, 1);
                 _surfaceVisual.CenterPoint = new Vector3(0, (float)Bounds.Height / 2f, 0);
 
+                var (width, height) = GetPhysicalSize();
+                _presentationPool = await D3D11PresentationBufferPool.CreateAsync(
+                    _device, _deviceContext, _interop, width, height);
+                _lastWidth = width;
+                _lastHeight = height;
+                ResetFrameClock();
+
                 ElementComposition.SetElementChildVisual(this, _surfaceVisual);
 
                 _initialized = true;
@@ -205,21 +215,24 @@ namespace WTEditor.Avalonia.Controls
 
         private async void RestartEngine()
         {
-            if (!_initialized || _dxgi == null || !_attached)
+            if (_dxgi == null || !_attached)
                 return;
 
-            if (_renderFrameInProgress)
+            if (Volatile.Read(ref _renderFrameInProgress) != 0 ||
+                Volatile.Read(ref _resizeInProgress) != 0)
             {
                 _restartPending = true;
                 return;
             }
 
+            if (!_initialized)
+                return;
+
             await _lifecycleLock.WaitAsync();
             try
             {
                 _initialized = false;
-                _importedImage = null;
-                _lastSharedHandle = IntPtr.Zero;
+                await DisposePresentationResourcesAsync();
                 if (_terrainStrokeActive && _rendererSession.Engine is { } activeEngine)
                     CompleteTerrainStroke(activeEngine);
                 await _rendererSession.DisposeAsync();
@@ -230,6 +243,12 @@ namespace WTEditor.Avalonia.Controls
                 try
                 {
                     CreateEngine(_clientConfiguration);
+                    var (width, height) = GetPhysicalSize();
+                    _presentationPool = await D3D11PresentationBufferPool.CreateAsync(
+                        _device, _deviceContext, _interop!, width, height);
+                    _lastWidth = width;
+                    _lastHeight = height;
+                    ResetFrameClock();
                     _initialized = true;
                     RequestRenderFrame();
                 }
@@ -260,15 +279,94 @@ namespace WTEditor.Avalonia.Controls
 
         private void CreateEngine(ClientConfiguration configuration)
         {
+            var (width, height) = GetPhysicalSize();
             _rendererSession.Initialize(
                 configuration,
                 _renderingConfiguration,
                 _dxgi!,
                 _device,
                 _deviceContext,
-                new Vector2D<int>(Math.Max(1, (int)Bounds.Width), Math.Max(1, (int)Bounds.Height)),
+                new Vector2D<int>(width, height),
                 _vm?.HasInitialCameraPosition == true ? _vm.InitialCameraPosition : null,
                 _vm?.HasInitialCameraDirection == true ? _vm.InitialCameraDirection : null);
+        }
+
+        private (int Width, int Height) GetPhysicalSize()
+        {
+            var renderScaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d;
+            if (!double.IsFinite(renderScaling) || renderScaling <= 0)
+                renderScaling = 1d;
+
+            return (
+                Math.Max(1, (int)Math.Ceiling(Math.Max(0, Bounds.Width) * renderScaling)),
+                Math.Max(1, (int)Math.Ceiling(Math.Max(0, Bounds.Height) * renderScaling)));
+        }
+
+        private void UpdateSurfaceVisualLayout()
+        {
+            if (_surfaceVisual == null)
+                return;
+
+            if (_surfaceVisual.Size.X != (float)Bounds.Width ||
+                _surfaceVisual.Size.Y != (float)Bounds.Height)
+            {
+                _surfaceVisual.Size = new Vector2((float)Bounds.Width, (float)Bounds.Height);
+                _surfaceVisual.CenterPoint = new Vector3(0, (float)Bounds.Height / 2f, 0);
+            }
+        }
+
+        private void BeginResize(int width, int height)
+        {
+            if (Interlocked.CompareExchange(ref _resizeInProgress, 1, 0) != 0)
+                return;
+
+            _initialized = false;
+            _ = ResizeAsync(width, height);
+        }
+
+        private async Task ResizeAsync(int width, int height)
+        {
+            await _lifecycleLock.WaitAsync();
+            try
+            {
+                if (!_attached || _interop == null || _d3d11 == null)
+                    return;
+
+                await DisposePresentationResourcesAsync();
+                var engine = _rendererSession.Engine;
+                if (engine == null)
+                    return;
+
+                engine.Resize((uint)width, (uint)height);
+                _presentationPool = await D3D11PresentationBufferPool.CreateAsync(
+                    _device, _deviceContext, _interop, width, height);
+                _lastWidth = width;
+                _lastHeight = height;
+                ResetFrameClock();
+                _initialized = true;
+            }
+            catch (Exception exception)
+            {
+                _vm?.UpdateRendererStatus(new RendererStatus(
+                    RendererLifecycleState.Failed,
+                    "Unable to resize the renderer.",
+                    exception.Message));
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+                Volatile.Write(ref _resizeInProgress, 0);
+                if (_initialized && _attached)
+                    RequestRenderFrame();
+            }
+        }
+
+        private async Task DisposePresentationResourcesAsync()
+        {
+            var pool = _presentationPool;
+            _presentationPool = null;
+            if (pool != null)
+                await pool.DisposeAsync();
         }
 
         private unsafe void CreateD3DDevice()
@@ -279,10 +377,39 @@ namespace WTEditor.Avalonia.Controls
                 ? (uint)CreateDeviceFlag.Debug
                 : 0;
 
-            SilkMarshal.ThrowHResult(
-                _d3d11.CreateDevice(
-                    default(ComPtr<IDXGIAdapter>),
-                    D3DDriverType.Hardware,
+            // Avalonia may select a different adapter when more than one GPU is
+            // present. Importing a texture created on another adapter is undefined,
+            // so prefer the compositor's LUID and retain the default hardware path
+            // as a fallback for backends that do not expose one.
+            ComPtr<IDXGIAdapter> adapter = default;
+            ComPtr<IDXGIFactory4> adapterFactory = default;
+            try
+            {
+                var luidBytes = _interop?.DeviceLuid;
+                if (luidBytes is { Length: 8 })
+                {
+                    var luid = default(Luid);
+                    luid.Low = BitConverter.ToUInt32(luidBytes, 0);
+                    luid.High = BitConverter.ToInt32(luidBytes, 4);
+                    try
+                    {
+                        adapterFactory = _dxgi.CreateDXGIFactory1<IDXGIFactory4>();
+                        if (adapterFactory.EnumAdapterByLuid<IDXGIAdapter>(luid, out adapter) != 0)
+                            adapter = default;
+                    }
+                    catch
+                    {
+                        adapter.Dispose();
+                        adapter = default;
+                    }
+                }
+
+                var driverType = adapter.Handle != null
+                    ? D3DDriverType.Unknown
+                    : D3DDriverType.Hardware;
+                var createResult = _d3d11.CreateDevice(
+                    adapter,
+                    driverType,
                     Software: default,
                     deviceCreationFlags,
                     null,
@@ -290,29 +417,101 @@ namespace WTEditor.Avalonia.Controls
                     D3D11.SdkVersion,
                     ref _device,
                     null,
-                    ref _deviceContext
-                )
-            );
+                    ref _deviceContext);
+                if (createResult != 0 && adapter.Handle != null)
+                {
+                    adapter.Dispose();
+                    adapter = default;
+                    createResult = _d3d11.CreateDevice(
+                        default(ComPtr<IDXGIAdapter>),
+                        D3DDriverType.Hardware,
+                        Software: default,
+                        deviceCreationFlags,
+                        null,
+                        0,
+                        D3D11.SdkVersion,
+                        ref _device,
+                        null,
+                        ref _deviceContext);
+                }
+
+                SilkMarshal.ThrowHResult(createResult);
+            }
+            finally
+            {
+                adapter.Dispose();
+                adapterFactory.Dispose();
+            }
         }
 
         private void RequestRenderFrame()
         {
-            Dispatcher.UIThread.Post(RenderFrame, DispatcherPriority.Render);
+            var compositor = _compositor;
+            if (!_attached || !_initialized || compositor == null)
+                return;
+
+            var generation = Volatile.Read(ref _attachmentGeneration);
+            if (Interlocked.CompareExchange(ref _compositionUpdateQueued, 1, 0) != 0)
+                return;
+
+            Volatile.Write(ref _compositionUpdateGeneration, generation);
+
+            try
+            {
+                compositor.RequestCompositionUpdate(() =>
+                {
+                    // A callback from a detached visual can run after a new
+                    // attachment has already queued its first update. Only clear
+                    // the queue state if this callback still owns that state.
+                    var ownsQueue = Volatile.Read(ref _compositionUpdateGeneration) == generation;
+                    if (ownsQueue)
+                        Interlocked.Exchange(ref _compositionUpdateQueued, 0);
+
+                    if (_attached &&
+                        _initialized &&
+                        Volatile.Read(ref _attachmentGeneration) == generation)
+                    {
+                        RenderFrame();
+                    }
+                    else if (_attached && _initialized)
+                    {
+                        // The old callback was stale, but a fresh attachment is
+                        // ready. Requeue it unless its callback is already pending.
+                        RequestRenderFrame();
+                    }
+                });
+            }
+            catch
+            {
+                if (Volatile.Read(ref _compositionUpdateGeneration) == generation)
+                    Interlocked.Exchange(ref _compositionUpdateQueued, 0);
+                throw;
+            }
         }
 
-        private async void RenderFrame()
+        private void ResetFrameClock() => _last = _sw.Elapsed.TotalSeconds;
+
+        private void RenderFrame()
         {
             var engine = _rendererSession.Engine;
             if (!_initialized || engine == null || _interop == null || _surface == null || _surfaceVisual == null)
                 return;
 
-            if (_renderFrameInProgress)
+            if (_interop.IsLost)
+            {
+                _vm?.UpdateRendererStatus(new RendererStatus(
+                    RendererLifecycleState.Failed,
+                    "The compositor GPU device was lost; stopping the viewport."));
+                BeginCleanup();
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _renderFrameInProgress, 1, 0) != 0)
                 return;
 
-            _renderFrameInProgress = true;
             try
             {
-                await RenderFrameCore(engine);
+                RenderFrameCore(engine);
             }
             catch (Exception exception)
             {
@@ -324,7 +523,7 @@ namespace WTEditor.Avalonia.Controls
             }
             finally
             {
-                _renderFrameInProgress = false;
+                Volatile.Write(ref _renderFrameInProgress, 0);
 
                 if (_cleanupPending)
                 {
@@ -343,28 +542,36 @@ namespace WTEditor.Avalonia.Controls
             }
         }
 
-        private async Task RenderFrameCore(WowViewerEngine engine)
+        private void RenderFrameCore(WowViewerEngine engine)
         {
             if (_interop == null || _surface == null || _surfaceVisual == null)
                 return;
 
             double now = _sw.Elapsed.TotalSeconds;
-            double delta = now - _last;
-            _last = now;
 
-            int width = Math.Max(1, (int)Bounds.Width);
-            int height = Math.Max(1, (int)Bounds.Height);
+            var (width, height) = GetPhysicalSize();
+            UpdateSurfaceVisualLayout();
 
             if (width != _lastWidth || height != _lastHeight)
             {
-                _lastWidth = width;
-                _lastHeight = height;
-                _surfaceVisual.Size = new Vector2(width, height);
-                _surfaceVisual.CenterPoint = new Vector3(0, height / 2f, 0);
-                engine.Resize((uint)width, (uint)height);
-                _lastSharedHandle = IntPtr.Zero;
-                _importedImage = null;
+                // Do not carry time spent waiting for a resize into the next
+                // simulation update. ResizeAsync resets the clock again once the
+                // replacement presentation pool is ready.
+                ResetFrameClock();
+                BeginResize(width, height);
+                return;
             }
+
+            var presentationPool = _presentationPool;
+            var presentationBuffer = presentationPool?.TryAcquire();
+            if (presentationBuffer == null)
+                return;
+
+            // A full pool means the compositor is still consuming all three
+            // images. Keep the simulation interval intact until a frame can be
+            // rendered instead of advancing the clock for a dropped frame.
+            var delta = _last > 0 ? Math.Max(0, now - _last) : 0;
+            _last = now;
 
             var inputStarted = Stopwatch.GetTimestamp();
             var inputFrame = BuildInputFrame();
@@ -388,35 +595,49 @@ namespace WTEditor.Avalonia.Controls
             PublishSelection(engine.SelectedObject);
             PublishTerrainDirtyState(engine, includeSnapshots: false);
             engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
-            engine.Render(delta);
+            try
+            {
+                engine.RenderTo(delta, presentationBuffer.RenderTargetView);
+            }
+            catch
+            {
+                presentationBuffer.AbandonProducer();
+                throw;
+            }
             var engineFrameMilliseconds = Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
 
-            var handle = engine.GetSharedTextureHandle();
-            if (handle != IntPtr.Zero && handle != _lastSharedHandle)
+            presentationBuffer.ReleaseProducer();
+            try
             {
-                _lastSharedHandle = handle;
-                _importedImage = _interop.ImportImage(
-                    new PlatformHandle(handle, KnownPlatformGraphicsExternalImageHandleTypes.D3D11TextureGlobalSharedHandle),
-                    new PlatformGraphicsExternalImageProperties
-                    {
-                        Width = width,
-                        Height = height,
-                        Format = PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm
-                    });
+                var presentTask = _surface.UpdateWithKeyedMutexAsync(
+                    presentationBuffer.ImportedImage!, acquireIndex: 1, releaseIndex: 0);
+                presentationBuffer.SetLastPresent(presentTask);
             }
-
-            if (_importedImage != null)
-                await _surface.UpdateWithKeyedMutexAsync(_importedImage, acquireIndex: 1, releaseIndex: 0);
+            catch
+            {
+                // Do not put a texture whose consumer ownership is unknown back into
+                // the pool. It will be drained and recreated with the next lifecycle.
+                presentationBuffer.MarkPresentationFailed();
+                throw;
+            }
 
             if (_vm != null)
             {
-                _vm.UpdateTelemetry(new ViewportTelemetry(
-                    engine.Stats.FPS,
-                    engineFrameMilliseconds,
-                    engine.activeCamera?.Position ?? Vector3.Zero,
-                    engine.activeCamera?.Front ?? Vector3.Zero,
-                    (int)engine.Stats.DrawCalls,
-                    checked((long)engine.Stats.SubmittedTriangleCount)));
+                // Scalar bindings and camera persistence are UI-facing work. Keep
+                // them at approximately 10 Hz while retaining every frame's profile
+                // sample below for capture/benchmark consumers.
+                if (_telemetryWatch.ElapsedMilliseconds >= 100)
+                {
+                    _telemetryWatch.Restart();
+                    _vm.UpdateTelemetry(new ViewportTelemetry(
+                        engine.Stats.FPS,
+                        engineFrameMilliseconds,
+                        engine.activeCamera?.Position ?? Vector3.Zero,
+                        engine.activeCamera?.Front ?? Vector3.Zero,
+                        (int)engine.Stats.DrawCalls,
+                        checked((long)engine.Stats.SubmittedTriangleCount),
+                        delta * 1_000d));
+                }
 
                 var gpuUploadMilliseconds = engine.Stats.GpuUploadTimeMs ?? 0;
                 var gpuWorldModelMilliseconds = engine.Stats.GpuWorldModelTimeMs ?? 0;
@@ -472,7 +693,7 @@ namespace WTEditor.Avalonia.Controls
                     steps.Add(new("World span (GPU timeline)", engine.Stats.GpuDrawTimeMs ?? 0, FrameTimingDomain.Gpu));
                 }
                 steps.Add(new("Other GPU timeline", gpuOtherMilliseconds, FrameTimingDomain.Gpu));
-                steps.Add(new("Wait for viewport texture", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation));
+                steps.Add(new("Producer mutex wait", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation));
                 var profileSnapshot = new FrameProfileSnapshot(
                     ++_profileFrameNumber,
                     DateTimeOffset.UtcNow,
@@ -1118,7 +1339,7 @@ namespace WTEditor.Avalonia.Controls
         {
             _initialized = false;
             _restartPending = false;
-            if (_renderFrameInProgress)
+            if (Volatile.Read(ref _renderFrameInProgress) != 0)
             {
                 _cleanupPending = true;
                 return;
@@ -1132,9 +1353,15 @@ namespace WTEditor.Avalonia.Controls
             await _lifecycleLock.WaitAsync();
             try
             {
-                _importedImage = null;
+                await DisposePresentationResourcesAsync();
+                var surface = _surface;
+                var surfaceVisual = _surfaceVisual;
                 _surface = null;
                 _surfaceVisual = null;
+                if (surfaceVisual != null)
+                    ElementComposition.SetElementChildVisual(this, null);
+                if (surface != null)
+                    surface.Dispose();
                 if (_terrainStrokeActive && _rendererSession.Engine is { } activeEngine)
                     CompleteTerrainStroke(activeEngine);
                 await _rendererSession.DisposeAsync();

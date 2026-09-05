@@ -215,6 +215,14 @@ namespace WoWRenderLib.DX11
 
         public bool UseKeyedMutex = false;
 
+        /// <summary>
+        /// Renders into a caller-owned render target. This is used by the Avalonia
+        /// presentation pool so the compositor can consume one image while the
+        /// renderer fills another. The caller must acquire/release the target's
+        /// keyed mutex around <see cref="RenderTo"/>.
+        /// </summary>
+        public bool UsesExternalRenderTarget { get; set; }
+
         private CompiledShader adtShaderProgram;
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
@@ -408,6 +416,14 @@ namespace WoWRenderLib.DX11
             if (oldSrv.Handle != null) { oldSrv.Dispose(); SharedSRV = default; }
             if (sharedTexture.Handle != null) { sharedTexture.Dispose(); sharedTexture = default; }
 
+            if (UsesExternalRenderTarget)
+            {
+                // SceneManager still needs a size-dependent depth buffer and viewport,
+                // but the actual color target is supplied to RenderTo for each frame.
+                sceneManager?.Resize(width, height, default);
+                return;
+            }
+
             var texDesc = new Texture2DDesc
             {
                 Width = width,
@@ -517,7 +533,25 @@ namespace WoWRenderLib.DX11
                     ? EditAction.Positive
                     : EditAction.Default;
 
-        public unsafe void Render(double deltaTime)
+        public void Render(double deltaTime) => RenderCore(deltaTime, useSharedMutex: true);
+
+        /// <summary>
+        /// Renders directly into an externally-owned RTV. No application-side texture
+        /// copy is performed. The target must be keyed-mutex acquired by the caller.
+        /// </summary>
+        public unsafe void RenderTo(double deltaTime, ComPtr<ID3D11RenderTargetView> target)
+        {
+            if (target.Handle == null)
+                throw new ArgumentException("A valid external render target is required.", nameof(target));
+
+            if (!UsesExternalRenderTarget)
+                throw new InvalidOperationException("External render targets are not enabled for this engine.");
+
+            sceneManager.SetRenderTarget(target);
+            RenderCore(deltaTime, useSharedMutex: false);
+        }
+
+        private unsafe void RenderCore(double deltaTime, bool useSharedMutex)
         {
             if (!IsInitialized) return;
             var renderStarted = Stopwatch.GetTimestamp();
@@ -525,9 +559,10 @@ namespace WoWRenderLib.DX11
 
             var mutexAcquired = false;
             var mutexStarted = Stopwatch.GetTimestamp();
-            if (UseKeyedMutex && _keyedMutex.Handle != null)
+            if (useSharedMutex && UseKeyedMutex && _keyedMutex.Handle != null)
             {
-                _keyedMutex.AcquireSync(0, unchecked((uint)-1));
+                var acquireResult = _keyedMutex.AcquireSync(0, unchecked((uint)-1));
+                SilkMarshal.ThrowHResult(acquireResult);
                 mutexAcquired = true;
             }
             Stats.MutexWaitTimeMs = Stopwatch.GetElapsedTime(mutexStarted).TotalMilliseconds;
@@ -613,7 +648,12 @@ namespace WoWRenderLib.DX11
             {
                 _gpuFrameTimer?.EndFrame();
                 if (mutexAcquired)
-                    _keyedMutex.ReleaseSync(1);
+                {
+                    // Ensure all rendering commands are visible to the compositor
+                    // before handing ownership to the consumer keyed-mutex key.
+                    deviceContext.Flush();
+                    SilkMarshal.ThrowHResult(_keyedMutex.ReleaseSync(1));
+                }
             }
 
             Stats.GpuFrameTimeMs = _gpuFrameTimer?.LatestFrameMilliseconds;
