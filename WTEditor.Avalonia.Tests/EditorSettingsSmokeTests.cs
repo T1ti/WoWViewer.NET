@@ -54,6 +54,82 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void MainWindow_ProvidesThreeNonClosableWorkspaceTabsInRequestedOrder()
+    {
+        var window = new MainWindow();
+        var tabs = window.FindControl<TabControl>("WorkspaceTabs");
+
+        Assert.IsNotNull(tabs);
+        var items = tabs.Items.Cast<TabItem>().ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "World Selection", "Main Editor", "Data Tools" },
+            items.Select(tab => tab.Header).Cast<string>().ToArray());
+    }
+
+    [TestMethod]
+    public void ViewportFrameRatePolicy_AppliesCapExactlyAndSuspendsAtOneFps()
+    {
+        Assert.IsNull(
+            ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                100,
+                ViewportRenderActivity.Foreground,
+                isForegroundFrameRateLimitEnabled: false));
+        Assert.AreEqual(0.01d,
+            ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                100,
+                ViewportRenderActivity.Foreground,
+                isForegroundFrameRateLimitEnabled: true)!.Value,
+            0.0001d);
+        Assert.IsNull(
+            ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                100,
+                ViewportRenderActivity.Background,
+                isForegroundFrameRateLimitEnabled: false));
+        Assert.AreEqual(0.01d,
+            ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                100,
+                ViewportRenderActivity.Background,
+                isForegroundFrameRateLimitEnabled: true)!.Value,
+            0.0001d);
+        Assert.AreEqual(1d,
+            ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                100,
+                ViewportRenderActivity.Suspended,
+                isForegroundFrameRateLimitEnabled: false)!.Value,
+            0.0001d);
+    }
+
+    [TestMethod]
+    public void ViewportFrameClock_DoesNotConsumeDeadlineUntilFrameIsPresented()
+    {
+        var clock = new ViewportFrameClock(dueToleranceSeconds: 0);
+        const double interval = 0.01d;
+
+        Assert.IsTrue(clock.IsFrameDue(1d, interval));
+        clock.MarkFramePresented(1d, interval);
+
+        // A due callback with no free presentation buffer does not call
+        // MarkFramePresented. The next callback must therefore remain due.
+        Assert.IsTrue(clock.IsFrameDue(1.01d, interval));
+        Assert.IsTrue(clock.IsFrameDue(1.015d, interval));
+
+        clock.MarkFramePresented(1.015d, interval);
+        Assert.IsFalse(clock.IsFrameDue(1.019d, interval));
+        Assert.IsTrue(clock.IsFrameDue(1.02d, interval));
+    }
+
+    [TestMethod]
+    public void ViewportFrameClock_DisablingCapClearsExistingDeadline()
+    {
+        var clock = new ViewportFrameClock(dueToleranceSeconds: 0);
+
+        clock.MarkFramePresented(1d, frameIntervalSeconds: 0.01d);
+
+        Assert.IsTrue(clock.IsFrameDue(1.001d, frameIntervalSeconds: null));
+        Assert.IsTrue(clock.IsFrameDue(1.001d, frameIntervalSeconds: 0.01d));
+    }
+
+    [TestMethod]
     public void PersistedSettings_RoundTripPreservesStartupConfiguration()
     {
         var expected = new EditorSettingsSnapshot
@@ -67,6 +143,9 @@ public sealed class EditorSettingsSmokeTests
             },
             Rendering = new RenderingConfiguration
             {
+                IsForegroundFrameRateLimitEnabled = true,
+                IsForegroundFrameRateLimitInitialized = true,
+                ViewportFrameRateLimit = 144,
                 AmbientColor = new Vector3(0.1f, 0.2f, 0.3f),
                 DiffuseColor = new Vector3(0.9f, 0.8f, 0.7f),
                 TerrainRenderDistance = 12_500f,

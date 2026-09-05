@@ -27,6 +27,9 @@ public sealed record ClientConfiguration
 
 public sealed record RenderingConfiguration
 {
+    public bool IsForegroundFrameRateLimitEnabled { get; init; }
+    public bool IsForegroundFrameRateLimitInitialized { get; init; }
+    public int ViewportFrameRateLimit { get; init; } = 60;
     public Vector3 AmbientColor { get; init; } = new(104f / 255f, 130f / 255f, 154f / 255f);
     public Vector3 DiffuseColor { get; init; } = new(1f, 136f / 255f, 0f);
     public float TerrainRenderDistance { get; init; } = 20_000f;
@@ -47,6 +50,7 @@ public sealed record RenderingConfiguration
 
     public RenderingConfiguration Normalize() => this with
     {
+        ViewportFrameRateLimit = Math.Clamp(ViewportFrameRateLimit, 30, 360),
         AmbientColor = ClampColor(AmbientColor),
         DiffuseColor = ClampColor(DiffuseColor),
         TerrainRenderDistance = Math.Clamp(TerrainRenderDistance, 100f, 1_000_000f),

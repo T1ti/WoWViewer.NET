@@ -18,6 +18,7 @@ internal static class Program
         WoWRenderLib.Listfile.EnsureLoadedAsync().GetAwaiter().GetResult();
         Services = ConfigureServices().BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        Services.GetRequiredService<WorldMapStartupPreloader>().Start();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
@@ -34,12 +35,17 @@ internal static class Program
         services.AddSingleton<UndoService>();
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
+        services.AddSingleton<IMinimapService, MinimapService>();
+        services.AddSingleton<IMapCatalogService, MapCatalogService>();
+        services.AddSingleton<IMapTerrainMetadataCacheService, MapTerrainMetadataCacheService>();
+        services.AddSingleton<WorldMapStartupPreloader>();
         services.AddSingleton<IObjectInspectorSectionProvider, TerrainInspectorSectionProvider>();
         services.AddSingleton<SelectionInspectorViewModel>();
         services.AddSingleton<TerrainEditingViewModel>();
 
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();
+        services.AddSingleton<WorldSelectionViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<ProjectSelectionViewModel>();
         services.AddTransient<MainWindow>();

@@ -6,12 +6,18 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using WTEditor.Application.Models;
+using WTEditor.Avalonia.Rendering;
 using WTEditor.Avalonia.ViewModels;
 
 namespace WTEditor.Avalonia.Views;
 
 public partial class Editor3DView : UserControl
 {
+    public static readonly StyledProperty<ViewportRenderActivity> RenderActivityProperty =
+        AvaloniaProperty.Register<Editor3DView, ViewportRenderActivity>(
+            nameof(RenderActivity),
+            ViewportRenderActivity.Foreground);
+
     private Editor3DViewModel? _subscribedViewModel;
     private MetricsWindow? _metricsWindow;
     // private bool _leftMouseDown = false;
@@ -58,6 +64,12 @@ public partial class Editor3DView : UserControl
 
         _DetectedAzertyInput = _AzertyInput;
         SetKeyboardMode(_AzertyInput);
+    }
+
+    public ViewportRenderActivity RenderActivity
+    {
+        get => GetValue(RenderActivityProperty);
+        set => SetValue(RenderActivityProperty, value);
     }
 
     protected override void OnDataContextChanged(EventArgs e)

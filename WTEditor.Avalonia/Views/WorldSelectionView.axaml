@@ -1,0 +1,179 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
+             x:Class="WTEditor.Avalonia.Views.WorldSelectionView"
+             x:DataType="vm:WorldSelectionViewModel"
+             Foreground="#DCE7ED">
+  <UserControl.Styles>
+    <Style Selector="TextBox.map-filter">
+      <Setter Property="Background" Value="#253440"/>
+      <Setter Property="Foreground" Value="#E7F0F5"/>
+      <Setter Property="BorderBrush" Value="#597083"/>
+      <Setter Property="CaretBrush" Value="#E7F0F5"/>
+    </Style>
+    <Style Selector="ComboBox.map-filter">
+      <Setter Property="Background" Value="#253440"/>
+      <Setter Property="Foreground" Value="#E7F0F5"/>
+      <Setter Property="BorderBrush" Value="#597083"/>
+    </Style>
+    <Style Selector="CheckBox.terrain-filter">
+      <Setter Property="Foreground" Value="#DCE7ED"/>
+      <Setter Property="Background" Value="#1A252E"/>
+      <Setter Property="BorderBrush" Value="#7595A9"/>
+    </Style>
+    <Style Selector="CheckBox.terrain-filter:pointerover">
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#A6C7DB"/>
+    </Style>
+    <Style Selector="ListBox.world-map-list">
+      <Setter Property="Background" Value="#131D25"/>
+      <Setter Property="Foreground" Value="#DCE7ED"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.world-map-list ListBoxItem">
+      <Setter Property="Padding" Value="8,7"/>
+      <Setter Property="Margin" Value="0,0,0,2"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Foreground" Value="#DCE7ED"/>
+    </Style>
+    <Style Selector="ListBox.world-map-list ListBoxItem:pointerover">
+      <Setter Property="Background" Value="#263540"/>
+    </Style>
+    <Style Selector="ListBox.world-map-list ListBoxItem:selected">
+      <Setter Property="Background" Value="#245F8D"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Background="#11171C" ColumnDefinitions="460,8,*" Margin="16">
+    <Border Grid.Column="0" Background="#18232C" BorderBrush="#4B6172" BorderThickness="1"
+            CornerRadius="7" Padding="14">
+      <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+        <StackPanel Spacing="2">
+          <TextBlock Text="MAP SELECTION" FontWeight="Bold" Foreground="#F0F6F9"/>
+          <TextBlock Text="Browse the selected client's Map DB2" FontSize="11" Foreground="#AFC0CB"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Spacing="8">
+          <TextBox Classes="map-filter" Width="300" HorizontalAlignment="Left"
+                   Text="{Binding SearchText, Mode=TwoWay}"
+                   PlaceholderText="Search map name or ID"/>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <ComboBox Classes="map-filter" Width="150" ItemsSource="{Binding ExpansionFilters}"
+                      SelectedItem="{Binding SelectedExpansion, Mode=TwoWay}">
+              <ComboBox.Styles>
+                <Style Selector="ComboBoxItem">
+                  <Setter Property="Background" Value="#253440"/>
+                  <Setter Property="Foreground" Value="#E8F2F8"/>
+                </Style>
+                <Style Selector="ComboBoxItem:pointerover">
+                  <Setter Property="Background" Value="#365064"/>
+                  <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Style>
+                <Style Selector="ComboBoxItem:selected">
+                  <Setter Property="Background" Value="#15557E"/>
+                  <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Style>
+              </ComboBox.Styles>
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:MapFilterOption">
+                  <TextBlock Text="{Binding DisplayName}" Foreground="#DCE7ED"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <ComboBox Classes="map-filter" Width="150" ItemsSource="{Binding MapTypeFilters}"
+                      SelectedItem="{Binding SelectedMapType, Mode=TwoWay}">
+              <ComboBox.Styles>
+                <Style Selector="ComboBoxItem">
+                  <Setter Property="Background" Value="#253440"/>
+                  <Setter Property="Foreground" Value="#E8F2F8"/>
+                </Style>
+                <Style Selector="ComboBoxItem:pointerover">
+                  <Setter Property="Background" Value="#365064"/>
+                  <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Style>
+                <Style Selector="ComboBoxItem:selected">
+                  <Setter Property="Background" Value="#15557E"/>
+                  <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Style>
+              </ComboBox.Styles>
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:MapFilterOption">
+                  <TextBlock Text="{Binding DisplayName}" Foreground="#DCE7ED"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+          <CheckBox Classes="terrain-filter"
+                    IsChecked="{Binding ShowMapsWithoutTerrain, Mode=TwoWay}"
+                    Content="Show maps without terrain"/>
+        </StackPanel>
+
+        <Grid Grid.Row="2" ColumnDefinitions="3*,54,30,4*" Margin="2,0" IsVisible="{Binding HasFilteredMaps}">
+          <TextBlock Text="NAME" FontSize="10" FontWeight="Bold" Foreground="#93A9B6"/>
+          <TextBlock Grid.Column="1" Text="ID" FontSize="10" FontWeight="Bold" Foreground="#93A9B6"/>
+          <TextBlock Grid.Column="2" Text="EXP" FontSize="10" FontWeight="Bold" Foreground="#93A9B6"/>
+          <TextBlock Grid.Column="3" Text="TYPE" FontSize="10" FontWeight="Bold" Foreground="#93A9B6"/>
+        </Grid>
+
+        <Grid Grid.Row="3">
+          <ListBox Classes="world-map-list" ItemsSource="{Binding FilteredMaps}"
+                   SelectedItem="{Binding SelectedMap, Mode=TwoWay}"
+                   IsVisible="{Binding HasFilteredMaps}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:WorldMapListItem">
+                <Grid ColumnDefinitions="3*,54,30,4*" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                             ToolTip.Tip="{Binding Name}" Foreground="#E1EBF0"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Id}" Foreground="#C4D2DA"
+                             VerticalAlignment="Center"/>
+                  <Border Grid.Column="2" Width="20" Height="20" CornerRadius="10"
+                          Background="{Binding ExpansionBrush}" ToolTip.Tip="{Binding ExpansionName}">
+                    <PathIcon Data="{Binding ExpansionIcon}" Width="12" Height="12" Foreground="#F7FBFD"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <TextBlock Grid.Column="3" Text="{Binding MapType}" TextTrimming="CharacterEllipsis"
+                             Foreground="#C4D2DA" VerticalAlignment="Center"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel IsVisible="{Binding HasNoFilteredMaps}" HorizontalAlignment="Center"
+                      VerticalAlignment="Center" Spacing="5" MaxWidth="270">
+            <TextBlock Text="No maps match the current filters." TextAlignment="Center" Foreground="#D8E3E9"/>
+            <TextBlock Text="Clear or adjust a filter to see other map entries." TextAlignment="Center"
+                       TextWrapping="Wrap" FontSize="11" Foreground="#9EB1BD"/>
+          </StackPanel>
+          <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center"
+                      VerticalAlignment="Center" Spacing="7">
+            <ProgressBar IsIndeterminate="True" Width="160" Height="4"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#BFD0DA" FontSize="11"/>
+          </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" FontSize="11" Foreground="#9EB1BD"
+                   TextTrimming="CharacterEllipsis"/>
+      </Grid>
+    </Border>
+
+    <Border Grid.Column="2" Background="#18232C" BorderBrush="#4B6172" BorderThickness="1"
+            CornerRadius="7" Padding="14">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="3">
+            <TextBlock Text="MINIMAP" FontWeight="Bold"/>
+            <TextBlock Text="Wheel to zoom · Drag to pan · Double-click to fit"
+                       FontSize="11" Foreground="#AFC0CB"/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="Fit map" Command="{Binding Minimap.ResetViewCommand}"/>
+        </Grid>
+        <controls:MinimapControl Grid.Row="1" DataContext="{Binding Minimap}"/>
+        <TextBlock Grid.Row="2" Text="{Binding Minimap.Status}" FontSize="11"
+                   Foreground="#AFC0CB" TextWrapping="Wrap"/>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

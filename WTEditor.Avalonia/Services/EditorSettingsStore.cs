@@ -7,6 +7,9 @@ namespace WTEditor.Avalonia.Services;
 
 public sealed class PersistedRenderingSettings
 {
+    public bool IsForegroundFrameRateLimitEnabled { get; set; }
+    public bool IsForegroundFrameRateLimitInitialized { get; set; }
+    public int ViewportFrameRateLimit { get; set; } = 60;
     public float AmbientColorR { get; set; } = 104f / 255f;
     public float AmbientColorG { get; set; } = 130f / 255f;
     public float AmbientColorB { get; set; } = 154f / 255f;
@@ -31,6 +34,9 @@ public sealed class PersistedRenderingSettings
 
     public RenderingConfiguration ToModel() => new()
     {
+        IsForegroundFrameRateLimitEnabled = IsForegroundFrameRateLimitEnabled,
+        IsForegroundFrameRateLimitInitialized = IsForegroundFrameRateLimitInitialized,
+        ViewportFrameRateLimit = ViewportFrameRateLimit,
         AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
         DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
         TerrainRenderDistance = TerrainRenderDistance,
@@ -52,6 +58,9 @@ public sealed class PersistedRenderingSettings
 
     public static PersistedRenderingSettings From(RenderingConfiguration rendering) => new()
     {
+        IsForegroundFrameRateLimitEnabled = rendering.IsForegroundFrameRateLimitEnabled,
+        IsForegroundFrameRateLimitInitialized = rendering.IsForegroundFrameRateLimitInitialized,
+        ViewportFrameRateLimit = rendering.ViewportFrameRateLimit,
         AmbientColorR = rendering.AmbientColor.X,
         AmbientColorG = rendering.AmbientColor.Y,
         AmbientColorB = rendering.AmbientColor.Z,

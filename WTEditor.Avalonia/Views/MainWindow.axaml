@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+        xmlns:views="using:WTEditor.Avalonia.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
@@ -29,11 +30,83 @@
           <MenuItem Header="_Settings" Command="{Binding OpenSettingsCommand}"/>
         </Menu>
 
-    <!-- Main content goes here -->
-    <Grid>
-        <ContentControl Content="{Binding CurrentView}" />
-        <!--  <views:MainView x:Name="mainView" /> -->
-        <!-- <ContentControl Content="{Binding CurrentView}" /> For swappable views -->
+    <Grid RowDefinitions="30,*">
+      <!-- Keep each page in the visual tree. Standard TabItem content is detached
+           when it is not selected, which would otherwise tear down the DX11 engine. -->
+      <Border Grid.Row="0" Background="#11171C" BorderBrush="#526170"
+              BorderThickness="0,0,0,1" IsHitTestVisible="False"/>
+      <TabControl Grid.Row="0" x:Name="WorkspaceTabs"
+                  SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
+                  FontSize="12" Background="Transparent" BorderThickness="0">
+        <TabControl.Styles>
+          <!-- A scoped, desktop-style tab treatment. Fluent only supplies the
+               modern underline variant, so the active tab is deliberately
+               raised above the page boundary here. -->
+          <Style Selector="TabItem.workspace-tab">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Margin" Value="0,4,2,0" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#B9C7D3" />
+            <Setter Property="Background" Value="#202A34" />
+            <Setter Property="BorderBrush" Value="#43515E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+              <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4,4,0,0"
+                        Padding="{TemplateBinding Padding}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <PathIcon Width="14" Height="14"
+                              Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                    <ContentPresenter Content="{TemplateBinding Header}"
+                                      ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                      VerticalContentAlignment="Center" />
+                  </StackPanel>
+                </Border>
+              </ControlTemplate>
+            </Setter>
+          </Style>
+          <Style Selector="TabItem.workspace-tab:pointerover">
+            <Setter Property="Foreground" Value="#E8F1F7" />
+            <Setter Property="Background" Value="#2A3642" />
+            <Setter Property="BorderBrush" Value="#5D6D7C" />
+          </Style>
+          <Style Selector="TabItem.workspace-tab:selected">
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Background" Value="#11171C" />
+            <Setter Property="BorderBrush" Value="#667B8D" />
+            <Setter Property="BorderThickness" Value="1,1,1,0" />
+            <Setter Property="Margin" Value="0,1,2,-1" />
+            <Setter Property="ZIndex" Value="1" />
+          </Style>
+        </TabControl.Styles>
+        <TabItem Classes="workspace-tab" Header="World Selection"
+                 Tag="M3,5 L9,3 L15,5 L21,3 L21,19 L15,21 L9,19 L3,21 Z M9,3 L9,19 M15,5 L15,21" />
+        <TabItem Classes="workspace-tab" Header="Main Editor"
+                 Tag="M12,2 L21,7 L21,17 L12,22 L3,17 L3,7 Z M3,7 L12,12 L21,7 M12,12 L12,22" />
+        <TabItem Classes="workspace-tab" Header="Data Tools"
+                 Tag="M4,5 C4,3 20,3 20,5 C20,7 4,7 4,5 M4,5 L4,19 C4,21 20,21 20,19 L20,5 M4,12 C4,14 20,14 20,12" />
+      </TabControl>
+
+      <Grid Grid.Row="1">
+        <Border Background="#11171C" IsVisible="{Binding IsWorldSelectionTabActive}">
+          <views:WorldSelectionView DataContext="{Binding WorldSelection}" />
+        </Border>
+        <Border Background="#11171C" IsVisible="{Binding IsMainEditorTabActive}">
+          <views:MainView DataContext="{Binding MainView}" />
+        </Border>
+        <Border Padding="24" Background="#11171C" IsVisible="{Binding IsDataToolsTabActive}">
+          <StackPanel Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="520">
+            <TextBlock Text="Data Tools" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" />
+            <TextBlock Text="Data conversion and inspection tools will live here."
+                       TextWrapping="Wrap" TextAlignment="Center" Opacity="0.75" />
+          </StackPanel>
+        </Border>
+      </Grid>
     </Grid>
   </DockPanel>
 

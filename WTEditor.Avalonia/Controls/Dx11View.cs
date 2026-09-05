@@ -28,6 +28,17 @@ namespace WTEditor.Avalonia.Controls
 {
     public sealed class Dx11View : Control
     {
+        // Composition callbacks arrive on a discrete cadence. Allow a small lead
+        // so a callback that is fractionally early does not miss its slot. The
+        // deadline remains phase-locked below, preventing this tolerance from
+        // lowering the effective rate to every second compositor pulse.
+        private const double FrameDueToleranceSeconds = 0.0015d;
+
+        public static readonly StyledProperty<ViewportRenderActivity> RenderActivityProperty =
+            AvaloniaProperty.Register<Dx11View, ViewportRenderActivity>(
+                nameof(RenderActivity),
+                ViewportRenderActivity.Foreground);
+
         private readonly Dx11RendererSession _rendererSession = new();
         private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
 
@@ -49,7 +60,10 @@ namespace WTEditor.Avalonia.Controls
 
         private readonly Stopwatch _sw = Stopwatch.StartNew();
         private readonly Stopwatch _telemetryWatch = Stopwatch.StartNew();
+        private readonly ViewportFrameClock _frameClock = new(FrameDueToleranceSeconds);
         private double _last;
+        private DispatcherTimer? _suspendedFrameTimer;
+        private bool _suspendedFrameDue;
 
         private ViewModels.Editor3DViewModel? _vm;
         private RenderingConfiguration _renderingConfiguration = new();
@@ -73,6 +87,12 @@ namespace WTEditor.Avalonia.Controls
         private bool _terrainStrokeActive;
         private IUndoTransaction? _terrainStrokeTransaction;
         private bool? _lastPublishedTerrainDirtyState;
+
+        public ViewportRenderActivity RenderActivity
+        {
+            get => GetValue(RenderActivityProperty);
+            set => SetValue(RenderActivityProperty, value);
+        }
 
         public Dx11View()
         {
@@ -199,7 +219,7 @@ namespace WTEditor.Avalonia.Controls
                 ElementComposition.SetElementChildVisual(this, _surfaceVisual);
 
                 _initialized = true;
-                RequestRenderFrame();
+                QueueNextRenderFrame();
             }
             finally
             {
@@ -250,7 +270,7 @@ namespace WTEditor.Avalonia.Controls
                     _lastHeight = height;
                     ResetFrameClock();
                     _initialized = true;
-                    RequestRenderFrame();
+                    QueueNextRenderFrame();
                 }
                 catch (Exception exception)
                 {
@@ -269,6 +289,10 @@ namespace WTEditor.Avalonia.Controls
         private void OnRenderingConfigurationChanged(object? sender, RenderingConfiguration configuration)
         {
             _renderingConfiguration = configuration;
+            ResetFrameClock();
+            if (_initialized && _attached && RenderActivity != ViewportRenderActivity.Suspended)
+                RequestRenderFrame();
+
             if (_rendererSession.Engine == null)
                 return;
 
@@ -289,6 +313,27 @@ namespace WTEditor.Avalonia.Controls
                 new Vector2D<int>(width, height),
                 _vm?.HasInitialCameraPosition == true ? _vm.InitialCameraPosition : null,
                 _vm?.HasInitialCameraDirection == true ? _vm.InitialCameraDirection : null);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property != RenderActivityProperty)
+                return;
+
+            ResetFrameClock();
+            if (RenderActivity == ViewportRenderActivity.Suspended)
+            {
+                _suspendedFrameDue = false;
+                ScheduleSuspendedFrame();
+            }
+            else
+            {
+                StopSuspendedFrameTimer();
+                if (_initialized && _attached)
+                    RequestRenderFrame();
+            }
         }
 
         private (int Width, int Height) GetPhysicalSize()
@@ -357,7 +402,7 @@ namespace WTEditor.Avalonia.Controls
                 _lifecycleLock.Release();
                 Volatile.Write(ref _resizeInProgress, 0);
                 if (_initialized && _attached)
-                    RequestRenderFrame();
+                    QueueNextRenderFrame();
             }
         }
 
@@ -489,7 +534,11 @@ namespace WTEditor.Avalonia.Controls
             }
         }
 
-        private void ResetFrameClock() => _last = _sw.Elapsed.TotalSeconds;
+        private void ResetFrameClock()
+        {
+            _last = _sw.Elapsed.TotalSeconds;
+            _frameClock.Reset();
+        }
 
         private void RenderFrame()
         {
@@ -506,11 +555,15 @@ namespace WTEditor.Avalonia.Controls
                 return;
             }
 
+            if (RenderActivity == ViewportRenderActivity.Suspended && !_suspendedFrameDue)
+                return;
+
             if (Interlocked.CompareExchange(ref _renderFrameInProgress, 1, 0) != 0)
                 return;
 
             try
             {
+                _suspendedFrameDue = false;
                 RenderFrameCore(engine);
             }
             catch (Exception exception)
@@ -537,7 +590,7 @@ namespace WTEditor.Avalonia.Controls
                 }
                 else if (_initialized)
                 {
-                    RequestRenderFrame();
+                    QueueNextRenderFrame();
                 }
             }
         }
@@ -561,6 +614,13 @@ namespace WTEditor.Avalonia.Controls
                 BeginResize(width, height);
                 return;
             }
+
+            var frameInterval = ViewportFrameRatePolicy.GetFrameIntervalSeconds(
+                _renderingConfiguration.ViewportFrameRateLimit,
+                RenderActivity,
+                _renderingConfiguration.IsForegroundFrameRateLimitEnabled);
+            if (!_frameClock.IsFrameDue(now, frameInterval))
+                return;
 
             var presentationPool = _presentationPool;
             var presentationBuffer = presentationPool?.TryAcquire();
@@ -612,6 +672,7 @@ namespace WTEditor.Avalonia.Controls
                 var presentTask = _surface.UpdateWithKeyedMutexAsync(
                     presentationBuffer.ImportedImage!, acquireIndex: 1, releaseIndex: 0);
                 presentationBuffer.SetLastPresent(presentTask);
+                _frameClock.MarkFramePresented(now, frameInterval);
             }
             catch
             {
@@ -765,6 +826,45 @@ namespace WTEditor.Avalonia.Controls
                 _vm.UpdatePerformanceProfile(profileSnapshot);
                 UpdateAutomatedBenchmark(profileSnapshot);
             }
+        }
+
+        private void QueueNextRenderFrame()
+        {
+            if (RenderActivity == ViewportRenderActivity.Suspended)
+            {
+                ScheduleSuspendedFrame();
+                return;
+            }
+
+            RequestRenderFrame();
+        }
+
+        private void ScheduleSuspendedFrame()
+        {
+            if (!_attached || !_initialized || _suspendedFrameTimer?.IsEnabled == true)
+                return;
+
+            _suspendedFrameTimer ??= new DispatcherTimer();
+            _suspendedFrameTimer.Interval = TimeSpan.FromSeconds(1);
+            _suspendedFrameTimer.Tick -= OnSuspendedFrameTimerTick;
+            _suspendedFrameTimer.Tick += OnSuspendedFrameTimerTick;
+            _suspendedFrameTimer.Start();
+        }
+
+        private void StopSuspendedFrameTimer()
+        {
+            if (_suspendedFrameTimer != null)
+                _suspendedFrameTimer.Stop();
+        }
+
+        private void OnSuspendedFrameTimerTick(object? sender, EventArgs e)
+        {
+            StopSuspendedFrameTimer();
+            if (!_attached || !_initialized || RenderActivity != ViewportRenderActivity.Suspended)
+                return;
+
+            _suspendedFrameDue = true;
+            RequestRenderFrame();
         }
 
         private void PublishSelection(Container3D? selectedObject)
@@ -1339,6 +1439,8 @@ namespace WTEditor.Avalonia.Controls
         {
             _initialized = false;
             _restartPending = false;
+            _suspendedFrameDue = false;
+            StopSuspendedFrameTimer();
             if (Volatile.Read(ref _renderFrameInProgress) != 0)
             {
                 _cleanupPending = true;

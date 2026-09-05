@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WTEditor.Application.Services;
+using WTEditor.Avalonia.Rendering;
 using WTEditor.Application.Models;
 using WoWRenderLib.DX11.Editing;
 
@@ -22,6 +23,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private EditorModeViewModel _activeMode;
+    [ObservableProperty]
+    private bool _isEditorTabVisible = true;
+    [ObservableProperty]
+    private ViewportRenderActivity _viewportRenderActivity = ViewportRenderActivity.Foreground;
     private ObjectTransform? _lastInspectorTransform;
 
     public MainViewModel(

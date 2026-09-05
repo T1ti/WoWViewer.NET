@@ -3,8 +3,8 @@
              x:Class="WTEditor.Avalonia.App"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
              xmlns:views="using:WTEditor.Avalonia.Views"
-             RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             RequestedThemeVariant="Dark">
+             <!-- Use the dark Fluent theme so popups and form controls match the editor surface. -->
 
     <Application.DataTemplates>
         <DataTemplate DataType="{x:Type vm:MainViewModel}">

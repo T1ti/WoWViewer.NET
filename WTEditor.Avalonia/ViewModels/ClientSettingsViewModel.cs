@@ -9,6 +9,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
     public IReadOnlyList<string> KeyboardLayouts { get; } = ["Auto", "QWERTY", "AZERTY"];
 
     [ObservableProperty] private string _keyboardLayout;
+    [ObservableProperty] private bool _isForegroundFrameRateLimitEnabled;
+    [ObservableProperty] private int _viewportFrameRateLimit;
     [ObservableProperty] private float _terrainRenderDistance;
     [ObservableProperty] private float _modelRenderDistance;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
@@ -31,6 +33,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
     {
         var rendererSettings = settings.Rendering;
         _keyboardLayout = ToDisplayName(settings.KeyboardLayout);
+        _isForegroundFrameRateLimitEnabled = rendererSettings.IsForegroundFrameRateLimitEnabled;
+        _viewportFrameRateLimit = rendererSettings.ViewportFrameRateLimit;
         _terrainRenderDistance = rendererSettings.TerrainRenderDistance;
         _modelRenderDistance = rendererSettings.ModelRenderDistance;
         _minimumModelScreenSizePixels = rendererSettings.MinimumModelScreenSizePixels;
@@ -55,6 +59,9 @@ public partial class ClientSettingsViewModel : ViewModelBase
         Client = original.Client,
         Rendering = new RenderingConfiguration
         {
+            IsForegroundFrameRateLimitEnabled = IsForegroundFrameRateLimitEnabled,
+            IsForegroundFrameRateLimitInitialized = original.Rendering.IsForegroundFrameRateLimitInitialized,
+            ViewportFrameRateLimit = ViewportFrameRateLimit,
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
             DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
             TerrainRenderDistance = TerrainRenderDistance,

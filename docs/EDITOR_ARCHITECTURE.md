@@ -19,6 +19,23 @@ future editors share the same interaction model.
 - `UndoService` is the one editor-wide history. Tools must not create private
   undo/redo stacks.
 
+## Shared coordinate and geometry utilities
+
+Reusable coordinate math belongs in `WTEditor.Application/Geometry`, starting
+with `MapCoordinates`. These helpers are pure, deterministic functions with
+explicit source/destination names and units. They use primitive numbers and
+application-owned value types (`TilePoint`, `TileBounds`); they must not depend
+on Avalonia, a renderer, wowlib, a file system, or global client state. They do
+not perform I/O, mutate scene state, or own presentation settings.
+
+Services adapt format-specific values into these helpers once when loading
+metadata. For example, `MapTerrainMetadataCacheService` reads WDT MODF extents
+and caches their projected `TileBounds`. View models own fit/zoom/pan state;
+controls convert tile coordinates to pixels and draw. Do not put coordinate
+conventions into XAML, code-behind, or duplicate conversion formulas in views.
+New coordinate conventions should get explicitly named functions and tests,
+not flags that silently change the meaning of a generic vector.
+
 ## Mode and tool rules
 
 1. Every editing mode must be represented by one typed `EditorModeId` in the
@@ -147,3 +164,54 @@ Before merging a new mode or tool, verify:
 - no tool-specific undo stack or direct UI-to-GPU mutation path was added;
 - tests cover command replay, transaction grouping, cancellation, and dirty
   state transitions.
+
+## WMO minimap loading boundary
+
+The application core does not reference wowlib. Pure coordinate and footprint
+math stays in `WTEditor.Application/Geometry`. File-format parsing belongs in
+an infrastructure adapter, not in view models or controls. Calling wowlib from
+a host service is a workable adapter boundary, but spreading native format
+objects throughout the application is not the desired design.
+
+`WoWRenderLib.Services.IWmoMinimapLoader` / `WmoMinimapLoader` provide the new
+CPU-only WMO path in the existing shared library. This does not depend on DX11,
+GPU caches, or a live render engine. The loader reads WDT MWMO/MODF, resolves the
+root WMO by path or FileDataID/listfile, and parses MOGI group bounds with wowlib.
+It returns managed placement metadata and decoded RGBA images; native format
+objects are disposed inside the adapter. `MinimapService` owns the Avalonia
+bitmaps and applies application coordinate helpers. Existing terrain/catalog
+wowlib adapters in Avalonia services can move behind similar shared readers
+incrementally; this feature does not refactor all content loading.
+
+The WMO implementation enumerates `<root>_<sourceGroupIndex:000>_<x:00>_<y:00>.blp`
+from each MOGI bounding box. Counts are `ceil(width/128)` by `ceil(height/128)`;
+filenames are resolved only after enumeration. The listfile is a name resolver,
+not the source of tile counts. Group indices are original MOGI indices, never
+filtered-list indices. Try `world/minimaps/` names, then logical filenames, then
+`world/minimaps/md5translate.trs` mappings to hashed files. Missing tiles are
+counted independently without stopping the rest of a group.
+
+A texture's world-unit side is 16, 32, 64, or 128 according to the generator's
+whole-group bounding-box thresholds, independent of BLP pixel dimensions.
+Offset `(x,y)` starts at `(groupMinX + x*side, groupMinY + y*side)`. Image top-left
+is `(groupMinX + x*side, groupMinY + (y+1)*side, groupMaxZ)`; its right and down
+vectors are projected with MODF scale, rotation, and translation. Edge tiles
+keep their full square footprint rather than stretching into the remaining
+bounds. This makes adjacent textures share exactly the same edge.
+
+The view draws the affine quads and retains the green MODF bounds behind them.
+Groups are drawn from lower to higher local bounds, with stable group/X/Y
+ordering. Floor selection is not yet implemented. Installed Classic Gnomeregan
+(WDT 782773) provides 94 textures across 73 groups: bounds-based enumeration
+matches the reference list (FileDataIDs 213257–213350) without missing or extra
+paths. An offscreen render of the actual control verifies the combined layout.
+
+WMO roots may include the `World/` prefix; strip it when constructing logical
+minimap names before adding `World/Minimaps/`. For `_Classic.wmo` replacement
+roots, prefer their own texture names and fall back to the unsuffixed root's
+names. Gnomeregan's Classic and original roots share the same group indices and
+bounds, while the installed textures use the original name.
+
+Native MODF extents use `(model Y, model Z, model X)` at zero rotation. Ground
+axis reversal happens once in `PlacementToTile`; reversing the model axes too
+would mirror the images away from the bounds used by Fit map.

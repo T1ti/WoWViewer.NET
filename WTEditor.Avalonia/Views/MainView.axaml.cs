@@ -35,6 +35,8 @@ public partial class MainView : UserControl
         if (_viewModel != null)
             _viewModel.PropertyChanged += MainViewModel_OnPropertyChanged;
 
+        EditorViewport.RenderActivity = _viewModel?.ViewportRenderActivity
+            ?? WTEditor.Avalonia.Rendering.ViewportRenderActivity.Foreground;
         Dispatcher.UIThread.Post(ArrangePanels);
     }
 
@@ -45,6 +47,10 @@ public partial class MainView : UserControl
         {
             Dispatcher.UIThread.Post(ArrangePanels);
         }
+
+        if (e.PropertyName == nameof(ViewModels.MainViewModel.ViewportRenderActivity))
+            EditorViewport.RenderActivity = _viewModel?.ViewportRenderActivity
+                ?? WTEditor.Avalonia.Rendering.ViewportRenderActivity.Foreground;
     }
 
     private void MainView_OnKeyDown(object? sender, KeyEventArgs e)

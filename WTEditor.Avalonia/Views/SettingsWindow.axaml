@@ -12,7 +12,7 @@
         <StackPanel Margin="8" Spacing="10">
           <TextBlock TextWrapping="Wrap" Opacity="0.75"
                      Text="Tile loading distance is used for both loading and unloading. Larger values increase memory use and streaming work." />
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
             <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Terrain render distance" />
             <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TerrainRenderDistance}" />
             <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Tile loading distance" />
@@ -41,6 +41,12 @@
             <TextBlock Grid.Row="8" VerticalAlignment="Center" Text="Terrain LOD transition (pixels)" />
             <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding TerrainLodTransitionPixels}"
                      ToolTip.Tip="Use the half-index terrain mesh below this projected chunk diameter; 0 disables" />
+            <CheckBox Grid.Row="9" VerticalAlignment="Center" Content="Enable foreground FPS cap"
+                      IsChecked="{Binding IsForegroundFrameRateLimitEnabled}" />
+            <NumericUpDown Grid.Row="9" Grid.Column="1" Value="{Binding ViewportFrameRateLimit}"
+                           Minimum="30" Maximum="360" Increment="10"
+                           IsEnabled="{Binding IsForegroundFrameRateLimitEnabled}"
+                           ToolTip.Tip="Renderer cap while the viewport is visible. A minimized window or inactive editor tab uses 1 FPS." />
           </Grid>
           <WrapPanel Orientation="Horizontal" ItemWidth="180">
             <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />

@@ -22,7 +22,7 @@
   </UserControl.Styles>
 
   <Grid Background="#11171C">
-    <local:Editor3DView DataContext="{Binding ViewportVM}"/>
+    <local:Editor3DView x:Name="EditorViewport" DataContext="{Binding ViewportVM}"/>
 
     <!-- Mode selection belongs to the viewport and floats above it so future
          modes do not consume permanent editor workspace. -->
