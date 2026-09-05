@@ -14,6 +14,8 @@ cbuffer PerObject : register(b0)
     float3 firstPos;
     uint renderTerrainGrid;
     float4 terrainGridSettings;
+    uint renderTerrainWireframe;
+    float3 terrainWireframePadding;
     float3 terrainBrushCenter;
     float terrainBrushOuterRadius;
     float terrainBrushInnerRadius;
@@ -85,6 +87,7 @@ struct VSOut
     float3 Normal  : NORMAL;
     nointerpolation uint ChunkIndex : TEXCOORD1;
     float3 TerrainPosition : TEXCOORD2;
+    noperspective float3 Barycentric : TEXCOORD3;
 };
 
 float2 TerrainTexCoordFromVertexId(uint vertexId)
@@ -131,7 +134,24 @@ VSOut VS_Main(VSIn input, uint vertexId : SV_VertexID)
     o.VColor = input.color;
     o.ChunkIndex = vertexId / 145;
     o.TerrainPosition = posOffset;
+    o.Barycentric = float3(0.0f, 0.0f, 0.0f);
     return o;
+}
+
+[maxvertexcount(3)]
+void GS_Main(triangle VSOut input[3], inout TriangleStream<VSOut> output)
+{
+    VSOut outputVertex = input[0];
+    outputVertex.Barycentric = float3(1.0f, 0.0f, 0.0f);
+    output.Append(outputVertex);
+
+    outputVertex = input[1];
+    outputVertex.Barycentric = float3(0.0f, 1.0f, 0.0f);
+    output.Append(outputVertex);
+
+    outputVertex = input[2];
+    outputVertex.Barycentric = float3(0.0f, 0.0f, 1.0f);
+    output.Append(outputVertex);
 }
 
 float TerrainGeometricEdgeMask(
@@ -198,6 +218,19 @@ float TerrainAdtBoundaryMask(
         ? TerrainGeometricEdgeMask(1.0f - coordinate.y, pixelFootprint.y, halfWidthInCell)
         : 0.0f;
     return max(max(uMin, uMax), max(vMin, vMax));
+}
+
+float TerrainWireframeMask(float3 barycentric)
+{
+    // Geometry-stage barycentrics describe the actual indexed triangle,
+    // including terrain LOD and holes. Derivatives keep the one-pixel edge
+    // smooth and stable while avoiding a CPU line mesh.
+    float3 pixelFootprint = max(fwidth(barycentric), 0.0001f);
+    float3 interior = smoothstep(
+        float3(0.0f, 0.0f, 0.0f),
+        pixelFootprint * 0.75f,
+        barycentric);
+    return 1.0f - min(interior.x, min(interior.y, interior.z));
 }
 
 float TerrainBrushRingMask(float2 terrainPosition, float radius)
@@ -324,13 +357,15 @@ float4 PS_Main(VSOut i) : SV_Target
     float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
     float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
     float3 shadedColor = final_color * in_vertexColor.rgb * 2.0f * lighting;
+    float chunkMask = 0.0f;
+    float adtMask = 0.0f;
     if (renderTerrainGrid != 0)
     {
-        float chunkMask = TerrainChunkGridMask(
+        chunkMask = TerrainChunkGridMask(
             i.TexCoord,
             i.ChunkIndex,
             terrainGridSettings.x);
-        float adtMask = TerrainAdtBoundaryMask(
+        adtMask = TerrainAdtBoundaryMask(
             i.TexCoord,
             i.ChunkIndex,
             terrainGridSettings.y);
@@ -340,6 +375,15 @@ float4 PS_Main(VSOut i) : SV_Target
             : float3(1.0f, 1.0f, 1.0f);
         float gridMask = hasAdtLine ? adtMask : chunkMask;
         shadedColor = lerp(shadedColor, gridColor, gridMask);
+    }
+
+    // Do not blend a lower-priority triangle edge into a chunk or ADT edge.
+    // Selecting at the fragment level makes the higher grid level exclusive.
+    bool terrainGridOwnsPixel = adtMask > 0.0001f || chunkMask > 0.0001f;
+    if (renderTerrainWireframe != 0 && !terrainGridOwnsPixel)
+    {
+        float wireframeMask = TerrainWireframeMask(i.Barycentric);
+        shadedColor = lerp(shadedColor, float3(0.55f, 0.65f, 0.75f), wireframeMask);
     }
 
     if (renderTerrainBrush != 0)

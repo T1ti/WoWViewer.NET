@@ -25,6 +25,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _showBoundingBoxes;
     [ObservableProperty] private bool _showBoundingSpheres;
     [ObservableProperty] private bool _showTerrainGrid;
+    [ObservableProperty] private bool _showTerrainWireframe;
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
@@ -46,6 +47,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _showBoundingBoxes = rendererSettings.ShowBoundingBoxes;
         _showBoundingSpheres = rendererSettings.ShowBoundingSpheres;
         _showTerrainGrid = rendererSettings.ShowTerrainGrid;
+        _showTerrainWireframe = rendererSettings.ShowTerrainWireframe;
     }
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
@@ -68,7 +70,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
             EnableWmoPortalCulling = original.Rendering.EnableWmoPortalCulling,
             ShowBoundingBoxes = ShowBoundingBoxes,
             ShowBoundingSpheres = ShowBoundingSpheres,
-            ShowTerrainGrid = ShowTerrainGrid
+            ShowTerrainGrid = ShowTerrainGrid,
+            ShowTerrainWireframe = ShowTerrainWireframe
         },
         KeyboardLayout = ParseKeyboardLayout(KeyboardLayout)
     };

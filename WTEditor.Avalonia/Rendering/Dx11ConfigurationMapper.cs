@@ -30,6 +30,7 @@ internal static class Dx11ConfigurationMapper
         EnableWmoPortalCulling = configuration.EnableWmoPortalCulling,
         ShowBoundingBoxes = configuration.ShowBoundingBoxes,
         ShowBoundingSpheres = configuration.ShowBoundingSpheres,
-        ShowTerrainGrid = configuration.ShowTerrainGrid
+        ShowTerrainGrid = configuration.ShowTerrainGrid,
+        ShowTerrainWireframe = configuration.ShowTerrainWireframe
     };
 }

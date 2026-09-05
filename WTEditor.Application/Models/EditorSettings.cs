@@ -43,6 +43,7 @@ public sealed record RenderingConfiguration
     public bool ShowBoundingBoxes { get; init; }
     public bool ShowBoundingSpheres { get; init; }
     public bool ShowTerrainGrid { get; init; }
+    public bool ShowTerrainWireframe { get; init; }
 
     public RenderingConfiguration Normalize() => this with
     {

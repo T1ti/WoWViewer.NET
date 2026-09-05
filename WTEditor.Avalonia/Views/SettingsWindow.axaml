@@ -46,6 +46,7 @@
             <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />
             <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" />
             <CheckBox Content="Show terrain grid" IsChecked="{Binding ShowTerrainGrid}" />
+            <CheckBox Content="Show terrain wireframe" IsChecked="{Binding ShowTerrainWireframe}" />
           </WrapPanel>
         </StackPanel>
       </TabItem>

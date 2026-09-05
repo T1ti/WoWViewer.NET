@@ -98,6 +98,13 @@
             <TextBlock Text="Terrain grid"/>
           </StackPanel>
         </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainWireframe}"
+                      ToolTip.Tip="Show the terrain triangles; grid lines take priority when both overlays are enabled">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="16" Height="16" Data="M3,20 L12,3 L21,20 Z M3,20 L16,13 L21,20 M12,3 L16,13"/>
+            <TextBlock Text="Terrain wireframe"/>
+          </StackPanel>
+        </ToggleButton>
         <Border Width="1" Margin="3,3" Background="#526170"/>
         <Button Classes="viewport-tool" ToolTip.Tip="Advanced rendering settings for this world viewport">
           <StackPanel Orientation="Horizontal" Spacing="6">

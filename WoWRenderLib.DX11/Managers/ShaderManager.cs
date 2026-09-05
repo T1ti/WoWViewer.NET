@@ -10,6 +10,7 @@ namespace WoWRenderLib.DX11.Managers
     public struct CompiledShader
     {
         public ComPtr<ID3D11VertexShader> VertexShader;
+        public ComPtr<ID3D11GeometryShader> GeometryShader;
         public ComPtr<ID3D11PixelShader> PixelShader;
         public ComPtr<ID3D11InputLayout> InputLayout;
     }
@@ -100,6 +101,7 @@ namespace WoWRenderLib.DX11.Managers
         {
             shader.InputLayout.Dispose();
             shader.PixelShader.Dispose();
+            shader.GeometryShader.Dispose();
             shader.VertexShader.Dispose();
         }
 
@@ -163,6 +165,7 @@ namespace WoWRenderLib.DX11.Managers
 
             var shaderBytes = Encoding.ASCII.GetBytes(shaderSource);
             ComPtr<ID3D11VertexShader> vertexShader = default;
+            ComPtr<ID3D11GeometryShader> geometryShader = default;
             ComPtr<ID3D11PixelShader> pixelShader = default;
 
             // Compile vertex shader.
@@ -192,6 +195,38 @@ namespace WoWRenderLib.DX11.Managers
                 }
 
                 hr.Throw();
+            }
+
+            // The generic ADT shader owns the optional geometry stage used to
+            // assign per-triangle barycentrics for fragment-shader wireframes.
+            // Texture-layer variants share that stage, so they do not compile
+            // duplicate geometry shader objects.
+            ComPtr<ID3D10Blob> geometryCode = default;
+            ComPtr<ID3D10Blob> geometryErrors = default;
+            if (type == "adt" && !adtLayerCount.HasValue)
+            {
+                hr = compiler.Compile
+                (
+                    in shaderBytes[0],
+                    (nuint)shaderBytes.Length,
+                    nameof(shaderSource),
+                    null,
+                    ref Unsafe.NullRef<ID3DInclude>(),
+                    "GS_Main",
+                    "gs_5_0",
+                    0,
+                    0,
+                    ref geometryCode,
+                    ref geometryErrors
+                );
+
+                if (hr.IsFailure)
+                {
+                    if (geometryErrors.Handle is not null)
+                        Console.WriteLine(SilkMarshal.PtrToString((nint)geometryErrors.GetBufferPointer()));
+
+                    hr.Throw();
+                }
             }
 
             // Compile pixel shader.
@@ -234,6 +269,20 @@ namespace WoWRenderLib.DX11.Managers
                     ref vertexShader
                 )
             );
+
+            if (geometryCode.Handle is not null)
+            {
+                SilkMarshal.ThrowHResult
+                (
+                    device.CreateGeometryShader
+                    (
+                        geometryCode.GetBufferPointer(),
+                        geometryCode.GetBufferSize(),
+                        ref Unsafe.NullRef<ID3D11ClassLinkage>(),
+                        ref geometryShader
+                    )
+                );
+            }
 
             // Create pixel shader.
             SilkMarshal.ThrowHResult
@@ -604,12 +653,15 @@ namespace WoWRenderLib.DX11.Managers
             // Clean up any resources.
             vertexCode.Dispose();
             vertexErrors.Dispose();
+            geometryCode.Dispose();
+            geometryErrors.Dispose();
             pixelCode.Dispose();
             pixelErrors.Dispose();
 
             return new CompiledShader
             {
                 VertexShader = vertexShader,
+                GeometryShader = geometryShader,
                 PixelShader = pixelShader,
                 InputLayout = inputLayout
             };

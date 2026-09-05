@@ -59,6 +59,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool ShowBoundingBoxes { get; set; } = false;
         public bool ShowBoundingSpheres { get; set; } = false;
         public bool ShowTerrainGrid { get; set; }
+        public bool ShowTerrainWireframe { get; set; }
 
         public bool RenderADT { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
@@ -85,8 +86,8 @@ namespace WoWRenderLib.DX11.Managers
         private const int MaxTerrainChunksPerTile = 256;
         private const int TerrainVerticesPerChunk = 145;
         private const uint TerrainIndicesPerChunk = 768;
-        private const float TerrainChunkGridHalfWidthInCell = 0.005f;
-        private const float TerrainAdtGridHalfWidthInCell = 0.008f;
+        private const float TerrainChunkGridHalfWidthInCell = 0.004f;
+        private const float TerrainAdtGridHalfWidthInCell = 0.0065f;
         private const uint TerrainFarLodIndicesPerChunk = 384;
         private const int MaxTerrainLayers = 8;
         private const int TerrainHeightTextureSlot = 8;
@@ -2211,6 +2212,10 @@ namespace WoWRenderLib.DX11.Managers
                 deviceContext.RSSetState(rasterizerState);
                 deviceContext.IASetInputLayout(adtShaderProgram.InputLayout);
                 deviceContext.VSSetShader(adtShaderProgram.VertexShader, ref nullClassInstance, 0);
+                var terrainGeometryShader = ShowTerrainWireframe
+                    ? adtShaderProgram.GeometryShader
+                    : default;
+                deviceContext.GSSetShader(terrainGeometryShader, ref nullClassInstance, 0);
                 deviceContext.PSSetShader(adtShaderProgram.PixelShader, ref nullClassInstance, 0);
                 deviceContext.VSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
                 deviceContext.PSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
@@ -2344,6 +2349,8 @@ namespace WoWRenderLib.DX11.Managers
                             TerrainAdtGridHalfWidthInCell,
                             0f,
                             0f),
+                        renderTerrainWireframe = ShowTerrainWireframe ? 1u : 0u,
+                        terrainWireframePadding = Vector3.Zero,
                         terrainBrushCenter = terrainBrushCenter,
                         terrainBrushOuterRadius = TerrainBrushRadius,
                         terrainBrushInnerRadius = TerrainBrushRadius * TerrainBrushInnerRadius,
@@ -2444,6 +2451,8 @@ namespace WoWRenderLib.DX11.Managers
                     }
                 }
             }
+            ComPtr<ID3D11GeometryShader> nullGeometryShader = default;
+            deviceContext.GSSetShader(nullGeometryShader, ref nullClassInstance, 0);
             gpuTimer?.EndTerrain();
             TerrainSubmissionTimeMs = RenderADT
                 ? Math.Max(0, Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - TerrainCullingTimeMs)

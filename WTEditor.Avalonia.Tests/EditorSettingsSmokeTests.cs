@@ -80,7 +80,8 @@ public sealed class EditorSettingsSmokeTests
                 EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
                 ShowBoundingSpheres = true,
-                ShowTerrainGrid = true
+                ShowTerrainGrid = true,
+                ShowTerrainWireframe = true
             },
             KeyboardLayout = KeyboardLayoutMode.Azerty,
             Camera = new CameraState(
@@ -166,7 +167,8 @@ public sealed class EditorSettingsSmokeTests
                 RenderWMO = true,
                 RenderM2 = true,
                 EnableWmoPortalCulling = false,
-                ShowTerrainGrid = false
+                ShowTerrainGrid = false,
+                ShowTerrainWireframe = false
             }
         };
         var store = new MemorySettingsStore(initial);
@@ -180,6 +182,7 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.RenderDoodads = false;
         firstViewport.WmoPortalCullingEnabled = true;
         firstViewport.ShowTerrainGrid = true;
+        firstViewport.ShowTerrainWireframe = true;
 
         Assert.IsNotNull(published);
         Assert.IsFalse(published.RenderADT);
@@ -187,14 +190,17 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(published.RenderWMO);
         Assert.IsTrue(published.EnableWmoPortalCulling);
         Assert.IsTrue(published.ShowTerrainGrid);
+        Assert.IsTrue(published.ShowTerrainWireframe);
         Assert.IsTrue(secondViewport.RenderTerrain);
         Assert.IsTrue(secondViewport.RenderDoodads);
         Assert.IsFalse(secondViewport.WmoPortalCullingEnabled);
         Assert.IsFalse(secondViewport.ShowTerrainGrid);
+        Assert.IsFalse(secondViewport.ShowTerrainWireframe);
         Assert.IsTrue(session.Current.Rendering.RenderADT);
         Assert.IsTrue(session.Current.Rendering.RenderM2);
         Assert.IsFalse(session.Current.Rendering.EnableWmoPortalCulling);
         Assert.IsFalse(session.Current.Rendering.ShowTerrainGrid);
+        Assert.IsFalse(session.Current.Rendering.ShowTerrainWireframe);
         Assert.AreEqual(0, store.SaveCount);
     }
 

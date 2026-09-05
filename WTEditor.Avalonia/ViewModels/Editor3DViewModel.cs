@@ -57,7 +57,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         TileLoadingDistance = TileLoadingDistance,
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres,
-        ShowTerrainGrid = ShowTerrainGrid
+        ShowTerrainGrid = ShowTerrainGrid,
+        ShowTerrainWireframe = ShowTerrainWireframe
     };
     public KeyboardLayoutMode KeyboardLayout => _session.Current.KeyboardLayout;
     public bool HasInitialCameraPosition => _session.Current.Camera != null;
@@ -94,6 +95,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _showBoundingBoxes;
     [ObservableProperty] private bool _showBoundingSpheres;
     [ObservableProperty] private bool _showTerrainGrid;
+    [ObservableProperty] private bool _showTerrainWireframe;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
     [ObservableProperty] private IReadOnlyList<FrameTimingStep> _currentFrameSteps = Array.Empty<FrameTimingStep>();
@@ -165,6 +167,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _showBoundingBoxes = session.Current.Rendering.ShowBoundingBoxes;
         _showBoundingSpheres = session.Current.Rendering.ShowBoundingSpheres;
         _showTerrainGrid = session.Current.Rendering.ShowTerrainGrid;
+        _showTerrainWireframe = session.Current.Rendering.ShowTerrainWireframe;
         _cameraPosition = session.Current.Camera?.Position ?? Vector3.Zero;
         _cameraDirection = session.Current.Camera?.Direction ?? Vector3.Zero;
         _lastProcessCpuTime = _currentProcess.TotalProcessorTime;
@@ -229,6 +232,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     partial void OnShowBoundingBoxesChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnShowBoundingSpheresChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnShowTerrainGridChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnShowTerrainWireframeChanged(bool value) => PublishViewportRenderingConfiguration();
 
     private void PublishViewportRenderingConfiguration()
     {
@@ -597,6 +601,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowBoundingBoxes = configuration.ShowBoundingBoxes;
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;
+            ShowTerrainWireframe = configuration.ShowTerrainWireframe;
         }
         finally
         {

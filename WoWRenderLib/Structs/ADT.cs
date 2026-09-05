@@ -13,6 +13,8 @@ namespace WoWRenderLib.Structs
         public Vector3 firstPos;
         public uint renderTerrainGrid;
         public Vector4 terrainGridSettings;
+        public uint renderTerrainWireframe;
+        public Vector3 terrainWireframePadding;
         public Vector3 terrainBrushCenter;
         public float terrainBrushOuterRadius;
         public float terrainBrushInnerRadius;

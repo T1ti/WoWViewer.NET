@@ -44,6 +44,7 @@ public sealed class RendererSettings
     public bool ShowBoundingBoxes { get; set; }
     public bool ShowBoundingSpheres { get; set; }
     public bool ShowTerrainGrid { get; set; }
+    public bool ShowTerrainWireframe { get; set; }
 
     public RendererSettings Clone() => new()
     {
@@ -62,6 +63,7 @@ public sealed class RendererSettings
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres,
-        ShowTerrainGrid = ShowTerrainGrid
+        ShowTerrainGrid = ShowTerrainGrid,
+        ShowTerrainWireframe = ShowTerrainWireframe
     };
 }
