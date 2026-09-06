@@ -14,7 +14,7 @@ public sealed class MinimapSmokeTests
     {
         Assert.AreEqual(new TilePoint(32, 32), MapCoordinates.PlacementToTile(0, 0));
         Assert.AreEqual(new TilePoint(31, 32), MapCoordinates.PlacementToTile(MapCoordinates.TileSize, 0));
-        Assert.AreEqual(new TilePoint(32, 33), MapCoordinates.PlacementToTile(0, -MapCoordinates.TileSize));
+        Assert.AreEqual(new TilePoint(32, 31), MapCoordinates.PlacementToTile(0, -MapCoordinates.TileSize));
         Assert.AreEqual(new TilePoint(32, 31), MapCoordinates.TerrainToTile(MapCoordinates.TileSize, 0));
         foreach (var tile in new[] { new TilePoint(0, 0), new TilePoint(64, 64), new TilePoint(12.25, 40.5) })
         {
@@ -24,6 +24,9 @@ public sealed class MinimapSmokeTests
             Assert.AreEqual(tile.Y, roundTrip.Y, 0.000001);
         }
         Assert.IsNull(MapCoordinates.PlacementBoundsToTile(double.NaN, 0, 1, 1));
+        Assert.AreEqual(
+            new System.Numerics.Vector3((float)MapCoordinates.ClientOriginOffset, (float)MapCoordinates.ClientOriginOffset, 10),
+            MapCoordinates.TerrainToClient(new System.Numerics.Vector3(0, 0, 10)));
     }
 
     [TestMethod]
@@ -46,10 +49,10 @@ public sealed class MinimapSmokeTests
     {
         var bounds = MapCoordinates.PlacementBoundsToTile(4 * 533.333, 6 * 533.333, 2 * 533.333, 5 * 533.333);
         Assert.IsNotNull(bounds);
-        Assert.AreEqual(28d, bounds.MinX, 0.000001);
-        Assert.AreEqual(26d, bounds.MinY, 0.000001);
-        Assert.AreEqual(30d, bounds.MaxX, 0.000001);
-        Assert.AreEqual(27d, bounds.MaxY, 0.000001);
+        Assert.AreEqual(34d, bounds.MinX, 0.000001);
+        Assert.AreEqual(37d, bounds.MinY, 0.000001);
+        Assert.AreEqual(36d, bounds.MaxX, 0.000001);
+        Assert.AreEqual(38d, bounds.MaxY, 0.000001);
         var service = new DeferredService();
         using var model = new MinimapViewModel(service);
         var load = model.LoadAsync(Map(1) with
@@ -60,9 +63,9 @@ public sealed class MinimapSmokeTests
         service.Requests[0].Completion.SetResult(new MinimapDocument([], 0));
         await load;
         Assert.AreSame(bounds, model.GlobalWmoBounds);
-        Assert.AreEqual(32d, model.Zoom, 0.000001);
-        Assert.AreEqual(0d, model.OffsetX + bounds.MinX * model.Zoom / 64, 0.000001);
-        Assert.AreEqual(1d, model.OffsetX + bounds.MaxX * model.Zoom / 64, 0.000001);
+        Assert.AreEqual(64d / 2.2d, model.Zoom, 0.000001);
+        Assert.AreEqual(1d / 22, model.OffsetX + bounds.MinX * model.Zoom / 64, 0.000001);
+        Assert.AreEqual(21d / 22, model.OffsetX + bounds.MaxX * model.Zoom / 64, 0.000001);
         await model.LoadAsync(null);
         Assert.IsNull(model.GlobalWmoBounds);
     }
@@ -80,6 +83,28 @@ public sealed class MinimapSmokeTests
             Assert.AreEqual(zoom / 128, model.OffsetX, 0.000001);
             Assert.AreEqual(1 - zoom - zoom / 128, model.OffsetY, 0.000001);
         }
+    }
+
+    [TestMethod]
+    public void DoubleClickMapping_PreservesFractionalPositionAtAnyZoomAndPan()
+    {
+        TilePoint? navigation = null;
+        using var model = new MinimapViewModel(new DeferredService(), point => navigation = point)
+        {
+            Zoom = 8,
+            OffsetX = -2.5,
+            OffsetY = -4
+        };
+
+        // Viewport coordinates are chosen to land 45% and 20% into tile (24, 36).
+        model.NavigateAtViewportPoint(
+            (-2.5 + 24.45 * 8 / 64) * 800,
+            (-4 + 36.20 * 8 / 64) * 800,
+            800);
+
+        Assert.IsNotNull(navigation);
+        Assert.AreEqual(24.45, navigation.Value.X, 0.000001);
+        Assert.AreEqual(36.20, navigation.Value.Y, 0.000001);
     }
 
     [TestMethod]
@@ -147,11 +172,11 @@ public sealed class MinimapSmokeTests
         model.OffsetX = model.OffsetY = 0;
         model.ResetViewCommand.Execute(null);
 
-        Assert.AreEqual(16d, model.Zoom);
-        Assert.AreEqual(0d, model.OffsetX + 10 * model.Zoom / 64, 0.00001);
-        Assert.AreEqual(1d, model.OffsetX + 14 * model.Zoom / 64, 0.00001);
-        Assert.AreEqual(0.25, model.OffsetY + 20 * model.Zoom / 64, 0.00001);
-        Assert.AreEqual(0.75, model.OffsetY + 22 * model.Zoom / 64, 0.00001);
+        Assert.AreEqual(64d / 4.4d, model.Zoom, 0.00001);
+        Assert.AreEqual(1d / 22, model.OffsetX + 10 * model.Zoom / 64, 0.00001);
+        Assert.AreEqual(21d / 22, model.OffsetX + 14 * model.Zoom / 64, 0.00001);
+        Assert.AreEqual(3d / 11, model.OffsetY + 20 * model.Zoom / 64, 0.00001);
+        Assert.AreEqual(8d / 11, model.OffsetY + 22 * model.Zoom / 64, 0.00001);
     }
 
     [TestMethod]
@@ -165,9 +190,29 @@ public sealed class MinimapSmokeTests
         });
         service.Requests[0].Completion.SetResult(new MinimapDocument([], 1));
         await load;
-        Assert.AreEqual(64d, model.Zoom);
-        Assert.AreEqual(-63d, model.OffsetX);
-        Assert.AreEqual(0d, model.OffsetY);
+        Assert.AreEqual(64d / 1.1d, model.Zoom, 0.00001);
+        Assert.AreEqual(1d / 22, model.OffsetX + 63 * model.Zoom / 64, 0.00001);
+        Assert.AreEqual(1d / 22, model.OffsetY, 0.00001);
+    }
+
+    [TestMethod]
+    public async Task FitMap_IncludesActiveCameraPositionOutsideMapBounds()
+    {
+        var service = new DeferredService();
+        using var model = new MinimapViewModel(service);
+        var load = model.LoadAsync(Map(1) with
+        {
+            Wdt = new WorldMapWdtMetadata(1, 0) { ActiveTiles = [new(10, 10)] }
+        });
+        service.Requests[0].Completion.SetResult(new MinimapDocument([], 1));
+        await load;
+        model.ActivePosition = new TilePoint(20.5, 22.25);
+        model.ResetViewCommand.Execute(null);
+
+        var markerX = model.OffsetX + model.ActivePosition.Value.X * model.Zoom / 64;
+        var markerY = model.OffsetY + model.ActivePosition.Value.Y * model.Zoom / 64;
+        Assert.IsTrue(markerX is >= 0 and <= 1);
+        Assert.IsTrue(markerY is >= 0 and <= 1);
     }
 
     [TestMethod]

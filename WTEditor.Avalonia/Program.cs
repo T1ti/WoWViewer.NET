@@ -18,8 +18,6 @@ internal static class Program
         WoWRenderLib.Listfile.EnsureLoadedAsync().GetAwaiter().GetResult();
         Services = ConfigureServices().BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
-        Services.GetRequiredService<WorldMapStartupPreloader>().Start();
-
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

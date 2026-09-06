@@ -23,6 +23,27 @@ public static class WDTCache
         var header = root.Header;
         var mapFileDataIds = GetMapFileDataIds(root);
         var hasSplitAdts = mapFileDataIds.Length > 0;
+        WdtGlobalWmoPlacement? globalWmoPlacement = null;
+        if (root.GlobalWmo.Count > 0)
+        {
+            var placement = root.GlobalWmo[0];
+            var path = root.GlobalWmoName.Empty ? string.Empty : root.GlobalWmoName.At(0);
+            var globalWmoFileDataId = placement.NameId;
+            if (!string.IsNullOrWhiteSpace(path) && Listfile.TryGetFileDataID(path, out var resolvedFileDataId))
+                globalWmoFileDataId = resolvedFileDataId;
+            var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
+                ? placement.Scale / 1024f
+                : 1f;
+            globalWmoPlacement = new WdtGlobalWmoPlacement(
+                globalWmoFileDataId,
+                new System.Numerics.Vector3(placement.Position.X, placement.Position.Y, placement.Position.Z),
+                new System.Numerics.Vector3(placement.Rotation.X, placement.Rotation.Y, placement.Rotation.Z),
+                scale,
+                placement.UniqueId,
+                (ushort)placement.Flags,
+                placement.DoodadSet,
+                placement.NameSet);
+        }
 
         var wdt = new WdtFile
         {
@@ -30,6 +51,17 @@ public static class WDTCache
             Flags = header.Flags,
             TexFileDataId = GetTextureFileDataId(header),
             HasSplitAdts = hasSplitAdts,
+            GlobalWmoExtents = root.GlobalWmo.Count > 0
+                ? (new System.Numerics.Vector3(
+                        root.GlobalWmo[0].Extents.Min.X,
+                        root.GlobalWmo[0].Extents.Min.Y,
+                        root.GlobalWmo[0].Extents.Min.Z),
+                    new System.Numerics.Vector3(
+                        root.GlobalWmo[0].Extents.Max.X,
+                        root.GlobalWmo[0].Extents.Max.Y,
+                        root.GlobalWmo[0].Extents.Max.Z))
+                : null,
+            GlobalWmoPlacement = globalWmoPlacement,
             Format = format
         };
 

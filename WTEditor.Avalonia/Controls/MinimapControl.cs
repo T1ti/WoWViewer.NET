@@ -15,6 +15,8 @@ public sealed class MinimapControl : Control
     private static readonly IBrush BackgroundBrush = Brush.Parse("#0B1116");
     private static readonly IBrush WmoBrush = new SolidColorBrush(Colors.LimeGreen, 0.35);
     private static readonly Pen WorldBorderPen = new(new SolidColorBrush(Color.FromRgb(255, 72, 28), 0.45), 2);
+    private static readonly IBrush CameraBrush = Brush.Parse("#39D9FF");
+    private static readonly Pen CameraPen = new(CameraBrush, 2);
     private MinimapViewModel? _model;
     private Point? _dragPoint;
     private double Side => Math.Max(0, Math.Min(Bounds.Width, Bounds.Height));
@@ -114,6 +116,17 @@ public sealed class MinimapControl : Control
             }
             context.DrawGeometry(null, gridPen, grid);
             context.DrawRectangle(null, WorldBorderPen, new Rect(origin, new Size(size, size)));
+            if (_model.ActivePosition is { } active)
+            {
+                var camera = new Point(origin.X + active.X * cell, origin.Y + active.Y * cell);
+                if (_model.ActiveDirection is { } heading)
+                {
+                    var screenDirection = new Vector(heading.X * cell, heading.Y * cell);
+                    if (screenDirection.Length > double.Epsilon)
+                        context.DrawLine(CameraPen, camera, camera + screenDirection.Normalize() * 18);
+                }
+                context.DrawEllipse(CameraBrush, CameraPen, camera, 4, 4);
+            }
         }
     }
 
@@ -135,7 +148,13 @@ public sealed class MinimapControl : Control
     {
         base.OnPointerPressed(e);
         if (_model == null || !Square.Contains(e.GetPosition(this)) || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        if (e.ClickCount == 2) _model.ResetViewCommand.Execute(null);
+        if (e.ClickCount == 2)
+        {
+            var point = e.GetPosition(this) - Square.TopLeft;
+            _dragPoint = null;
+            e.Pointer.Capture(null);
+            _model.NavigateAtViewportPoint(point.X, point.Y, Side);
+        }
         else
         {
             _dragPoint = e.GetPosition(this);

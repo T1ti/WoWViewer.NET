@@ -12,6 +12,7 @@ using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.Services;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11
 {
@@ -189,9 +190,11 @@ namespace WoWRenderLib.DX11
         public Vector3? InitialCameraPosition { get; set; }
         public Vector3? InitialCameraDirection { get; set; }
         public uint CurrentMapHighestUniqueId => sceneManager?.CurrentMapHighestUniqueId ?? 0;
+        public uint CurrentWdtFileDataId => sceneManager?.CurrentWDTFileDataID ?? 0;
         public WowViewerEngineStatus Status { get; private set; } =
             new(WowViewerEngineState.Created, "Renderer created.");
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;
+        private (uint Wdt, byte X, byte Y, Vector2 Position)? _pendingTerrainNavigation;
 
         private bool disposed = false;
 
@@ -353,6 +356,7 @@ namespace WoWRenderLib.DX11
             bboxShaderProgram = shaderManager.GetOrCompileShader("boundingbox");
 
             sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, bboxShaderProgram);
+            sceneManager.TerrainTileHeightAvailable += OnTerrainTileHeightAvailable;
 
             shadersReady = true;
 
@@ -910,6 +914,58 @@ namespace WoWRenderLib.DX11
                 sceneManager.ShowTerrainGrid = Settings.ShowTerrainGrid;
                 sceneManager.ShowTerrainWireframe = Settings.ShowTerrainWireframe;
             }
+        }
+
+        public void NavigateTo(uint wdtFileDataId, double tileX, double tileY, bool isGlobalWmo)
+        {
+            if (!IsInitialized || sceneManager == null || activeCamera == null)
+                return;
+
+            sceneManager.LoadWDT(wdtFileDataId);
+            sceneManager.PreloadTEX();
+            _pendingTerrainNavigation = null;
+
+            if (isGlobalWmo && sceneManager.GetCurrentWDT()?.GlobalWmoExtents is { } extents)
+            {
+                // MODF ground X/Z map to renderer Y/X respectively; renderer Z is elevation.
+                var position = new Vector3(-extents.Min.Z, -extents.Min.X, extents.Max.Y);
+                var opposite = new Vector3(-extents.Max.Z, -extents.Max.X, extents.Min.Y);
+                activeCamera.Position = position;
+                activeCamera.SetDirection(opposite - position);
+                return;
+            }
+
+            var clampedX = Math.Clamp(tileX, 0d, 63.999999d);
+            var clampedY = Math.Clamp(tileY, 0d, 63.999999d);
+            var worldX = (float)((32d - clampedY) * 533.333d);
+            var worldY = (float)((32d - clampedX) * 533.333d);
+            var tile = ((byte)Math.Floor(clampedX), (byte)Math.Floor(clampedY));
+            _pendingTerrainNavigation = (wdtFileDataId, tile.Item1, tile.Item2, new Vector2(worldX, worldY));
+            // Move immediately so this exact tile enters the loading queue.
+            activeCamera.Position = new Vector3(worldX, worldY, activeCamera.Position.Z);
+            if (sceneManager.TryGetTerrainTileMaxHeight(wdtFileDataId, tile.Item1, tile.Item2, out var height))
+                OnTerrainTileHeightAvailable(new MapTile
+                {
+                    wdtFileDataID = wdtFileDataId,
+                    tileX = tile.Item1,
+                    tileY = tile.Item2
+                }, height);
+        }
+
+        private void OnTerrainTileHeightAvailable(MapTile tile, float highestHeight)
+        {
+            if (_pendingTerrainNavigation is not { } navigation ||
+                tile.wdtFileDataID != navigation.Wdt || tile.tileX != navigation.X || tile.tileY != navigation.Y)
+                return;
+
+            var center = SceneManager.GetTileCenterPosition(tile.tileX, tile.tileY);
+            var horizontal = new Vector2(center.X - navigation.Position.X, center.Y - navigation.Position.Y);
+            var direction = horizontal.LengthSquared() > float.Epsilon
+                ? Vector3.Normalize(new Vector3(Vector2.Normalize(horizontal), -MathF.Tan(20f * MathF.PI / 180f)))
+                : -Vector3.UnitZ;
+            activeCamera.Position = new Vector3(navigation.Position, highestHeight + 10f);
+            activeCamera.SetDirection(direction);
+            _pendingTerrainNavigation = null;
         }
 
         public void SetHasFocus(bool focus)

@@ -33,8 +33,8 @@
         <ListBox Classes="mode-list" ItemsSource="{Binding Modes}" SelectedItem="{Binding ActiveMode}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:EditorModeViewModel">
-              <TextBlock Text="{Binding Icon}" Foreground="#EDF4F8" FontSize="20"
-                         HorizontalAlignment="Center" ToolTip.Tip="{Binding DisplayName} · {Binding Description} · Shortcut {Binding Shortcut}"/>
+              <PathIcon Data="{Binding Icon}" Foreground="#EDF4F8" Width="20" Height="20"
+                        HorizontalAlignment="Center" ToolTip.Tip="{Binding DisplayName} · {Binding Description} · Shortcut {Binding Shortcut}"/>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>

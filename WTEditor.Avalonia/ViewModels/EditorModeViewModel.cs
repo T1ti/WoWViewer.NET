@@ -1,4 +1,6 @@
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using WTEditor.Avalonia.Presentation;
 using WoWRenderLib.DX11.Editing;
 
 namespace WTEditor.Avalonia.ViewModels;
@@ -21,7 +23,7 @@ public sealed record EditorModeDefinition(
     string DisplayName,
     string Description,
     string Shortcut,
-    string Icon,
+    Geometry Icon,
     EditorModeCapabilities Capabilities,
     EditorModeId RendererMode);
 
@@ -35,7 +37,7 @@ public static class EditorModeDefinitions
         "Select",
         "Select and inspect objects in the world viewport",
         "1",
-        "⌖",
+        EditorIcons.Select,
         EditorModeCapabilities.Selection,
         EditorModeId.Selection);
 
@@ -44,7 +46,7 @@ public static class EditorModeDefinitions
         "Terrain",
         "Sculpt, smooth, and flatten terrain in the world viewport",
         "2",
-        "⛰",
+        EditorIcons.Terrain,
         EditorModeCapabilities.TerrainEditing,
         EditorModeId.Terrain);
 }
@@ -60,7 +62,7 @@ public partial class EditorModeViewModel(EditorModeDefinition definition) : View
     public string DisplayName => Definition.DisplayName;
     public string Description => Definition.Description;
     public string Shortcut => Definition.Shortcut;
-    public string Icon => Definition.Icon;
+    public Geometry Icon => Definition.Icon;
     public EditorModeCapabilities Capabilities => Definition.Capabilities;
 
     [ObservableProperty]

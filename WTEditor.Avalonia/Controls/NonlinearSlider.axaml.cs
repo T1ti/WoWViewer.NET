@@ -86,8 +86,6 @@ public partial class NonlinearSlider : UserControl
         var minimum = Math.Min(Minimum, Maximum);
         var maximum = Math.Max(Minimum, Maximum);
         var clamped = Math.Clamp(Value, minimum, maximum);
-        if (Math.Abs(clamped - Value) > double.Epsilon)
-            SetCurrentValue(ValueProperty, clamped);
 
         _updatingSlider = true;
         PART_Slider.Value = ToNormalized(clamped);

@@ -6,10 +6,11 @@ using WTEditor.Avalonia.Services;
 
 namespace WTEditor.Avalonia.ViewModels;
 
-public partial class MinimapViewModel(IMinimapService service) : ViewModelBase, IDisposable
+public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>? navigate = null) : ViewModelBase, IDisposable
 {
     public const double MinimumZoom = 64d / 65;
     public const double MaximumZoom = 64;
+    public const double FitPaddingFraction = 0.05;
 
     private CancellationTokenSource? _cancellation;
     private IReadOnlyList<WorldMapTile> _activeTiles = [];
@@ -19,6 +20,8 @@ public partial class MinimapViewModel(IMinimapService service) : ViewModelBase, 
     [ObservableProperty] private double _offsetX = (1 - MinimumZoom) / 2;
     [ObservableProperty] private double _offsetY = (1 - MinimumZoom) / 2;
     [ObservableProperty] private TileBounds? _globalWmoBounds;
+    [ObservableProperty] private TilePoint? _activePosition;
+    [ObservableProperty] private TilePoint? _activeDirection;
 
     public void SelectMap(WorldMapCatalogEntry? map) => _ = LoadAsync(map);
 
@@ -81,7 +84,16 @@ public partial class MinimapViewModel(IMinimapService service) : ViewModelBase, 
         // Include the complete last tile, rather than fitting only its origin.
         var maxX = GlobalWmoBounds?.MaxX ?? _activeTiles.Max(tile => tile.X) + 1;
         var maxY = GlobalWmoBounds?.MaxY ?? _activeTiles.Max(tile => tile.Y) + 1;
-        Zoom = Math.Clamp(64d / Math.Max(1, Math.Max(maxX - minX, maxY - minY)), MinimumZoom, MaximumZoom);
+        if (ActivePosition is { } active)
+        {
+            minX = Math.Min(minX, active.X);
+            minY = Math.Min(minY, active.Y);
+            maxX = Math.Max(maxX, active.X);
+            maxY = Math.Max(maxY, active.Y);
+        }
+        var contentSpan = Math.Max(1, Math.Max(maxX - minX, maxY - minY));
+        var paddedSpan = contentSpan * (1 + 2 * FitPaddingFraction);
+        Zoom = Math.Clamp(64d / paddedSpan, MinimumZoom, MaximumZoom);
         OffsetX = 0.5 - (minX + maxX) * Zoom / 128;
         OffsetY = 0.5 - (minY + maxY) * Zoom / 128;
         ClampOffsets();
@@ -99,6 +111,19 @@ public partial class MinimapViewModel(IMinimapService service) : ViewModelBase, 
         var padding = Zoom / 128;
         OffsetX = Math.Clamp(OffsetX, 1 - Zoom - padding, padding);
         OffsetY = Math.Clamp(OffsetY, 1 - Zoom - padding, padding);
+    }
+
+    public void NavigateAtViewportPoint(double x, double y, double viewportSide)
+    {
+        if (navigate == null || viewportSide <= 0 || !double.IsFinite(x) || !double.IsFinite(y))
+            return;
+
+        var tileX = (x / viewportSide - OffsetX) * 64 / Zoom;
+        var tileY = (y / viewportSide - OffsetY) * 64 / Zoom;
+        if (tileX is < 0 or >= 64 || tileY is < 0 or >= 64)
+            return;
+
+        navigate(new TilePoint(tileX, tileY));
     }
 
     public void Dispose()

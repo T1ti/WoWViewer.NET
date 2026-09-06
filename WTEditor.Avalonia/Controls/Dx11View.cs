@@ -109,6 +109,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
                 _vm.SelectedObjectTransformRequested -= OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested -= OnSelectedWmoPlacementRequested;
+                _vm.WorldNavigationRequested -= OnWorldNavigationRequested;
             }
 
             base.OnDataContextChanged(e);
@@ -122,6 +123,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
                 _vm.SelectedObjectTransformRequested += OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested += OnSelectedWmoPlacementRequested;
+                _vm.WorldNavigationRequested += OnWorldNavigationRequested;
                 if (_benchmarkOptions.Enabled)
                 {
                     _vm.IsDetailedGpuProfilingEnabled = true;
@@ -697,7 +699,8 @@ namespace WTEditor.Avalonia.Controls
                         engine.activeCamera?.Front ?? Vector3.Zero,
                         (int)engine.Stats.DrawCalls,
                         checked((long)engine.Stats.SubmittedTriangleCount),
-                        delta * 1_000d));
+                        delta * 1_000d,
+                        engine.CurrentWdtFileDataId));
                 }
 
                 var gpuUploadMilliseconds = engine.Stats.GpuUploadTimeMs ?? 0;
@@ -1276,6 +1279,13 @@ namespace WTEditor.Avalonia.Controls
                 transform.Scale.X);
         }
 
+        private void OnWorldNavigationRequested(object? sender, ViewModels.WorldNavigationRequest request) =>
+            _rendererSession.Engine?.NavigateTo(
+                request.WdtFileDataId,
+                request.Position.X,
+                request.Position.Y,
+                request.IsGlobalWmo);
+
         private void CompleteTerrainStroke(WowViewerEngine engine)
         {
             var delta = engine.EndTerrainStroke();
@@ -1419,7 +1429,7 @@ namespace WTEditor.Avalonia.Controls
                 TerrainBrush = new TerrainBrushInput
                 {
                     ToolMode = (TerrainBrushMode)(_vm?.TerrainBrushToolMode ?? 0),
-                    Radius = (float)(_vm?.TerrainBrushSize ?? 50),
+                    Radius = (float)(_vm?.TerrainBrushSize ?? 10),
                     Speed = (float)(_vm?.TerrainBrushSpeed ?? 5),
                     InnerRadius = (float)(_vm?.TerrainBrushInnerRadius ?? 0.35),
                     FlattenHeight = (float)(_vm?.TerrainFlattenHeight ?? 0),

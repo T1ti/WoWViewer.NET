@@ -28,4 +28,5 @@ public sealed record ViewportTelemetry(
     Vector3 CameraDirection,
     int DrawCalls,
     long SubmittedTriangleCount,
-    double PresentationIntervalMilliseconds = 0);
+    double PresentationIntervalMilliseconds = 0,
+    uint ActiveWdtFileDataId = 0);

@@ -56,10 +56,10 @@ public sealed class WmoMinimapSmokeTests
     public void ModelProjection_UsesGroundAxesScaleAndPlacementRotation()
     {
         var projected = MapCoordinates.ModelToTile(new Vector3(10, 20, 30), Vector3.Zero, Vector3.Zero, 2);
-        Assert.AreEqual(32 - 40 / MapCoordinates.TileSize, projected.X, 0.000001);
-        Assert.AreEqual(32 - 20 / MapCoordinates.TileSize, projected.Y, 0.000001);
+        Assert.AreEqual(32 + 40 / MapCoordinates.TileSize, projected.X, 0.000001);
+        Assert.AreEqual(32 + 20 / MapCoordinates.TileSize, projected.Y, 0.000001);
         var rotated = MapCoordinates.ModelToTile(new Vector3(10, 0, 0), Vector3.Zero, new Vector3(0, 90, 0), 1);
-        Assert.AreEqual(32 - 10 / MapCoordinates.TileSize, rotated.X, 0.000001);
+        Assert.AreEqual(32 + 10 / MapCoordinates.TileSize, rotated.X, 0.000001);
         Assert.AreEqual(32d, rotated.Y, 0.000001);
     }
 
@@ -73,10 +73,10 @@ public sealed class WmoMinimapSmokeTests
             Vector3.Zero, Vector3.Zero, 1);
         var last = MapCoordinates.ModelToTile(new Vector3(913.99976f, 142.03816f, -90.81402f),
             Vector3.Zero, Vector3.Zero, 1);
-        Assert.AreEqual(modf.MaxX, first.X, 0.000001);
-        Assert.AreEqual(modf.MaxY, first.Y, 0.000001);
-        Assert.AreEqual(modf.MinX, last.X, 0.000001);
-        Assert.AreEqual(modf.MinY, last.Y, 0.000001);
+        Assert.AreEqual(modf.MinX, first.X, 0.000001);
+        Assert.AreEqual(modf.MinY, first.Y, 0.000001);
+        Assert.AreEqual(modf.MaxX, last.X, 0.000001);
+        Assert.AreEqual(modf.MaxY, last.Y, 0.000001);
     }
 
     [TestMethod]
@@ -94,8 +94,8 @@ public sealed class WmoMinimapSmokeTests
         var image = document.WmoImages[0];
         Assert.AreEqual(7, image.GroupIndex);
         // Each tile retains a 128-unit footprint, including the partially filled edge tiles.
-        Assert.AreEqual(-128 / MapCoordinates.TileSize, image.TopRight.Y - image.TopLeft.Y, 0.000001);
-        Assert.AreEqual(128 / MapCoordinates.TileSize, image.BottomLeft.X - image.TopLeft.X, 0.000001);
+        Assert.AreEqual(128 / MapCoordinates.TileSize, image.TopRight.Y - image.TopLeft.Y, 0.000001);
+        Assert.AreEqual(-128 / MapCoordinates.TileSize, image.BottomLeft.X - image.TopLeft.X, 0.000001);
         var nextX = document.WmoImages.Single(tile => tile.OffsetX == 1 && tile.OffsetY == 0);
         var nextY = document.WmoImages.Single(tile => tile.OffsetX == 0 && tile.OffsetY == 1);
         Assert.AreEqual(image.TopRight, nextX.TopLeft);

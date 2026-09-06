@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using WTEditor.Avalonia.Rendering;
+using WTEditor.Avalonia.Services;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.ViewModels;
 using WTEditor.Avalonia.Views;
@@ -75,6 +76,7 @@ public partial class App : global::Avalonia.Application
 
             if (AutomatedBenchmarkOptions.Current.Enabled || !shouldShowProjectSelection)
             {
+                Program.Services.GetRequiredService<WorldMapStartupPreloader>().Start();
                 desktop.MainWindow = Program.Services.GetRequiredService<MainWindow>();
             }
             else
@@ -85,6 +87,7 @@ public partial class App : global::Avalonia.Application
                 {
                     try
                     {
+                        Program.Services.GetRequiredService<WorldMapStartupPreloader>().Start();
                         var mainWindow = Program.Services.GetRequiredService<MainWindow>();
                         desktop.MainWindow = mainWindow;
                         desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;

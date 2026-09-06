@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace WoWRenderLib.Structs;
 
 public readonly record struct MapFileDataIds(
@@ -10,6 +12,16 @@ public readonly record struct MapFileDataIds(
     uint MapTextureN,
     uint MinimapTexture);
 
+public readonly record struct WdtGlobalWmoPlacement(
+    uint FileDataId,
+    Vector3 Position,
+    Vector3 Rotation,
+    float Scale,
+    uint UniqueId,
+    ushort Flags,
+    ushort DoodadSet,
+    ushort NameSet);
+
 public sealed class WdtFile : IDisposable
 {
     internal IDisposable? Format { get; init; }
@@ -18,6 +30,8 @@ public sealed class WdtFile : IDisposable
     public uint Flags { get; init; }
     public uint TexFileDataId { get; init; }
     public bool HasSplitAdts { get; init; }
+    public (Vector3 Min, Vector3 Max)? GlobalWmoExtents { get; init; }
+    public WdtGlobalWmoPlacement? GlobalWmoPlacement { get; init; }
     public List<MapTile> Tiles { get; } = [];
     public Dictionary<(byte X, byte Y), MapFileDataIds> TileFiles { get; } = [];
 

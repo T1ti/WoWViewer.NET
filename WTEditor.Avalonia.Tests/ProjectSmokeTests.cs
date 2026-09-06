@@ -1,6 +1,8 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WTEditor.Application.Models;
 using WTEditor.Application.Services;
+using WTEditor.Application;
+using WTEditor.Avalonia.Services;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -43,6 +45,8 @@ public sealed class ProjectSmokeTests
             };
             service.SaveCurrentSettings(settings);
             Assert.AreEqual("D:\\WoW", store.LoadProject(project).Client.WowDirectory);
+            var restoredSession = new EditorSession(new ProjectEditorSettingsStore(service));
+            Assert.AreEqual("D:\\WoW", restoredSession.Current.Client.WowDirectory);
 
             var retainedFile = Path.Combine(projectFolder, "keep-me.txt");
             File.WriteAllText(retainedFile, "project data");

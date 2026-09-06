@@ -4,6 +4,7 @@ using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.Models;
+using WTEditor.Avalonia.Presentation;
 using WTEditor.Avalonia.Services;
 
 namespace WTEditor.Avalonia.ViewModels;
@@ -28,11 +29,11 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 {
     private static readonly Geometry[] ExpansionIcons =
     [
-        Geometry.Parse("M12,2 C6.5,2 2,6.5 2,12 C2,17.5 6.5,22 12,22 C17.5,22 22,17.5 22,12 C22,6.5 17.5,2 12,2 Z"),
-        Geometry.Parse("M12,2 L22,12 L12,22 L2,12 Z"),
-        Geometry.Parse("M12,2 L20.5,7 L20.5,17 L12,22 L3.5,17 L3.5,7 Z"),
-        Geometry.Parse("M12,2 L21,6 L19,20 L12,23 L5,20 L3,6 Z"),
-        Geometry.Parse("M12,2 L14.7,8.3 L21.5,8.9 L16.4,13.4 L18,20 L12,16.4 L6,20 L7.6,13.4 L2.5,8.9 L9.3,8.3 Z")
+        EditorIcons.ExpansionCircle,
+        EditorIcons.ExpansionDiamond,
+        EditorIcons.ExpansionHexagon,
+        EditorIcons.ExpansionShield,
+        EditorIcons.ExpansionStar
     ];
 
     private static readonly IBrush[] ExpansionBrushes =
@@ -96,7 +97,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         Editor3DViewModel viewport,
         IMinimapService? minimapService = null)
     {
-        Minimap = new MinimapViewModel(minimapService ?? new MinimapService());
+        Minimap = new MinimapViewModel(minimapService ?? new MinimapService(), NavigateFromMinimap);
         _mapCatalogService = mapCatalogService;
         _viewport = viewport;
         _isContentReady = viewport.RendererState == RendererLifecycleState.Ready;
@@ -119,6 +120,24 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     private void OnViewportPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
     {
+        if (eventArgs.PropertyName == nameof(Editor3DViewModel.CameraPosition))
+        {
+            UpdateActivePosition();
+            return;
+        }
+
+        if (eventArgs.PropertyName == nameof(Editor3DViewModel.CameraDirection))
+        {
+            UpdateActivePosition();
+            return;
+        }
+
+        if (eventArgs.PropertyName == nameof(Editor3DViewModel.ActiveWdtFileDataId))
+        {
+            SynchronizeActiveWorldSelection();
+            return;
+        }
+
         if (eventArgs.PropertyName != nameof(Editor3DViewModel.RendererState))
             return;
 
@@ -186,6 +205,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
             UpdateFilterOptions();
             ApplyFilters();
             _isMapsLoaded = true;
+            SynchronizeActiveWorldSelection();
             StatusMessage = $"{_allMaps.Count:N0} maps and WDT headers loaded.";
         }
         catch (OperationCanceledException) when (generation != _catalogGeneration)
@@ -231,8 +251,69 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         SelectedMapType = MapTypeFilters[0];
     }
 
-    partial void OnSelectedMapChanged(WorldMapListItem? value) =>
+    partial void OnSelectedMapChanged(WorldMapListItem? value)
+    {
+        Minimap.ActivePosition = null;
         Minimap.SelectMap(value != null && _mapEntries.TryGetValue(value.Id, out var map) ? map : null);
+        UpdateActivePosition();
+    }
+
+    private void NavigateFromMinimap(WTEditor.Application.Geometry.TilePoint position)
+    {
+        if (SelectedMap == null || !_mapEntries.TryGetValue(SelectedMap.Id, out var map))
+            return;
+
+        _viewport.RequestWorldNavigation(new WorldNavigationRequest(
+            map.Wdt.FileDataId,
+            position,
+            !map.HasTerrain));
+    }
+
+    private void SynchronizeActiveWorldSelection()
+    {
+        if (!_isMapsLoaded || _viewport.ActiveWdtFileDataId == 0)
+            return;
+
+        var active = _allMaps.FirstOrDefault(map =>
+            _mapEntries.TryGetValue(map.Id, out var entry) &&
+            entry.Wdt.FileDataId == _viewport.ActiveWdtFileDataId);
+        if (active == null)
+            return;
+
+        if (!FilteredMaps.Contains(active))
+        {
+            SearchText = string.Empty;
+            SelectedExpansion = ExpansionFilters.FirstOrDefault();
+            SelectedMapType = MapTypeFilters.FirstOrDefault();
+            ShowMapsWithoutTerrain = !active.HasTerrain;
+            ApplyFilters();
+        }
+
+        if (SelectedMap != active)
+        {
+            SelectedMap = active;
+            Minimap.ResetViewCommand.Execute(null);
+        }
+        else
+            UpdateActivePosition();
+    }
+
+    private void UpdateActivePosition()
+    {
+        if (_viewport.ActiveWdtFileDataId == 0)
+        {
+            Minimap.ActivePosition = null;
+            Minimap.ActiveDirection = null;
+            return;
+        }
+
+        Minimap.ActivePosition = WTEditor.Application.Geometry.MapCoordinates.TerrainToTile(
+            _viewport.CameraPosition.X,
+            _viewport.CameraPosition.Y);
+        Minimap.ActiveDirection = new WTEditor.Application.Geometry.TilePoint(
+            -_viewport.CameraDirection.Y,
+            -_viewport.CameraDirection.X);
+    }
 
     partial void OnSearchTextChanged(string value) => ApplyFilters();
     partial void OnSelectedExpansionChanged(MapFilterOption? value) => ApplyFilters();

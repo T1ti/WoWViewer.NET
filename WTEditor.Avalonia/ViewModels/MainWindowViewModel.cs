@@ -56,9 +56,13 @@ public partial class MainWindowViewModel : ViewModelBase
         _projectService = projectService;
         UndoService = undoService;
         UndoService.HistoryChanged += OnHistoryChanged;
+        MainView.ViewportVM.WorldNavigationRequested += OnWorldNavigationRequested;
         _projectService.CurrentProjectChanged += OnCurrentProjectChanged;
         UpdateViewportRenderActivity();
     }
+
+    private void OnWorldNavigationRequested(object? sender, WorldNavigationRequest request) =>
+        SelectedTabIndex = MainEditorTabIndex;
 
     private void OnCurrentProjectChanged(object? sender, ProjectDefinition? project)
     {

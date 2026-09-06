@@ -1342,7 +1342,26 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(EditorModeDefinitions.SelectionId, EditorModeDefinitions.Selection.Id);
         Assert.IsTrue(EditorModeDefinitions.Selection.Capabilities.HasFlag(EditorModeCapabilities.Selection));
         Assert.IsTrue(EditorModeDefinitions.Terrain.Capabilities.HasFlag(EditorModeCapabilities.TerrainEditing));
-        Assert.AreEqual("⛰", EditorModeDefinitions.Terrain.Icon);
+        Assert.IsNotNull(EditorModeDefinitions.Selection.Icon);
+        Assert.IsNotNull(EditorModeDefinitions.Terrain.Icon);
+        Assert.AreNotSame(EditorModeDefinitions.Selection.Icon, EditorModeDefinitions.Terrain.Icon);
+        Assert.AreEqual(10d, new TerrainEditingViewModel().BrushSize);
+    }
+
+    [TestMethod]
+    public void NonlinearSlider_DoesNotOverwriteValueWhileRangeBindingsInitialize()
+    {
+        var slider = new NonlinearSlider
+        {
+            Value = 10d,
+            Minimum = 1d
+        };
+
+        Assert.AreEqual(10d, slider.Value,
+            "A temporary range must not write its clamp back through the two-way Value binding.");
+
+        slider.Maximum = 1000d;
+        Assert.AreEqual(10d, slider.Value);
     }
 
     [TestMethod]

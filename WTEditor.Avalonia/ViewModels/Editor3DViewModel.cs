@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using WTEditor.Application;
 using WTEditor.Application.Models;
 using WTEditor.Application.Services;
+using WTEditor.Application.Geometry;
 using WoWRenderLib.DX11.Editing;
 using WTEditor.Avalonia.Rendering;
 using WoWRenderLib.DX11;
@@ -41,6 +42,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
     public event EventHandler<ObjectTransform>? SelectedObjectTransformRequested;
     public event EventHandler<WmoPlacementSelection>? SelectedWmoPlacementRequested;
+    public event EventHandler<WorldNavigationRequest>? WorldNavigationRequested;
     public UndoService UndoService { get; }
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
@@ -68,12 +70,18 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public string PerformanceEnvironmentLabel => Dx11RuntimeOptions.ProfilerEnvironmentLabel;
     public bool IsPerformanceEnvironmentWarningVisible =>
         Dx11RuntimeOptions.IsDebugBuild || Dx11RuntimeOptions.IsDebugLayerRequested;
+    public Vector3 CameraClientPosition => MapCoordinates.TerrainToClient(CameraPosition);
+    public Vector3 CameraClientDirection => MapCoordinates.TerrainDirectionToClient(CameraDirection);
 
     [ObservableProperty] private double _fps;
     [ObservableProperty] private double _frameTime;
     [ObservableProperty] private double _presentationInterval;
     [ObservableProperty] private Vector3 _cameraPosition;
     [ObservableProperty] private Vector3 _cameraDirection;
+    [ObservableProperty] private uint _activeWdtFileDataId;
+
+    partial void OnCameraPositionChanged(Vector3 value) => OnPropertyChanged(nameof(CameraClientPosition));
+    partial void OnCameraDirectionChanged(Vector3 value) => OnPropertyChanged(nameof(CameraClientDirection));
     [ObservableProperty] private int _drawCalls;
     [ObservableProperty] private long _submittedTriangleCount;
     [ObservableProperty] private float _moveSpeed;
@@ -137,7 +145,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private float _mouseWheel;
     [ObservableProperty] private Vector2 _mousePosition;
     [ObservableProperty] private EditorModeId _editorMode = EditorModeId.Selection;
-    [ObservableProperty] private double _terrainBrushSize = 50;
+    [ObservableProperty] private double _terrainBrushSize = 10;
     [ObservableProperty] private double _terrainBrushInnerRadius = 0.35;
     [ObservableProperty] private int _terrainBrushToolMode;
     [ObservableProperty] private double _terrainBrushSpeed = 5;
@@ -249,6 +257,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         PresentationInterval = telemetry.PresentationIntervalMilliseconds;
         CameraPosition = telemetry.CameraPosition;
         CameraDirection = telemetry.CameraDirection;
+        ActiveWdtFileDataId = telemetry.ActiveWdtFileDataId;
         DrawCalls = telemetry.DrawCalls;
         SubmittedTriangleCount = telemetry.SubmittedTriangleCount;
         _session.UpdateCamera(telemetry.CameraPosition, telemetry.CameraDirection);
@@ -281,6 +290,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public void RequestSelectedWmoPlacement(WmoPlacementSelection selection) =>
         SelectedWmoPlacementRequested?.Invoke(this, selection);
+
+    public void RequestWorldNavigation(WorldNavigationRequest request) =>
+        WorldNavigationRequested?.Invoke(this, request);
 
     partial void OnTerrainBrushSizeChanged(double value)
     {

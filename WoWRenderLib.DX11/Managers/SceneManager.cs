@@ -45,6 +45,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<ulong, TileSceneBounds> tileSceneBounds = [];
         private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
         private readonly HashSet<uint> coarseCulledTileRoots = [];
+        public event Action<MapTile, float>? TerrainTileHeightAvailable;
 
         private static ulong GetTileBoundsKey(MapTile tile) =>
             ((ulong)tile.wdtFileDataID << 16) |
@@ -604,15 +605,58 @@ namespace WoWRenderLib.DX11.Managers
 
                 lock (SceneObjectLock)
                 {
+                    foreach (var adt in adtContainers)
+                    {
+                        adt.LoadCallback -= OnADTContainerLoaded;
+                        adt.Unload();
+                    }
+                    foreach (var wmo in SceneObjects.OfType<WMOContainer>())
+                        WMOCache.Release(wmo.FileDataId, wmo.ParentFileDataId);
+                    foreach (var m2 in SceneObjects.OfType<M2Container>())
+                        M2Cache.Release(m2.FileDataId, m2.ParentFileDataId);
                     SceneObjects.Clear();
                     adtContainers.Clear();
                 }
+                pendingWMODoodads.Clear();
+                uuidUsers.Clear();
+                wmoInstances.Clear();
+                m2Instances.Clear();
+                m2InstancePackets.Clear();
+                SelectedObject = null;
 
                 CurrentWDTFileDataID = wdtFileDataID;
                 currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
                 UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
+                SpawnGlobalWmo();
+                WMOCache.CheckUsers();
+                M2Cache.CheckUsers();
+                BLPCache.CheckUsers();
             }
+        }
+
+        private void SpawnGlobalWmo()
+        {
+            if (currentWDT?.GlobalWmoPlacement is not { FileDataId: not 0 } placement)
+                return;
+
+            var container = new WMOContainer(device, placement.FileDataId, CurrentWDTFileDataID)
+            {
+                Position = placement.Position,
+                Rotation = placement.Rotation,
+                Scale = placement.Scale,
+                UniqueID = placement.UniqueId,
+                PlacementFlags = placement.Flags,
+                PlacementDoodadSet = placement.DoodadSet,
+                PlacementNameSet = placement.NameSet,
+                OnDoodadSetsChanged = RefreshWMODoodads,
+                OnGroupsChanged = _ => UpdateWMOInstanceList()
+            };
+            container.SetDoodadSetsToEnable([placement.DoodadSet]);
+            lock (SceneObjectLock)
+                SceneObjects.Add(container);
+            pendingWMODoodads.Enqueue(container);
+            UpdateWMOInstanceList();
         }
 
         public void PreloadTEX()
@@ -632,6 +676,7 @@ namespace WoWRenderLib.DX11.Managers
                 currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
                 UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
+                SpawnGlobalWmo();
             }
             return currentWDT;
         }
@@ -1011,6 +1056,21 @@ namespace WoWRenderLib.DX11.Managers
             M2Cache.GetLoadQueueCount() +
             BLPCache.GetQueueCount();
 
+        public bool TryGetTerrainTileMaxHeight(uint wdtFileDataId, byte tileX, byte tileY, out float height)
+        {
+            var container = adtContainers.FirstOrDefault(candidate =>
+                candidate.IsLoaded && candidate.mapTile.wdtFileDataID == wdtFileDataId &&
+                candidate.mapTile.tileX == tileX && candidate.mapTile.tileY == tileY);
+            if (container == null)
+            {
+                height = 0;
+                return false;
+            }
+
+            height = container.Terrain.terrainBounds.Max.Z;
+            return true;
+        }
+
         private void OnADTContainerLoaded(ADTContainer adtContainer, Terrain terrain)
         {
             // unregister the callback, adts only load once, probably
@@ -1024,6 +1084,7 @@ namespace WoWRenderLib.DX11.Managers
             }
             owningTileBounds.SetTerrain(terrain.rootADTFileDataID, terrain.terrainBounds);
             tileSceneBoundsByRoot[terrain.rootADTFileDataID] = owningTileBounds;
+            TerrainTileHeightAvailable?.Invoke(adtContainer.mapTile, terrain.terrainBounds.Max.Z);
 
             foreach (var worldModel in terrain.worldModelBatches)
             {
@@ -1253,6 +1314,11 @@ namespace WoWRenderLib.DX11.Managers
 
             lock (SceneObjectLock)
             {
+                // Terrain is opaque for selection: an object's bounds may only win
+                // when their first intersection is closer than the terrain surface.
+                if (TryRaycastTerrainLocked(ray, out var terrainHit))
+                    closestDistance = Vector3.Distance(ray.Origin, terrainHit.WorldPosition);
+
                 foreach (var sceneObject in SceneObjects)
                 {
                     if (sceneObject is ADTContainer)

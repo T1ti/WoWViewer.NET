@@ -3,6 +3,7 @@
              xmlns:controls="using:WTEditor.Avalonia.Controls"
              xmlns:models="using:WTEditor.Application.Models"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:icons="using:WTEditor.Avalonia.Presentation"
              x:Class="WTEditor.Avalonia.Controls.FloatingMetricsPanel"
              x:DataType="vm:Editor3DViewModel"
              MinWidth="360" MinHeight="320">
@@ -29,7 +30,7 @@
         <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <PathIcon Width="16" Height="16" Foreground="#6CB6FF"
-                      Data="M2,18 L2,11 L6,11 L6,15 L10,15 L10,7 L14,7 L14,13 L18,13 L18,4 L22,4 L22,18 Z"/>
+                      Data="{x:Static icons:EditorIcons.Profiler}"/>
             <TextBlock Text="Frame profiler" FontWeight="SemiBold"/>
           </StackPanel>
           <TextBlock Grid.Column="1" Text="{Binding PerformanceEnvironmentLabel}" Foreground="#AFC7DC"
@@ -41,7 +42,7 @@
                   ToolTip.Tip="Waits 2 seconds for GPU timing to settle, then records 10 seconds"/>
           <Button Grid.Column="4" Width="28" Height="26" Padding="0"
                   Command="{Binding CloseMetricsPanelCommand}" ToolTip.Tip="Close profiler">
-            <PathIcon Width="12" Height="12" Data="M4,4 L20,20 M20,4 L4,20"/>
+            <PathIcon Width="12" Height="12" Data="{x:Static icons:EditorIcons.Close}"/>
           </Button>
         </Grid>
       </Border>

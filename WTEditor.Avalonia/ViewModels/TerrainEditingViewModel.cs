@@ -20,7 +20,7 @@ public partial class TerrainEditingViewModel : ViewModelBase
     private TerrainToolMode _toolMode = TerrainToolMode.Sculpt;
 
     [ObservableProperty]
-    private double _brushSize = 50;
+    private double _brushSize = 10;
 
     public double BrushSizeMinimum => 1d;
     public double BrushSizeMaximum => 1000d;

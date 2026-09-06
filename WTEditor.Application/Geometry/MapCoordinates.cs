@@ -16,24 +16,37 @@ public static class MapCoordinates
     /// <summary>Model-local XYZ to placement X/up/Z, with right-handed Euler X/Y/Z rotations in degrees.</summary>
     public static TilePoint ModelToTile(Vector3 local, Vector3 position, Vector3 rotation, float scale)
     {
-        // File-space MODF extents use (model Y, model Z, model X) at zero rotation.
-        // PlacementToTile already reverses the ground axes; do not reverse them twice.
-        var placementLocal = new Vector3(local.Y, local.Z, local.X) * scale;
+        // Keep this identical to WMOContainer.GetModelMatrix. The renderer consumes
+        // unmodified WMO vertices, remaps placement axes in the translation, and
+        // applies its final world-axis correction after the placement transform.
         const float radians = MathF.PI / 180;
-        var transform = Matrix4x4.CreateRotationX(rotation.X * radians)
-            * Matrix4x4.CreateRotationY(rotation.Y * radians)
-            * Matrix4x4.CreateRotationZ(rotation.Z * radians);
-        var world = Vector3.Transform(placementLocal, transform) + position;
-        return PlacementToTile(world.X, world.Z);
+        var transform = Matrix4x4.CreateScale(scale)
+            * Matrix4x4.CreateRotationX(rotation.Z * radians)
+            * Matrix4x4.CreateRotationY(rotation.X * radians)
+            * Matrix4x4.CreateRotationZ((rotation.Y + 90f) * radians)
+            * Matrix4x4.CreateTranslation(position.X, position.Z, position.Y)
+            * Matrix4x4.CreateRotationZ(-270f * radians);
+        var renderer = Vector3.Transform(local, transform);
+        return TerrainToTile(renderer.X, renderer.Y);
     }
 
     public const int TilesPerAxis = 64;
     public const double CenterTile = TilesPerAxis / 2d;
     public const double TileSize = 533.333;
+    public const double ClientOriginOffset = CenterTile * TileSize;
 
     /// <summary>Terrain X is north/south, Y is west/east; tile X is horizontal.</summary>
     public static TilePoint TerrainToTile(double x, double y) =>
         new(CenterTile - y / TileSize, CenterTile - x / TileSize);
+
+    /// <summary>Center-origin renderer terrain coordinates to top-left-origin client coordinates.</summary>
+    public static Vector3 TerrainToClient(Vector3 position) => new(
+        (float)(ClientOriginOffset - position.X),
+        (float)(ClientOriginOffset - position.Y),
+        position.Z);
+
+    public static Vector3 TerrainDirectionToClient(Vector3 direction) =>
+        new(-direction.X, -direction.Y, direction.Z);
 
     /// <summary>
     /// Center-relative MDDF/MODF ground coordinates: X is west/east, Z is north/south.
@@ -41,19 +54,21 @@ public static class MapCoordinates
     /// This applies x' = 32*T - x and z' = 32*T - z, then divides by T.
     /// </summary>
     public static TilePoint PlacementToTile(double x, double z) =>
-        new(CenterTile - x / TileSize, CenterTile - z / TileSize);
+        new(CenterTile - x / TileSize, CenterTile + z / TileSize);
 
     /// <summary>Inverse of PlacementToTile, returning placement ground X/Z in world units.</summary>
     public static (double X, double Z) TileToPlacement(TilePoint point) =>
-        ((CenterTile - point.X) * TileSize, (CenterTile - point.Y) * TileSize);
+        ((CenterTile - point.X) * TileSize, (point.Y - CenterTile) * TileSize);
 
     /// <summary>Projects already-transformed MODF extents; do not add placement or rotate again.</summary>
     public static TileBounds? PlacementBoundsToTile(double x1, double z1, double x2, double z2)
     {
         if (!double.IsFinite(x1) || !double.IsFinite(z1) || !double.IsFinite(x2) || !double.IsFinite(z2))
             return null;
-        var first = PlacementToTile(x1, z1);
-        var second = PlacementToTile(x2, z2);
+        // MODF extents are stored in the already-oriented WMO bounds layout;
+        // unlike the placement origin, their X axis corresponds to model Y.
+        var first = new TilePoint(CenterTile + x1 / TileSize, CenterTile + z1 / TileSize);
+        var second = new TilePoint(CenterTile + x2 / TileSize, CenterTile + z2 / TileSize);
         return new(Math.Min(first.X, second.X), Math.Min(first.Y, second.Y),
             Math.Max(first.X, second.X), Math.Max(first.Y, second.Y));
     }
