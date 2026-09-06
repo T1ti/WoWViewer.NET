@@ -145,12 +145,18 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private float _mouseWheel;
     [ObservableProperty] private Vector2 _mousePosition;
     [ObservableProperty] private EditorModeId _editorMode = EditorModeId.Selection;
-    [ObservableProperty] private double _terrainBrushSize = 10;
-    [ObservableProperty] private double _terrainBrushInnerRadius = 0.35;
+    [ObservableProperty] private double _brushSize = 10;
+    [ObservableProperty] private double _brushFalloff = 0.35;
+    [ObservableProperty] private bool _brushHasFalloff = true;
+    [ObservableProperty] private BrushShape _brushShape = BrushShape.Circle;
+    [ObservableProperty] private BrushFalloffProfile _brushFalloffProfile = BrushFalloffProfile.Smooth;
     [ObservableProperty] private int _terrainBrushToolMode;
     [ObservableProperty] private double _terrainBrushSpeed = 5;
     [ObservableProperty] private double _terrainFlattenHeight;
     [ObservableProperty] private int _terrainSmoothIterations = 1;
+    [ObservableProperty] private int _textureBrushToolMode;
+    [ObservableProperty] private double _textureBrushOpacity = 255;
+    [ObservableProperty] private double _textureBrushStrength = 1;
 
 
     public Editor3DViewModel(
@@ -294,12 +300,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public void RequestWorldNavigation(WorldNavigationRequest request) =>
         WorldNavigationRequested?.Invoke(this, request);
 
-    partial void OnTerrainBrushSizeChanged(double value)
+    partial void OnBrushSizeChanged(double value)
     {
         var normalized = Math.Clamp(value, 1, 1000);
         if (normalized != value)
         {
-            TerrainBrushSize = normalized;
+            BrushSize = normalized;
             return;
         }
 
@@ -315,15 +321,35 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         }
     }
 
-    partial void OnTerrainBrushInnerRadiusChanged(double value)
+    partial void OnBrushFalloffChanged(double value)
     {
         var normalized = Math.Clamp(value, 0, 1);
         if (normalized != value)
         {
-            TerrainBrushInnerRadius = normalized;
+            BrushFalloff = normalized;
             return;
         }
 
+    }
+
+    partial void OnTextureBrushOpacityChanged(double value)
+    {
+        var normalized = Math.Clamp(value, 0, 255);
+        if (normalized != value)
+        {
+            TextureBrushOpacity = normalized;
+            return;
+        }
+    }
+
+    partial void OnTextureBrushStrengthChanged(double value)
+    {
+        var normalized = Math.Clamp(value, 0, 1);
+        if (normalized != value)
+        {
+            TextureBrushStrength = normalized;
+            return;
+        }
     }
 
     public void UpdatePerformanceProfile(FrameProfileSnapshot snapshot)

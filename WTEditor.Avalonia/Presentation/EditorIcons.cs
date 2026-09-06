@@ -10,6 +10,12 @@ public static class EditorIcons
     public static Geometry Data { get; } = Geometry.Parse("M4,5 C4,2.5 20,2.5 20,5 C20,7.5 4,7.5 4,5 Z M4,8 C8,10 16,10 20,8 L20,12 C16,14 8,14 4,12 Z M4,15 C8,17 16,17 20,15 L20,19 C20,21.5 4,21.5 4,19 Z");
     public static Geometry Select { get; } = Geometry.Parse("M5,2 L20,13 L13.2,14.2 L17,21 L13.5,23 L9.7,16 L5,20 Z");
     public static Geometry Terrain { get; } = Geometry.Parse("M2,20 L8.5,8 L12,13 L15.5,7 L22,20 Z");
+    public static Geometry Texture { get; } = Geometry.Parse("M4,3 H17 A4,4 0 0 1 21,7 V15 A4,4 0 0 1 17,19 H13 V22 H9 V19 H4 A2,2 0 0 1 2,17 V5 A2,2 0 0 1 4,3 Z M6,7 H17 V11 H6 Z");
+    public static Geometry Sculpt { get; } = Geometry.Parse("M3,18 H21 V21 H3 Z M11,3 H13 V13 L16,10 L18,12 L12,18 L6,12 L8,10 L11,13 Z");
+    public static Geometry Smooth { get; } = Geometry.Parse("M3,8 C6,4 9,4 12,8 C15,12 18,12 21,8 V12 C18,16 15,16 12,12 C9,8 6,8 3,12 Z");
+    public static Geometry Flatten { get; } = Geometry.Parse("M3,5 H21 V8 H3 Z M6,11 H18 V14 H6 Z M3,17 H21 V20 H3 Z");
+    public static Geometry Paint { get; } = Geometry.Parse("M4,16 L15,5 L19,9 L8,20 L3,21 Z M16,4 L18,2 L22,6 L20,8 Z");
+    public static Geometry Colour { get; } = Geometry.Parse("M12,2 C9,7 5,11 5,16 A7,7 0 0 0 19,16 C19,11 15,7 12,2 Z");
     public static Geometry Wmo { get; } = Geometry.Parse("M3,21 L3,9 L6,9 L6,5 L9,5 L9,9 L15,9 L15,5 L18,5 L18,9 L21,9 L21,21 L15,21 L15,15 L9,15 L9,21 Z");
     public static Geometry Doodad { get; } = Geometry.Parse("M12,2 L21,7 L21,17 L12,22 L3,17 L3,7 Z M5,8 L11,11.3 L11,19.5 L5,16 Z M13,11.3 L19,8 L19,16 L13,19.5 Z");
     public static Geometry Grid { get; } = Geometry.Parse("M3,3 H8 V8 H3 Z M10,3 H14 V8 H10 Z M16,3 H21 V8 H16 Z M3,10 H8 V14 H3 Z M10,10 H14 V14 H10 Z M16,10 H21 V14 H16 Z M3,16 H8 V21 H3 Z M10,16 H14 V21 H10 Z M16,16 H21 V21 H16 Z");

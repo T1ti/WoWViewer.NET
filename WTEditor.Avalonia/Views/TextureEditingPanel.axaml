@@ -2,8 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
              xmlns:controls="using:WTEditor.Avalonia.Controls"
-             x:Class="WTEditor.Avalonia.Views.TerrainEditingPanel"
-             x:DataType="vm:TerrainEditingViewModel">
+             x:Class="WTEditor.Avalonia.Views.TextureEditingPanel"
+             x:DataType="vm:TextureEditingViewModel">
   <UserControl.Styles>
     <Style Selector="TextBlock.panel-heading">
       <Setter Property="Foreground" Value="#F3F7FA"/>
@@ -26,12 +26,12 @@
       <StackPanel Margin="13" Spacing="12">
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel Spacing="2">
-            <TextBlock Classes="panel-heading" Text="Terrain tools"/>
+            <TextBlock Classes="panel-heading" Text="Texture tools"/>
             <TextBlock Classes="muted" Text="Brush editing"/>
           </StackPanel>
           <Button Grid.Column="1" Content="×" Width="26" Height="26" Padding="0"
                   Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
-                  Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide terrain tools"/>
+                  Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide texture tools"/>
         </Grid>
 
         <StackPanel Spacing="6">
@@ -44,36 +44,25 @@
 
         <StackPanel Spacing="6">
           <TextBlock Classes="section-label" Text="TOOL SETTINGS"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Speed" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="7">
+            <TextBlock Text="Opacity" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-              <controls:NonlinearSlider Value="{Binding Speed}" Minimum="{Binding SpeedMinimum}"
-                                        Maximum="{Binding SpeedMaximum}" Curve="{Binding SpeedCurve}"
-                                        Width="118" VerticalAlignment="Center"/>
-              <TextBlock Text="{Binding Speed, StringFormat={}{0:0.0}}" Width="42" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+              <Slider Value="{Binding Opacity}" Minimum="{Binding OpacityMinimum}"
+                      Maximum="{Binding OpacityMaximum}" TickFrequency="1" IsSnapToTickEnabled="True"
+                      Width="118" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding Opacity, StringFormat={}{0:0}}" Width="42" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Text="Strength" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
+            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+              <Slider Value="{Binding Strength}" Minimum="0" Maximum="1" Width="118" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding Strength, StringFormat={}{0:0%}}" Width="42" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
             </StackPanel>
           </Grid>
         </StackPanel>
 
-        <StackPanel IsVisible="{Binding IsFlattenSelected}" Spacing="6">
-          <TextBlock Classes="section-label" Text="FLATTEN TARGET"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Height" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
-            <NumericUpDown Grid.Column="1" Value="{Binding FlattenHeight}" Increment="0.5" FormatString="0.0" Width="92"/>
-          </Grid>
-        </StackPanel>
-
-        <StackPanel IsVisible="{Binding IsSmoothSelected}" Spacing="6">
-          <TextBlock Classes="section-label" Text="SMOOTHING"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Iterations" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
-            <NumericUpDown Grid.Column="1" Value="{Binding SmoothIterations}" Minimum="1" Maximum="8" Increment="1" Width="92"/>
-          </Grid>
-        </StackPanel>
-
-        <Border Background="#1B3038" BorderBrush="#315E6B" BorderThickness="1" CornerRadius="4" Padding="8">
-          <TextBlock Text="Move over terrain to position the brush. Hold Shift or Control with the left mouse button to edit."
-                     Foreground="#9FC0CA" FontSize="10" TextWrapping="Wrap"/>
+        <Border Background="#382B20" BorderBrush="#6A5134" BorderThickness="1" CornerRadius="4" Padding="8">
+          <TextBlock Text="Move over terrain to position the texture brush. Texture application will use the selected submode and opacity."
+                     Foreground="#DFC49D" FontSize="10" TextWrapping="Wrap"/>
         </Border>
       </StackPanel>
     </ScrollViewer>

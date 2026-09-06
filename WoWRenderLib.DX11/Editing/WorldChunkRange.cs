@@ -34,7 +34,8 @@ public static class WorldChunkRange
         Func<TTile, IReadOnlyList<TChunk>> getChunks,
         Func<TChunk, BoundingBox> getChunkBounds,
         Func<WorldChunkRangeContext<TTile, TChunk>, bool> visitChunk,
-        Action<TTile>? markTileChanged = null)
+        Action<TTile>? markTileChanged = null,
+        float? intersectionRadius = null)
     {
         ArgumentNullException.ThrowIfNull(tiles);
         ArgumentNullException.ThrowIfNull(isLoaded);
@@ -60,7 +61,10 @@ public static class WorldChunkRange
 
             var localCenter = Vector3.Transform(worldPosition, inverseModelMatrix);
             var localRadius = GetConservativeLocalRadius(radius, inverseModelMatrix);
-            if (!Intersects(localCenter, getTileBounds(tile), localRadius))
+            var localIntersectionRadius = GetConservativeLocalRadius(
+                intersectionRadius ?? radius,
+                inverseModelMatrix);
+            if (!Intersects(localCenter, getTileBounds(tile), localIntersectionRadius))
                 continue;
 
             var tileChanged = false;
@@ -68,7 +72,7 @@ public static class WorldChunkRange
             for (var chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
             {
                 var chunk = chunks[chunkIndex];
-                if (!Intersects(localCenter, getChunkBounds(chunk), localRadius))
+                if (!Intersects(localCenter, getChunkBounds(chunk), localIntersectionRadius))
                     continue;
 
                 tileChanged |= visitChunk(new WorldChunkRangeContext<TTile, TChunk>(

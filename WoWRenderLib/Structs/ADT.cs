@@ -15,12 +15,13 @@ namespace WoWRenderLib.Structs
         public Vector4 terrainGridSettings;
         public uint renderTerrainWireframe;
         public Vector3 terrainWireframePadding;
-        public Vector3 terrainBrushCenter;
-        public float terrainBrushOuterRadius;
-        public float terrainBrushInnerRadius;
-        public uint renderTerrainBrush;
-        public Vector2 terrainBrushPadding;
-        public Vector4 terrainBrushColor;
+        public Vector3 brushCenter;
+        public float brushOuterRadius;
+        public float brushFalloffRadius;
+        public uint renderBrush;
+        public uint brushShape;
+        public uint brushFalloffProfile;
+        public Vector4 brushColor;
     }
 
     public struct ParsedADT

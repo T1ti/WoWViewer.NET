@@ -1342,10 +1342,74 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(EditorModeDefinitions.SelectionId, EditorModeDefinitions.Selection.Id);
         Assert.IsTrue(EditorModeDefinitions.Selection.Capabilities.HasFlag(EditorModeCapabilities.Selection));
         Assert.IsTrue(EditorModeDefinitions.Terrain.Capabilities.HasFlag(EditorModeCapabilities.TerrainEditing));
+        Assert.IsTrue(EditorModeDefinitions.Texture.Capabilities.HasFlag(EditorModeCapabilities.TextureEditing));
         Assert.IsNotNull(EditorModeDefinitions.Selection.Icon);
         Assert.IsNotNull(EditorModeDefinitions.Terrain.Icon);
+        Assert.IsNotNull(EditorModeDefinitions.Texture.Icon);
         Assert.AreNotSame(EditorModeDefinitions.Selection.Icon, EditorModeDefinitions.Terrain.Icon);
-        Assert.AreEqual(10d, new TerrainEditingViewModel().BrushSize);
+        Assert.AreEqual(10d, new TerrainEditingViewModel().Brush.Size);
+    }
+
+    [TestMethod]
+    public void BrushSettings_AreSharedWhileToolSpecificSettingsStaySeparate()
+    {
+        var terrain = new TerrainEditingViewModel();
+        var texture = new TextureEditingViewModel();
+
+        CollectionAssert.AreEquivalent(
+            new[] { BrushShape.Circle, BrushShape.Square },
+            terrain.Brush.AvailableBrushes.Select(option => option.Shape).Distinct().ToArray());
+        CollectionAssert.AreEqual(
+            terrain.Brush.AvailableBrushes.Select(option => option.Id).ToArray(),
+            texture.Brush.AvailableBrushes.Select(option => option.Id).ToArray());
+        CollectionAssert.AreEqual(new[] { "Paint", "Colour" },
+            texture.SubModes.Select(mode => mode.DisplayName).ToArray());
+        Assert.IsTrue(texture.SubModes.All(mode => mode.Icon != null));
+        Assert.IsTrue(texture.SubModes.All(mode => mode.UsesFalloff));
+
+        terrain.Speed = 100;
+        texture.Opacity = 300;
+        texture.Strength = -1;
+        Assert.AreEqual(50d, terrain.Speed);
+        Assert.AreEqual(255d, texture.Opacity);
+        Assert.AreEqual(0d, texture.Strength);
+        Assert.IsTrue(terrain.Brush.HasFalloff);
+        Assert.AreEqual(0.35d, terrain.Brush.Falloff);
+
+        terrain.Brush.SelectedBrush = terrain.Brush.AvailableBrushes.Single(
+            brush => brush.Id == BuiltInBrushPreset.HardRound);
+        Assert.IsFalse(terrain.Brush.HasFalloff);
+        Assert.IsFalse(terrain.Brush.IsFalloffVisible);
+    }
+
+    [TestMethod]
+    public void BrushMath_SupportsSquareFootprintsAndOptionalFalloff()
+    {
+        var circle = new BrushInput(
+            10f,
+            0.5f,
+            false,
+            BrushShape.Circle,
+            BrushFalloffProfile.Smooth);
+        var square = circle with { Shape = BrushShape.Square };
+
+        Assert.AreEqual(0f, BrushMath.CalculateInfluence(8f, 8f, circle));
+        Assert.AreEqual(1f, BrushMath.CalculateInfluence(8f, 8f, square));
+        Assert.AreEqual(1f, BrushMath.CalculateInfluence(9f, 0f, circle));
+
+        var softened = circle with { HasFalloff = true };
+        var edgeInfluence = BrushMath.CalculateInfluence(9f, 0f, softened);
+        Assert.IsTrue(edgeInfluence > 0f && edgeInfluence < 1f);
+        var linear = softened with { FalloffProfile = BrushFalloffProfile.Linear };
+        var gaussian = softened with { FalloffProfile = BrushFalloffProfile.Gaussian };
+        Assert.AreNotEqual(
+            BrushMath.CalculateInfluence(6.25f, 0f, linear),
+            BrushMath.CalculateInfluence(6.25f, 0f, softened));
+        Assert.AreNotEqual(
+            BrushMath.CalculateInfluence(6.25f, 0f, gaussian),
+            BrushMath.CalculateInfluence(6.25f, 0f, softened));
+        Assert.AreEqual(288, Marshal.SizeOf<ADTPerObjectCB>(),
+            "The managed ADT constant buffer must retain the shader's 16-byte register layout.");
     }
 
     [TestMethod]

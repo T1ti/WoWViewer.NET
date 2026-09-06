@@ -71,10 +71,13 @@ namespace WoWRenderLib.DX11.Managers
         public float ModelRenderDistance { get; set; } = 20_000f;
         public float MinimumModelScreenSizePixels { get; set; } = 1f;
         public float TerrainLodTransitionPixels { get; set; } = 32f;
-        public Vector3? TerrainBrushWorldPosition { get; private set; }
-        public float TerrainBrushRadius { get; private set; }
-        public float TerrainBrushInnerRadius { get; private set; }
-        public Vector4 TerrainBrushColor { get; private set; } = new(0.2f, 0.85f, 1f, 1f);
+        public Vector3? BrushWorldPosition { get; private set; }
+        public float BrushRadius { get; private set; }
+        public float BrushFalloff { get; private set; }
+        public bool BrushHasFalloff { get; private set; }
+        public BrushShape BrushShape { get; private set; }
+        public BrushFalloffProfile BrushFalloffProfile { get; private set; }
+        public Vector4 BrushColor { get; private set; } = new(0.2f, 0.85f, 1f, 1f);
         private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
 
         // World-space light from north-west at a 45° elevation. WoW's world
@@ -1366,11 +1369,29 @@ namespace WoWRenderLib.DX11.Managers
             SelectedObject?.IsSelected = true;
         }
 
-        public void ClearTerrainBrush()
+        public void ClearBrushPreview()
         {
-            TerrainBrushWorldPosition = null;
-            TerrainBrushRadius = 0f;
-            TerrainBrushInnerRadius = 0f;
+            BrushWorldPosition = null;
+            BrushRadius = 0f;
+            BrushFalloff = 0f;
+            BrushHasFalloff = false;
+        }
+
+        public bool UpdateBrushPreview(
+            Vector2 mousePosition,
+            Camera camera,
+            int windowWidth,
+            int windowHeight,
+            in BrushInput brush,
+            Vector4 color)
+        {
+            if (!TryUpdateBrushPreview(mousePosition, camera, windowWidth, windowHeight, brush, color, out _))
+            {
+                ClearBrushPreview();
+                return false;
+            }
+
+            return true;
         }
 
         public void UpdateTerrainBrush(
@@ -1378,9 +1399,37 @@ namespace WoWRenderLib.DX11.Managers
             Camera camera,
             int windowWidth,
             int windowHeight,
+            in BrushInput brush,
             TerrainBrushInput input,
             bool apply,
             float deltaTime)
+        {
+            var previewColor = TerrainBrushTools.Get(input.ToolMode).PreviewColor;
+            if (!TryUpdateBrushPreview(
+                    mousePosition,
+                    camera,
+                    windowWidth,
+                    windowHeight,
+                    brush,
+                    previewColor,
+                    out var hit))
+            {
+                ClearBrushPreview();
+                return;
+            }
+
+            if (apply)
+                ApplyTerrainBrush(hit, brush, input, Math.Clamp(deltaTime, 0f, 0.1f));
+        }
+
+        private bool TryUpdateBrushPreview(
+            Vector2 mousePosition,
+            Camera camera,
+            int windowWidth,
+            int windowHeight,
+            in BrushInput brush,
+            Vector4 color,
+            out TerrainRayHit hit)
         {
             var ray = camera.GetRayFromScreen(
                 mousePosition.X,
@@ -1388,19 +1437,19 @@ namespace WoWRenderLib.DX11.Managers
                 windowWidth,
                 windowHeight);
 
-            if (!TryRaycastTerrain(ray, out var hit))
-            {
-                ClearTerrainBrush();
-                return;
-            }
+            if (!TryRaycastTerrain(ray, out hit))
+                return false;
 
-            TerrainBrushWorldPosition = hit.WorldPosition;
-            TerrainBrushRadius = Math.Clamp(input.Radius, 1f, 1000f);
-            TerrainBrushInnerRadius = Math.Clamp(input.InnerRadius, 0f, 1f);
-            TerrainBrushColor = TerrainBrushTools.Get(input.ToolMode).PreviewColor;
-
-            if (apply)
-                ApplyTerrainBrush(hit, input, Math.Clamp(deltaTime, 0f, 0.1f));
+            BrushWorldPosition = hit.WorldPosition;
+            BrushRadius = Math.Clamp(brush.Radius, 1f, 1000f);
+            BrushFalloff = Math.Clamp(brush.Falloff, 0f, 1f);
+            BrushHasFalloff = brush.HasFalloff;
+            BrushShape = brush.Shape;
+            BrushFalloffProfile = brush.HasFalloff
+                ? brush.FalloffProfile
+                : BrushFalloffProfile.Hard;
+            BrushColor = color;
+            return true;
         }
 
         private bool TryRaycastTerrain(Ray ray, out TerrainRayHit closestHit)
@@ -1509,9 +1558,13 @@ namespace WoWRenderLib.DX11.Managers
             }
         }
 
-        private void ApplyTerrainBrush(TerrainRayHit hit, TerrainBrushInput input, float deltaTime)
+        private void ApplyTerrainBrush(
+            TerrainRayHit hit,
+            BrushInput brush,
+            TerrainBrushInput input,
+            float deltaTime)
         {
-            var radius = Math.Clamp(input.Radius, 1f, 1000f);
+            var radius = Math.Clamp(brush.Radius, 1f, 1000f);
             var speed = Math.Clamp(input.Speed, 0.1f, 50f);
             var tool = TerrainBrushTools.Get(input.ToolMode);
             lock (SceneObjectLock)
@@ -1552,7 +1605,7 @@ namespace WoWRenderLib.DX11.Managers
                             context.ChunkIndex,
                             context.LocalCenter,
                             context.LocalRadius,
-                            Math.Clamp(input.InnerRadius, 0f, 1f),
+                            brush,
                             speed,
                             tool,
                             input,
@@ -1576,7 +1629,10 @@ namespace WoWRenderLib.DX11.Managers
 
                         activeAdt = null;
                         activeChanged = false;
-                    });
+                    },
+                    intersectionRadius: brush.Shape == BrushShape.Square
+                        ? radius * MathF.Sqrt(2f)
+                        : radius);
             }
         }
 
@@ -1585,15 +1641,14 @@ namespace WoWRenderLib.DX11.Managers
             int chunkIndex,
             Vector3 localCenter,
             float radius,
-            float innerRadiusRatio,
+            in BrushInput brush,
             float speed,
             TerrainBrushTool tool,
             TerrainBrushInput input,
             float deltaTime)
         {
             var passes = tool.GetPassCount(input.SmoothIterations);
-            var radiusSquared = radius * radius;
-            var innerRadius = radius * innerRadiusRatio;
+            var localBrush = brush with { Radius = radius };
             var changed = false;
 
             for (var pass = 0; pass < passes; pass++)
@@ -1606,12 +1661,10 @@ namespace WoWRenderLib.DX11.Managers
                     var vertex = terrain.vertices[vertexIndex];
                     var deltaX = vertex.Position.X - localCenter.X;
                     var deltaY = vertex.Position.Y - localCenter.Y;
-                    var distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
-                    if (distanceSquared > radiusSquared)
+                    var falloff = BrushMath.CalculateInfluence(deltaX, deltaY, localBrush);
+                    if (falloff <= 0f)
                         continue;
 
-                    var distance = MathF.Sqrt(distanceSquared);
-                    var falloff = BrushMath.CalculateFalloff(distance, radius, innerRadius);
                     var amount = speed * deltaTime * falloff;
                     var height = vertex.Position.Z;
                     var nextHeight = tool.Apply(new TerrainBrushSample(
@@ -2390,17 +2443,17 @@ namespace WoWRenderLib.DX11.Managers
 
                     var vertexBuffer = adt.Terrain.vertexBuffer;
                     var modelMatrix = adt.GetModelMatrix();
-                    var terrainBrushWorldPosition = TerrainBrushWorldPosition;
-                    var terrainBrushCenter = Vector3.Zero;
-                    var renderTerrainBrush = 0u;
-                    if (terrainBrushWorldPosition.HasValue &&
-                        TerrainBrushRadius > 0f &&
+                    var brushWorldPosition = BrushWorldPosition;
+                    var brushCenter = Vector3.Zero;
+                    var renderBrush = 0u;
+                    if (brushWorldPosition.HasValue &&
+                        BrushRadius > 0f &&
                         Matrix4x4.Invert(modelMatrix, out var inverseTerrainModel))
                     {
-                        terrainBrushCenter = Vector3.Transform(
-                            terrainBrushWorldPosition.Value,
+                        brushCenter = Vector3.Transform(
+                            brushWorldPosition.Value,
                             inverseTerrainModel);
-                        renderTerrainBrush = 1u;
+                        renderBrush = 1u;
                     }
 
                     var cb = new ADTPerObjectCB
@@ -2417,12 +2470,13 @@ namespace WoWRenderLib.DX11.Managers
                             0f),
                         renderTerrainWireframe = ShowTerrainWireframe ? 1u : 0u,
                         terrainWireframePadding = Vector3.Zero,
-                        terrainBrushCenter = terrainBrushCenter,
-                        terrainBrushOuterRadius = TerrainBrushRadius,
-                        terrainBrushInnerRadius = TerrainBrushRadius * TerrainBrushInnerRadius,
-                        renderTerrainBrush = renderTerrainBrush,
-                        terrainBrushPadding = Vector2.Zero,
-                        terrainBrushColor = TerrainBrushColor
+                        brushCenter = brushCenter,
+                        brushOuterRadius = BrushRadius,
+                        brushFalloffRadius = BrushRadius * BrushFalloff,
+                        renderBrush = renderBrush,
+                        brushShape = (uint)BrushShape,
+                        brushFalloffProfile = (uint)BrushFalloffProfile,
+                        brushColor = BrushColor
                     };
 
                     deviceContext.UpdateSubresource(adtPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref cb, 0, 0);

@@ -1426,15 +1426,23 @@ namespace WTEditor.Avalonia.Controls
                 Mode = _vm?.EditorMode ?? EditorModeId.Selection,
                 Modifiers = (_vm?.Shift == true ? InputModifiers.Shift : InputModifiers.None) |
                             (_vm?.Ctrl == true ? InputModifiers.Control : InputModifiers.None),
+                Brush = new BrushInput(
+                    (float)(_vm?.BrushSize ?? 10),
+                    (float)(_vm?.BrushFalloff ?? 0.35),
+                    _vm?.BrushHasFalloff ?? true,
+                    _vm?.BrushShape ?? BrushShape.Circle,
+                    _vm?.BrushFalloffProfile ?? BrushFalloffProfile.Smooth),
                 TerrainBrush = new TerrainBrushInput
                 {
                     ToolMode = (TerrainBrushMode)(_vm?.TerrainBrushToolMode ?? 0),
-                    Radius = (float)(_vm?.TerrainBrushSize ?? 10),
                     Speed = (float)(_vm?.TerrainBrushSpeed ?? 5),
-                    InnerRadius = (float)(_vm?.TerrainBrushInnerRadius ?? 0.35),
                     FlattenHeight = (float)(_vm?.TerrainFlattenHeight ?? 0),
                     SmoothIterations = _vm?.TerrainSmoothIterations ?? 1
                 },
+                TextureBrush = new TextureBrushInput(
+                    (TextureBrushMode)(_vm?.TextureBrushToolMode ?? 0),
+                    (byte)Math.Clamp((int)Math.Round(_vm?.TextureBrushOpacity ?? 255), 0, 255),
+                    (float)(_vm?.TextureBrushStrength ?? 1)),
                 MouseWheel = _vm?.MouseWheel ?? 0f,
                 KeysDown = keysDown
             };

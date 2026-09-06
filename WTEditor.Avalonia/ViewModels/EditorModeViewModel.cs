@@ -11,7 +11,8 @@ public enum EditorModeCapabilities
 {
     None = 0,
     Selection = 1,
-    TerrainEditing = 2
+    TerrainEditing = 2,
+    TextureEditing = 4
 }
 
 /// <summary>
@@ -31,6 +32,7 @@ public static class EditorModeDefinitions
 {
     public const string SelectionId = "selection";
     public const string TerrainId = "terrain";
+    public const string TextureId = "texture";
 
     public static EditorModeDefinition Selection { get; } = new(
         SelectionId,
@@ -49,6 +51,15 @@ public static class EditorModeDefinitions
         EditorIcons.Terrain,
         EditorModeCapabilities.TerrainEditing,
         EditorModeId.Terrain);
+
+    public static EditorModeDefinition Texture { get; } = new(
+        TextureId,
+        "Texture",
+        "Paint textures and terrain colour in the world viewport",
+        "3",
+        EditorIcons.Texture,
+        EditorModeCapabilities.TextureEditing,
+        EditorModeId.Texture);
 }
 
 /// <summary>

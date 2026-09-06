@@ -58,7 +58,9 @@ namespace WoWRenderLib.DX11
         public bool LeftMouseDown;
         public bool RightMouseDown;
         public EditorModeId Mode;
+        public BrushInput Brush;
         public TerrainBrushInput TerrainBrush;
+        public TextureBrushInput TextureBrush;
         public InputModifiers Modifiers;
 
         public float MouseWheel;
@@ -70,9 +72,7 @@ namespace WoWRenderLib.DX11
     {
         public TerrainBrushMode ToolMode;
         public EditAction Action;
-        public float Radius;
         public float Speed;
-        public float InnerRadius;
         public float FlattenHeight;
         public int SmoothIterations;
     }
@@ -492,13 +492,24 @@ namespace WoWRenderLib.DX11
                     activeCamera,
                     viewportWidth,
                     viewportHeight,
+                    input.Brush,
                     terrainBrush,
                     input.LeftMouseDown && terrainBrush.Action != EditAction.Default,
                     (float)deltaTime);
             }
+            else if (input.Mode == EditorModeId.Texture)
+            {
+                sceneManager.UpdateBrushPreview(
+                    input.MousePosition,
+                    activeCamera,
+                    viewportWidth,
+                    viewportHeight,
+                    input.Brush,
+                    TextureBrushModes.GetPreviewColor(input.TextureBrush.ToolMode));
+            }
             else
             {
-                sceneManager.ClearTerrainBrush();
+                sceneManager.ClearBrushPreview();
             }
 
             sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;

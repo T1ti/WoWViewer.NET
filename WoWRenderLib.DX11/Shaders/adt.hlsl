@@ -16,12 +16,13 @@ cbuffer PerObject : register(b0)
     float4 terrainGridSettings;
     uint renderTerrainWireframe;
     float3 terrainWireframePadding;
-    float3 terrainBrushCenter;
-    float terrainBrushOuterRadius;
-    float terrainBrushInnerRadius;
-    uint renderTerrainBrush;
-    float2 terrainBrushPadding;
-    float4 terrainBrushColor;
+    float3 brushCenter;
+    float brushOuterRadius;
+    float brushFalloffRadius;
+    uint renderBrush;
+    uint brushShape;
+    uint brushFalloffProfile;
+    float4 brushColor;
 }
 
 cbuffer LayerData : register(b1)
@@ -233,10 +234,17 @@ float TerrainWireframeMask(float3 barycentric)
     return 1.0f - min(interior.x, min(interior.y, interior.z));
 }
 
-float TerrainBrushRingMask(float2 terrainPosition, float radius)
+float BrushDistance(float2 brushOffset)
 {
-    float2 brushOffset = terrainPosition - terrainBrushCenter.xy;
-    float distanceToBrushCenter = length(brushOffset);
+    return brushShape == 1
+        ? max(abs(brushOffset.x), abs(brushOffset.y))
+        : length(brushOffset);
+}
+
+float BrushRingMask(float2 terrainPosition, float radius)
+{
+    float2 brushOffset = terrainPosition - brushCenter.xy;
+    float distanceToBrushCenter = BrushDistance(brushOffset);
     float radialPixelFootprint = max(fwidth(distanceToBrushCenter), 0.0001f);
     float ringMask = 1.0f - smoothstep(
         radialPixelFootprint,
@@ -386,14 +394,14 @@ float4 PS_Main(VSOut i) : SV_Target
         shadedColor = lerp(shadedColor, float3(0.55f, 0.65f, 0.75f), wireframeMask);
     }
 
-    if (renderTerrainBrush != 0)
+    if (renderBrush != 0)
     {
-        float outerBrushMask = TerrainBrushRingMask(i.TerrainPosition.xy, terrainBrushOuterRadius);
-        float innerBrushMask = terrainBrushInnerRadius > 0.01f
-            ? TerrainBrushRingMask(i.TerrainPosition.xy, terrainBrushInnerRadius)
+        float outerBrushMask = BrushRingMask(i.TerrainPosition.xy, brushOuterRadius);
+        float falloffBrushMask = brushFalloffProfile != 0 && brushFalloffRadius > 0.01f
+            ? BrushRingMask(i.TerrainPosition.xy, brushFalloffRadius)
             : 0.0f;
-        float brushMask = max(outerBrushMask, innerBrushMask) * terrainBrushColor.a;
-        shadedColor = lerp(shadedColor, terrainBrushColor.rgb, brushMask);
+        float brushMask = max(outerBrushMask, falloffBrushMask) * brushColor.a;
+        shadedColor = lerp(shadedColor, brushColor.rgb, brushMask);
     }
 
     return float4(shadedColor, 1.0f);

@@ -7,5 +7,6 @@ namespace WoWRenderLib.DX11.Editing;
 public enum EditorModeId
 {
     Selection,
-    Terrain
+    Terrain,
+    Texture
 }

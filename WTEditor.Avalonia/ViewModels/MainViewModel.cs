@@ -13,13 +13,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public Editor3DViewModel ViewportVM { get; }
     public SelectionInspectorViewModel Inspector { get; }
     public TerrainEditingViewModel TerrainEditor { get; }
+    public TextureEditingViewModel TextureEditor { get; }
     public IReadOnlyList<EditorModeViewModel> Modes { get; }
     public UndoService UndoService { get; }
 
     public bool IsTerrainModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.TerrainEditing);
+    public bool IsTextureModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.TextureEditing);
     public bool IsSelectionModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.Selection);
     public bool IsSelectionPanelVisible => IsSelectionModeActive && Inspector.IsPanelVisible;
     public bool IsTerrainToolsPanelVisible => IsTerrainModeActive && TerrainEditor.IsPanelVisible;
+    public bool IsTextureToolsPanelVisible => IsTextureModeActive && TextureEditor.IsPanelVisible;
+    public bool IsEditingToolsPanelVisible => IsTerrainToolsPanelVisible || IsTextureToolsPanelVisible;
 
     [ObservableProperty]
     private EditorModeViewModel _activeMode;
@@ -33,16 +37,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         Editor3DViewModel viewportViewModel,
         SelectionInspectorViewModel inspector,
         TerrainEditingViewModel terrainEditor,
+        TextureEditingViewModel textureEditor,
         UndoService undoService)
     {
         ViewportVM = viewportViewModel;
         Inspector = inspector;
         TerrainEditor = terrainEditor;
+        TextureEditor = textureEditor;
         UndoService = undoService;
         Modes =
         [
             new EditorModeViewModel(EditorModeDefinitions.Selection),
-            new EditorModeViewModel(EditorModeDefinitions.Terrain)
+            new EditorModeViewModel(EditorModeDefinitions.Terrain),
+            new EditorModeViewModel(EditorModeDefinitions.Texture)
         ];
         _activeMode = Modes[0];
         _activeMode.IsActive = true;
@@ -51,7 +58,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         Inspector.TransformChanged += OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged += OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged += OnTerrainEditorPropertyChanged;
-        SyncTerrainSettings();
+        TerrainEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
+        TextureEditor.PropertyChanged += OnTextureEditorPropertyChanged;
+        TextureEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
+        SyncToolSettings();
         ViewportVM.EditorMode = EditorModeId.Selection;
         Inspector.SetBuildProfile(ClientBuildProfile.From(ViewportVM.ClientConfiguration));
         Inspector.Inspect(ViewportVM.SelectedObject);
@@ -75,28 +85,67 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             mode.IsActive = ReferenceEquals(mode, value);
 
         ViewportVM.EditorMode = value.Definition.RendererMode;
+        SyncActiveBrushSettings();
         OnPropertyChanged(nameof(IsTerrainModeActive));
+        OnPropertyChanged(nameof(IsTextureModeActive));
         OnPropertyChanged(nameof(IsSelectionModeActive));
         OnPropertyChanged(nameof(IsSelectionPanelVisible));
         OnPropertyChanged(nameof(IsTerrainToolsPanelVisible));
+        OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
+        OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
     }
 
     private void OnTerrainEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        SyncTerrainSettings();
+        SyncToolSettings();
 
         if (e.PropertyName == nameof(TerrainEditingViewModel.IsPanelVisible))
+        {
             OnPropertyChanged(nameof(IsTerrainToolsPanelVisible));
+            OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+        }
     }
 
-    private void SyncTerrainSettings()
+    private void OnTextureEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        ViewportVM.TerrainBrushSize = TerrainEditor.BrushSize;
-        ViewportVM.TerrainBrushInnerRadius = TerrainEditor.InnerRadius;
+        SyncToolSettings();
+
+        if (e.PropertyName == nameof(TextureEditingViewModel.IsPanelVisible))
+        {
+            OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
+            OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+        }
+    }
+
+    private void OnBrushSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if ((IsTerrainModeActive && ReferenceEquals(sender, TerrainEditor.Brush)) ||
+            (IsTextureModeActive && ReferenceEquals(sender, TextureEditor.Brush)))
+        {
+            SyncActiveBrushSettings();
+        }
+    }
+
+    private void SyncToolSettings()
+    {
         ViewportVM.TerrainBrushToolMode = (int)TerrainEditor.ToolMode;
         ViewportVM.TerrainBrushSpeed = TerrainEditor.Speed;
         ViewportVM.TerrainFlattenHeight = TerrainEditor.FlattenHeight;
         ViewportVM.TerrainSmoothIterations = TerrainEditor.SmoothIterations;
+        ViewportVM.TextureBrushToolMode = (int)TextureEditor.ToolMode;
+        ViewportVM.TextureBrushOpacity = TextureEditor.Opacity;
+        ViewportVM.TextureBrushStrength = TextureEditor.Strength;
+        SyncActiveBrushSettings();
+    }
+
+    private void SyncActiveBrushSettings()
+    {
+        var brush = IsTextureModeActive ? TextureEditor.Brush : TerrainEditor.Brush;
+        ViewportVM.BrushSize = brush.Size;
+        ViewportVM.BrushFalloff = brush.Falloff;
+        ViewportVM.BrushHasFalloff = brush.HasFalloff;
+        ViewportVM.BrushShape = brush.Shape;
+        ViewportVM.BrushFalloffProfile = brush.FalloffProfile;
     }
 
     private void OnViewportPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -146,5 +195,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         Inspector.TransformChanged -= OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged -= OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged -= OnTerrainEditorPropertyChanged;
+        TerrainEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
+        TextureEditor.PropertyChanged -= OnTextureEditorPropertyChanged;
+        TextureEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
     }
 }

@@ -43,7 +43,7 @@ public partial class MainView : UserControl
     private void MainViewModel_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ViewModels.MainViewModel.IsSelectionPanelVisible)
-            or nameof(ViewModels.MainViewModel.IsTerrainToolsPanelVisible))
+            or nameof(ViewModels.MainViewModel.IsEditingToolsPanelVisible))
         {
             Dispatcher.UIThread.Post(ArrangePanels);
         }
@@ -62,6 +62,7 @@ public partial class MainView : UserControl
         {
             Key.D1 => viewModel.Modes.FirstOrDefault(mode => mode.Id == EditorModeDefinitions.SelectionId),
             Key.D2 => viewModel.Modes.FirstOrDefault(mode => mode.Id == EditorModeDefinitions.TerrainId),
+            Key.D3 => viewModel.Modes.FirstOrDefault(mode => mode.Id == EditorModeDefinitions.TextureId),
             _ => null
         };
         if (mode == null)
@@ -152,7 +153,7 @@ public partial class MainView : UserControl
             return;
 
         ArrangePanel(InspectorPanel);
-        ArrangePanel(TerrainPanel);
+        ArrangePanel(ToolsPanel);
     }
 
     private void ArrangePanel(Border panel)
@@ -190,8 +191,8 @@ public partial class MainView : UserControl
     {
         if (source.Name?.Contains("Inspector", StringComparison.Ordinal) == true)
             return InspectorPanel;
-        if (source.Name?.Contains("Terrain", StringComparison.Ordinal) == true)
-            return TerrainPanel;
+        if (source.Name?.Contains("Tools", StringComparison.Ordinal) == true)
+            return ToolsPanel;
         return null;
     }
 }

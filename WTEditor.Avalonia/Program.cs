@@ -40,6 +40,7 @@ internal static class Program
         services.AddSingleton<IObjectInspectorSectionProvider, TerrainInspectorSectionProvider>();
         services.AddSingleton<SelectionInspectorViewModel>();
         services.AddSingleton<TerrainEditingViewModel>();
+        services.AddSingleton<TextureEditingViewModel>();
 
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();

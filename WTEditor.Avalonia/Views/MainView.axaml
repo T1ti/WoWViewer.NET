@@ -48,6 +48,7 @@
                   <TextBlock Text="EDITOR CONTROLS" Foreground="#F3F7FA" FontSize="11" FontWeight="Bold"/>
                   <TextBlock Text="1  Select mode" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="2  Terrain mode" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="3  Texture mode" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="RMB + drag  Orbit camera" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="WASD / QE  Move camera" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="Shift  Move faster / positive tool action" Foreground="#DCE7ED" FontSize="11"/>
@@ -98,23 +99,28 @@
         </Grid>
       </Border>
 
-      <Border x:Name="TerrainPanel" Width="292" Height="640"
-              IsVisible="{Binding IsTerrainToolsPanelVisible}">
+      <Border x:Name="ToolsPanel" Width="292" Height="640"
+              IsVisible="{Binding IsEditingToolsPanelVisible}">
         <Grid>
-          <local:TerrainEditingPanel DataContext="{Binding TerrainEditor}"/>
-          <Border x:Name="TerrainDragHandle" Height="52" Margin="0,0,36,0"
+          <Grid IsVisible="{Binding IsTerrainModeActive}">
+            <local:TerrainEditingPanel DataContext="{Binding TerrainEditor}"/>
+          </Grid>
+          <Grid IsVisible="{Binding IsTextureModeActive}">
+            <local:TextureEditingPanel DataContext="{Binding TextureEditor}"/>
+          </Grid>
+          <Border x:Name="ToolsDragHandle" Height="52" Margin="0,0,36,0"
                   HorizontalAlignment="Stretch" VerticalAlignment="Top"
                   Background="#01000000" Cursor="SizeAll"
                   PointerPressed="PanelDragHandle_OnPointerPressed"
                   PointerMoved="PanelDragHandle_OnPointerMoved"
                   PointerReleased="PanelDragHandle_OnPointerReleased"/>
-          <Thumb x:Name="TerrainLeftResizeHandle" Width="7" HorizontalAlignment="Left"
+          <Thumb x:Name="ToolsLeftResizeHandle" Width="7" HorizontalAlignment="Left"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
-          <Thumb x:Name="TerrainRightResizeHandle" Width="7" HorizontalAlignment="Right"
+          <Thumb x:Name="ToolsRightResizeHandle" Width="7" HorizontalAlignment="Right"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
-          <Thumb x:Name="TerrainBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
+          <Thumb x:Name="ToolsBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
                  VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
         </Grid>
