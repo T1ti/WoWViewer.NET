@@ -165,12 +165,6 @@ namespace WoWRenderLib.DX11.Loaders
             terrain.chunkLayerDataBuffer.Dispose();
             terrain.alphaMaterialArray.Dispose();
 
-            foreach (var usedWMO in terrain.worldModelBatches)
-                WMOCache.Release(usedWMO.fileDataID, terrain.rootADTFileDataID);
-
-            foreach (var usedM2 in terrain.doodads)
-                M2Cache.Release(usedM2.fileDataID, terrain.rootADTFileDataID);
-
             foreach (var usedBLP in terrain.blpFileDataIDs)
                 BLPCache.Release(usedBLP, terrain.rootADTFileDataID);
 

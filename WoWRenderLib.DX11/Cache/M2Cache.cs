@@ -3,6 +3,7 @@ using Silk.NET.Direct3D11;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using WoWRenderLib.DX11.Loaders;
+using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
 
@@ -11,29 +12,26 @@ namespace WoWRenderLib.DX11.Cache
     public static class M2Cache
     {
         private static readonly Dictionary<uint, ParsedDoodadBatch> Cache = [];
-        private static readonly Dictionary<uint, List<uint>> Users = [];
+        private static readonly ConcurrentDictionary<uint, List<uint>> Users = [];
 
         private static ComPtr<ID3D11Device>? cachedDevice = null;
 
         private static readonly HashSet<uint> inFlight = [];
-        private static readonly ConcurrentQueue<uint> parseQueue = [];
-        private static readonly ConcurrentQueue<(uint originalFileDataId, ParsedM2 parsedM2)> uploadQueue = [];
-
-        private static CancellationTokenSource? workerCancellation;
-        private static Task? workerTask;
+        private static readonly BackgroundResourceQueue<uint, ParsedM2> loadQueue =
+            new(
+                WoWRenderLib.Loaders.M2Loader.ParseM2,
+                shouldProcess: fileDataId => Users.ContainsKey(fileDataId));
 
         public static ParsedDoodadBatch GetOrLoad(ComPtr<ID3D11Device> device, uint fileDataId, uint parent, bool keepTrack = true)
         {
             cachedDevice ??= device;
-
-            StartWorker();
 
             if (keepTrack)
             {
                 if (Users.TryGetValue(fileDataId, out var users))
                     users.Add(parent);
                 else
-                    Users.Add(fileDataId, [parent]);
+                    Users.TryAdd(fileDataId, [parent]);
             }
 
             if (Cache.TryGetValue(fileDataId, out ParsedDoodadBatch value))
@@ -51,55 +49,60 @@ namespace WoWRenderLib.DX11.Cache
                 return placeholder;
 
             inFlight.Add(fileDataId);
-            parseQueue.Enqueue(fileDataId);
+            try
+            {
+                loadQueue.Enqueue(fileDataId);
+            }
+            catch
+            {
+                inFlight.Remove(fileDataId);
+                Cache.Remove(fileDataId);
+                throw;
+            }
 
             return placeholder;
         }
 
-        private static void StartWorker()
-        {
-            if (workerTask != null)
-                return;
-
-            workerCancellation = new CancellationTokenSource();
-            workerTask = Task.Run(() => ParseWorker(workerCancellation.Token), workerCancellation.Token);
-        }
-
-        private static async Task ParseWorker(CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                if (!parseQueue.TryDequeue(out var fileDataId))
-                {
-                    await Task.Delay(10, cancellationToken);
-                    continue;
-                }
-
-                try
-                {
-                    var parsed = WoWRenderLib.Loaders.M2Loader.ParseM2(fileDataId);
-                    uploadQueue.Enqueue((fileDataId, parsed));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"!!! Error parsing M2 {fileDataId}: {e.Message}");
-                    inFlight.Remove(fileDataId);
-                }
-            }
-        }
-
-        public static int Upload(Stopwatch queueTimer)
+        public static int Upload(
+            Stopwatch queueTimer,
+            double budgetMilliseconds = 10d,
+            int maxItems = int.MaxValue)
         {
             if (cachedDevice == null)
                 return 0;
 
             var uploaded = 0;
-            while (queueTimer.ElapsedMilliseconds < 10)
+            var processed = 0;
+            while (processed < maxItems && queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
             {
-                if (!uploadQueue.TryDequeue(out var item))
+                if (!loadQueue.TryDequeue(out var item))
                     return uploaded;
 
-                var (originalFileDataId, parsedM2) = item;
+                if (item.IsSkipped)
+                {
+                    CompleteSkippedRequest(item.Request);
+                    continue;
+                }
+
+                processed++;
+
+                var originalFileDataId = item.Request;
+                if (item.Error != null)
+                {
+                    Console.WriteLine($"!!! Error parsing M2 {originalFileDataId}: {item.Error.Message}");
+                    inFlight.Remove(originalFileDataId);
+                    // Keep the placeholder while this model still has users.
+                    // Its parse failure is terminal for this residency period;
+                    // removing it would make every render lookup queue it again.
+                    if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
+                            Users.ContainsKey(originalFileDataId)))
+                    {
+                        Cache.Remove(originalFileDataId);
+                    }
+                    continue;
+                }
+
+                var parsedM2 = item.Value;
 
                 if (!Cache.TryGetValue(originalFileDataId, out var oldBatch))
                 {
@@ -124,6 +127,11 @@ namespace WoWRenderLib.DX11.Cache
                 catch (Exception e)
                 {
                     Console.WriteLine($"!!! Error uploading M2 {originalFileDataId}: {e.Message}");
+                    if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
+                            Users.ContainsKey(originalFileDataId)))
+                    {
+                        Cache.Remove(originalFileDataId);
+                    }
                 }
 
                 inFlight.Remove(originalFileDataId);
@@ -134,35 +142,28 @@ namespace WoWRenderLib.DX11.Cache
 
         public static void StopWorker()
         {
-            StopWorkerAsync().GetAwaiter().GetResult();
+            loadQueue.StopAsync().GetAwaiter().GetResult();
         }
 
-        public static async Task StopWorkerAsync()
+        public static Task StopWorkerAsync() => loadQueue.StopAsync();
+
+        public static int GetLoadQueueCount() => loadQueue.Count;
+
+        internal static AssetPipelineMetrics GetQueueMetrics() => loadQueue.Metrics;
+
+        private static void CompleteSkippedRequest(uint fileDataId)
         {
-            var cancellation = workerCancellation;
-            var task = workerTask;
-            workerCancellation = null;
-            workerTask = null;
-
-            if (cancellation == null)
-                return;
-
-            cancellation.Cancel();
-            try
+            inFlight.Remove(fileDataId);
+            if (Users.ContainsKey(fileDataId))
             {
-                if (task != null)
-                    await task.ConfigureAwait(false);
+                inFlight.Add(fileDataId);
+                loadQueue.Enqueue(fileDataId);
             }
-            catch (OperationCanceledException)
+            else
             {
-            }
-            finally
-            {
-                cancellation.Dispose();
+                Cache.Remove(fileDataId);
             }
         }
-
-        public static int GetLoadQueueCount() => parseQueue.Count + uploadQueue.Count;
 
         public static void Release(uint fileDataId, uint parent)
         {
@@ -172,7 +173,7 @@ namespace WoWRenderLib.DX11.Cache
 
                 if (users.Count == 0)
                 {
-                    Users.Remove(fileDataId);
+                    Users.TryRemove(fileDataId, out _);
                     if (Cache.TryGetValue(fileDataId, out var model))
                     {
                         Cache.Remove(fileDataId);
@@ -226,8 +227,6 @@ namespace WoWRenderLib.DX11.Cache
             Cache.Clear();
             Users.Clear();
             inFlight.Clear();
-            while (parseQueue.TryDequeue(out _)) { }
-            while (uploadQueue.TryDequeue(out _)) { }
             cachedDevice = null;
         }
     }

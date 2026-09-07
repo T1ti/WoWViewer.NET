@@ -3,6 +3,7 @@ using Silk.NET.Direct3D11;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using WoWRenderLib.DX11.Loaders;
+using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
 
@@ -12,30 +13,26 @@ namespace WoWRenderLib.DX11.Cache
     {
         private static readonly Dictionary<uint, WorldModel> Cache = [];
 
-        private static readonly Dictionary<uint, List<uint>> Users = [];
+        private static readonly ConcurrentDictionary<uint, List<uint>> Users = [];
 
         private static ComPtr<ID3D11Device>? cachedDevice = null;
 
         private static readonly HashSet<uint> inFlight = [];
-
-        private static readonly ConcurrentQueue<uint> parseQueue = [];
-        private static readonly ConcurrentQueue<(uint originalFileDataId, PreppedWMO preppedWMO)> uploadQueue = [];
-
-        private static CancellationTokenSource? workerCancellation;
-        private static Task? workerTask;
+        private static readonly BackgroundResourceQueue<uint, PreppedWMO> loadQueue =
+            new(
+                fileDataId => WoWRenderLib.Loaders.WMOLoader.ParseWMO(fileDataId),
+                shouldProcess: fileDataId => Users.ContainsKey(fileDataId));
 
         public static WorldModel GetOrLoad(ComPtr<ID3D11Device> device, uint fileDataId, uint parent, bool keepTrack = true)
         {
             cachedDevice ??= device;
-
-            StartWorker();
 
             if (keepTrack)
             {
                 if (Users.TryGetValue(fileDataId, out var users))
                     users.Add(parent);
                 else
-                    Users.Add(fileDataId, [parent]);
+                    Users.TryAdd(fileDataId, [parent]);
             }
 
             if (Cache.TryGetValue(fileDataId, out WorldModel value))
@@ -53,65 +50,60 @@ namespace WoWRenderLib.DX11.Cache
                 return placeholderWMO;
 
             inFlight.Add(fileDataId);
-            parseQueue.Enqueue(fileDataId);
+            try
+            {
+                loadQueue.Enqueue(fileDataId);
+            }
+            catch
+            {
+                inFlight.Remove(fileDataId);
+                Cache.Remove(fileDataId);
+                throw;
+            }
 
             return placeholderWMO;
         }
 
-        private static void StartWorker()
-        {
-            if (workerTask != null)
-                return;
-
-            workerCancellation = new CancellationTokenSource();
-            workerTask = Task.Run(() => ParseWorker(workerCancellation.Token), workerCancellation.Token);
-        }
-
-        private static async Task ParseWorker(CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                bool hasWork = false;
-
-                if (parseQueue.TryDequeue(out var fileDataId))
-                    hasWork = true;
-
-                if (!hasWork)
-                {
-                    await Task.Delay(10, cancellationToken);
-                    continue;
-                }
-
-                try
-                {
-                    var preppedWMO = WoWRenderLib.Loaders.WMOLoader.ParseWMO(fileDataId);
-                    uploadQueue.Enqueue((fileDataId, preppedWMO));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"!!! Error parsing WMO {fileDataId}: {e.Message}");
-
-                    // Remove from in-flight set so it's not stuck in limbo
-                    inFlight.Remove(fileDataId);
-                }
-            }
-        }
-
-        public static int Upload(Stopwatch queueTimer)
+        public static int Upload(
+            Stopwatch queueTimer,
+            double budgetMilliseconds = 10d,
+            int maxItems = int.MaxValue)
         {
             if (cachedDevice == null)
                 return 0;
 
             var uploaded = 0;
-            while (queueTimer.ElapsedMilliseconds < 5)
+            var processed = 0;
+            while (processed < maxItems && queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
             {
-                if (!uploadQueue.TryDequeue(out var item))
+                if (!loadQueue.TryDequeue(out var item))
                     return uploaded;
 
-                uint originalFileDataId;
-                PreppedWMO preppedWMO;
+                if (item.IsSkipped)
+                {
+                    CompleteSkippedRequest(item.Request);
+                    continue;
+                }
 
-                (originalFileDataId, preppedWMO) = item;
+                processed++;
+
+                var originalFileDataId = item.Request;
+                if (item.Error != null)
+                {
+                    Console.WriteLine($"!!! Error parsing WMO {originalFileDataId}: {item.Error.Message}");
+                    inFlight.Remove(originalFileDataId);
+                    // Memoize a terminal failure with the existing placeholder
+                    // until its last owner releases it. Otherwise every lookup
+                    // immediately queues the same invalid resource again.
+                    if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
+                            Users.ContainsKey(originalFileDataId)))
+                    {
+                        Cache.Remove(originalFileDataId);
+                    }
+                    continue;
+                }
+
+                var preppedWMO = item.Value;
 
                 if (!Cache.TryGetValue(originalFileDataId, out var oldWMO))
                 {
@@ -133,6 +125,11 @@ namespace WoWRenderLib.DX11.Cache
                 catch (Exception e)
                 {
                     Console.WriteLine($"!!! Error uploading WMO {originalFileDataId}: {e.Message}");
+                    if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
+                            Users.ContainsKey(originalFileDataId)))
+                    {
+                        Cache.Remove(originalFileDataId);
+                    }
                 }
 
                 inFlight.Remove(originalFileDataId);
@@ -143,37 +140,30 @@ namespace WoWRenderLib.DX11.Cache
 
         public static void StopWorker()
         {
-            StopWorkerAsync().GetAwaiter().GetResult();
+            loadQueue.StopAsync().GetAwaiter().GetResult();
         }
 
-        public static async Task StopWorkerAsync()
-        {
-            var cancellation = workerCancellation;
-            var task = workerTask;
-            workerCancellation = null;
-            workerTask = null;
-
-            if (cancellation == null)
-                return;
-
-            cancellation.Cancel();
-            try
-            {
-                if (task != null)
-                    await task.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            finally
-            {
-                cancellation.Dispose();
-            }
-        }
+        public static Task StopWorkerAsync() => loadQueue.StopAsync();
 
         public static int GetLoadQueueCount()
         {
-            return parseQueue.Count + uploadQueue.Count;
+            return loadQueue.Count;
+        }
+
+        internal static AssetPipelineMetrics GetQueueMetrics() => loadQueue.Metrics;
+
+        private static void CompleteSkippedRequest(uint fileDataId)
+        {
+            inFlight.Remove(fileDataId);
+            if (Users.ContainsKey(fileDataId))
+            {
+                inFlight.Add(fileDataId);
+                loadQueue.Enqueue(fileDataId);
+            }
+            else
+            {
+                Cache.Remove(fileDataId);
+            }
         }
 
         public static void Release(uint fileDataId, uint parent)
@@ -184,7 +174,7 @@ namespace WoWRenderLib.DX11.Cache
 
                 if (users.Count == 0)
                 {
-                    Users.Remove(fileDataId);
+                    Users.TryRemove(fileDataId, out _);
                     if (Cache.TryGetValue(fileDataId, out var wmo))
                     {
                         Cache.Remove(fileDataId);
@@ -224,6 +214,7 @@ namespace WoWRenderLib.DX11.Cache
         {
             groupBatches = [],
             preppedMats = [],
+            textureReferences = [],
             wmoRenderBatches = [],
             doodads = [],
             doodadSets = [],
@@ -242,8 +233,6 @@ namespace WoWRenderLib.DX11.Cache
             Cache.Clear();
             Users.Clear();
             inFlight.Clear();
-            while (parseQueue.TryDequeue(out _)) { }
-            while (uploadQueue.TryDequeue(out _)) { }
             cachedDevice = null;
         }
     }

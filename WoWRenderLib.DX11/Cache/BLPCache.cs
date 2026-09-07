@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using WoWLib;
 using Formats = WoWLib.Formats;
 using WoWRenderLib.DX11.Loaders;
+using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Services;
 
@@ -29,18 +30,14 @@ namespace WoWRenderLib.DX11.Cache
         // decoded and uploaded it.
         private static ComPtr<ID3D11ShaderResourceView>? pendingTexture;
 
-        private static readonly ConcurrentQueue<uint> decodeQueue = new();
-        private static readonly ConcurrentQueue<DecodedBLP> uploadQueue = new();
-
-
-        private static CancellationTokenSource? workerCancellation;
-        private static Task? workerTask;
+        private static readonly BackgroundResourceQueue<uint, DecodedBLP> loadQueue =
+            new(
+                Decode,
+                shouldProcess: fileDataId => Users.ContainsKey(fileDataId));
 
         public static ComPtr<ID3D11ShaderResourceView> GetOrLoad(ComPtr<ID3D11Device> device, uint fileDataId, uint parent)
         {
             cachedDevice ??= device;
-
-            StartWorker();
 
             if (Users.TryGetValue(fileDataId, out var users))
                 users.Add(parent);
@@ -53,105 +50,72 @@ namespace WoWRenderLib.DX11.Cache
             pendingTexture ??= BLPLoader.CreatePlaceholderTexture(cachedDevice.Value);
 
             if (inFlight.TryAdd(fileDataId, 0))
-                decodeQueue.Enqueue(fileDataId);
+            {
+                try
+                {
+                    loadQueue.Enqueue(fileDataId);
+                }
+                catch
+                {
+                    inFlight.TryRemove(fileDataId, out _);
+                    throw;
+                }
+            }
 
             return pendingTexture.Value;
         }
 
-        private static void StartWorker()
+        private static DecodedBLP Decode(uint fileDataId)
         {
-            if (workerTask != null)
-                return;
+            using var blp = new Formats.BLP.BLP();
+            blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
 
-            workerCancellation = new CancellationTokenSource();
-            workerTask = Task.Run(() => DecodeWorker(workerCancellation.Token), workerCancellation.Token);
-        }
-
-        private static async Task DecodeWorker(CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
+            if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1 ||
+                blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3 ||
+                blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt5)
             {
-                uint fileDataId = 0;
-                bool hasWork = false;
-
-                if (decodeQueue.TryDequeue(out fileDataId))
-                    hasWork = true;
-
-                if (!hasWork)
+                var compressedFormat = blp.PreferredFormat switch
                 {
-                    await Task.Delay(10, cancellationToken);
-                    continue;
-                }
+                    Formats.BLP.PixelFormat.Dxt1 => Format.FormatBC1Unorm,
+                    Formats.BLP.PixelFormat.Dxt3 => Format.FormatBC2Unorm,
+                    _ => Format.FormatBC3Unorm
+                };
+                var mipmaps = new List<MipLevel>((int)blp.MipCount);
 
-                try
+                for (uint i = 0; i < blp.MipCount; i++)
                 {
-                    using var blp = new Formats.BLP.BLP();
-                    blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
+                    var width = (int)blp.MipWidth(i);
+                    var height = (int)blp.MipHeight(i);
+                    if (width == 0 || height == 0)
+                        break;
 
-                    DecodedBLP decoded;
-
-                    if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1 ||
-                        blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3 ||
-                        blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt5)
+                    mipmaps.Add(new MipLevel
                     {
-                        Format compressedFormat;
-
-                        if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1)
-                            compressedFormat = Format.FormatBC1Unorm;
-                        else if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3)
-                            compressedFormat = Format.FormatBC2Unorm;
-                        else
-                            compressedFormat = Format.FormatBC3Unorm;
-                        var mipmaps = new List<MipLevel>((int)blp.MipCount);
-
-                        for (uint i = 0; i < blp.MipCount; i++)
-                        {
-                            var width = (int)blp.MipWidth(i);
-                            var height = (int)blp.MipHeight(i);
-
-                            if (width == 0 || height == 0)
-                                break;
-
-                            var bytes = blp.Mip(i);
-                            mipmaps.Add(new MipLevel
-                            {
-                                Data = bytes,
-                                Width = width,
-                                Height = height,
-                                Level = (int)i
-                            });
-                        }
-
-                        decoded = new DecodedBLP
-                        {
-                            FileDataId = fileDataId,
-                            IsCompressed = true,
-                            CompressedFormat = compressedFormat,
-                            MipLevels = mipmaps
-                        };
-                    }
-                    else
-                    {
-                        using var image = blp.Decode(0);
-                        var pixels = image.Pixels.AsSpan().ToArray();
-                        decoded = new DecodedBLP
-                        {
-                            FileDataId = fileDataId,
-                            PixelData = pixels,
-                            Width = (int)image.Width,
-                            Height = (int)image.Height,
-                            IsCompressed = false
-                        };
-                    }
-
-                    uploadQueue.Enqueue(decoded);
+                        Data = blp.Mip(i),
+                        Width = width,
+                        Height = height,
+                        Level = (int)i
+                    });
                 }
-                catch (Exception e)
+
+                return new DecodedBLP
                 {
-                    Console.WriteLine($"Failed to decode BLP {fileDataId}: {e.Message}");
-                    inFlight.TryRemove(fileDataId, out _);
-                }
+                    FileDataId = fileDataId,
+                    IsCompressed = true,
+                    CompressedFormat = compressedFormat,
+                    MipLevels = mipmaps
+                };
             }
+
+            using var image = blp.Decode(0);
+            return new DecodedBLP
+            {
+                FileDataId = fileDataId,
+                PixelData = image.Pixels.AsSpan().ToArray(),
+                Width = (int)image.Width,
+                Height = (int)image.Height,
+                IsCompressed = false
+            };
         }
 
         public static ComPtr<ID3D11ShaderResourceView> GetCurrent(uint fileDataId, ComPtr<ID3D11ShaderResourceView> fallback)
@@ -165,16 +129,37 @@ namespace WoWRenderLib.DX11.Cache
             return fallback;
         }
 
-        public static int Upload(Stopwatch queueTimer)
+        public static int Upload(
+            Stopwatch queueTimer,
+            double budgetMilliseconds = 10d,
+            int maxItems = int.MaxValue)
         {
             if (!cachedDevice.HasValue)
                 return 0;
 
             var uploaded = 0;
-            while (queueTimer.ElapsedMilliseconds < 5)
+            var processed = 0;
+            while (processed < maxItems && queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
             {
-                if (!uploadQueue.TryDequeue(out var decoded))
+                if (!loadQueue.TryDequeue(out var item))
                     break;
+
+                if (item.IsSkipped)
+                {
+                    CompleteSkippedRequest(item.Request);
+                    continue;
+                }
+
+                processed++;
+
+                if (item.Error != null)
+                {
+                    Console.WriteLine($"Failed to decode BLP {item.Request}: {item.Error.Message}");
+                    inFlight.TryRemove(item.Request, out _);
+                    continue;
+                }
+
+                var decoded = item.Value;
 
                 // A tile may have been evicted while the worker was decoding
                 // its textures.  Do not submit GPU work for an asset that no
@@ -287,37 +272,27 @@ namespace WoWRenderLib.DX11.Cache
 
         public static void StopWorker()
         {
-            StopWorkerAsync().GetAwaiter().GetResult();
+            loadQueue.StopAsync().GetAwaiter().GetResult();
         }
 
-        public static async Task StopWorkerAsync()
-        {
-            var cancellation = workerCancellation;
-            var task = workerTask;
-            workerCancellation = null;
-            workerTask = null;
-
-            if (cancellation == null)
-                return;
-
-            cancellation.Cancel();
-            try
-            {
-                if (task != null)
-                    await task.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            finally
-            {
-                cancellation.Dispose();
-            }
-        }
+        public static Task StopWorkerAsync() => loadQueue.StopAsync();
 
         public static int GetQueueCount()
         {
-            return decodeQueue.Count + uploadQueue.Count;
+            return loadQueue.Count;
+        }
+
+        internal static AssetPipelineMetrics GetQueueMetrics() => loadQueue.Metrics;
+
+        private static void CompleteSkippedRequest(uint fileDataId)
+        {
+            inFlight.TryRemove(fileDataId, out _);
+            if (Users.ContainsKey(fileDataId) &&
+                !Cache.ContainsKey(fileDataId) &&
+                inFlight.TryAdd(fileDataId, 0))
+            {
+                loadQueue.Enqueue(fileDataId);
+            }
         }
 
         internal static bool ShouldDiscardDecodedTexture(bool hasUsers, bool hasCachedTexture) =>
@@ -374,8 +349,6 @@ namespace WoWRenderLib.DX11.Cache
             Cache.Clear();
             Users.Clear();
             inFlight.Clear();
-            while (decodeQueue.TryDequeue(out _)) { }
-            while (uploadQueue.TryDequeue(out _)) { }
             if (pendingTexture.HasValue)
             {
                 pendingTexture.Value.Dispose();

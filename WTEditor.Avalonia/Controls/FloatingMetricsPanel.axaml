@@ -198,15 +198,31 @@
           </StackPanel>
 
           <Border Padding="9" CornerRadius="4" Background="#242D35">
-            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
               <TextBlock Text="Pending streamed resources"/>
               <TextBlock Grid.Column="1" Text="{Binding ProfilePendingAssets}"/>
-              <TextBlock Grid.Row="1" Text="Resources uploaded this frame"/>
-              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileUploadedResources}"/>
-              <TextBlock Grid.Row="2" Text="Draw calls submitted"/>
-              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DrawCalls}"/>
-              <TextBlock Grid.Row="3" Text="Indexed triangles submitted"/>
-              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SubmittedTriangleCount, StringFormat='{}{0:N0}'}"/>
+              <TextBlock Grid.Row="1" Text="ADT pipeline pending"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProfileAssetStreaming.Adt.Pending}"/>
+              <TextBlock Grid.Row="2" Text="BLP pipeline pending"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ProfileAssetStreaming.Blp.Pending}"/>
+              <TextBlock Grid.Row="3" Text="M2 pipeline pending"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ProfileAssetStreaming.M2.Pending}"/>
+              <TextBlock Grid.Row="4" Text="WMO pipeline pending"/>
+              <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ProfileAssetStreaming.Wmo.Pending}"/>
+              <TextBlock Grid.Row="5" Text="Stale worker requests skipped"/>
+              <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ProfileAssetStreaming.Skipped}"/>
+              <TextBlock Grid.Row="6" Text="Worker failures"/>
+              <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding ProfileAssetStreaming.Failed}"/>
+              <TextBlock Grid.Row="7" Text="Maximum parse/decode time"/>
+              <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding ProfileAssetStreaming.MaximumProcessingMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+              <TextBlock Grid.Row="8" Text="Synchronous streaming budget"/>
+              <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding ProfileStreamingBudgetMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+              <TextBlock Grid.Row="9" Text="Resources uploaded this frame"/>
+              <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding ProfileUploadedResources}"/>
+              <TextBlock Grid.Row="10" Text="Draw calls submitted"/>
+              <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding DrawCalls}"/>
+              <TextBlock Grid.Row="11" Text="Indexed triangles submitted"/>
+              <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SubmittedTriangleCount, StringFormat='{}{0:N0}'}"/>
             </Grid>
           </Border>
 

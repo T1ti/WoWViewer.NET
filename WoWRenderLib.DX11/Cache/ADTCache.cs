@@ -3,6 +3,7 @@ using Silk.NET.Direct3D11;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using WoWRenderLib.DX11.Loaders;
+using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
 
@@ -10,40 +11,53 @@ namespace WoWRenderLib.DX11.Cache
 {
     public static class ADTCache
     {
-        private static readonly ConcurrentDictionary<string, Terrain> Cache = [];
-        private static readonly ConcurrentDictionary<string, List<uint>> Users = [];
-        private static readonly ConcurrentDictionary<string, Action<Terrain>> Callbacks = [];
+        internal const int MaxRequestsInFlight = 16;
+
+        private static readonly ConcurrentDictionary<MapTile, Terrain> Cache = [];
+        private static readonly ConcurrentDictionary<MapTile, List<uint>> Users = [];
+        private static readonly ConcurrentDictionary<MapTile, ADTCallbacks> Callbacks = [];
 
         private static readonly Lock inFlightLock = new();
-        private static readonly HashSet<string> inFlight = [];
-        private static readonly ConcurrentQueue<(string key, MapTile mapTile)> parseQueue = [];
-        private static readonly ConcurrentQueue<(string key, ParsedADT parsedADT)> uploadQueue = [];
+        private static readonly HashSet<MapTile> inFlight = [];
+        private static readonly BackgroundResourceQueue<MapTile, ParsedADT> loadQueue = new(
+            WoWRenderLib.Loaders.ADTLoader.ParseADT,
+            bufferedResultCount: 4,
+            bufferedRequestCount: MaxRequestsInFlight,
+            shouldProcess: mapTile => Users.ContainsKey(mapTile));
 
-        private static CancellationTokenSource? workerCancellation;
-        private static Task? workerTask;
+        private readonly record struct ADTCallbacks(
+            Action<Terrain>? Loaded,
+            Action<Exception>? Failed);
 
-        public static Terrain GetOrLoad(MapTile mapTile, uint parent, Action<Terrain>? onLoaded = null, bool keepTrack = true)
+        public static Terrain GetOrLoad(
+            MapTile mapTile,
+            uint parent,
+            Action<Terrain>? onLoaded = null,
+            Action<Exception>? onFailed = null,
+            bool keepTrack = true)
         {
-            StartWorker();
-
-            var key = (mapTile.wdtFileDataID, mapTile.tileX, mapTile.tileY).ToString();
-
-
             if (keepTrack)
             {
-                if (Users.TryGetValue(key, out var users))
+                if (Users.TryGetValue(mapTile, out var users))
                     users.Add(parent);
                 else
-                    Users.TryAdd(key, [parent]);
+                    Users.TryAdd(mapTile, [parent]);
             }
 
             lock (inFlightLock)
             {
-                if (inFlight.Contains(key))
-                    return Cache[key];
+                if (inFlight.Contains(mapTile))
+                {
+                    // A tile can leave and re-enter the desired set while its
+                    // parse is still running. Attach the new owner before
+                    // returning the existing placeholder.
+                    if (onLoaded != null || onFailed != null)
+                        Callbacks[mapTile] = new ADTCallbacks(onLoaded, onFailed);
+                    return Cache[mapTile];
+                }
             }
 
-            if (Cache.TryGetValue(key, out Terrain value))
+            if (Cache.TryGetValue(mapTile, out Terrain value))
             {
                 // return immediately if already loaded
                 if (value.renderBatches != null)
@@ -53,70 +67,100 @@ namespace WoWRenderLib.DX11.Cache
             }
 
             // TODO: LOD ADT? Better placeholder? Do in ADT container?
-            Cache.TryAdd(key, new Terrain());
+            Cache.TryAdd(mapTile, new Terrain());
 
             // onLoaded here is the callback to the ADT container to fire for when its loaded
-            if (onLoaded != null)
-                Callbacks[key] = onLoaded;
+            if (onLoaded != null || onFailed != null)
+                Callbacks[mapTile] = new ADTCallbacks(onLoaded, onFailed);
 
             lock(inFlightLock)
-                inFlight.Add(key);
+                inFlight.Add(mapTile);
             
-            parseQueue.Enqueue((key, mapTile));
-
-            return Cache[key];
-        }
-
-        private static void StartWorker()
-        {
-            if (workerTask != null)
-                return;
-
-            workerCancellation = new CancellationTokenSource();
-            workerTask = Task.Run(() => ParseWorker(workerCancellation.Token), workerCancellation.Token);
-        }
-
-        private static async Task ParseWorker(CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                if (!parseQueue.TryDequeue(out var item))
+                loadQueue.Enqueue(mapTile);
+            }
+            catch
+            {
+                RollBackRequest(mapTile, parent, keepTrack);
+                throw;
+            }
+
+            return Cache[mapTile];
+        }
+
+        private static void RollBackRequest(MapTile mapTile, uint parent, bool keepTrack)
+        {
+            lock (inFlightLock)
+                inFlight.Remove(mapTile);
+
+            Callbacks.TryRemove(mapTile, out _);
+            if (keepTrack && Users.TryGetValue(mapTile, out var users))
+            {
+                users.Remove(parent);
+                if (users.Count == 0)
+                    Users.TryRemove(mapTile, out _);
+            }
+
+            if (!Users.ContainsKey(mapTile))
+                Cache.TryRemove(mapTile, out _);
+        }
+
+        private static void CompleteSkippedRequest(MapTile mapTile)
+        {
+            lock (inFlightLock)
+                inFlight.Remove(mapTile);
+
+            // Re-entry may occur after the worker decided this request was
+            // stale but before the render thread observes that decision.
+            if (Users.ContainsKey(mapTile))
+            {
+                lock (inFlightLock)
+                    inFlight.Add(mapTile);
+                loadQueue.Enqueue(mapTile);
+                return;
+            }
+
+            Callbacks.TryRemove(mapTile, out _);
+            Cache.TryRemove(mapTile, out _);
+        }
+
+        public static int Upload(
+            Stopwatch queueTimer,
+            ComPtr<ID3D11Device> device,
+            double budgetMilliseconds = 10d,
+            int maxItems = int.MaxValue)
+        {
+            var uploaded = 0;
+            var processed = 0;
+            while (processed < maxItems && queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
+            {
+                if (!loadQueue.TryDequeue(out var item))
+                    return uploaded;
+
+                if (item.IsSkipped)
                 {
-                    await Task.Delay(10, cancellationToken);
+                    CompleteSkippedRequest(item.Request);
                     continue;
                 }
 
-                var (key, mapTile) = item;
+                processed++;
 
-                try
+                var key = item.Request;
+                if (item.Error != null)
                 {
-                    var parsed = WoWRenderLib.Loaders.ADTLoader.ParseADT(mapTile);
-                    uploadQueue.Enqueue((key, parsed));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"Failed to parse ADT {key}: {e}");
-                    
-                    lock(inFlightLock)
+                    lock (inFlightLock)
                         inFlight.Remove(key);
-                    
-                    Callbacks.TryRemove(key, out _);
+
+                    if (Callbacks.TryRemove(key, out var failedCallbacks))
+                        failedCallbacks.Failed?.Invoke(item.Error);
 
                     if (!Users.ContainsKey(key))
                         Cache.TryRemove(key, out _);
+                    continue;
                 }
-            }
-        }
 
-        public static int Upload(Stopwatch queueTimer, ComPtr<ID3D11Device> device)
-        {
-            var uploaded = 0;
-            while (queueTimer.ElapsedMilliseconds < 10)
-            {
-                if (!uploadQueue.TryDequeue(out var item))
-                    return uploaded;
-
-                var (key, parsedADT) = item;
+                var parsedADT = item.Value;
 
                 if (!Cache.TryGetValue(key, out var oldTerrain))
                 {
@@ -149,13 +193,21 @@ namespace WoWRenderLib.DX11.Cache
                     Cache[key] = newTerrain;
                     uploaded++;
 
-                    if (Callbacks.Remove(key, out var callback))
-                        callback(newTerrain);
+                    if (Callbacks.Remove(key, out var callbacks))
+                        callbacks.Loaded?.Invoke(newTerrain);
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine($"Failed to upload ADT {parsedADT.rootADTFileDataID}: {e.Message}");
-                    Callbacks.TryRemove(key, out _);
+                    lock (inFlightLock)
+                        inFlight.Remove(key);
+
+                    if (Callbacks.TryRemove(key, out var failedCallbacks))
+                        failedCallbacks.Failed?.Invoke(e);
+
+                    if (!Users.ContainsKey(key))
+                        Cache.TryRemove(key, out _);
+                    continue;
                 }
 
                 lock(inFlightLock)
@@ -171,54 +223,32 @@ namespace WoWRenderLib.DX11.Cache
             StopWorkerAsync().GetAwaiter().GetResult();
         }
 
-        public static async Task StopWorkerAsync()
-        {
-            var cancellation = workerCancellation;
-            var task = workerTask;
-            workerCancellation = null;
-            workerTask = null;
+        public static Task StopWorkerAsync() => loadQueue.StopAsync();
 
-            if (cancellation == null)
-                return;
+        public static int GetLoadQueueCount() => loadQueue.Count;
 
-            cancellation.Cancel();
-            try
-            {
-                if (task != null)
-                    await task.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            finally
-            {
-                cancellation.Dispose();
-            }
-        }
-
-        public static int GetLoadQueueCount() => parseQueue.Count + uploadQueue.Count;
+        internal static AssetPipelineMetrics GetQueueMetrics() => loadQueue.Metrics;
 
         public static void Release(MapTile mapTile, uint parent)
         {
-            var key = (mapTile.wdtFileDataID, mapTile.tileX, mapTile.tileY).ToString();
-            if (Users.TryGetValue(key, out var users))
+            if (Users.TryGetValue(mapTile, out var users))
             {
                 users.Remove(parent);
                 if (users.Count == 0)
                 {
-                    Users.TryRemove(key, out _);
-                    Callbacks.TryRemove(key, out _);
+                    Users.TryRemove(mapTile, out _);
+                    Callbacks.TryRemove(mapTile, out _);
 
                     bool isPending;
                     lock (inFlightLock)
-                        isPending = inFlight.Contains(key);
+                        isPending = inFlight.Contains(mapTile);
 
                     // Keep an in-flight placeholder alive until its parsed
                     // result reaches Upload. This avoids a key-not-found race
                     // when the tile is requested again before the worker
                     // finishes, while Upload will discard it if it remains
                     // unused.
-                    if (!isPending && Cache.TryRemove(key, out var terrain))
+                    if (!isPending && Cache.TryRemove(mapTile, out var terrain))
                         ADTLoader.UnloadTerrain(terrain);
                 }
             }
@@ -241,8 +271,6 @@ namespace WoWRenderLib.DX11.Cache
             Callbacks.Clear();
             Users.Clear();
             Cache.Clear();
-            while (parseQueue.TryDequeue(out _)) { }
-            while (uploadQueue.TryDequeue(out _)) { }
             lock (inFlightLock)
                 inFlight.Clear();
         }

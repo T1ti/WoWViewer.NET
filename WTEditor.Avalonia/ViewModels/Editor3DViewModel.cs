@@ -110,9 +110,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _profileCpuMilliseconds;
     [ObservableProperty] private double? _profileGpuMilliseconds;
     [ObservableProperty] private double _profileFrameMilliseconds;
+    [ObservableProperty] private double _profileStreamingBudgetMilliseconds;
     [ObservableProperty] private string _profileBottleneck = "Waiting for timing samples";
     [ObservableProperty] private int _profilePendingAssets;
     [ObservableProperty] private int _profileUploadedResources;
+    [ObservableProperty] private AssetStreamingProfile _profileAssetStreaming = AssetStreamingProfile.Empty;
     [ObservableProperty] private CullingMetrics _profileCulling = new(0, 0, 0, 0, 0, 0);
     [ObservableProperty] private RenderWorkloadMetrics _profileRenderWorkload = RenderWorkloadMetrics.Empty;
     [ObservableProperty] private double _profileProcessCpuPercent;
@@ -382,8 +384,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfileCpuMilliseconds = snapshot.CpuFrameMilliseconds;
         ProfileGpuMilliseconds = snapshot.GpuFrameMilliseconds;
         ProfileFrameMilliseconds = snapshot.EngineFrameMilliseconds;
+        ProfileStreamingBudgetMilliseconds = snapshot.StreamingBudgetMilliseconds;
         ProfilePendingAssets = snapshot.PendingAssetOperations;
         ProfileUploadedResources = snapshot.UploadedResources;
+        ProfileAssetStreaming = snapshot.AssetStreaming;
         ProfileCulling = snapshot.Culling;
         ProfileRenderWorkload = snapshot.RenderWorkload;
 
@@ -425,8 +429,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfileCpuMilliseconds = 0;
         ProfileGpuMilliseconds = null;
         ProfileFrameMilliseconds = 0;
+        ProfileStreamingBudgetMilliseconds = 0;
         ProfilePendingAssets = 0;
         ProfileUploadedResources = 0;
+        ProfileAssetStreaming = AssetStreamingProfile.Empty;
         ProfileCulling = new CullingMetrics(0, 0, 0, 0, 0, 0);
         ProfileRenderWorkload = RenderWorkloadMetrics.Empty;
         ProfileProcessCpuPercent = 0;

@@ -657,9 +657,22 @@ namespace WTEditor.Avalonia.Controls
             PublishSelection(engine.SelectedObject);
             PublishTerrainDirtyState(engine, includeSnapshots: false);
             engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
+            var elapsedBeforeRenderMilliseconds = inputMilliseconds +
+                Stopwatch.GetElapsedTime(engineFrameStarted).TotalMilliseconds;
+            var estimatedRenderMilliseconds = engine.Stats.MutexWaitTimeMs +
+                                               engine.Stats.TileUpdateTimeMs +
+                                               engine.Stats.SceneRenderTimeMs +
+                                               engine.Stats.RenderOverheadTimeMs;
+            var streamingBudgetMilliseconds = StreamingFrameBudget.CalculateMilliseconds(
+                frameInterval,
+                elapsedBeforeRenderMilliseconds,
+                estimatedRenderMilliseconds);
             try
             {
-                engine.RenderTo(delta, presentationBuffer.RenderTargetView);
+                engine.RenderTo(
+                    delta,
+                    presentationBuffer.RenderTargetView,
+                    streamingBudgetMilliseconds);
             }
             catch
             {
@@ -770,6 +783,7 @@ namespace WTEditor.Avalonia.Controls
                     engine.Stats.PendingAssetOperations)
                 {
                     EngineFrameMilliseconds = engineFrameMilliseconds,
+                    StreamingBudgetMilliseconds = streamingBudgetMilliseconds,
                     UploadedResources = engine.Stats.UploadedResources,
                     ViewportWidth = width,
                     ViewportHeight = height,
@@ -824,12 +838,27 @@ namespace WTEditor.Avalonia.Controls
                         (int)engine.Stats.TextureBindingCalls,
                         (int)engine.Stats.BlendStateBindings,
                         (int)engine.Stats.VertexBufferBindings,
-                        (int)engine.Stats.IndexBufferBindings)
+                        (int)engine.Stats.IndexBufferBindings),
+                    AssetStreaming = new AssetStreamingProfile(
+                        ToProfile(engine.Stats.AssetStreaming.Adt),
+                        ToProfile(engine.Stats.AssetStreaming.Blp),
+                        ToProfile(engine.Stats.AssetStreaming.M2),
+                        ToProfile(engine.Stats.AssetStreaming.Wmo))
                 };
                 _vm.UpdatePerformanceProfile(profileSnapshot);
                 UpdateAutomatedBenchmark(profileSnapshot);
             }
         }
+
+        private static AssetPipelineProfile ToProfile(
+            WoWRenderLib.DX11.Streaming.AssetPipelineMetrics metrics) => new(
+                metrics.Pending,
+                metrics.Active,
+                metrics.Completed,
+                metrics.Skipped,
+                metrics.Failed,
+                metrics.LastProcessingMilliseconds,
+                metrics.MaximumProcessingMilliseconds);
 
         private void QueueNextRenderFrame()
         {

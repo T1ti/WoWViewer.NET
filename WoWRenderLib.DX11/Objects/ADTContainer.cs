@@ -12,10 +12,13 @@ namespace WoWRenderLib.DX11.Objects
         public Terrain Terrain { get; private set; }
         public MapTile mapTile;
         public event Action<ADTContainer, Terrain>? LoadCallback;
+        public event Action<ADTContainer, Exception>? LoadFailedCallback;
         public bool IsLoaded { get; private set; }
         public bool IsModified { get; private set; }
         private ADTVertex[] _originalVertices = [];
+        private bool _hasOriginalVertices;
         private bool _cacheReferenceHeld;
+        private long? _unloadRequestedAt;
 
         public ADTContainer(ComPtr<ID3D11Device> device, MapTile mapTile) : base(device, mapTile.wdtFileDataID, mapTile.wdtFileDataID)
         {
@@ -37,11 +40,26 @@ namespace WoWRenderLib.DX11.Objects
         {
             // this gets called by the cache when it finishes (up)loading terrain
             UpdateTerrain(terrain);
-            _originalVertices = terrain.vertices?.ToArray() ?? [];
+            _originalVertices = [];
+            _hasOriginalVertices = false;
             IsModified = false;
             IsLoaded = true;
             LoadCallback?.Invoke(this, terrain); // and in turn we left scene manager know it loaded!
         }
+
+        public void OnLoadFailed(Exception exception) =>
+            LoadFailedCallback?.Invoke(this, exception);
+
+        internal bool IsUnloadScheduled => _unloadRequestedAt.HasValue;
+
+        internal void ScheduleUnload(TimeProvider timeProvider) =>
+            _unloadRequestedAt ??= timeProvider.GetTimestamp();
+
+        internal void CancelUnload() => _unloadRequestedAt = null;
+
+        internal bool IsUnloadDue(TimeProvider timeProvider, TimeSpan delay) =>
+            _unloadRequestedAt is long requestedAt &&
+            timeProvider.GetElapsedTime(requestedAt) >= delay;
 
         public void Unload()
         {
@@ -54,20 +72,32 @@ namespace WoWRenderLib.DX11.Objects
             IsLoaded = false;
             IsModified = false;
             _originalVertices = [];
+            _hasOriginalVertices = false;
+            _unloadRequestedAt = null;
             Terrain = default;
+        }
+
+        internal void EnsureOriginalVerticesCaptured()
+        {
+            if (_hasOriginalVertices)
+                return;
+
+            _originalVertices = Terrain.vertices?.ToArray() ?? [];
+            _hasOriginalVertices = true;
         }
 
         public void RefreshModifiedState()
         {
             var vertices = Terrain.vertices;
-            IsModified = vertices is { Length: > 0 } &&
+            IsModified = _hasOriginalVertices && vertices is { Length: > 0 } &&
                          (_originalVertices.Length != vertices.Length ||
                           !HaveSamePositions(_originalVertices, vertices));
         }
 
         public void MarkSaved()
         {
-            _originalVertices = Terrain.vertices?.ToArray() ?? [];
+            _originalVertices = [];
+            _hasOriginalVertices = false;
             IsModified = false;
         }
 

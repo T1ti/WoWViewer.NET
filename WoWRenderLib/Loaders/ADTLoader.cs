@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using WoWLib;
 using Formats = WoWLib.Formats;
 using Fs = WoWLib.Filesystem;
@@ -327,7 +328,6 @@ public static class ADTLoader
         // An ADT has at most eight texture layers. Keep the selected alpha
         // maps in a fixed array so conversion does not hash a layer index for
         // every output byte.
-        var alphaLayers = new byte[]?[MaxTextureLayers];
         for (var layerIndex = 0; layerIndex < Math.Min(layers.Length, MaxTextureLayers); layerIndex++)
         {
             var layer = layers[layerIndex];
@@ -346,26 +346,24 @@ public static class ADTLoader
             if (diffuse != 0)
                 usedIds.Add(diffuse);
 
-            if (layerIndex < alphaMaps.Count)
-                alphaLayers[layerIndex] = alphaMaps[layerIndex].AsSpan().ToArray();
         }
 
         var alphaMaterials = new byte[2][];
         for (var group = 0; group < 2; group++)
         {
             var baseLayer = group * 4;
-            var layer0 = alphaLayers[baseLayer];
-            var layer1 = alphaLayers[baseLayer + 1];
-            var layer2 = alphaLayers[baseLayer + 2];
-            var layer3 = alphaLayers[baseLayer + 3];
-            if (layer0 is null && layer1 is null && layer2 is null && layer3 is null)
+            var layerCount = Math.Min(AlphaChannelCount, alphaMaps.Count - baseLayer);
+            if (layerCount <= 0)
                 continue;
 
             var alphaData = new byte[AlphaMapSize * AlphaMapSize * AlphaChannelCount];
-            CopyAlphaChannel(layer0, alphaData, 0);
-            CopyAlphaChannel(layer1, alphaData, 1);
-            CopyAlphaChannel(layer2, alphaData, 2);
-            CopyAlphaChannel(layer3, alphaData, 3);
+            for (var channel = 0; channel < layerCount; channel++)
+            {
+                CopyAlphaChannel(
+                    alphaMaps[baseLayer + channel].AsSpan(),
+                    alphaData,
+                    channel);
+            }
             alphaMaterials[group] = alphaData;
         }
 
@@ -380,15 +378,30 @@ public static class ADTLoader
         };
     }
 
-    private static void CopyAlphaChannel(byte[]? source, byte[] destination, int channel)
+    internal static void CopyAlphaChannel(
+        ReadOnlySpan<byte> source,
+        byte[] destination,
+        int channel)
     {
-        if (source is null)
-            return;
-
         var count = Math.Min(source.Length, AlphaMapSize * AlphaMapSize);
-        var destinationIndex = channel;
-        for (var sourceIndex = 0; sourceIndex < count; sourceIndex++, destinationIndex += 4)
-            destination[destinationIndex] = source[sourceIndex];
+        if ((uint)channel >= AlphaChannelCount)
+            throw new ArgumentOutOfRangeException(nameof(channel));
+
+        var requiredLength = count == 0
+            ? 0
+            : ((count - 1) * AlphaChannelCount) + channel + 1;
+        if (destination.Length < requiredLength)
+            throw new ArgumentException("The alpha destination is too small.", nameof(destination));
+
+        ref var sourceStart = ref MemoryMarshal.GetReference(source);
+        ref var destinationStart = ref Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(destination),
+            channel);
+        for (var index = 0; index < count; index++)
+        {
+            Unsafe.Add(ref destinationStart, index * AlphaChannelCount) =
+                Unsafe.Add(ref sourceStart, index);
+        }
     }
 
     private static Doodad[] BuildDoodads(

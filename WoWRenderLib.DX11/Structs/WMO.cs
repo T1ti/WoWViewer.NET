@@ -44,6 +44,7 @@ namespace WoWRenderLib.DX11.Structs
         public ushort flags;
         public WorldModelGroupBatches[] groupBatches;
         public PreppedWMOMaterial[] preppedMats;
+        public uint[] textureReferences;
         public WMORenderBatch[] wmoRenderBatches;
         public WMODoodad[] doodads;
         public string[] doodadSets;

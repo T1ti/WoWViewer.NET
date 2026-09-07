@@ -11,6 +11,7 @@ using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
+using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
@@ -128,6 +129,7 @@ namespace WoWRenderLib.DX11
         public uint IndexBufferBindings { get; internal set; }
         public int PendingAssetOperations { get; internal set; }
         public int UploadedResources { get; internal set; }
+        public AssetStreamingMetrics AssetStreaming { get; internal set; }
         public int VisibleTerrainChunks { get; internal set; }
         public int CandidateTerrainChunks { get; internal set; }
         public int VisibleWorldModels { get; internal set; }
@@ -548,13 +550,17 @@ namespace WoWRenderLib.DX11
                     ? EditAction.Positive
                     : EditAction.Default;
 
-        public void Render(double deltaTime) => RenderCore(deltaTime, useSharedMutex: true);
+        public void Render(double deltaTime) =>
+            RenderCore(deltaTime, useSharedMutex: true, synchronousStreamingBudgetMilliseconds: 10d);
 
         /// <summary>
         /// Renders directly into an externally-owned RTV. No application-side texture
         /// copy is performed. The target must be keyed-mutex acquired by the caller.
         /// </summary>
-        public unsafe void RenderTo(double deltaTime, ComPtr<ID3D11RenderTargetView> target)
+        public unsafe void RenderTo(
+            double deltaTime,
+            ComPtr<ID3D11RenderTargetView> target,
+            double synchronousStreamingBudgetMilliseconds = 10d)
         {
             if (target.Handle == null)
                 throw new ArgumentException("A valid external render target is required.", nameof(target));
@@ -563,10 +569,13 @@ namespace WoWRenderLib.DX11
                 throw new InvalidOperationException("External render targets are not enabled for this engine.");
 
             sceneManager.SetRenderTarget(target);
-            RenderCore(deltaTime, useSharedMutex: false);
+            RenderCore(deltaTime, useSharedMutex: false, synchronousStreamingBudgetMilliseconds);
         }
 
-        private unsafe void RenderCore(double deltaTime, bool useSharedMutex)
+        private unsafe void RenderCore(
+            double deltaTime,
+            bool useSharedMutex,
+            double synchronousStreamingBudgetMilliseconds)
         {
             if (!IsInitialized) return;
             var renderStarted = Stopwatch.GetTimestamp();
@@ -592,7 +601,7 @@ namespace WoWRenderLib.DX11
 
                 phaseStarted = Stopwatch.GetTimestamp();
                 _gpuFrameTimer?.BeginUploads();
-                sceneManager.ProcessQueue();
+                sceneManager.ProcessQueue(synchronousStreamingBudgetMilliseconds);
                 _gpuFrameTimer?.EndUploads();
                 Stats.AssetUploadTimeMs = Stopwatch.GetElapsedTime(phaseStarted).TotalMilliseconds;
                 Stats.UploadedResources = sceneManager.UploadedResourcesLastFrame;
@@ -658,6 +667,7 @@ namespace WoWRenderLib.DX11
                 _gpuFrameTimer?.EndDraws();
                 Stats.SceneRenderTimeMs = Stopwatch.GetElapsedTime(phaseStarted).TotalMilliseconds;
                 Stats.PendingAssetOperations = sceneManager.GetPendingOperationCount();
+                Stats.AssetStreaming = SceneManager.GetAssetStreamingMetrics();
             }
             finally
             {
@@ -948,8 +958,8 @@ namespace WoWRenderLib.DX11
 
             var clampedX = Math.Clamp(tileX, 0d, 63.999999d);
             var clampedY = Math.Clamp(tileY, 0d, 63.999999d);
-            var worldX = (float)((32d - clampedY) * 533.333d);
-            var worldY = (float)((32d - clampedX) * 533.333d);
+            var worldX = (float)((32d - clampedY) * 533.33333d);
+            var worldY = (float)((32d - clampedX) * 533.33333d);
             var tile = ((byte)Math.Floor(clampedX), (byte)Math.Floor(clampedY));
             _pendingTerrainNavigation = (wdtFileDataId, tile.Item1, tile.Item2, new Vector2(worldX, worldY));
             // Move immediately so this exact tile enters the loading queue.

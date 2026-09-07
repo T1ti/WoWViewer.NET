@@ -75,6 +75,36 @@ public sealed record RenderWorkloadMetrics(
         0);
 }
 
+public sealed record AssetPipelineProfile(
+    int Pending,
+    int Active,
+    long Completed,
+    long Skipped,
+    long Failed,
+    double LastProcessingMilliseconds,
+    double MaximumProcessingMilliseconds);
+
+public sealed record AssetStreamingProfile(
+    AssetPipelineProfile Adt,
+    AssetPipelineProfile Blp,
+    AssetPipelineProfile M2,
+    AssetPipelineProfile Wmo)
+{
+    private static readonly AssetPipelineProfile EmptyPipeline = new(0, 0, 0, 0, 0, 0, 0);
+
+    public static AssetStreamingProfile Empty { get; } = new(
+        EmptyPipeline,
+        EmptyPipeline,
+        EmptyPipeline,
+        EmptyPipeline);
+
+    public long Skipped => Adt.Skipped + Blp.Skipped + M2.Skipped + Wmo.Skipped;
+    public long Failed => Adt.Failed + Blp.Failed + M2.Failed + Wmo.Failed;
+    public double MaximumProcessingMilliseconds => Math.Max(
+        Math.Max(Adt.MaximumProcessingMilliseconds, Blp.MaximumProcessingMilliseconds),
+        Math.Max(M2.MaximumProcessingMilliseconds, Wmo.MaximumProcessingMilliseconds));
+}
+
 public sealed record FrameProfileSnapshot(
     long FrameNumber,
     DateTimeOffset CapturedAt,
@@ -88,9 +118,11 @@ public sealed record FrameProfileSnapshot(
 {
     public long SubmittedTriangles => SubmittedIndices / 3;
     public double EngineFrameMilliseconds { get; init; }
+    public double StreamingBudgetMilliseconds { get; init; }
     public int UploadedResources { get; init; }
     public CullingMetrics Culling { get; init; } = new(0, 0, 0, 0, 0, 0);
     public RenderWorkloadMetrics RenderWorkload { get; init; } = RenderWorkloadMetrics.Empty;
+    public AssetStreamingProfile AssetStreaming { get; init; } = AssetStreamingProfile.Empty;
     public int ViewportWidth { get; init; }
     public int ViewportHeight { get; init; }
 

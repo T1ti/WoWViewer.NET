@@ -96,6 +96,7 @@ namespace WoWRenderLib.DX11.Loaders
             }
 
             var renderBatches = new List<WMORenderBatch>();
+            var textureReferences = new List<uint>();
 
             for (var g = 0; g < preppedWMO.PreppedWMOGroups.Length; g++)
             {
@@ -131,7 +132,10 @@ namespace WoWRenderLib.DX11.Loaders
                     foreach (var id in renderBatch.materialFDIDs)
                     {
                         if (HasTexture(id))
+                        {
                             BLPCache.GetOrLoad(device, id, preppedWMO.FileDataID);
+                            textureReferences.Add(id);
+                        }
                     }
 
                     renderBatches.Add(renderBatch);
@@ -141,6 +145,7 @@ namespace WoWRenderLib.DX11.Loaders
             wmoBatch.doodadSets = preppedWMO.DoodadSets;
             wmoBatch.doodads = preppedWMO.Doodads;
             wmoBatch.preppedMats = preppedWMO.Materials;
+            wmoBatch.textureReferences = [.. textureReferences];
             //wmoBatch.mats = mats;
             wmoBatch.wmoRenderBatches = [.. renderBatches];
             wmoBatch.doodads = preppedWMO.Doodads;
@@ -271,36 +276,8 @@ namespace WoWRenderLib.DX11.Loaders
                 wmo.groupBatches[g].indiceBuffer.Dispose();
             }
 
-            if (wmo.doodads != null)
-            {
-                foreach (var model in wmo.doodads)
-                    M2Cache.Release(model.filedataid, wmo.rootWMOFileDataID);
-            }
-
-            if (wmo.preppedMats != null)
-            {
-                foreach (var mat in wmo.preppedMats)
-                {
-                    if (HasTexture(mat.TexFileDataID0))
-                        BLPCache.Release(mat.TexFileDataID0, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID1))
-                        BLPCache.Release(mat.TexFileDataID1, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID2))
-                        BLPCache.Release(mat.TexFileDataID2, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID3))
-                        BLPCache.Release(mat.TexFileDataID3, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID4))
-                        BLPCache.Release(mat.TexFileDataID4, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID5))
-                        BLPCache.Release(mat.TexFileDataID5, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID6))
-                        BLPCache.Release(mat.TexFileDataID6, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID7))
-                        BLPCache.Release(mat.TexFileDataID7, wmo.rootWMOFileDataID);
-                    if (HasTexture(mat.TexFileDataID8))
-                        BLPCache.Release(mat.TexFileDataID8, wmo.rootWMOFileDataID);
-                }
-            }
+            foreach (var fileDataId in wmo.textureReferences ?? [])
+                BLPCache.Release(fileDataId, wmo.rootWMOFileDataID);
         }
 
         private static bool HasTexture(uint fileDataId)

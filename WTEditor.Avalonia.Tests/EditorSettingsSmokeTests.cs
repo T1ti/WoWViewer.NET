@@ -130,6 +130,43 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void StreamingBudgetUsesRemainingFrameTimeAndFpsCap()
+    {
+        Assert.AreEqual(
+            9d,
+            StreamingFrameBudget.CalculateMilliseconds(
+                frameIntervalSeconds: 0.01d,
+                elapsedBeforeRenderMilliseconds: 0d,
+                estimatedRenderMilliseconds: 0d),
+            0.001d);
+        Assert.AreEqual(
+            3d,
+            StreamingFrameBudget.CalculateMilliseconds(
+                frameIntervalSeconds: 0.01d,
+                elapsedBeforeRenderMilliseconds: 1d,
+                estimatedRenderMilliseconds: 5d),
+            0.001d);
+        Assert.AreEqual(
+            0d,
+            StreamingFrameBudget.CalculateMilliseconds(
+                frameIntervalSeconds: 0.01d,
+                elapsedBeforeRenderMilliseconds: 3d,
+                estimatedRenderMilliseconds: 8d),
+            0.001d);
+        Assert.AreEqual(
+            10d,
+            StreamingFrameBudget.CalculateMilliseconds(
+                frameIntervalSeconds: 1d / 60d,
+                elapsedBeforeRenderMilliseconds: 0d,
+                estimatedRenderMilliseconds: 0d),
+            0.01d);
+        Assert.IsTrue(double.IsFinite(StreamingFrameBudget.CalculateMilliseconds(
+            frameIntervalSeconds: double.NaN,
+            elapsedBeforeRenderMilliseconds: double.NaN,
+            estimatedRenderMilliseconds: double.PositiveInfinity)));
+    }
+
+    [TestMethod]
     public void PersistedSettings_RoundTripPreservesStartupConfiguration()
     {
         var expected = new EditorSettingsSnapshot
