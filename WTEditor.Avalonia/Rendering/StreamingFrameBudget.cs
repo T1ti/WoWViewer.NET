@@ -4,11 +4,13 @@ internal static class StreamingFrameBudget
 {
     private const double DefaultTargetFrameMilliseconds = 10d;
     private const double MaximumSynchronousWorkMilliseconds = 10d;
+    private const double MinimumProgressMilliseconds = 1d;
 
     public static double CalculateMilliseconds(
         double? frameIntervalSeconds,
         double elapsedBeforeRenderMilliseconds,
-        double estimatedRenderMilliseconds)
+        double estimatedRenderMilliseconds,
+        bool hasPendingWork = false)
     {
         var targetMilliseconds = frameIntervalSeconds is > 0d &&
                                  double.IsFinite(frameIntervalSeconds.Value)
@@ -32,8 +34,13 @@ internal static class StreamingFrameBudget
                         estimatedRenderMilliseconds -
                         safetyReserve;
 
-        // If the rest of the frame has already spent the deadline, leave GPU
-        // publication queued for the next frame instead of forcing a spike.
-        return Math.Clamp(available, 0d, maximumStreamingShare);
+        var budget = Math.Clamp(available, 0d, maximumStreamingShare);
+        if (!hasPendingWork)
+            return budget;
+
+        // A consistently over-budget renderer must not reduce streaming to zero
+        // forever. One small progress slice keeps bounded result channels draining
+        // and prevents expensive M2 submission from deadlocking world loading.
+        return Math.Max(budget, Math.Min(MinimumProgressMilliseconds, maximumStreamingShare));
     }
 }

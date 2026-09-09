@@ -197,6 +197,40 @@ public partial class Editor3DView : UserControl
 
         var props = e.GetCurrentPoint(this).Properties;
 
+        var pos = e.GetPosition(this);
+        viewModel.MousePosition = new System.Numerics.Vector2((float)pos.X, (float)pos.Y);
+
+        if (props.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed &&
+            viewModel.EditorMode == WoWRenderLib.DX11.Editing.EditorModeId.Texture &&
+            viewModel.TexturePickerModeActive)
+        {
+            viewModel.RequestDominantTerrainTexture(viewModel.MousePosition);
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (props.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed &&
+            e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
+            viewModel.EditorMode == WoWRenderLib.DX11.Editing.EditorModeId.Texture &&
+            viewModel.TextureBrushToolMode == (int)WoWRenderLib.DX11.TextureBrushMode.Paint)
+        {
+            viewModel.RequestTerrainChunkTextures(viewModel.MousePosition);
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (props.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed &&
+            viewModel.EditorMode == WoWRenderLib.DX11.Editing.EditorModeId.Texture &&
+            viewModel.TextureBrushToolMode == (int)WoWRenderLib.DX11.TextureBrushMode.Paint)
+        {
+            viewModel.RequestDominantTerrainTexture(viewModel.MousePosition);
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
         switch (props.PointerUpdateKind)
         {
             case PointerUpdateKind.LeftButtonPressed:
@@ -207,9 +241,6 @@ public partial class Editor3DView : UserControl
                 viewModel.RightMouseDown = true;
                 break;
         }
-
-        var pos = e.GetPosition(this);
-        viewModel.MousePosition = new System.Numerics.Vector2((float)pos.X, (float)pos.Y);
 
         e.Pointer.Capture(this);
 
@@ -261,6 +292,17 @@ public partial class Editor3DView : UserControl
     {
         var vm = ViewModel;
         if (vm == null) return;
+
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && (e.Key == Key.Z || e.Key == Key.Y))
+        {
+            vm.Forward = false;
+            if (e.Key == Key.Y || (e.KeyModifiers & KeyModifiers.Shift) != 0)
+                vm.UndoService.Redo();
+            else
+                vm.UndoService.Undo();
+            e.Handled = true;
+            return;
+        }
 
         if (e.Key == _MoveForwardKey) vm.Forward = true;
         if (e.Key == _MoveBackwardKey) vm.Backward = true;

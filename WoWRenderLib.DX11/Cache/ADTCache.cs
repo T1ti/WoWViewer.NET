@@ -16,6 +16,7 @@ namespace WoWRenderLib.DX11.Cache
         private static readonly ConcurrentDictionary<MapTile, Terrain> Cache = [];
         private static readonly ConcurrentDictionary<MapTile, List<uint>> Users = [];
         private static readonly ConcurrentDictionary<MapTile, ADTCallbacks> Callbacks = [];
+        private static readonly ResourceFailureTracker<MapTile> failures = new();
 
         private static readonly Lock inFlightLock = new();
         private static readonly HashSet<MapTile> inFlight = [];
@@ -149,6 +150,12 @@ namespace WoWRenderLib.DX11.Cache
                 var key = item.Request;
                 if (item.Error != null)
                 {
+                    if (failures.TryScheduleRetry(
+                            key,
+                            Users.ContainsKey(key),
+                            loadQueue.Enqueue))
+                        continue;
+
                     lock (inFlightLock)
                         inFlight.Remove(key);
 
@@ -191,6 +198,7 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     var newTerrain = ADTLoader.LoadADT(device, parsedADT);
                     Cache[key] = newTerrain;
+                    failures.Succeeded(key);
                     uploaded++;
 
                     if (Callbacks.Remove(key, out var callbacks))
@@ -199,6 +207,12 @@ namespace WoWRenderLib.DX11.Cache
                 catch (Exception e)
                 {
                     Console.WriteLine($"Failed to upload ADT {parsedADT.rootADTFileDataID}: {e.Message}");
+                    if (failures.TryScheduleRetry(
+                            key,
+                            Users.ContainsKey(key),
+                            loadQueue.Enqueue))
+                        continue;
+
                     lock (inFlightLock)
                         inFlight.Remove(key);
 
@@ -237,6 +251,7 @@ namespace WoWRenderLib.DX11.Cache
                 if (users.Count == 0)
                 {
                     Users.TryRemove(mapTile, out _);
+                    failures.Forget(mapTile);
                     Callbacks.TryRemove(mapTile, out _);
 
                     bool isPending;
@@ -271,6 +286,7 @@ namespace WoWRenderLib.DX11.Cache
             Callbacks.Clear();
             Users.Clear();
             Cache.Clear();
+            failures.Clear();
             lock (inFlightLock)
                 inFlight.Clear();
         }

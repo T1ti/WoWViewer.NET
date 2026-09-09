@@ -75,6 +75,7 @@ namespace WoWRenderLib.DX11
         public EditAction Action;
         public float Speed;
         public float FlattenHeight;
+        public TerrainFlattenTarget FlattenTarget;
         public int SmoothIterations;
     }
 
@@ -267,6 +268,20 @@ namespace WoWRenderLib.DX11
         public void ApplyTerrainStroke(TerrainStrokeDelta delta, bool useAfter) =>
             sceneManager?.ApplyTerrainStroke(delta, useAfter);
         public void MarkTerrainChangesSaved() => sceneManager?.MarkTerrainChangesSaved();
+        public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainChunkTextures(Vector2 mousePosition) =>
+            sceneManager?.GetTerrainChunkTextures(
+                mousePosition,
+                activeCamera,
+                viewportWidth,
+                viewportHeight) ?? [];
+        public TerrainChunkTextureLayer? GetDominantTerrainTexture(Vector2 mousePosition) =>
+            sceneManager?.GetDominantTerrainTexture(
+                mousePosition,
+                activeCamera,
+                viewportWidth,
+                viewportHeight);
+        public IReadOnlyList<TerrainChunkTextureLayer> GetCurrentTerrainTileTextures() =>
+            sceneManager?.GetTerrainTileTextures(activeCamera.Position) ?? [];
 
         public void UpdateSelectedObjectTransform(Vector3 position, Vector3 rotationDegrees, float scale) =>
             sceneManager?.UpdateSelectedObjectTransform(

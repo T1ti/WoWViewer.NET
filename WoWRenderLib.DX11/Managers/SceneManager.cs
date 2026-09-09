@@ -35,6 +35,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly HashSet<MapTile> tilesQueuedForLoad = [];
         private readonly HashSet<MapTile> tilesInFlight = [];
         private readonly HashSet<MapTile> desiredTiles = [];
+        private readonly HashSet<MapTile> failedDesiredTiles = [];
 
         private readonly Dictionary<uint, uint> uuidUsers = [];
         private readonly HashSet<MapTile> loadedTiles = [];
@@ -80,6 +81,7 @@ namespace WoWRenderLib.DX11.Managers
         public BrushFalloffProfile BrushFalloffProfile { get; private set; }
         public Vector4 BrushColor { get; private set; } = new(0.2f, 0.85f, 1f, 1f);
         private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
+        private float? _flattenStrokeHeight;
 
         // World-space light from north-west at a 45° elevation. WoW's world
         // axes map north/west to the negative X/Y directions in this renderer.
@@ -146,6 +148,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<uint, M2InstancePacket> m2InstancePackets = [];
         private int nextUploadQueue;
         private int nextPopulationQueue;
+        private int nextStreamingPhase;
 
         private ComPtr<ID3D11Buffer> adtPerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> layerDataConstantBuffer = default;
@@ -162,7 +165,8 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11RasterizerState> wmoRasterizerState = default;
         private ComPtr<ID3D11RasterizerState> wireframeRasterizerState = default;
         private ComPtr<ID3D11ClassInstance> nullClassInstance = default;
-        private ComPtr<ID3D11ShaderResourceView> defaultTexture;
+        private ComPtr<ID3D11ShaderResourceView> missingTexture;
+        private ComPtr<ID3D11ShaderResourceView> emptyTerrainTexture;
         private ComPtr<ID3D11Buffer> bboxConstantBuffer = default;
         private ComPtr<ID3D11Buffer> bboxVertexBuffer = default;
         private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
@@ -236,7 +240,8 @@ namespace WoWRenderLib.DX11.Managers
             bboxShaderProgram = bboxShader;
 
             // debugRenderer = new DebugRenderer(_gl, debugShaderProgram);
-            defaultTexture = BLPLoader.CreatePlaceholderTexture(device);
+            missingTexture = BLPLoader.CreatePlaceholderTexture(device);
+            emptyTerrainTexture = BLPLoader.CreateWhiteTexture(device);
 
             // Create PerObject constant buffer (matches cbuffer PerObject in adt.hlsl)
             unsafe
@@ -458,15 +463,20 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11ShaderResourceView> ResolveFrameTexture(uint fileDataId)
         {
             if (fileDataId == 0)
-                return defaultTexture;
+                return missingTexture;
 
             if (_frameTextureSrvs.TryGetValue(fileDataId, out var texture))
                 return texture;
 
-            texture = BLPCache.GetCurrent(fileDataId, defaultTexture);
+            texture = BLPCache.GetCurrent(fileDataId, missingTexture);
             _frameTextureSrvs.Add(fileDataId, texture);
             return texture;
         }
+
+        private ComPtr<ID3D11ShaderResourceView> ResolveTerrainDiffuseTexture(int fileDataId) =>
+            fileDataId > 0
+                ? ResolveFrameTexture(checked((uint)fileDataId))
+                : emptyTerrainTexture;
 
         private void ResetWmoVisibilityBatches()
         {
@@ -635,6 +645,7 @@ namespace WoWRenderLib.DX11.Managers
                 tilesQueuedForLoad.Clear();
                 tilesInFlight.Clear();
                 desiredTiles.Clear();
+                failedDesiredTiles.Clear();
                 availableWdtTiles.Clear();
 
                 foreach (var bounds in tileSceneBounds.Values)
@@ -763,6 +774,7 @@ namespace WoWRenderLib.DX11.Managers
                 availableWdtTiles);
             var nextDesiredTiles = orderedDesiredTiles.ToHashSet();
             var desiredTilesChanged = !desiredTiles.SetEquals(nextDesiredTiles);
+            failedDesiredTiles.RemoveWhere(tile => !nextDesiredTiles.Contains(tile));
 
             desiredTiles.Clear();
             desiredTiles.UnionWith(nextDesiredTiles);
@@ -790,7 +802,8 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (!loadedTiles.Contains(mapTile) &&
                 !tilesQueuedForLoad.Contains(mapTile) &&
-                !tilesInFlight.Contains(mapTile))
+                !tilesInFlight.Contains(mapTile) &&
+                !failedDesiredTiles.Contains(mapTile))
             {
                 tilesToLoad.Enqueue(mapTile);
                 tilesQueuedForLoad.Add(mapTile);
@@ -1181,30 +1194,43 @@ namespace WoWRenderLib.DX11.Managers
             var unloadDeadline = AllocatePhaseDeadline(
                 queueTimer.Elapsed.TotalMilliseconds,
                 synchronousBudgetMilliseconds,
-                0.35d);
+                0.2d);
             ProcessUnloadQueue(queueTimer, unloadDeadline);
 
-            var populationDeadline = AllocatePhaseDeadline(
+            var firstWorkPhaseDeadline = AllocatePhaseDeadline(
                 queueTimer.Elapsed.TotalMilliseconds,
                 synchronousBudgetMilliseconds,
-                0.35d);
-            if (nextPopulationQueue == 0)
+                0.5d);
+            var uploaded = 0;
+            if (nextStreamingPhase == 0)
             {
-                ProcessPendingAdtPopulations(queueTimer, populationDeadline);
-                ProcessPendingWmoDoodads(queueTimer, populationDeadline);
+                uploaded += UploadQueuedResources(queueTimer, firstWorkPhaseDeadline);
+                ProcessPopulationQueues(queueTimer, synchronousBudgetMilliseconds);
             }
             else
             {
-                ProcessPendingWmoDoodads(queueTimer, populationDeadline);
-                ProcessPendingAdtPopulations(queueTimer, populationDeadline);
+                ProcessPopulationQueues(queueTimer, firstWorkPhaseDeadline);
+                uploaded += UploadQueuedResources(queueTimer, synchronousBudgetMilliseconds);
             }
-            nextPopulationQueue = (nextPopulationQueue + 1) % 2;
-
-            UploadedResourcesLastFrame = UploadQueuedResources(
-                queueTimer,
-                synchronousBudgetMilliseconds);
+            nextStreamingPhase = (nextStreamingPhase + 1) % 2;
+            UploadedResourcesLastFrame = uploaded;
 
             return GetPendingOperationCount() > 0;
+        }
+
+        private void ProcessPopulationQueues(Stopwatch queueTimer, double deadlineMilliseconds)
+        {
+            if (nextPopulationQueue == 0)
+            {
+                ProcessPendingAdtPopulations(queueTimer, deadlineMilliseconds);
+                ProcessPendingWmoDoodads(queueTimer, deadlineMilliseconds);
+            }
+            else
+            {
+                ProcessPendingWmoDoodads(queueTimer, deadlineMilliseconds);
+                ProcessPendingAdtPopulations(queueTimer, deadlineMilliseconds);
+            }
+            nextPopulationQueue = (nextPopulationQueue + 1) % 2;
         }
 
         private void ProcessPendingAdtPopulations(Stopwatch queueTimer, double budgetMilliseconds)
@@ -1467,6 +1493,7 @@ namespace WoWRenderLib.DX11.Managers
                 owningTileBounds));
             tilesInFlight.Remove(adtContainer.mapTile);
             loadedTiles.Add(adtContainer.mapTile);
+            failedDesiredTiles.Remove(adtContainer.mapTile);
         }
 
         private void AddWorldModelPlacement(
@@ -1525,6 +1552,7 @@ namespace WoWRenderLib.DX11.Managers
             adtContainer.LoadFailedCallback -= OnADTContainerLoadFailed;
             tilesInFlight.Remove(adtContainer.mapTile);
             loadedTiles.Remove(adtContainer.mapTile);
+            failedDesiredTiles.Add(adtContainer.mapTile);
             RemovePendingAdtPopulation(adtContainer.mapTile);
 
             lock (SceneObjectLock)
@@ -1634,7 +1662,10 @@ namespace WoWRenderLib.DX11.Managers
         public void BeginTerrainStroke()
         {
             lock (SceneObjectLock)
+            {
+                _flattenStrokeHeight = null;
                 _activeTerrainStrokeBefore = [];
+            }
         }
 
         public TerrainStrokeDelta? EndTerrainStroke()
@@ -1650,7 +1681,7 @@ namespace WoWRenderLib.DX11.Managers
                     var adt = adtContainers.FirstOrDefault(candidate =>
                         TerrainTileId.From(candidate.mapTile) == tile);
                     if (adt?.Terrain.vertices is not { Length: > 0 } after ||
-                        HaveSamePositions(before, after))
+                        before.SequenceEqual(after))
                     {
                         continue;
                     }
@@ -1691,20 +1722,6 @@ namespace WoWRenderLib.DX11.Managers
             }
         }
 
-        private static bool HaveSamePositions(ADTVertex[] left, ADTVertex[] right)
-        {
-            if (left.Length != right.Length)
-                return false;
-
-            for (var index = 0; index < left.Length; index++)
-            {
-                if (left[index].Position != right[index].Position)
-                    return false;
-            }
-
-            return true;
-        }
-
         public void PerformRaycast(float mouseX, float mouseY, Camera camera, int windowWidth, int windowHeight)
         {
             var ray = camera.GetRayFromScreen(mouseX, mouseY, windowWidth, windowHeight);
@@ -1716,7 +1733,7 @@ namespace WoWRenderLib.DX11.Managers
             {
                 // Terrain is opaque for selection: an object's bounds may only win
                 // when their first intersection is closer than the terrain surface.
-                if (TryRaycastTerrainLocked(ray, out var terrainHit))
+                if (RenderADT && TryRaycastTerrainLocked(ray, out var terrainHit))
                     closestDistance = Vector3.Distance(ray.Origin, terrainHit.WorldPosition);
 
                 foreach (var sceneObject in SceneObjects)
@@ -1737,6 +1754,13 @@ namespace WoWRenderLib.DX11.Managers
                     var sphere = sceneObject.GetBoundingSphere();
                     if (sphere.HasValue)
                     {
+                        if (!IsWithinRenderDistance(
+                                ray.Origin,
+                                sphere.Value.Center,
+                                sphere.Value.Radius,
+                                ModelRenderDistance))
+                            continue;
+
                         if (IntersectionTests.RayIntersectsSphere(ray, sphere.Value, out float sphereDistance))
                         {
                             if (sphereDistance < closestDistance)
@@ -1855,9 +1879,131 @@ namespace WoWRenderLib.DX11.Managers
                 return TryRaycastTerrainLocked(ray, out closestHit);
         }
 
+        /// <summary>
+        /// Raycasts only loaded terrain and returns the hit chunk's active textures
+        /// in material-layer order. Scene objects intentionally do not participate.
+        /// </summary>
+        public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainChunkTextures(
+            Vector2 mousePosition,
+            Camera camera,
+            int windowWidth,
+            int windowHeight)
+        {
+            if (windowWidth <= 0 || windowHeight <= 0)
+                return Array.Empty<TerrainChunkTextureLayer>();
+
+            var ray = camera.GetRayFromScreen(
+                mousePosition.X,
+                mousePosition.Y,
+                windowWidth,
+                windowHeight);
+
+            lock (SceneObjectLock)
+            {
+                if (!TryRaycastTerrainLocked(ray, out var hit))
+                    return Array.Empty<TerrainChunkTextureLayer>();
+
+                var batches = hit.Container.Terrain.renderBatches;
+                if (batches == null || (uint)hit.ChunkIndex >= (uint)batches.Length)
+                    return Array.Empty<TerrainChunkTextureLayer>();
+
+                var materials = batches[hit.ChunkIndex].materialFDIDs;
+                if (materials == null || materials.Length == 0)
+                    return Array.Empty<TerrainChunkTextureLayer>();
+
+                return materials
+                    .Select((fileDataId, layerIndex) => (fileDataId, layerIndex))
+                    .Where(layer => layer.fileDataId > 0)
+                    .Select(layer => new TerrainChunkTextureLayer(
+                        layer.layerIndex,
+                        checked((uint)layer.fileDataId)))
+                    .ToArray();
+            }
+        }
+
+        public TerrainChunkTextureLayer? GetDominantTerrainTexture(
+            Vector2 mousePosition,
+            Camera camera,
+            int windowWidth,
+            int windowHeight)
+        {
+            if (windowWidth <= 0 || windowHeight <= 0)
+                return null;
+
+            var ray = camera.GetRayFromScreen(
+                mousePosition.X,
+                mousePosition.Y,
+                windowWidth,
+                windowHeight);
+
+            lock (SceneObjectLock)
+            {
+                if (!TryRaycastTerrainLocked(ray, out var hit))
+                    return null;
+
+                var batches = hit.Container.Terrain.renderBatches;
+                if (batches == null || (uint)hit.ChunkIndex >= (uint)batches.Length)
+                    return null;
+
+                var batch = batches[hit.ChunkIndex];
+                var weights = TerrainAlphaMapSampler.SampleWeights(
+                    batch.alphaMaterials,
+                    batch.layerCount,
+                    hit.TextureCoordinate);
+                var dominantLayer = TerrainAlphaMapSampler.FindDominantLayer(
+                    weights,
+                    batch.materialFDIDs);
+
+                return dominantLayer >= 0
+                    ? new TerrainChunkTextureLayer(
+                        dominantLayer,
+                        checked((uint)batch.materialFDIDs[dominantLayer]))
+                    : null;
+            }
+        }
+
+        public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainTileTextures(Vector3 worldPosition)
+        {
+            var (tileX, tileY) = GetTileFromPosition(worldPosition);
+            lock (SceneObjectLock)
+            {
+                var adt = adtContainers.FirstOrDefault(candidate =>
+                    candidate.IsLoaded &&
+                    candidate.mapTile.wdtFileDataID == CurrentWDTFileDataID &&
+                    candidate.mapTile.tileX == tileX &&
+                    candidate.mapTile.tileY == tileY);
+                if (adt == null)
+                    return Array.Empty<TerrainChunkTextureLayer>();
+
+                var seen = new HashSet<uint>();
+                var textures = new List<TerrainChunkTextureLayer>();
+                foreach (var batch in adt.Terrain.renderBatches ?? [])
+                {
+                    var materials = batch.materialFDIDs;
+                    if (materials == null)
+                        continue;
+                    var layerCount = Math.Min(batch.layerCount, materials.Length);
+                    for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
+                    {
+                        var fileDataId = materials[layerIndex];
+                        if (fileDataId <= 0 || !seen.Add(checked((uint)fileDataId)))
+                            continue;
+                        textures.Add(new TerrainChunkTextureLayer(
+                            layerIndex,
+                            checked((uint)fileDataId)));
+                    }
+                }
+
+                return textures;
+            }
+        }
+
         private bool TryRaycastTerrainLocked(Ray ray, out TerrainRayHit closestHit)
         {
             closestHit = default;
+            if (!RenderADT)
+                return false;
+
             var closestDistance = float.MaxValue;
 
             foreach (var adt in adtContainers)
@@ -1873,17 +2019,32 @@ namespace WoWRenderLib.DX11.Managers
                     Vector3.Transform(ray.Origin, inverseModel),
                     Vector3.Normalize(Vector3.TransformNormal(ray.Direction, inverseModel)));
                 var terrain = adt.Terrain;
+                if (!IsWithinRenderDistance(
+                        ray.Origin,
+                        terrain.terrainBoundingSphere.Center,
+                        terrain.terrainBoundingSphere.Radius,
+                        TerrainRenderDistance))
+                    continue;
                 if (!IntersectionTests.RayIntersectsBox(localRay, terrain.terrainBounds, out _))
                     continue;
                 var candidate = new TerrainRaycastChunk(adt, modelMatrix, inverseModel, -1);
 
                 for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
+                {
+                    var chunkSphere = terrain.chunkBoundingSpheres[chunkIndex];
+                    if (!IsWithinRenderDistance(
+                            ray.Origin,
+                            chunkSphere.Center,
+                            chunkSphere.Radius,
+                            TerrainRenderDistance))
+                        continue;
                     TryRaycastTerrainChunk(
                         candidate,
                         ray,
                         chunkIndex,
                         ref closestDistance,
                         ref closestHit);
+                }
             }
 
             return closestDistance < float.MaxValue;
@@ -1930,7 +2091,9 @@ namespace WoWRenderLib.DX11.Managers
                         terrain.vertices[i1].Position,
                         terrain.vertices[i2].Position,
                         out var distance,
-                        out var localPosition) ||
+                        out var localPosition,
+                        out var triangleU,
+                        out var triangleV) ||
                     distance >= closestDistance)
                 {
                     continue;
@@ -1949,145 +2112,60 @@ namespace WoWRenderLib.DX11.Managers
                 closestDistance = Vector3.Distance(worldRay.Origin, worldPosition);
                 closestHit = new TerrainRayHit(
                     candidate.Container,
+                    chunkIndex,
                     localPosition,
+                    terrain.vertices[i0].TexCoord * (1f - triangleU - triangleV) +
+                    terrain.vertices[i1].TexCoord * triangleU +
+                    terrain.vertices[i2].TexCoord * triangleV,
                     worldPosition,
                     worldNormal);
             }
         }
 
         private void ApplyTerrainBrush(
-            TerrainRayHit hit,
-            BrushInput brush,
-            TerrainBrushInput input,
-            float deltaTime)
+            TerrainRayHit hit, BrushInput brush, TerrainBrushInput input, float deltaTime)
         {
-            var radius = Math.Clamp(brush.Radius, 1f, 1000f);
-            var speed = Math.Clamp(input.Speed, 0.1f, 50f);
-            var tool = TerrainBrushTools.Get(input.ToolMode);
+            brush = brush with { Radius = Math.Clamp(brush.Radius, 1f, 1000f) };
             lock (SceneObjectLock)
             {
-                ADTContainer? activeAdt = null;
-                Terrain activeTerrain = default;
-                var activeChanged = false;
-
+                // Include a halo for smoothing neighbours and seam-normal triangles.
+                var tiles = new HashSet<ADTContainer>();
                 WorldChunkRange.ForEachChunkInRange(
-                    adtContainers,
-                    hit.WorldPosition,
-                    radius,
+                    adtContainers, hit.WorldPosition, brush.Radius * MathF.Sqrt(2f) + 16f,
                     static adt => adt.IsLoaded && adt.Terrain.vertices is { Length: > 0 },
                     static adt => adt.GetModelMatrix(),
                     static adt => adt.Terrain.terrainBounds,
                     static adt => adt.Terrain.chunkBounds,
                     static bounds => bounds,
-                    context =>
-                    {
-                        if (!ReferenceEquals(activeAdt, context.Tile))
-                        {
-                            activeAdt = context.Tile;
-                            activeTerrain = context.Tile.Terrain;
-                            context.Tile.EnsureOriginalVerticesCaptured();
-                            activeChanged = false;
-                        }
-
-                        if (_activeTerrainStrokeBefore is { } strokeBefore)
-                        {
-                            var tileId = TerrainTileId.From(context.Tile.mapTile);
-                            if (!strokeBefore.ContainsKey(tileId))
-                            {
-                                strokeBefore[tileId] = activeTerrain.vertices?.ToArray() ?? [];
-                            }
-                        }
-
-                        var changed = ApplyTerrainChunk(
-                            ref activeTerrain,
-                            context.ChunkIndex,
-                            context.LocalCenter,
-                            context.LocalRadius,
-                            brush,
-                            speed,
-                            tool,
-                            input,
-                            deltaTime);
-                        activeChanged |= changed;
-                        return changed;
-                    },
-                    tile =>
-                    {
-                        if (!ReferenceEquals(activeAdt, tile))
-                            return;
-
-                        if (activeChanged)
-                        {
-                            RebuildTerrainAggregateBounds(ref activeTerrain);
-                            UploadTerrainVertices(activeTerrain);
-                            tile.UpdateTerrain(activeTerrain);
-                            tile.RefreshModifiedState();
-                            MarkTileBoundsDirty(activeTerrain.rootADTFileDataID);
-                        }
-
-                        activeAdt = null;
-                        activeChanged = false;
-                    },
-                    intersectionRadius: brush.Shape == BrushShape.Square
-                        ? radius * MathF.Sqrt(2f)
-                        : radius);
-            }
-        }
-
-        private bool ApplyTerrainChunk(
-            ref Terrain terrain,
-            int chunkIndex,
-            Vector3 localCenter,
-            float radius,
-            in BrushInput brush,
-            float speed,
-            TerrainBrushTool tool,
-            TerrainBrushInput input,
-            float deltaTime)
-        {
-            var passes = tool.GetPassCount(input.SmoothIterations);
-            var localBrush = brush with { Radius = radius };
-            var changed = false;
-
-            for (var pass = 0; pass < passes; pass++)
-            {
-                var chunkChanged = false;
-                var start = chunkIndex * TerrainVerticesPerChunk;
-                var end = Math.Min(start + TerrainVerticesPerChunk, terrain.vertices.Length);
-                for (var vertexIndex = start; vertexIndex < end; vertexIndex++)
+                    context => { tiles.Add(context.Tile); return false; },
+                    _ => { });
+                if (input.ToolMode == TerrainBrushMode.Flatten &&
+                    input.FlattenTarget == TerrainFlattenTarget.BrushCenter)
                 {
-                    var vertex = terrain.vertices[vertexIndex];
-                    var deltaX = vertex.Position.X - localCenter.X;
-                    var deltaY = vertex.Position.Y - localCenter.Y;
-                    var falloff = BrushMath.CalculateInfluence(deltaX, deltaY, localBrush);
-                    if (falloff <= 0f)
-                        continue;
-
-                    var amount = speed * deltaTime * falloff;
-                    var height = vertex.Position.Z;
-                    var nextHeight = tool.Apply(new TerrainBrushSample(
-                        terrain.vertices,
-                        vertexIndex,
-                        height,
-                        amount,
-                        radius,
-                        input.FlattenHeight,
-                        input.Action));
-
-                    if (MathF.Abs(nextHeight - height) < 0.0001f)
-                        continue;
-
-                    vertex.Position.Z = nextHeight;
-                    terrain.vertices[vertexIndex] = vertex;
-                    changed = true;
-                    chunkChanged = true;
+                    _flattenStrokeHeight ??= hit.WorldPosition.Z;
+                    input.FlattenHeight = _flattenStrokeHeight.Value;
                 }
-
-                if (chunkChanged)
-                    RebuildTerrainChunkBounds(ref terrain, chunkIndex);
+                foreach (var tile in tiles)
+                {
+                    tile.EnsureOriginalVerticesCaptured();
+                    var id = TerrainTileId.From(tile.mapTile);
+                    if (_activeTerrainStrokeBefore is { } before && !before.ContainsKey(id))
+                        before[id] = tile.Terrain.vertices.ToArray();
+                }
+                var surfaces = tiles.Select(tile => new TerrainSurfaceEditor.Surface(
+                    tile.Terrain.vertices, tile.Terrain.indices, tile.GetModelMatrix())).ToArray();
+                if (!TerrainSurfaceEditor.Apply(surfaces, hit.WorldPosition, brush, input, deltaTime))
+                    return;
+                foreach (var tile in tiles)
+                {
+                    var terrain = tile.Terrain;
+                    RebuildTerrainBounds(ref terrain);
+                    UploadTerrainVertices(terrain);
+                    tile.UpdateTerrain(terrain);
+                    tile.RefreshModifiedState();
+                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
+                }
             }
-
-            return changed;
         }
 
         private unsafe void UploadTerrainVertices(Terrain terrain)
@@ -2163,11 +2241,15 @@ namespace WoWRenderLib.DX11.Managers
             Vector3 v1,
             Vector3 v2,
             out float distance,
-            out Vector3 hit)
+            out Vector3 hit,
+            out float barycentricU,
+            out float barycentricV)
         {
             const float epsilon = 0.000001f;
             distance = 0f;
             hit = default;
+            barycentricU = 0f;
+            barycentricV = 0f;
             var edge1 = v1 - v0;
             var edge2 = v2 - v0;
             var p = Vector3.Cross(ray.Direction, edge2);
@@ -2191,12 +2273,16 @@ namespace WoWRenderLib.DX11.Managers
                 return false;
 
             hit = ray.GetPoint(distance);
+            barycentricU = u;
+            barycentricV = v;
             return true;
         }
 
         private readonly record struct TerrainRayHit(
             ADTContainer Container,
+            int ChunkIndex,
             Vector3 LocalPosition,
+            Vector2 TextureCoordinate,
             Vector3 WorldPosition,
             Vector3 WorldNormal);
 
@@ -2931,20 +3017,17 @@ namespace WoWRenderLib.DX11.Managers
 
                         for (int s = 0; s < shaderLayerCount; s++)
                             _srvScratch[s] = s < batch.materialFDIDs.Length
-                                ? ResolveFrameTexture((uint)batch.materialFDIDs[s])
-                                : defaultTexture;
-                        if (batch.materialFDIDs.Length > 0)
-                        {
-                            deviceContext.PSSetShaderResources(0, (uint)shaderLayerCount, ref _srvScratch[0]);
-                            TextureBindingCalls++;
-                        }
+                                ? ResolveTerrainDiffuseTexture(batch.materialFDIDs[s])
+                                : emptyTerrainTexture;
+                        deviceContext.PSSetShaderResources(0, (uint)shaderLayerCount, ref _srvScratch[0]);
+                        TextureBindingCalls++;
 
                         if (batch.usesHeightTextures)
                         {
                             for (int s = 0; s < shaderLayerCount; s++)
                                 _srvScratch[s] = s < batch.heightMaterialFDIDs.Length
                                     ? ResolveFrameTexture((uint)batch.heightMaterialFDIDs[s])
-                                    : defaultTexture;
+                                    : missingTexture;
                             deviceContext.PSSetShaderResources(
                                 TerrainHeightTextureSlot,
                                 (uint)shaderLayerCount,
@@ -3271,7 +3354,8 @@ namespace WoWRenderLib.DX11.Managers
                 m2PerObjectConstantBuffer.Dispose();
                 wmoPerObjectConstantBuffer.Dispose();
                 instanceMatrixBuffer.Dispose();
-                defaultTexture.Dispose();
+                emptyTerrainTexture.Dispose();
+                missingTexture.Dispose();
                 bboxDepthStencilState.Dispose();
                 bboxConstantBuffer.Dispose();
                 bboxVertexBuffer.Dispose();

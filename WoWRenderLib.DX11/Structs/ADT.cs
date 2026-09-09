@@ -40,6 +40,7 @@ namespace WoWRenderLib.DX11.Structs
         public int layerCount;
         public bool usesHeightTextures;
         public int[] materialFDIDs;
+        public byte[][] alphaMaterials;
         public int[] heightMaterialFDIDs;
         public float[] scales;
         public float[] heightScales;

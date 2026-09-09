@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:icons="using:WTEditor.Avalonia.Presentation"
+             x:Class="WTEditor.Avalonia.Controls.ChunkTexturePickerControl"
+             x:Name="Root"
+             x:DataType="vm:TextureEditingViewModel">
+  <Border Background="#F51A2128" BorderBrush="#687986" BorderThickness="1"
+          CornerRadius="6" Padding="8">
+    <StackPanel Spacing="6">
+      <TextBlock Text="CHUNK TEXTURES" Foreground="#DCE7ED" FontSize="10" FontWeight="Bold"/>
+      <ItemsControl ItemsSource="{Binding ChunkTextures}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="5"/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TexturePaletteItemViewModel">
+            <Grid Width="80" Height="80" ToolTip.Tip="{Binding Tooltip}">
+              <Grid.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Preview" Command="{Binding PreviewCommand}"/>
+                </ContextMenu>
+              </Grid.ContextMenu>
+              <Button Padding="2" Background="#11171C" BorderBrush="#526170" BorderThickness="1"
+                      PointerPressed="TextureSlot_OnPointerPressed"
+                      PointerMoved="TextureSlot_OnPointerMoved"
+                      PointerReleased="TextureSlot_OnPointerReleased"
+                      Command="{Binding DataContext.SelectTextureCommand, ElementName=Root}"
+                      CommandParameter="{Binding}">
+                <Grid ClipToBounds="True">
+                  <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+                  <Border VerticalAlignment="Bottom" Background="#D911171C" Padding="2,1">
+                    <TextBlock Text="{Binding DisplayName}" Foreground="#EDF4F8" FontSize="8"
+                               TextTrimming="CharacterEllipsis"/>
+                  </Border>
+                </Grid>
+              </Button>
+              <Button Width="18" Height="18" Padding="0" Margin="0,2,2,0"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="2"
+                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                      Background="#E624669A" BorderBrush="#91C9ED" BorderThickness="1"
+                      Foreground="White"
+                      Command="{Binding DataContext.AddFavoriteCommand, ElementName=Root}"
+                      CommandParameter="{Binding}"
+                      ToolTip.Tip="Add to favorites">
+                <PathIcon Width="10" Height="10" Data="{x:Static icons:EditorIcons.Add}"/>
+              </Button>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </Border>
+</UserControl>

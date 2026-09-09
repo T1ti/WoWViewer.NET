@@ -3,6 +3,8 @@ using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11;
 
+public enum TerrainFlattenTarget { FixedHeight, BrushCenter }
+
 public enum TerrainBrushMode
 {
     Sculpt,

@@ -215,12 +215,25 @@ public static class M2Loader
         for (var i = 0; i < result.Length; i++)
         {
             var texture = textures[i];
-            var id = texture.Type == 0 && i < chunkIds.Length ? chunkIds[i] : 0;
-            if (id == 0)
-                id = ResolvePath(fileSystem, texture.Filename);
-            result[i] = id == 0 ? FallbackTextureFileDataId : id;
+            // TXID replaces the legacy filename array one-for-one. It remains the
+            // authoritative asset identity even when Type describes a component
+            // texture slot; ignoring it leaves otherwise valid materials pink.
+            var chunkId = i < chunkIds.Length ? chunkIds[i] : 0;
+            var pathId = chunkId == 0 && texture.Type == 0
+                ? ResolvePath(fileSystem, texture.Filename)
+                : 0;
+            result[i] = SelectTextureFileDataId(chunkId, texture.Type, pathId);
         }
         return result;
+    }
+
+    internal static uint SelectTextureFileDataId(uint chunkId, uint textureType, uint resolvedPathId)
+    {
+        if (chunkId != 0)
+            return chunkId;
+        if (textureType == 0 && resolvedPathId != 0)
+            return resolvedPathId;
+        return FallbackTextureFileDataId;
     }
 
     private static uint[] GetChunkTextureIds(Formats.M2.M2 model)

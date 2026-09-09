@@ -14,6 +14,19 @@ public sealed class BackgroundResourceQueueSmokeTests
     }
 
     [TestMethod]
+    public void ResourceFailuresRetryOnlyWhileResidentAndWithinTheAttemptLimit()
+    {
+        var failures = new ResourceFailureTracker<int>(maximumAttempts: 3);
+
+        Assert.IsTrue(failures.CanRetry(42, isResident: true));
+        Assert.IsTrue(failures.CanRetry(42, isResident: true));
+        Assert.IsFalse(failures.CanRetry(42, isResident: true));
+        failures.Forget(42);
+        Assert.IsTrue(failures.CanRetry(42, isResident: true));
+        Assert.IsFalse(failures.CanRetry(7, isResident: false));
+    }
+
+    [TestMethod]
     public void QueueProcessesRequestsAndCanRestartAfterStop()
     {
         var queue = new BackgroundResourceQueue<int, int>(value => value * 2);
@@ -121,6 +134,7 @@ public sealed class BackgroundResourceQueueSmokeTests
             queue.StopAsync().GetAwaiter().GetResult();
         }
     }
+
 
     private static BackgroundResourceResult<int, int> WaitForResult(
         BackgroundResourceQueue<int, int> queue)

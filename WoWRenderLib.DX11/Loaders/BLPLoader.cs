@@ -7,10 +7,18 @@ namespace WoWRenderLib.DX11.Loaders;
 public static class BLPLoader
 {
     private static readonly byte[] PlaceholderPixels = [255, 0, 255, 255];
+    private static readonly byte[] WhitePixels = [255, 255, 255, 255];
     private static readonly byte[] TransparentPixels = [0, 0, 0, 0];
 
     public static ComPtr<ID3D11ShaderResourceView> CreatePlaceholderTexture(ComPtr<ID3D11Device> device) =>
         CreateSolidTexture(device, PlaceholderPixels);
+
+    /// <summary>
+    /// Creates the neutral diffuse texture used when terrain has no assigned texture.
+    /// This is intentionally distinct from the magenta missing-asset placeholder.
+    /// </summary>
+    public static ComPtr<ID3D11ShaderResourceView> CreateWhiteTexture(ComPtr<ID3D11Device> device) =>
+        CreateSolidTexture(device, WhitePixels);
 
     /// <summary>
     /// Creates the neutral texture used for optional WMO material slots.

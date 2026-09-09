@@ -81,6 +81,9 @@ public static class Listfile
     public static string GetDisplayName(uint fileDataId) =>
         TryGetFilename(fileDataId, out var filename) ? filename : $"FDID {fileDataId}";
 
+    /// <summary>Returns the immutable file-name snapshot currently loaded from the listfile.</summary>
+    public static IReadOnlyDictionary<uint, string> GetFiles() => _fileNames;
+
     private static async Task DownloadAsync(
         string path,
         HttpClient? suppliedClient,

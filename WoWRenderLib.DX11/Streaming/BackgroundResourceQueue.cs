@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading.Channels;
 
@@ -6,6 +7,37 @@ namespace WoWRenderLib.DX11.Streaming;
 internal static class ResourceCachePolicy
 {
     public static bool ShouldRemovePlaceholderAfterFailure(bool hasUsers) => !hasUsers;
+}
+
+/// <summary>Tracks bounded retries for one cache residency period.</summary>
+internal sealed class ResourceFailureTracker<TKey>(int maximumAttempts = 3)
+    where TKey : notnull
+{
+    private readonly ConcurrentDictionary<TKey, int> _failureCounts = [];
+
+    public bool CanRetry(TKey key, bool isResident)
+    {
+        if (!isResident)
+        {
+            Forget(key);
+            return false;
+        }
+
+        var count = _failureCounts.AddOrUpdate(key, 1, static (_, current) => current + 1);
+        return count < maximumAttempts;
+    }
+
+    public bool TryScheduleRetry(TKey key, bool isResident, Action<TKey> enqueue)
+    {
+        if (!CanRetry(key, isResident))
+            return false;
+        enqueue(key);
+        return true;
+    }
+
+    public void Succeeded(TKey key) => _failureCounts.TryRemove(key, out _);
+    public void Forget(TKey key) => _failureCounts.TryRemove(key, out _);
+    public void Clear() => _failureCounts.Clear();
 }
 
 internal readonly record struct BackgroundResourceResult<TRequest, TResult>(
@@ -168,15 +200,15 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
             await foreach (var request in requests.ReadAllAsync(cancellationToken))
             {
                 Interlocked.Increment(ref _activeRequestCount);
+                BackgroundResourceResult<TRequest, TResult> result;
                 try
                 {
-                    BackgroundResourceResult<TRequest, TResult> result;
                     if (shouldProcess?.Invoke(request) == false)
                     {
                         Interlocked.Increment(ref _skippedCount);
                         result = new(request, default!, null, IsSkipped: true);
                     }
-                    else try
+                    else
                     {
                         var started = Stopwatch.GetTimestamp();
                         try
@@ -198,17 +230,13 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
                             RecordProcessingDuration(Stopwatch.GetTimestamp() - started);
                         }
                     }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    await results.WriteAsync(result, cancellationToken);
                 }
                 finally
                 {
                     Interlocked.Decrement(ref _activeRequestCount);
                 }
+
+                await results.WriteAsync(result, cancellationToken);
             }
         }
         finally

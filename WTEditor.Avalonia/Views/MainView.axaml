@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:local="using:WTEditor.Avalonia.Views"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
              mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
              x:Class="WTEditor.Avalonia.Views.MainView"
@@ -21,8 +22,16 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid Background="#11171C">
+  <Grid x:Name="WorkspaceRoot" Background="#11171C" DragDrop.AllowDrop="True"
+        PointerMoved="WorkspaceRoot_OnPointerMoved">
     <local:Editor3DView x:Name="EditorViewport" DataContext="{Binding ViewportVM}"/>
+
+    <Popup IsOpen="{Binding TextureEditor.IsChunkPickerOpen, Mode=TwoWay}"
+           Placement="Pointer" PlacementTarget="{Binding #EditorViewport}"
+           HorizontalOffset="10" VerticalOffset="10"
+           IsLightDismissEnabled="True">
+      <controls:ChunkTexturePickerControl DataContext="{Binding TextureEditor}"/>
+    </Popup>
 
     <!-- Mode selection belongs to the viewport and floats above it so future
          modes do not consume permanent editor workspace. -->
@@ -54,6 +63,8 @@
                   <TextBlock Text="Shift  Move faster / positive tool action" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="Control  Negative tool action" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="LMB  Select or edit" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="Ctrl + LMB in Texture Paint  Pick chunk texture" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="Middle click in Texture Paint  Pick dominant texture" Foreground="#DCE7ED" FontSize="11"/>
                 </StackPanel>
               </Border>
             </Flyout>
@@ -73,6 +84,18 @@
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Terrain tools" Command="{Binding TerrainEditor.TogglePanelCommand}"
             IsVisible="{Binding IsTerrainModeActive}"/>
+
+    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
+            Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
+            BorderBrush="#526170" BorderThickness="1" ZIndex="45"
+            Content="Texture tools" Command="{Binding TextureEditor.TogglePanelCommand}"
+            IsVisible="{Binding IsTextureModeActive}"/>
+
+    <Button HorizontalAlignment="Left" VerticalAlignment="Top" Margin="56,10,0,0"
+            Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
+            BorderBrush="#526170" BorderThickness="1" ZIndex="45"
+            Content="Texture browser" Command="{Binding TextureEditor.ShowTextureBrowserCommand}"
+            IsVisible="{Binding IsTextureBrowserPanelHidden}"/>
 
     <!-- The active mode owns the visible panel. Both panels share the same
          drag/resize behavior and remain independent of document state. -->
@@ -99,7 +122,7 @@
         </Grid>
       </Border>
 
-      <Border x:Name="ToolsPanel" Width="292" Height="640"
+      <Border x:Name="ToolsPanel" Width="292" MinHeight="260"
               IsVisible="{Binding IsEditingToolsPanelVisible}">
         <Grid>
           <Grid IsVisible="{Binding IsTerrainModeActive}">
@@ -123,6 +146,65 @@
           <Thumb x:Name="ToolsBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
                  VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
+        </Grid>
+      </Border>
+
+      <Border x:Name="TextureBrowserPanel" Width="500" MinHeight="44"
+              Height="{Binding TextureEditor.BrowserHeight, Mode=TwoWay}"
+              IsVisible="{Binding IsTextureBrowserPanelVisible}"
+              Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
+        <Grid RowDefinitions="44,*">
+          <TextBlock Margin="12,0" Text="Texture browser" Foreground="#F3F7FA"
+                     FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+           <controls:TextureBrowserControl Grid.Row="1" DataContext="{Binding TextureEditor}"
+                                          IsVisible="{Binding IsBrowserExpanded}"/>
+          <Border x:Name="TextureBrowserDragHandle" Grid.Row="0" Margin="0,0,76,0"
+                  Background="#01000000" Cursor="SizeAll"
+                  PointerPressed="PanelDragHandle_OnPointerPressed"
+                  PointerMoved="PanelDragHandle_OnPointerMoved"
+                  PointerReleased="PanelDragHandle_OnPointerReleased"/>
+          <Button Grid.Row="0" Width="30" Height="28" Padding="0" Margin="0,0,38,0"
+                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                  Background="Transparent" BorderThickness="0" Foreground="#BFD0DC"
+                  Command="{Binding TextureEditor.ToggleBrowserExpandedCommand}"
+                  ToolTip.Tip="Collapse or expand texture browser">
+            <Grid>
+              <TextBlock Text="▴" IsVisible="{Binding TextureEditor.IsBrowserExpanded}"/>
+              <TextBlock Text="▾" IsVisible="{Binding !TextureEditor.IsBrowserExpanded}"/>
+            </Grid>
+          </Button>
+          <Button Grid.Row="0" Width="30" Height="28" Padding="0" Margin="0,0,6,0"
+                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                  Background="Transparent" BorderThickness="0" Foreground="#BFD0DC"
+                  Content="×" Command="{Binding TextureEditor.HideTextureBrowserCommand}"
+                  ToolTip.Tip="Hide texture browser"/>
+          <Thumb x:Name="TextureBrowserLeftResizeHandle" Grid.RowSpan="2" Width="7"
+                 HorizontalAlignment="Left" Background="#35526170" Cursor="SizeWestEast"
+                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserRightResizeHandle" Grid.RowSpan="2" Width="7"
+                 HorizontalAlignment="Right" Background="#35526170" Cursor="SizeWestEast"
+                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
+                 DragDelta="PanelHorizontalResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserBottomResizeHandle" Grid.Row="1" Height="7"
+                 HorizontalAlignment="Stretch" VerticalAlignment="Bottom"
+                 Background="#35526170" Cursor="SizeNorthSouth"
+                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
+                 DragDelta="PanelBottomResize_OnDragDelta"/>
+        </Grid>
+      </Border>
+    </Canvas>
+
+    <Canvas x:Name="TextureDragLayer" ZIndex="200" IsHitTestVisible="False">
+      <Border x:Name="TextureDragGhost" Width="76" Height="92" IsVisible="False"
+              Padding="4" CornerRadius="5" Background="#EE11171C"
+              BorderBrush="#91C9ED" BorderThickness="2" Opacity="0.9">
+        <Grid RowDefinitions="64,*">
+          <Border Background="#080B0D" ClipToBounds="True">
+            <Image x:Name="TextureDragGhostImage" Stretch="UniformToFill"/>
+          </Border>
+          <TextBlock x:Name="TextureDragGhostName" Grid.Row="1" Margin="1,3,1,0"
+                     Foreground="#EDF4F8" FontSize="8" TextTrimming="CharacterEllipsis"/>
         </Grid>
       </Border>
     </Canvas>

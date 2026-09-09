@@ -5,6 +5,7 @@ namespace WTEditor.Avalonia.Presentation;
 /// <summary>Single source for the editor's 24 px filled vector icon family.</summary>
 public static class EditorIcons
 {
+    public static Geometry Information { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z M12,4 A8,8 0 1 0 12,20 A8,8 0 1 0 12,4 Z M11,10 H13 V17 H11 Z M11,6 H13 V8 H11 Z");
     public static Geometry WorldMap { get; } = Geometry.Parse("M3,5 L9,3 L15,5 L21,3 L21,19 L15,21 L9,19 L3,21 Z M8,4 L10,3.5 L10,19.5 L8,19 Z M14,4.5 L16,4.5 L16,20 L14,20 Z");
     public static Geometry World { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z M11,4 C8,6 8,18 11,20 L13,20 C16,18 16,6 13,4 Z M3,11 L21,11 L21,13 L3,13 Z");
     public static Geometry Data { get; } = Geometry.Parse("M4,5 C4,2.5 20,2.5 20,5 C20,7.5 4,7.5 4,5 Z M4,8 C8,10 16,10 20,8 L20,12 C16,14 8,14 4,12 Z M4,15 C8,17 16,17 20,15 L20,19 C20,21.5 4,21.5 4,19 Z");
@@ -24,6 +25,9 @@ public static class EditorIcons
     public static Geometry Metrics { get; } = Geometry.Parse("M3,20 V13 H7 V20 Z M10,20 V8 H14 V20 Z M17,20 V3 H21 V20 Z");
     public static Geometry Profiler { get; } = Geometry.Parse("M2,18 V11 H6 V15 H9 V7 H13 V13 H17 V4 H22 V18 Z");
     public static Geometry Close { get; } = Geometry.Parse("M4,5.5 L5.5,4 L12,10.5 L18.5,4 L20,5.5 L13.5,12 L20,18.5 L18.5,20 L12,13.5 L5.5,20 L4,18.5 L10.5,12 Z");
+    public static Geometry Add { get; } = Geometry.Parse("M11,4 H13 V11 H20 V13 H13 V20 H11 V13 H4 V11 H11 Z");
+    public static Geometry ChevronDown { get; } = Geometry.Parse("M5,8 L12,15 L19,8 L17.5,6.5 L12,12 L6.5,6.5 Z");
+    public static Geometry Picker { get; } = Geometry.Parse("M16.7,2.3 A2.4,2.4 0 0 1 20.1,5.7 L17.4,8.4 L18.8,9.8 L16.7,11.9 L15.3,10.5 L8.1,17.7 L5,18.5 L5.8,15.4 L13,8.2 L11.6,6.8 L13.7,4.7 L15.1,6.1 Z M4,19 H10 V21 H4 Z");
     public static Geometry ExpansionCircle { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z");
     public static Geometry ExpansionDiamond { get; } = Geometry.Parse("M12,2 L22,12 L12,22 L2,12 Z");
     public static Geometry ExpansionHexagon { get; } = Geometry.Parse("M12,2 L20.5,7 L20.5,17 L12,22 L3.5,17 L3.5,7 Z");

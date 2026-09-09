@@ -18,6 +18,7 @@ namespace WoWRenderLib.DX11.Cache
         private static ComPtr<ID3D11Device>? cachedDevice = null;
 
         private static readonly ConcurrentDictionary<uint, byte> inFlight = new();
+        private static readonly ResourceFailureTracker<uint> failures = new();
 
         private static readonly ConcurrentDictionary<uint, ComPtr<ID3D11ShaderResourceView>> Cache = new();
         private static readonly ConcurrentDictionary<uint, List<uint>> Users = new();
@@ -155,7 +156,11 @@ namespace WoWRenderLib.DX11.Cache
                 if (item.Error != null)
                 {
                     Console.WriteLine($"Failed to decode BLP {item.Request}: {item.Error.Message}");
-                    inFlight.TryRemove(item.Request, out _);
+                    if (!failures.TryScheduleRetry(
+                            item.Request,
+                            Users.ContainsKey(item.Request),
+                            loadQueue.Enqueue))
+                        inFlight.TryRemove(item.Request, out _);
                     continue;
                 }
 
@@ -199,69 +204,66 @@ namespace WoWRenderLib.DX11.Cache
                         var handles = new GCHandle[mipCount];
 
                         ComPtr<ID3D11Texture2D> tex = default;
-                        var texCreated = false;
                         try
                         {
-                            if (decoded.IsCompressed)
+                            try
                             {
-                                for (int i = 0; i < mipCount; i++)
+                                if (decoded.IsCompressed)
                                 {
-                                    var mip = decoded.MipLevels![i];
-                                    handles[i] = GCHandle.Alloc(mip.Data, GCHandleType.Pinned);
-                                    initData[i].PSysMem = (void*)handles[i].AddrOfPinnedObject();
-                                    initData[i].SysMemPitch = (uint)((Math.Max(1, mip.Width / 4)) * sizePerBlock);
+                                    for (int i = 0; i < mipCount; i++)
+                                    {
+                                        var mip = decoded.MipLevels![i];
+                                        handles[i] = GCHandle.Alloc(mip.Data, GCHandleType.Pinned);
+                                        initData[i].PSysMem = (void*)handles[i].AddrOfPinnedObject();
+                                        initData[i].SysMemPitch = (uint)(Math.Max(1, (mip.Width + 3) / 4) * sizePerBlock);
+                                    }
                                 }
-                            }
-                            else
-                            {
-                                fixed (byte* p = decoded.PixelData)
+                                else
                                 {
                                     handles[0] = GCHandle.Alloc(decoded.PixelData, GCHandleType.Pinned);
                                     initData[0].PSysMem = (void*)handles[0].AddrOfPinnedObject();
                                     initData[0].SysMemPitch = (uint)(decoded.Width * 4);
                                 }
+
+                                SilkMarshal.ThrowHResult(device.CreateTexture2D(in texDesc, ref initData[0], ref tex));
+                            }
+                            finally
+                            {
+                                for (int i = 0; i < mipCount; i++)
+                                {
+                                    if (handles[i].IsAllocated)
+                                        handles[i].Free();
+                                }
                             }
 
-                            SilkMarshal.ThrowHResult(device.CreateTexture2D(in texDesc, ref initData[0], ref tex));
-                            texCreated = true;
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine($"Failed to create texture for BLP {decoded.FileDataId}: {e.Message}");
-                            Cache[decoded.FileDataId] = BLPLoader.CreatePlaceholderTexture(device);
-                            texCreated = false;
+                            var srvDesc = new ShaderResourceViewDesc
+                            {
+                                Format = texDesc.Format,
+                                ViewDimension = D3DSrvDimension.D3D101SrvDimensionTexture2D,
+                                Texture2D = new Tex2DSrv { MipLevels = texDesc.MipLevels, MostDetailedMip = 0 }
+                            };
+
+                            ComPtr<ID3D11ShaderResourceView> srv = default;
+                            SilkMarshal.ThrowHResult(device.CreateShaderResourceView(tex, in srvDesc, ref srv));
+
+                            Cache[decoded.FileDataId] = srv;
+                            failures.Succeeded(decoded.FileDataId);
+                            uploaded++;
                         }
                         finally
                         {
-                            for (int i = 0; i < mipCount; i++)
-                            {
-                                if (handles[i].IsAllocated)
-                                    handles[i].Free();
-                            }
+                            tex.Dispose();
                         }
-
-                        var srvDesc = new ShaderResourceViewDesc
-                        {
-                            Format = texDesc.Format,
-                            ViewDimension = D3DSrvDimension.D3D101SrvDimensionTexture2D,
-                            Texture2D = new Tex2DSrv { MipLevels = texDesc.MipLevels, MostDetailedMip = 0 }
-                        };
-
-                        ComPtr<ID3D11ShaderResourceView> srv = default;
-                        if (texCreated)
-                            SilkMarshal.ThrowHResult(device.CreateShaderResourceView(tex, in srvDesc, ref srv));
-                        else
-                            srv = BLPLoader.CreatePlaceholderTexture(device);
-
-                        Cache[decoded.FileDataId] = srv;
-                        uploaded++;
-
-                        tex.Dispose();
                     }
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine($"Failed to upload BLP {decoded.FileDataId}: {e.Message}");
+                    if (failures.TryScheduleRetry(
+                            decoded.FileDataId,
+                            Users.ContainsKey(decoded.FileDataId),
+                            loadQueue.Enqueue))
+                        continue;
                 }
 
                 inFlight.TryRemove(decoded.FileDataId, out _);
@@ -307,6 +309,7 @@ namespace WoWRenderLib.DX11.Cache
                 if (users.Count == 0)
                 {
                     Users.TryRemove(fileDataId, out _);
+                    failures.Forget(fileDataId);
 
                     if (Cache.TryRemove(fileDataId, out var srv))
                         srv.Dispose();
@@ -349,6 +352,7 @@ namespace WoWRenderLib.DX11.Cache
             Cache.Clear();
             Users.Clear();
             inFlight.Clear();
+            failures.Clear();
             if (pendingTexture.HasValue)
             {
                 pendingTexture.Value.Dispose();

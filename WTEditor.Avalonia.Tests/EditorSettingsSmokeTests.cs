@@ -154,6 +154,14 @@ public sealed class EditorSettingsSmokeTests
                 estimatedRenderMilliseconds: 8d),
             0.001d);
         Assert.AreEqual(
+            1d,
+            StreamingFrameBudget.CalculateMilliseconds(
+                frameIntervalSeconds: 0.01d,
+                elapsedBeforeRenderMilliseconds: 3d,
+                estimatedRenderMilliseconds: 8d,
+                hasPendingWork: true),
+            0.001d);
+        Assert.AreEqual(
             10d,
             StreamingFrameBudget.CalculateMilliseconds(
                 frameIntervalSeconds: 1d / 60d,
@@ -1374,6 +1382,216 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void TerrainSurfaceEditor_WeldsSeamsAndRebuildsNormalsAfterSmoothing()
+    {
+        var left = new[]
+        {
+            TerrainVertex(0, 0, 0), TerrainVertex(1, 0, 0), TerrainVertex(0, 1, 10)
+        };
+        var right = new[]
+        {
+            TerrainVertex(1, 0, 0), TerrainVertex(0, 1, 10), TerrainVertex(1, 1, 0)
+        };
+        var input = new TerrainBrushInput
+        {
+            ToolMode = TerrainBrushMode.Smooth,
+            Action = EditAction.Positive,
+            Speed = 1,
+            SmoothIterations = 1
+        };
+
+        Assert.IsTrue(TerrainSurfaceEditor.Apply(
+            [
+                new(left, [0, 1, 2], Matrix4x4.Identity),
+                new(right, [0, 1, 2], Matrix4x4.Identity)
+            ],
+            new Vector3(.5f, .5f, 0),
+            new BrushInput(2, 0, false, BrushShape.Circle, BrushFalloffProfile.Hard),
+            input,
+            1));
+
+        Assert.AreEqual(left[1].Position.Z, right[0].Position.Z, .0001f);
+        Assert.AreEqual(left[2].Position.Z, right[1].Position.Z, .0001f);
+        Assert.IsTrue(left.Concat(right).All(vertex => vertex.Normal.Z > .99f));
+    }
+
+    [TestMethod]
+    public void TerrainFlattenTargets_ExposeFixedAndStrokeCentreModes()
+    {
+        var editor = new TerrainEditingViewModel();
+        CollectionAssert.AreEqual(
+            new[] { "Fixed height", "Brush centre (stroke start)" },
+            editor.FlattenTargets.ToArray());
+        editor.FlattenTarget = 1;
+        Assert.IsFalse(editor.IsFixedFlattenHeight);
+    }
+
+    [TestMethod]
+    public void TextureSmooth_BlendsTheWholeNormalizedLayerVector()
+    {
+        var weights = TextureLayerMath.Smooth(
+            new Vector4(1, 0, 0, 0),
+            new Vector4(0, .5f, .5f, 0),
+            .5f);
+
+        Assert.AreEqual(.5f, weights.X, .0001f);
+        Assert.AreEqual(.25f, weights.Y, .0001f);
+        Assert.AreEqual(.25f, weights.Z, .0001f);
+        Assert.AreEqual(1f, weights.X + weights.Y + weights.Z + weights.W, .0001f);
+    }
+
+    [TestMethod]
+    public void TerrainAlphaSampler_MatchesPackedChannelsAndPrefersHigherLayerOnTies()
+    {
+        var firstGroup = new byte[TerrainAlphaMapSampler.Size * TerrainAlphaMapSampler.Size * 4];
+        for (var pixel = 0; pixel < TerrainAlphaMapSampler.Size * TerrainAlphaMapSampler.Size; pixel++)
+        {
+            firstGroup[pixel * 4 + 1] = 102;
+            firstGroup[pixel * 4 + 2] = 102;
+        }
+
+        var weights = TerrainAlphaMapSampler.SampleWeights(
+            [firstGroup],
+            layerCount: 3,
+            new Vector2(0.321f, 0.654f));
+
+        Assert.AreEqual(0.2f, weights[0], 0.0001f);
+        Assert.AreEqual(0.4f, weights[1], 0.0001f);
+        Assert.AreEqual(0.4f, weights[2], 0.0001f);
+        Assert.AreEqual(2, TerrainAlphaMapSampler.FindDominantLayer(weights, [10, 20, 30]));
+    }
+
+    [TestMethod]
+    public void TexturePaletteNames_HideTilesetPathAndExtensionButPreserveStoredSuffix()
+    {
+        Assert.AreEqual(
+            "elwynngrass01_s",
+            TexturePaletteNaming.FromPath(@"tileset\elwynn\elwynngrass01_s.blp"));
+        Assert.AreEqual(
+            "rock_detail",
+            TexturePaletteNaming.FromPath("tileset/outland/rock_detail.blp"));
+        Assert.AreEqual("FDID 123", TexturePaletteNaming.FromPath("FDID 123"));
+    }
+
+    [TestMethod]
+    public async Task TexturePreviewCommand_UsesExactSelectedTextureIdentity()
+    {
+        var previews = new RecordingTexturePreviewService();
+        var editor = new TextureEditingViewModel(previewService: previews);
+        var texture = new TexturePaletteItemViewModel(
+            "fdid:187127",
+            "ElwynnGrassBase_s",
+            FileDataId: 187127);
+
+        editor.AddOrSelectTexture(texture);
+        await texture.PreviewCommand.ExecuteAsync(null);
+
+        Assert.AreEqual((187127u, "ElwynnGrassBase_s"), previews.LastRequest);
+    }
+
+    [TestMethod]
+    public void TextureBrowserSelectionAndPickerUseTheActiveTextureWorkflow()
+    {
+        var chosen = new TexturePaletteItemViewModel("fdid:42", "chosen", FileDataId: 42);
+        var editor = new TextureEditingViewModel(thumbnailService: new NullTextureThumbnailService());
+
+        editor.ShowTextureBrowserCommand.Execute(null);
+        editor.IsPickerModeActive = true;
+        Assert.IsNotNull(editor.Browser);
+        editor.Browser.SelectedTexture = chosen;
+
+        Assert.AreSame(chosen, editor.SelectedTexture);
+        Assert.IsTrue(editor.IsBrowserVisible);
+        Assert.IsTrue(editor.IsBrowserExpanded);
+        Assert.IsTrue(editor.IsPickerModeActive);
+        editor.ToggleBrowserExpandedCommand.Execute(null);
+        Assert.IsFalse(editor.IsBrowserExpanded);
+        Assert.AreEqual(44d, editor.BrowserHeight);
+        editor.ToggleBrowserExpandedCommand.Execute(null);
+        Assert.IsTrue(editor.IsBrowserExpanded);
+        Assert.IsTrue(editor.BrowserHeight >= 260d);
+        editor.SelectTerrainTexture(new TerrainChunkTextureLayer(0, 43));
+        Assert.IsFalse(editor.IsPickerModeActive);
+        Assert.IsTrue(TextureBrowserViewModel.IsBrowsableTerrainTexture("tileset/elwynn/grass.blp"));
+        Assert.IsFalse(TextureBrowserViewModel.IsBrowsableTerrainTexture("tileset/elwynn/grass_s.blp"));
+        Assert.IsTrue(TextureBrowserViewModel.IsBrowsableTerrainTexture(
+            "tileset/elwynn/grass_s.blp",
+            includeSpecular: true));
+        Assert.IsFalse(TextureBrowserViewModel.IsBrowsableTerrainTexture(
+            "tileset/elwynn/grass_h.blp",
+            includeSpecular: true));
+        Assert.IsFalse(TextureBrowserViewModel.IsBrowsableTerrainTexture("world/model/skin.blp"));
+    }
+
+    [TestMethod]
+    public void TexturePreviewChannelModes_PreserveColorOrExposeAlphaAtFullOpacity()
+    {
+        byte[] colorPixels = [10, 20, 30, 40, 50, 60, 70, 80];
+        TerrainTextureImageLoader.ApplyChannelMode(colorPixels, TexturePreviewChannelMode.Color);
+        CollectionAssert.AreEqual(
+            new byte[] { 10, 20, 30, 255, 50, 60, 70, 255 },
+            colorPixels);
+
+        byte[] alphaPixels = [10, 20, 30, 40, 50, 60, 70, 80];
+        TerrainTextureImageLoader.ApplyChannelMode(alphaPixels, TexturePreviewChannelMode.Alpha);
+        CollectionAssert.AreEqual(
+            new byte[] { 40, 40, 40, 255, 80, 80, 80, 255 },
+            alphaPixels);
+    }
+
+    [TestMethod]
+    public void TextureBrowserFolderTree_PreservesHierarchyAndFullPaths()
+    {
+        var root = TextureBrowserViewModel.BuildFolderTree([
+            new TextureBrowserCatalogEntry(10, @"tileset\elwynn\grass.blp"),
+            new TextureBrowserCatalogEntry(11, "tileset/elwynn/road/stone.blp"),
+            new TextureBrowserCatalogEntry(12, "tileset/outland/rock.blp")
+        ]);
+
+        Assert.AreEqual("tileset", root.FullPath);
+        CollectionAssert.AreEqual(
+            new[] { "elwynn", "outland" },
+            root.Children.Select(folder => folder.Name).ToArray());
+        var elwynn = root.Children[0];
+        Assert.AreEqual("tileset/elwynn", elwynn.FullPath);
+        Assert.AreEqual("tileset/elwynn/grass.blp", elwynn.Textures.Single().Path);
+        Assert.AreEqual("tileset/elwynn/road", elwynn.Children.Single().FullPath);
+
+        var item = new TexturePaletteItemViewModel(
+            "fdid:10",
+            "grass",
+            FileDataId: 10,
+            FullPath: "tileset/elwynn/grass.blp");
+        StringAssert.Contains(item.Tooltip, "tileset/elwynn/grass.blp");
+    }
+
+    [TestMethod]
+    public void TextureDragGesture_RequiresThePlatformMovementThreshold()
+    {
+        var origin = new global::Avalonia.Point(20, 30);
+        var threshold = new global::Avalonia.Size(4, 6);
+
+        Assert.IsFalse(TextureDragGesture.HasExceededThreshold(
+            origin,
+            new global::Avalonia.Point(23.9, 35.9),
+            threshold));
+        Assert.IsTrue(TextureDragGesture.HasExceededThreshold(
+            origin,
+            new global::Avalonia.Point(24, 30),
+            threshold));
+        Assert.IsTrue(TextureDragGesture.HasExceededThreshold(
+            origin,
+            new global::Avalonia.Point(20, 24),
+            threshold));
+    }
+
+    private static ADTVertex TerrainVertex(float x, float y, float z) => new()
+    {
+        Position = new Vector3(x, y, z),
+        Normal = Vector3.UnitZ
+    };
+
+    [TestMethod]
     public void EditorModeDefinitions_KeepCapabilitiesWithModeMetadata()
     {
         Assert.AreEqual(EditorModeDefinitions.SelectionId, EditorModeDefinitions.Selection.Id);
@@ -1399,7 +1617,7 @@ public sealed class EditorSettingsSmokeTests
         CollectionAssert.AreEqual(
             terrain.Brush.AvailableBrushes.Select(option => option.Id).ToArray(),
             texture.Brush.AvailableBrushes.Select(option => option.Id).ToArray());
-        CollectionAssert.AreEqual(new[] { "Paint", "Colour" },
+        CollectionAssert.AreEqual(new[] { "Paint", "Smooth", "Colour" },
             texture.SubModes.Select(mode => mode.DisplayName).ToArray());
         Assert.IsTrue(texture.SubModes.All(mode => mode.Icon != null));
         Assert.IsTrue(texture.SubModes.All(mode => mode.UsesFalloff));
@@ -1410,6 +1628,52 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(50d, terrain.Speed);
         Assert.AreEqual(255d, texture.Opacity);
         Assert.AreEqual(0d, texture.Strength);
+        texture.SelectedSubMode = texture.SubModes.Single(mode => mode.DisplayName == "Smooth");
+        Assert.IsFalse(texture.IsOpacityVisible);
+        Assert.IsNotNull(TextureBrushModes.GetPreviewColor(TextureBrushMode.Smooth));
+
+        var grass = new TexturePaletteItemViewModel("grass", "Grass", FileDataId: 123);
+        texture.AddOrSelectTexture(grass);
+        texture.AddOrSelectTexture(new TexturePaletteItemViewModel("grass", "Duplicate"));
+        Assert.AreEqual(1, texture.UserTextures.Count);
+        Assert.AreSame(grass, texture.SelectedTexture);
+        texture.SelectedFavorite = null;
+        Assert.AreSame(grass, texture.SelectedTexture);
+
+        texture.ShowChunkTextures([
+            new TerrainChunkTextureLayer(2, 300),
+            new TerrainChunkTextureLayer(0, 100),
+            new TerrainChunkTextureLayer(1, 200)
+        ]);
+        CollectionAssert.AreEqual(
+            new uint?[] { 100, 200, 300 },
+            texture.ChunkTextures.Select(item => item.FileDataId).ToArray());
+        Assert.IsTrue(texture.IsChunkPickerOpen);
+        var rock = texture.ChunkTextures[1];
+        texture.AddFavoriteCommand.Execute(rock);
+        texture.AddFavoriteCommand.Execute(rock);
+        Assert.AreEqual(2, texture.Favorites.Count);
+        texture.SelectTextureCommand.Execute(rock);
+        Assert.AreSame(rock, texture.SelectedTexture);
+        Assert.IsFalse(texture.IsChunkPickerOpen);
+        texture.RemoveFavoriteCommand.Execute(rock);
+        Assert.AreEqual(1, texture.Favorites.Count);
+        texture.SelectTerrainTexture(new TerrainChunkTextureLayer(3, 400));
+        Assert.AreEqual((uint)400, texture.SelectedTexture?.FileDataId);
+        Assert.AreEqual(1, texture.Favorites.Count);
+        texture.AddFavorites([
+            new TerrainChunkTextureLayer(0, 123),
+            new TerrainChunkTextureLayer(1, 400),
+            new TerrainChunkTextureLayer(2, 500),
+            new TerrainChunkTextureLayer(3, 500)
+        ]);
+        CollectionAssert.AreEqual(
+            new uint?[] { 123, 400, 500 },
+            texture.Favorites.Select(item => item.FileDataId).ToArray());
+        var tileRequestRaised = false;
+        texture.CurrentTerrainTileTexturesRequested += (_, _) => tileRequestRaised = true;
+        texture.AddFromCurrentPositionTileCommand.Execute(null);
+        Assert.IsTrue(tileRequestRaised);
         Assert.IsTrue(terrain.Brush.HasFalloff);
         Assert.AreEqual(0.35d, terrain.Brush.Falloff);
 
@@ -1417,6 +1681,14 @@ public sealed class EditorSettingsSmokeTests
             brush => brush.Id == BuiltInBrushPreset.HardRound);
         Assert.IsFalse(terrain.Brush.HasFalloff);
         Assert.IsFalse(terrain.Brush.IsFalloffVisible);
+    }
+
+    [TestMethod]
+    public void M2TextureResolution_PrefersAuthoritativeTxidForEveryTextureType()
+    {
+        Assert.AreEqual(777u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(777, 11, 0));
+        Assert.AreEqual(888u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(0, 0, 888));
+        Assert.AreEqual(186184u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(0, 11, 888));
     }
 
     [TestMethod]
@@ -1667,6 +1939,24 @@ public sealed class EditorSettingsSmokeTests
 
         public void UpdateObjectTransform(Guid documentId, EditorObjectId objectId, ObjectTransform transform) =>
             Updates.Add((documentId, objectId, transform));
+    }
+
+    private sealed class RecordingTexturePreviewService : ITerrainTexturePreviewService
+    {
+        public (uint FileDataId, string DisplayName)? LastRequest { get; private set; }
+
+        public Task ShowAsync(uint fileDataId, string displayName)
+        {
+            LastRequest = (fileDataId, displayName);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NullTextureThumbnailService : ITerrainTextureThumbnailService
+    {
+        public Task<global::Avalonia.Media.IImage?> LoadAsync(
+            uint fileDataId,
+            CancellationToken cancellationToken = default) => Task.FromResult<global::Avalonia.Media.IImage?>(null);
     }
 
     private sealed class TestBoundsContainer(BoundingBox? bounds) : Container3D(default, 1, 1)

@@ -34,6 +34,9 @@ internal static class Program
         services.AddSingleton<EditorSession>();
         services.AddSingleton<ISettingsDialogService, SettingsDialogService>();
         services.AddSingleton<IMinimapService, MinimapService>();
+        services.AddSingleton<ITerrainTextureThumbnailService, TerrainTextureThumbnailService>();
+        services.AddSingleton<ITerrainTexturePreviewService, TerrainTexturePreviewService>();
+        services.AddSingleton<IClientFileCatalogService, ClientFileCatalogService>();
         services.AddSingleton<IMapCatalogService, MapCatalogService>();
         services.AddSingleton<IMapTerrainMetadataCacheService, MapTerrainMetadataCacheService>();
         services.AddSingleton<WorldMapStartupPreloader>();

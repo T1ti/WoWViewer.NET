@@ -45,7 +45,8 @@
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
-    <TextBlock Text="{Binding SelectedItem.Description, ElementName=Root}"
-               Foreground="#91A5B5" FontSize="11" TextWrapping="Wrap"/>
+    <TextBlock Text="{Binding SelectedItem.DisplayName, ElementName=Root}"
+               ToolTip.Tip="{Binding SelectedItem.Description, ElementName=Root}"
+               Foreground="#7FD3EA" FontSize="13" FontWeight="SemiBold"/>
   </StackPanel>
 </UserControl>

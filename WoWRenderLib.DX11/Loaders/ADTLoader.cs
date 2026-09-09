@@ -39,6 +39,9 @@ namespace WoWRenderLib.DX11.Loaders
                 batch.heightScales = renderBatch.heightScales;
                 batch.heightOffsets = renderBatch.heightOffsets;
                 batch.materialFDIDs = renderBatch.materialFDIDs;
+                // Retain the CPU alpha maps for exact editor picking and future
+                // texture mutation. The GPU array remains the render source.
+                batch.alphaMaterials = renderBatch.alphaMaterials;
                 batch.heightMaterialFDIDs = renderBatch.heightMaterialFDIDs;
                 batch.scales = renderBatch.scales;
                 renderBatches[c] = batch;

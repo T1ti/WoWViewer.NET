@@ -5,6 +5,7 @@
              x:Class="WTEditor.Avalonia.Views.TerrainEditingPanel"
              x:DataType="vm:TerrainEditingViewModel">
   <UserControl.Styles>
+    <StyleInclude Source="/Controls/BrushToolSliderStyles.axaml"/>
     <Style Selector="TextBlock.panel-heading">
       <Setter Property="Foreground" Value="#F3F7FA"/>
       <Setter Property="FontSize" Value="15"/>
@@ -23,12 +24,9 @@
 
   <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="13" Spacing="12">
+      <StackPanel Margin="13" Spacing="8">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="2">
-            <TextBlock Classes="panel-heading" Text="Terrain tools"/>
-            <TextBlock Classes="muted" Text="Brush editing"/>
-          </StackPanel>
+          <TextBlock Classes="panel-heading" Text="Terrain tools" VerticalAlignment="Center"/>
           <Button Grid.Column="1" Content="×" Width="26" Height="26" Padding="0"
                   Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
                   Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide terrain tools"/>
@@ -57,7 +55,10 @@
 
         <StackPanel IsVisible="{Binding IsFlattenSelected}" Spacing="6">
           <TextBlock Classes="section-label" Text="FLATTEN TARGET"/>
-          <Grid ColumnDefinitions="*,Auto">
+          <ComboBox ItemsSource="{Binding FlattenTargets}" SelectedIndex="{Binding FlattenTarget}"
+                    HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Brush centre samples the height when the stroke starts and keeps that target while dragging."/>
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsFixedFlattenHeight}">
             <TextBlock Text="Height" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
             <NumericUpDown Grid.Column="1" Value="{Binding FlattenHeight}" Increment="0.5" FormatString="0.0" Width="92"/>
           </Grid>

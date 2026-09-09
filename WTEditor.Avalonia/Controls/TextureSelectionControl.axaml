@@ -1,0 +1,149 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:icons="using:WTEditor.Avalonia.Presentation"
+             x:Class="WTEditor.Avalonia.Controls.TextureSelectionControl"
+             x:Name="Root"
+             x:DataType="vm:TextureEditingViewModel"
+             MinHeight="146">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="Foreground" Value="#BFD0DC"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="ListBox.texture-list">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+    <Style Selector="ListBox.texture-list ListBoxItem">
+      <Setter Property="Background" Value="#11171C"/>
+      <Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Padding" Value="3"/>
+      <Setter Property="Margin" Value="0,0,5,5"/>
+      <Setter Property="Width" Value="80"/>
+      <Setter Property="Height" Value="80"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="ListBox.texture-list ListBoxItem:selected">
+      <Setter Property="Background" Value="#294B5A"/>
+      <Setter Property="BorderBrush" Value="#65AFC4"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <Style Selector="Border.active-texture">
+      <Setter Property="Background" Value="#11171C"/>
+      <Setter Property="BorderBrush" Value="#526170"/>
+    </Style>
+    <Style Selector="Border.active-texture:pointerover">
+      <Setter Property="Background" Value="#1D2B34"/>
+      <Setter Property="BorderBrush" Value="#78AFC4"/>
+    </Style>
+    <Style Selector="Border.active-texture.drag-over">
+      <Setter Property="Background" Value="#243E4B"/>
+      <Setter Property="BorderBrush" Value="#00BFFF"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,56,Auto,*" RowSpacing="5">
+    <TextBlock Classes="section-label" Text="ACTIVE TEXTURE"/>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,36" ColumnSpacing="5">
+      <Border x:Name="ActiveTextureDropTarget" Classes="active-texture"
+              BorderThickness="1" CornerRadius="4" ClipToBounds="True"
+              ToolTip.Tip="Choose a terrain texture, or drop a texture here"
+              DragDrop.AllowDrop="True"
+              PointerReleased="ActiveTexture_OnPointerReleased">
+        <Border.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Preview" Command="{Binding SelectedTexture.PreviewCommand}"/>
+          </ContextMenu>
+        </Border.ContextMenu>
+        <Grid ColumnDefinitions="54,*,22">
+          <Border Margin="4" Background="#0B0E11" BorderBrush="#394854" BorderThickness="1"
+                  CornerRadius="2" ClipToBounds="True">
+            <Grid>
+              <Image Source="{Binding SelectedTexture.Thumbnail}" Stretch="UniformToFill"/>
+              <TextBlock Text="?" IsVisible="{Binding HasNoSelectedTexture}" Foreground="#71828E"
+                         FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Button Width="17" Height="17" Padding="0" Margin="0,1,1,0"
+                      HorizontalAlignment="Right" VerticalAlignment="Top"
+                      Background="#E624669A" BorderBrush="#91C9ED" BorderThickness="1"
+                      IsVisible="{Binding HasSelectedTexture}"
+                      Command="{Binding AddFavoriteCommand}" CommandParameter="{Binding SelectedTexture}"
+                      ToolTip.Tip="Add active texture to favorites">
+                <PathIcon Width="9" Height="9" Foreground="White" Data="{x:Static icons:EditorIcons.Add}"/>
+              </Button>
+            </Grid>
+          </Border>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="3,0" Spacing="2">
+            <TextBlock Text="{Binding SelectedTexture.DisplayName, FallbackValue=No texture selected}"
+                       Foreground="#EDF4F8" FontSize="10" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Text="Choose or drop" Foreground="#9EB0BC" FontSize="9"/>
+          </StackPanel>
+          <PathIcon Grid.Column="2" Width="12" Height="12" Margin="3"
+                    Foreground="#9EB0BC" Data="{x:Static icons:EditorIcons.ChevronDown}"/>
+        </Grid>
+      </Border>
+      <ToggleButton Grid.Column="1" Padding="7" IsChecked="{Binding IsPickerModeActive}"
+                    ToolTip.Tip="Texture picker: select this mode, then left-click terrain">
+        <PathIcon Width="18" Height="18" Data="{x:Static icons:EditorIcons.Picker}"/>
+      </ToggleButton>
+    </Grid>
+
+    <TextBlock Grid.Row="2" Classes="section-label" Text="FAVORITES" Margin="0,2,0,0"/>
+
+    <Grid Grid.Row="3" RowDefinitions="*,Auto" RowSpacing="3">
+    <ListBox x:Name="FavoritesList" Classes="texture-list" MinHeight="80"
+             DragDrop.AllowDrop="True"
+             ItemsSource="{Binding Favorites}" SelectedItem="{Binding SelectedFavorite}">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal"/>
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:TexturePaletteItemViewModel">
+          <Grid ToolTip.Tip="{Binding Tooltip}">
+            <Grid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Preview" Command="{Binding PreviewCommand}"/>
+              </ContextMenu>
+            </Grid.ContextMenu>
+            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+            <Border VerticalAlignment="Bottom" Background="#D911171C" Padding="2,1">
+              <TextBlock Text="{Binding DisplayName}" Foreground="#EDF4F8" FontSize="8"
+                         TextTrimming="CharacterEllipsis"/>
+            </Border>
+            <Button Width="18" Height="18" Padding="0" Margin="0,-2,-2,0"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Background="#E62C343C" BorderBrush="#81909B" BorderThickness="1"
+                    Foreground="#F4F7F9" FontSize="11" Content="×"
+                    Command="{Binding DataContext.RemoveFavoriteCommand, ElementName=Root}"
+                    CommandParameter="{Binding}"
+                    ToolTip.Tip="Remove from favorites"/>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Button Grid.Row="1" HorizontalAlignment="Right" Content="+ Add" Height="24"
+            Padding="8,2" Background="#26313B" BorderBrush="#526170"
+            Foreground="#DCE7ED" FontSize="10" ToolTip.Tip="Add textures to favorites">
+      <Button.Flyout>
+        <MenuFlyout>
+          <MenuItem Header="From current position's tile"
+                    Command="{Binding AddFromCurrentPositionTileCommand}"/>
+        </MenuFlyout>
+      </Button.Flyout>
+    </Button>
+    </Grid>
+  </Grid>
+</UserControl>

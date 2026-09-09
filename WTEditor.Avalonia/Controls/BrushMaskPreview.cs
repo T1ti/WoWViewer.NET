@@ -29,7 +29,7 @@ public sealed class BrushMaskPreview : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(Brushes.Black, Bounds);
+        context.FillRectangle(Brushes.Black, new Rect(Bounds.Size));
         if (Preset is not { } preset || Bounds.Width <= 0 || Bounds.Height <= 0)
             return;
 

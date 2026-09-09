@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             x:Class="WTEditor.Avalonia.Controls.TextureBrowserControl"
+             x:Name="Root"
+             x:DataType="vm:TextureEditingViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="TextureItemTemplate" x:DataType="vm:TexturePaletteItemViewModel">
+      <Grid RowDefinitions="92,*" ToolTip.Tip="{Binding Tooltip}"
+            PointerPressed="TextureSlot_OnPointerPressed"
+            PointerMoved="TextureSlot_OnPointerMoved"
+            PointerReleased="TextureSlot_OnPointerReleased">
+        <Grid.ContextMenu>
+          <ContextMenu><MenuItem Header="Preview" Command="{Binding PreviewCommand}"/></ContextMenu>
+        </Grid.ContextMenu>
+        <Border Background="#0B0E11" ClipToBounds="True">
+          <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+        </Border>
+        <TextBlock Grid.Row="1" Margin="1,4,1,0" Text="{Binding DisplayName}"
+                   Foreground="#EDF4F8" FontSize="9" TextWrapping="Wrap"
+                   MaxLines="2" TextTrimming="CharacterEllipsis"/>
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <Style Selector="ListBox.texture-grid">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+    <Style Selector="ListBox.texture-grid ListBoxItem">
+      <Setter Property="Width" Value="104"/><Setter Property="Height" Value="124"/>
+      <Setter Property="Margin" Value="0,0,7,7"/><Setter Property="Padding" Value="4"/>
+      <Setter Property="Background" Value="#11171C"/><Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="4"/>
+    </Style>
+    <Style Selector="ListBox.texture-grid ListBoxItem:selected">
+      <Setter Property="Background" Value="#294B5A"/><Setter Property="BorderBrush" Value="#65AFC4"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Margin="10" RowDefinitions="Auto,Auto,*" RowSpacing="7">
+    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+      <ToggleButton Content="Folders" IsChecked="{Binding Browser.IsExplorerMode}"
+                    Padding="9,4" ToolTip.Tip="Toggle file explorer view"/>
+      <TextBox Grid.Column="1" PlaceholderText="Search terrain textures…"
+               Text="{Binding Browser.SearchText, Mode=TwoWay}"
+               IsVisible="{Binding Browser.IsSimpleMode}"/>
+      <TextBlock Grid.Column="1" Text="{Binding Browser.CurrentFolderPath}"
+                 Foreground="#BFD0DC" FontSize="11" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis"
+                 IsVisible="{Binding Browser.IsExplorerMode}"/>
+      <CheckBox Grid.Column="2" Content="Include _s"
+                IsChecked="{Binding Browser.IncludeSpecularTextures}"
+                Foreground="#BFD0DC" VerticalAlignment="Center"
+                ToolTip.Tip="Include specular texture files ending in _s"/>
+    </Grid>
+
+    <TextBlock Grid.Row="1" Text="Reading files available in this client…"
+               IsVisible="{Binding Browser.IsLoading}" Foreground="#91A5B5" FontSize="10"/>
+
+    <ListBox Grid.Row="2" Classes="texture-grid"
+             ItemsSource="{Binding Browser.Results}"
+             SelectedItem="{Binding Browser.SelectedSimpleTexture}"
+             ItemTemplate="{StaticResource TextureItemTemplate}"
+             IsVisible="{Binding Browser.IsSimpleMode}">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+    </ListBox>
+
+    <Grid Grid.Row="2" ColumnDefinitions="160,5,*"
+          IsVisible="{Binding Browser.IsExplorerMode}">
+      <Border Background="#11171C" BorderBrush="#394854" BorderThickness="1"
+              CornerRadius="4" Padding="4">
+        <TreeView ItemsSource="{Binding Browser.RootFolders}"
+                  SelectedItem="{Binding Browser.SelectedFolder, Mode=TwoWay}"
+                  Background="Transparent" BorderThickness="0">
+          <TreeView.DataTemplates>
+            <TreeDataTemplate DataType="vm:TextureBrowserFolderViewModel"
+                              ItemsSource="{Binding Children}">
+              <TextBlock Text="{Binding Name}" Foreground="#DCE7ED" FontSize="10"
+                         ToolTip.Tip="{Binding FullPath}"/>
+            </TreeDataTemplate>
+          </TreeView.DataTemplates>
+        </TreeView>
+      </Border>
+
+      <GridSplitter Grid.Column="1" Background="#526170"
+                    ResizeDirection="Columns"/>
+
+      <Grid Grid.Column="2" Margin="7,0,0,0" RowDefinitions="Auto,*" RowSpacing="6">
+        <ListBox ItemsSource="{Binding Browser.CurrentFolders}"
+                 Background="Transparent" BorderThickness="0" MaxHeight="94"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:TextureBrowserFolderViewModel">
+              <Button Command="{Binding DataContext.Browser.NavigateFolderCommand, ElementName=Root}"
+                      CommandParameter="{Binding}" Padding="7,4" Margin="0,0,5,5"
+                      Background="#26313B" BorderBrush="#526170" Foreground="#DCE7ED"
+                      ToolTip.Tip="{Binding FullPath}">
+                <TextBlock Text="{Binding Name, StringFormat=▸ {0}}" FontSize="10"/>
+              </Button>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <ListBox Grid.Row="1" Classes="texture-grid"
+                 ItemsSource="{Binding Browser.FolderResults}"
+                 SelectedItem="{Binding Browser.SelectedExplorerTexture}"
+                 ItemTemplate="{StaticResource TextureItemTemplate}">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+        </ListBox>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

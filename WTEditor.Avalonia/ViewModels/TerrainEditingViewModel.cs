@@ -34,6 +34,12 @@ public partial class TerrainEditingViewModel : BrushToolViewModelBase
     [ObservableProperty]
     private double _flattenHeight;
 
+    public IReadOnlyList<string> FlattenTargets { get; } = ["Fixed height", "Brush centre (stroke start)"];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFixedFlattenHeight))]
+    private int _flattenTarget;
+    public bool IsFixedFlattenHeight => FlattenTarget == 0;
+
     [ObservableProperty]
     private int _smoothIterations = 1;
 

@@ -11,7 +11,8 @@ public readonly record struct TerrainBrushSample(
     float Amount,
     float Radius,
     float FlattenHeight,
-    EditAction Action);
+    EditAction Action,
+    float? NeighborhoodHeight = null);
 
 /// <summary>
 /// Mode-specific terrain behavior. Traversal, falloff, upload, dirty state,
@@ -51,6 +52,9 @@ public sealed class SmoothTerrainBrushTool : TerrainBrushTool
 
     public override float Apply(in TerrainBrushSample sample)
     {
+        if (sample.NeighborhoodHeight is { } average)
+            return sample.CurrentHeight +
+                (average - sample.CurrentHeight) * Math.Clamp(sample.Amount, 0f, 1f);
         var chunkStart = sample.VertexIndex / VerticesPerTerrainChunk * VerticesPerTerrainChunk;
         var chunkEnd = Math.Min(chunkStart + VerticesPerTerrainChunk, sample.Vertices.Length);
         var center = sample.Vertices[sample.VertexIndex].Position;

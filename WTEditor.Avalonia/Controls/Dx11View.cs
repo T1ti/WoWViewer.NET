@@ -110,6 +110,9 @@ namespace WTEditor.Avalonia.Controls
                 _vm.SelectedObjectTransformRequested -= OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested -= OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested -= OnWorldNavigationRequested;
+                _vm.TerrainChunkTexturesRequested -= OnTerrainChunkTexturesRequested;
+                _vm.DominantTerrainTextureRequested -= OnDominantTerrainTextureRequested;
+                _vm.CurrentTerrainTileTexturesRequested -= OnCurrentTerrainTileTexturesRequested;
             }
 
             base.OnDataContextChanged(e);
@@ -124,6 +127,9 @@ namespace WTEditor.Avalonia.Controls
                 _vm.SelectedObjectTransformRequested += OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested += OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested += OnWorldNavigationRequested;
+                _vm.TerrainChunkTexturesRequested += OnTerrainChunkTexturesRequested;
+                _vm.DominantTerrainTextureRequested += OnDominantTerrainTextureRequested;
+                _vm.CurrentTerrainTileTexturesRequested += OnCurrentTerrainTileTexturesRequested;
                 if (_benchmarkOptions.Enabled)
                 {
                     _vm.IsDetailedGpuProfilingEnabled = true;
@@ -666,7 +672,8 @@ namespace WTEditor.Avalonia.Controls
             var streamingBudgetMilliseconds = StreamingFrameBudget.CalculateMilliseconds(
                 frameInterval,
                 elapsedBeforeRenderMilliseconds,
-                estimatedRenderMilliseconds);
+                estimatedRenderMilliseconds,
+                hasPendingWork: engine.Stats.PendingAssetOperations > 0);
             try
             {
                 engine.RenderTo(
@@ -1315,6 +1322,25 @@ namespace WTEditor.Avalonia.Controls
                 request.Position.Y,
                 request.IsGlobalWmo);
 
+        private void OnTerrainChunkTexturesRequested(object? sender, Vector2 mousePosition)
+        {
+            var layers = _rendererSession.Engine?.GetTerrainChunkTextures(mousePosition) ?? [];
+            _vm?.PublishTerrainChunkTextures(layers);
+        }
+
+        private void OnDominantTerrainTextureRequested(object? sender, Vector2 mousePosition)
+        {
+            var texture = _rendererSession.Engine?.GetDominantTerrainTexture(mousePosition);
+            if (texture is { } selected)
+                _vm?.PublishDominantTerrainTexture(selected);
+        }
+
+        private void OnCurrentTerrainTileTexturesRequested(object? sender, EventArgs eventArgs)
+        {
+            var textures = _rendererSession.Engine?.GetCurrentTerrainTileTextures() ?? [];
+            _vm?.PublishCurrentTerrainTileTextures(textures);
+        }
+
         private void CompleteTerrainStroke(WowViewerEngine engine)
         {
             var delta = engine.EndTerrainStroke();
@@ -1466,10 +1492,12 @@ namespace WTEditor.Avalonia.Controls
                     ToolMode = (TerrainBrushMode)(_vm?.TerrainBrushToolMode ?? 0),
                     Speed = (float)(_vm?.TerrainBrushSpeed ?? 5),
                     FlattenHeight = (float)(_vm?.TerrainFlattenHeight ?? 0),
+                    FlattenTarget = (TerrainFlattenTarget)(_vm?.TerrainFlattenTarget ?? 0),
                     SmoothIterations = _vm?.TerrainSmoothIterations ?? 1
                 },
                 TextureBrush = new TextureBrushInput(
                     (TextureBrushMode)(_vm?.TextureBrushToolMode ?? 0),
+                    _vm?.TextureBrushTextureFileDataId ?? 0,
                     (byte)Math.Clamp((int)Math.Round(_vm?.TextureBrushOpacity ?? 255), 0, 255),
                     (float)(_vm?.TextureBrushStrength ?? 1)),
                 MouseWheel = _vm?.MouseWheel ?? 0f,

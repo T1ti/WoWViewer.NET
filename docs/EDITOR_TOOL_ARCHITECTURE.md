@@ -10,7 +10,7 @@ Terrain and Texture.
   size. Each tool owns an instance and declares its supported presets, so tools
   retain their settings without requiring identical brush libraries.
 - Tool view models own domain settings. Terrain owns speed and terrain
-  operation parameters; Texture owns opacity, strength, and the Paint/Colour
+  operation parameters; Texture owns opacity, strength, and the Paint/Smooth/Colour
   submode.
 - Brush-driven tool view models inherit `BrushToolViewModelBase`, which owns
   the shared brush, submode selection, and panel lifecycle. Derived types keep
@@ -36,6 +36,14 @@ these controls rather than copying their XAML.
 Submodes are square icon buttons with descriptive tooltips. Brush choices are
 square grayscale mask previews sampled from the actual CPU algorithm: black is
 zero influence and white is full influence. They are not decorative glyphs.
+
+Texture discovery is backed by `IClientFileCatalogService`. It creates one
+cached snapshot from the active filesystem's authoritative `EnumeratePaths()`
+inventory and replaces that snapshot when the client filesystem changes. UI
+features must filter this catalog instead of walking the community listfile and
+calling `Exists` for every candidate. The texture browser's flat search and
+`tileset/` folder explorer are projections of the same catalog; palette items
+retain their canonical full path even when the UI displays only the file name.
 
 ## Mask and falloff model
 
@@ -105,6 +113,20 @@ second cursor raycast, ring renderer, or tool-specific brush shader.
 Non-circular brushes may use a conservative spatial intersection radius while
 retaining their actual operation radius. Square brushes use a circumscribed
 circle for chunk culling and Chebyshev distance for per-sample influence.
+
+Terrain mutation operates through `TerrainSurfaceEditor`. Each pass reads a
+stable world-space height snapshot, welds duplicate vertices by position across
+chunk and loaded-tile boundaries, then publishes the same result to every copy.
+After positions change, triangle normals are accumulated across the same welded
+surface before vertex upload. Keep seam handling and normal rebuilding in this
+shared layer rather than implementing either concern inside Sculpt, Smooth, or
+Flatten.
+
+Flatten supports a numeric world height and a stroke-centre target. The latter
+captures the terrain hit height once when the stroke begins. A brush-wide
+average would still be a flatten operation because every affected point moves
+toward one common plane; Smooth instead uses a different local-neighbour average
+for each vertex and therefore preserves large-scale terrain contours.
 
 ## Adding a brush-driven mode
 

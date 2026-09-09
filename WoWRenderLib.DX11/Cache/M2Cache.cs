@@ -13,6 +13,7 @@ namespace WoWRenderLib.DX11.Cache
     {
         private static readonly Dictionary<uint, ParsedDoodadBatch> Cache = [];
         private static readonly ConcurrentDictionary<uint, List<uint>> Users = [];
+        private static readonly ResourceFailureTracker<uint> failures = new();
 
         private static ComPtr<ID3D11Device>? cachedDevice = null;
 
@@ -90,10 +91,12 @@ namespace WoWRenderLib.DX11.Cache
                 if (item.Error != null)
                 {
                     Console.WriteLine($"!!! Error parsing M2 {originalFileDataId}: {item.Error.Message}");
+                    if (failures.TryScheduleRetry(
+                            originalFileDataId,
+                            Users.ContainsKey(originalFileDataId),
+                            loadQueue.Enqueue))
+                        continue;
                     inFlight.Remove(originalFileDataId);
-                    // Keep the placeholder while this model still has users.
-                    // Its parse failure is terminal for this residency period;
-                    // removing it would make every render lookup queue it again.
                     if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
                             Users.ContainsKey(originalFileDataId)))
                     {
@@ -116,6 +119,7 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     var newBatch = M2Loader.LoadM2(cachedDevice.Value, parsedM2);
                     Cache[originalFileDataId] = newBatch;
+                    failures.Succeeded(originalFileDataId);
                     uploaded++;
 
                     unsafe
@@ -127,6 +131,11 @@ namespace WoWRenderLib.DX11.Cache
                 catch (Exception e)
                 {
                     Console.WriteLine($"!!! Error uploading M2 {originalFileDataId}: {e.Message}");
+                    if (failures.TryScheduleRetry(
+                            originalFileDataId,
+                            Users.ContainsKey(originalFileDataId),
+                            loadQueue.Enqueue))
+                        continue;
                     if (ResourceCachePolicy.ShouldRemovePlaceholderAfterFailure(
                             Users.ContainsKey(originalFileDataId)))
                     {
@@ -174,6 +183,7 @@ namespace WoWRenderLib.DX11.Cache
                 if (users.Count == 0)
                 {
                     Users.TryRemove(fileDataId, out _);
+                    failures.Forget(fileDataId);
                     if (Cache.TryGetValue(fileDataId, out var model))
                     {
                         Cache.Remove(fileDataId);
@@ -227,6 +237,7 @@ namespace WoWRenderLib.DX11.Cache
             Cache.Clear();
             Users.Clear();
             inFlight.Clear();
+            failures.Clear();
             cachedDevice = null;
         }
     }

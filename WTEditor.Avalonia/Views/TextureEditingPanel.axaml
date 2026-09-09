@@ -5,6 +5,7 @@
              x:Class="WTEditor.Avalonia.Views.TextureEditingPanel"
              x:DataType="vm:TextureEditingViewModel">
   <UserControl.Styles>
+    <StyleInclude Source="/Controls/BrushToolSliderStyles.axaml"/>
     <Style Selector="TextBlock.panel-heading">
       <Setter Property="Foreground" Value="#F3F7FA"/>
       <Setter Property="FontSize" Value="15"/>
@@ -22,49 +23,47 @@
   </UserControl.Styles>
 
   <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="13" Spacing="12">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="2">
-            <TextBlock Classes="panel-heading" Text="Texture tools"/>
-            <TextBlock Classes="muted" Text="Brush editing"/>
-          </StackPanel>
-          <Button Grid.Column="1" Content="×" Width="26" Height="26" Padding="0"
-                  Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
-                  Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide texture tools"/>
-        </Grid>
+    <Grid Margin="13" RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="8">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="panel-heading" Text="Texture tools" VerticalAlignment="Center"/>
+        <Button Grid.Column="1" Content="×" Width="26" Height="26" Padding="0"
+                Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
+                Command="{Binding TogglePanelCommand}" ToolTip.Tip="Hide texture tools"/>
+      </Grid>
 
-        <StackPanel Spacing="6">
-          <TextBlock Classes="section-label" Text="SUBMODE"/>
-          <controls:ToolSubModeSelector ItemsSource="{Binding SubModes}"
-                                        SelectedItem="{Binding SelectedSubMode}"/>
-        </StackPanel>
-
-        <controls:BrushSettingsControl DataContext="{Binding Brush}"/>
-
-        <StackPanel Spacing="6">
-          <TextBlock Classes="section-label" Text="TOOL SETTINGS"/>
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="7">
-            <TextBlock Text="Opacity" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-              <Slider Value="{Binding Opacity}" Minimum="{Binding OpacityMinimum}"
-                      Maximum="{Binding OpacityMaximum}" TickFrequency="1" IsSnapToTickEnabled="True"
-                      Width="118" VerticalAlignment="Center"/>
-              <TextBlock Text="{Binding Opacity, StringFormat={}{0:0}}" Width="42" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
-            </StackPanel>
-            <TextBlock Grid.Row="1" Text="Strength" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"/>
-            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-              <Slider Value="{Binding Strength}" Minimum="0" Maximum="1" Width="118" VerticalAlignment="Center"/>
-              <TextBlock Text="{Binding Strength, StringFormat={}{0:0%}}" Width="42" Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Grid>
-        </StackPanel>
-
-        <Border Background="#382B20" BorderBrush="#6A5134" BorderThickness="1" CornerRadius="4" Padding="8">
-          <TextBlock Text="Move over terrain to position the texture brush. Texture application will use the selected submode and opacity."
-                     Foreground="#DFC49D" FontSize="10" TextWrapping="Wrap"/>
-        </Border>
+      <StackPanel Grid.Row="1" Spacing="6">
+        <TextBlock Classes="section-label" Text="TOOL"/>
+        <controls:ToolSubModeSelector ItemsSource="{Binding SubModes}"
+                                      SelectedItem="{Binding SelectedSubMode}"/>
       </StackPanel>
-    </ScrollViewer>
+
+      <controls:BrushSettingsControl Grid.Row="2" DataContext="{Binding Brush}"/>
+
+      <StackPanel Grid.Row="3" Spacing="4">
+        <TextBlock Classes="section-label" Text="TOOL SETTINGS"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
+          <TextBlock Text="Opacity" Foreground="#9FB1BD" FontSize="11" VerticalAlignment="Center"
+                     IsVisible="{Binding IsOpacityVisible}"/>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                      IsVisible="{Binding IsOpacityVisible}">
+            <Slider Value="{Binding Opacity}" Minimum="{Binding OpacityMinimum}"
+                    Maximum="{Binding OpacityMaximum}" TickFrequency="1" IsSnapToTickEnabled="True"
+                    Width="118" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Opacity, StringFormat={}{0:0}}" Width="42"
+                       Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Grid.Row="1" Text="Strength" Foreground="#9FB1BD" FontSize="11"
+                     VerticalAlignment="Center"/>
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <Slider Value="{Binding Strength}" Minimum="0" Maximum="1" Width="118"
+                    VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Strength, StringFormat={}{0:0%}}" Width="42"
+                       Foreground="#DCE7ED" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+
+      <controls:TextureSelectionControl Grid.Row="4"/>
+    </Grid>
   </Border>
 </UserControl>

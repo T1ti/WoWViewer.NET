@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="WTEditor.Avalonia.Views.TexturePreviewWindow"
+        x:Name="Root"
+        Title="{Binding WindowTitle, ElementName=Root}"
+        Width="720" Height="680" MinWidth="320" MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        Background="#161C22">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="12" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <TextBlock Text="{Binding DisplayName, ElementName=Root}"
+                 Foreground="#F3F7FA" FontSize="15" FontWeight="SemiBold"
+                 VerticalAlignment="Center"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+        <RadioButton Content="Combined" GroupName="Channels" IsChecked="True"
+                     Click="Combined_OnClick"/>
+        <RadioButton Content="Colour" GroupName="Channels"
+                     Click="Color_OnClick"/>
+        <RadioButton Content="Alpha" GroupName="Channels"
+                     Click="Alpha_OnClick"/>
+      </StackPanel>
+    </Grid>
+
+    <Border Grid.Row="1" Background="#0C1014" BorderBrush="#526170"
+            BorderThickness="1" CornerRadius="4">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto">
+        <Image x:Name="PreviewImageControl"
+               Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      </ScrollViewer>
+    </Border>
+
+    <TextBlock Grid.Row="2" Text="{Binding Details, ElementName=Root}"
+               Foreground="#91A5B5" FontSize="11"/>
+  </Grid>
+</Window>

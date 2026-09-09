@@ -6,6 +6,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System.ComponentModel;
 using WTEditor.Avalonia.ViewModels;
+using WTEditor.Avalonia.Controls;
 
 namespace WTEditor.Avalonia.Views;
 
@@ -13,14 +14,22 @@ public partial class MainView : UserControl
 {
     private enum PanelDock { Left, Right, Floating }
 
-    private PanelDock _panelDock = PanelDock.Right;
+    private readonly Dictionary<Border, PanelDock> _panelDocks = [];
     private Border? _draggingPanel;
     private Point _dragOffset;
     private ViewModels.MainViewModel? _viewModel;
+    private Point _lastPointerPosition;
 
     public MainView()
     {
         InitializeComponent();
+        _panelDocks[InspectorPanel] = PanelDock.Right;
+        _panelDocks[ToolsPanel] = PanelDock.Right;
+        _panelDocks[TextureBrowserPanel] = PanelDock.Left;
+        DragDrop.AddDragOverHandler(WorkspaceRoot, WorkspaceRoot_OnDragOver);
+        DragDrop.AddDropHandler(WorkspaceRoot, WorkspaceRoot_OnDrop);
+        AttachedToVisualTree += (_, _) => TextureDragDrop.ActiveTextureChanged += OnDraggedTextureChanged;
+        DetachedFromVisualTree += (_, _) => TextureDragDrop.ActiveTextureChanged -= OnDraggedTextureChanged;
         SizeChanged += (_, _) => ArrangePanels();
         DataContextChanged += MainView_OnDataContextChanged;
         KeyDown += MainView_OnKeyDown;
@@ -43,7 +52,8 @@ public partial class MainView : UserControl
     private void MainViewModel_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ViewModels.MainViewModel.IsSelectionPanelVisible)
-            or nameof(ViewModels.MainViewModel.IsEditingToolsPanelVisible))
+            or nameof(ViewModels.MainViewModel.IsEditingToolsPanelVisible)
+            or nameof(ViewModels.MainViewModel.IsTextureBrowserPanelVisible))
         {
             Dispatcher.UIThread.Post(ArrangePanels);
         }
@@ -72,6 +82,46 @@ public partial class MainView : UserControl
         e.Handled = true;
     }
 
+    private void WorkspaceRoot_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        _lastPointerPosition = e.GetPosition(WorkspaceRoot);
+        PositionTextureDragGhost(_lastPointerPosition);
+    }
+
+    private void WorkspaceRoot_OnDragOver(object? sender, DragEventArgs e)
+    {
+        if (TextureDragDrop.Read(e) == null)
+            return;
+        _lastPointerPosition = e.GetPosition(WorkspaceRoot);
+        PositionTextureDragGhost(_lastPointerPosition);
+    }
+
+    private void WorkspaceRoot_OnDrop(object? sender, DragEventArgs e)
+    {
+        if (TextureDragDrop.Read(e) != null)
+        {
+            e.DragEffects = DragDropEffects.None;
+            TextureDragGhost.IsVisible = false;
+        }
+    }
+
+    private void OnDraggedTextureChanged(TexturePaletteItemViewModel? texture)
+    {
+        TextureDragGhost.IsVisible = texture != null;
+        TextureDragGhostImage.Source = texture?.Thumbnail;
+        TextureDragGhostName.Text = texture?.DisplayName ?? string.Empty;
+        if (texture != null)
+            PositionTextureDragGhost(_lastPointerPosition);
+    }
+
+    private void PositionTextureDragGhost(Point pointer)
+    {
+        if (!TextureDragGhost.IsVisible)
+            return;
+        Canvas.SetLeft(TextureDragGhost, Math.Min(pointer.X + 14, Math.Max(0, WorkspaceRoot.Bounds.Width - 80)));
+        Canvas.SetTop(TextureDragGhost, Math.Min(pointer.Y + 14, Math.Max(0, WorkspaceRoot.Bounds.Height - 96)));
+    }
+
     private void PanelDragHandle_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Control handle || !e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
@@ -86,7 +136,7 @@ public partial class MainView : UserControl
         var top = GetCanvasCoordinate(Canvas.GetTop(panel));
         _dragOffset = new Point(pointer.X - left, pointer.Y - top);
         _draggingPanel = panel;
-        _panelDock = PanelDock.Floating;
+        _panelDocks[panel] = PanelDock.Floating;
         e.Pointer.Capture(handle);
         e.Handled = true;
     }
@@ -112,9 +162,9 @@ public partial class MainView : UserControl
         var left = GetCanvasCoordinate(Canvas.GetLeft(panel));
         const double snapDistance = 28;
         if (left <= snapDistance)
-            _panelDock = PanelDock.Left;
+            _panelDocks[panel] = PanelDock.Left;
         else if (PanelCanvas.Bounds.Width - left - panel.Width <= snapDistance)
-            _panelDock = PanelDock.Right;
+            _panelDocks[panel] = PanelDock.Right;
         ArrangePanel(panel);
         e.Handled = true;
     }
@@ -140,10 +190,14 @@ public partial class MainView : UserControl
         if (panel == null)
             return;
 
+        var minimumHeight = GetMinimumPanelHeight(panel);
+        var currentHeight = double.IsNaN(panel.Height)
+            ? Math.Max(panel.Bounds.Height, panel.DesiredSize.Height)
+            : panel.Height;
         panel.Height = Math.Clamp(
-            panel.Height + e.Vector.Y,
-            260,
-            Math.Max(260, PanelCanvas.Bounds.Height - GetCanvasCoordinate(Canvas.GetTop(panel))));
+            currentHeight + e.Vector.Y,
+            minimumHeight,
+            Math.Max(minimumHeight, PanelCanvas.Bounds.Height - GetCanvasCoordinate(Canvas.GetTop(panel))));
         ArrangePanel(panel);
     }
 
@@ -154,6 +208,7 @@ public partial class MainView : UserControl
 
         ArrangePanel(InspectorPanel);
         ArrangePanel(ToolsPanel);
+        ArrangePanel(TextureBrowserPanel);
     }
 
     private void ArrangePanel(Border panel)
@@ -162,13 +217,22 @@ public partial class MainView : UserControl
             return;
 
         panel.Width = Math.Min(panel.Width, Math.Max(260, PanelCanvas.Bounds.Width));
-        panel.Height = Math.Clamp(panel.Height, 260, Math.Max(260, PanelCanvas.Bounds.Height - 20));
-        if (_panelDock == PanelDock.Left)
+        var minimumHeight = GetMinimumPanelHeight(panel);
+        panel.MaxHeight = Math.Max(minimumHeight, PanelCanvas.Bounds.Height - 20);
+        if (!double.IsNaN(panel.Height))
+        {
+            panel.Height = Math.Clamp(
+                panel.Height,
+                minimumHeight,
+                panel.MaxHeight);
+        }
+        var dock = _panelDocks.GetValueOrDefault(panel, PanelDock.Floating);
+        if (dock == PanelDock.Left)
         {
             Canvas.SetLeft(panel, 10);
             Canvas.SetTop(panel, 10);
         }
-        else if (_panelDock == PanelDock.Right)
+        else if (dock == PanelDock.Right)
         {
             Canvas.SetLeft(panel, Math.Max(0, PanelCanvas.Bounds.Width - panel.Width - 10));
             Canvas.SetTop(panel, 10);
@@ -181,10 +245,19 @@ public partial class MainView : UserControl
 
     private static double GetCanvasCoordinate(double coordinate) => double.IsNaN(coordinate) ? 0 : coordinate;
 
+    private double GetMinimumPanelHeight(Border panel) =>
+        ReferenceEquals(panel, TextureBrowserPanel) &&
+        _viewModel?.TextureEditor.IsBrowserExpanded == false
+            ? 44d
+            : Math.Max(260d, panel.MinHeight);
+
     private void SetFloatingPosition(Border panel, double left, double top)
     {
         Canvas.SetLeft(panel, Math.Clamp(left, 0, Math.Max(0, PanelCanvas.Bounds.Width - panel.Width)));
-        Canvas.SetTop(panel, Math.Clamp(top, 0, Math.Max(0, PanelCanvas.Bounds.Height - panel.Height)));
+        var panelHeight = double.IsNaN(panel.Height)
+            ? Math.Max(panel.Bounds.Height, panel.DesiredSize.Height)
+            : panel.Height;
+        Canvas.SetTop(panel, Math.Clamp(top, 0, Math.Max(0, PanelCanvas.Bounds.Height - panelHeight)));
     }
 
     private Border? GetPanel(Control source)
@@ -193,6 +266,8 @@ public partial class MainView : UserControl
             return InspectorPanel;
         if (source.Name?.Contains("Tools", StringComparison.Ordinal) == true)
             return ToolsPanel;
+        if (source.Name?.Contains("TextureBrowser", StringComparison.Ordinal) == true)
+            return TextureBrowserPanel;
         return null;
     }
 }

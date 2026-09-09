@@ -24,6 +24,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public bool IsTerrainToolsPanelVisible => IsTerrainModeActive && TerrainEditor.IsPanelVisible;
     public bool IsTextureToolsPanelVisible => IsTextureModeActive && TextureEditor.IsPanelVisible;
     public bool IsEditingToolsPanelVisible => IsTerrainToolsPanelVisible || IsTextureToolsPanelVisible;
+    public bool IsTextureBrowserPanelVisible => IsTextureModeActive && TextureEditor.IsBrowserVisible;
+    public bool IsTextureBrowserPanelHidden => IsTextureModeActive && !TextureEditor.IsBrowserVisible;
 
     [ObservableProperty]
     private EditorModeViewModel _activeMode;
@@ -55,12 +57,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _activeMode.IsActive = true;
         ViewportVM.PropertyChanged += OnViewportPropertyChanged;
         ViewportVM.ClientConfigurationChanged += OnClientConfigurationChanged;
+        ViewportVM.TerrainChunkTexturesPicked += OnTerrainChunkTexturesPicked;
+        ViewportVM.DominantTerrainTexturePicked += OnDominantTerrainTexturePicked;
+        ViewportVM.CurrentTerrainTileTexturesPicked += OnCurrentTerrainTileTexturesPicked;
         Inspector.TransformChanged += OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged += OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged += OnTerrainEditorPropertyChanged;
         TerrainEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
         TextureEditor.PropertyChanged += OnTextureEditorPropertyChanged;
         TextureEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
+        TextureEditor.CurrentTerrainTileTexturesRequested += OnCurrentTerrainTileTexturesRequested;
         SyncToolSettings();
         ViewportVM.EditorMode = EditorModeId.Selection;
         Inspector.SetBuildProfile(ClientBuildProfile.From(ViewportVM.ClientConfiguration));
@@ -85,6 +91,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             mode.IsActive = ReferenceEquals(mode, value);
 
         ViewportVM.EditorMode = value.Definition.RendererMode;
+        if (!value.Definition.Capabilities.HasFlag(EditorModeCapabilities.TextureEditing))
+            TextureEditor.IsPickerModeActive = false;
         SyncActiveBrushSettings();
         OnPropertyChanged(nameof(IsTerrainModeActive));
         OnPropertyChanged(nameof(IsTextureModeActive));
@@ -93,6 +101,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsTerrainToolsPanelVisible));
         OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
         OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+        OnPropertyChanged(nameof(IsTextureBrowserPanelVisible));
+        OnPropertyChanged(nameof(IsTextureBrowserPanelHidden));
     }
 
     private void OnTerrainEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -115,6 +125,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
             OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
         }
+
+        if (e.PropertyName == nameof(TextureEditingViewModel.IsBrowserVisible))
+        {
+            OnPropertyChanged(nameof(IsTextureBrowserPanelVisible));
+            OnPropertyChanged(nameof(IsTextureBrowserPanelHidden));
+        }
     }
 
     private void OnBrushSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -131,10 +147,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ViewportVM.TerrainBrushToolMode = (int)TerrainEditor.ToolMode;
         ViewportVM.TerrainBrushSpeed = TerrainEditor.Speed;
         ViewportVM.TerrainFlattenHeight = TerrainEditor.FlattenHeight;
+        ViewportVM.TerrainFlattenTarget = TerrainEditor.FlattenTarget;
         ViewportVM.TerrainSmoothIterations = TerrainEditor.SmoothIterations;
         ViewportVM.TextureBrushToolMode = (int)TextureEditor.ToolMode;
+        ViewportVM.TextureBrushTextureFileDataId = TextureEditor.SelectedTexture?.FileDataId ?? 0;
         ViewportVM.TextureBrushOpacity = TextureEditor.Opacity;
         ViewportVM.TextureBrushStrength = TextureEditor.Strength;
+        ViewportVM.TexturePickerModeActive = TextureEditor.IsPickerModeActive;
         SyncActiveBrushSettings();
     }
 
@@ -159,6 +178,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
         Inspector.SetBuildProfile(ClientBuildProfile.From(configuration));
+
+    private void OnTerrainChunkTexturesPicked(
+        object? sender,
+        IReadOnlyList<WoWRenderLib.DX11.TerrainChunkTextureLayer> layers) =>
+        TextureEditor.ShowChunkTextures(layers);
+
+    private void OnDominantTerrainTexturePicked(
+        object? sender,
+        WoWRenderLib.DX11.TerrainChunkTextureLayer texture) =>
+        TextureEditor.SelectTerrainTexture(texture);
+
+    private void OnCurrentTerrainTileTexturesRequested(object? sender, EventArgs eventArgs) =>
+        ViewportVM.RequestCurrentTerrainTileTextures();
+
+    private void OnCurrentTerrainTileTexturesPicked(
+        object? sender,
+        IReadOnlyList<WoWRenderLib.DX11.TerrainChunkTextureLayer> textures) =>
+        TextureEditor.AddFavorites(textures);
 
     private void OnInspectorTransformChanged(object? sender, ObjectTransform transform) =>
         ExecuteObjectTransform(transform);
@@ -192,11 +229,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         ViewportVM.PropertyChanged -= OnViewportPropertyChanged;
         ViewportVM.ClientConfigurationChanged -= OnClientConfigurationChanged;
+        ViewportVM.TerrainChunkTexturesPicked -= OnTerrainChunkTexturesPicked;
+        ViewportVM.DominantTerrainTexturePicked -= OnDominantTerrainTexturePicked;
+        ViewportVM.CurrentTerrainTileTexturesPicked -= OnCurrentTerrainTileTexturesPicked;
         Inspector.TransformChanged -= OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged -= OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged -= OnTerrainEditorPropertyChanged;
         TerrainEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
         TextureEditor.PropertyChanged -= OnTextureEditorPropertyChanged;
         TextureEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
+        TextureEditor.CurrentTerrainTileTexturesRequested -= OnCurrentTerrainTileTexturesRequested;
     }
 }

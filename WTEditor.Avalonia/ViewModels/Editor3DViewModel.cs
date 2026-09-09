@@ -43,6 +43,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<ObjectTransform>? SelectedObjectTransformRequested;
     public event EventHandler<WmoPlacementSelection>? SelectedWmoPlacementRequested;
     public event EventHandler<WorldNavigationRequest>? WorldNavigationRequested;
+    public event EventHandler<Vector2>? TerrainChunkTexturesRequested;
+    public event EventHandler<IReadOnlyList<TerrainChunkTextureLayer>>? TerrainChunkTexturesPicked;
+    public event EventHandler<Vector2>? DominantTerrainTextureRequested;
+    public event EventHandler<TerrainChunkTextureLayer>? DominantTerrainTexturePicked;
+    public event EventHandler? CurrentTerrainTileTexturesRequested;
+    public event EventHandler<IReadOnlyList<TerrainChunkTextureLayer>>? CurrentTerrainTileTexturesPicked;
     public UndoService UndoService { get; }
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
@@ -155,10 +161,13 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private int _terrainBrushToolMode;
     [ObservableProperty] private double _terrainBrushSpeed = 5;
     [ObservableProperty] private double _terrainFlattenHeight;
+    [ObservableProperty] private int _terrainFlattenTarget;
     [ObservableProperty] private int _terrainSmoothIterations = 1;
     [ObservableProperty] private int _textureBrushToolMode;
+    [ObservableProperty] private uint _textureBrushTextureFileDataId;
     [ObservableProperty] private double _textureBrushOpacity = 255;
     [ObservableProperty] private double _textureBrushStrength = 1;
+    [ObservableProperty] private bool _texturePickerModeActive;
 
 
     public Editor3DViewModel(
@@ -199,6 +208,24 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public void RecordAppliedEdit(IEditorCommand command) =>
         UndoService.RecordExecuted(command);
+
+    public void RequestTerrainChunkTextures(Vector2 mousePosition) =>
+        TerrainChunkTexturesRequested?.Invoke(this, mousePosition);
+
+    public void PublishTerrainChunkTextures(IReadOnlyList<TerrainChunkTextureLayer> layers) =>
+        TerrainChunkTexturesPicked?.Invoke(this, layers);
+
+    public void RequestDominantTerrainTexture(Vector2 mousePosition) =>
+        DominantTerrainTextureRequested?.Invoke(this, mousePosition);
+
+    public void PublishDominantTerrainTexture(TerrainChunkTextureLayer texture) =>
+        DominantTerrainTexturePicked?.Invoke(this, texture);
+
+    public void RequestCurrentTerrainTileTextures() =>
+        CurrentTerrainTileTexturesRequested?.Invoke(this, EventArgs.Empty);
+
+    public void PublishCurrentTerrainTileTextures(IReadOnlyList<TerrainChunkTextureLayer> textures) =>
+        CurrentTerrainTileTexturesPicked?.Invoke(this, textures);
 
     partial void OnMoveSpeedChanged(float value)
     {
