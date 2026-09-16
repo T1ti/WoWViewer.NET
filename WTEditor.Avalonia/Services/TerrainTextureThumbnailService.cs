@@ -105,7 +105,7 @@ internal static class TerrainTextureImageLoader
         TexturePreviewChannelMode channelMode = TexturePreviewChannelMode.Combined)
     {
         using var blp = new WoWLib.Formats.BLP.BLP();
-        blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
+        blp.Read(CascFileReader.ReadFile(fileDataId));
         uint mip = 0;
         while (maximumDimension is { } maximum &&
                mip + 1 < blp.MipCount &&
@@ -125,7 +125,7 @@ internal static class TerrainTextureImageLoader
     public static TerrainTexturePreviewImages LoadPreview(uint fileDataId)
     {
         using var blp = new WoWLib.Formats.BLP.BLP();
-        blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
+        blp.Read(CascFileReader.ReadFile(fileDataId));
         using var image = blp.Decode(0);
         var source = image.Pixels.AsSpan().ToArray();
         var color = source.ToArray();

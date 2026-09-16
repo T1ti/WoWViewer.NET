@@ -73,17 +73,20 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         try
         {
             var fileSystem = WowlibFileSystem.Current;
-            using var format = Formats.WDT.WDT.ForVersion(fileSystem.Version);
-            format.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+            var bytes = CascFileReader.ReadFile(fileDataId);
+            WdtChunkDiagnostics.WarnAboutUnhandledChunks(fileDataId, bytes);
+            using var root = Formats.WDT.Root.WDTRoot.ForVersion(fileSystem.Version);
+            root.Read(bytes);
             return new WorldMapWdtMetadata(
                 fileDataId,
-                Convert.ToUInt32(format.Root.Header.Flags))
+                Convert.ToUInt32(root.Header.Flags))
             {
-                GlobalWmoBounds = ReadGlobalWmoBounds(format.Root),
-                ActiveTiles = Enumerable.Range(0, Math.Min(4096, format.Root.Tiles.Count))
-                    .Where(index => (Convert.ToUInt32(format.Root.Tiles[index].Flags) & 1) != 0)
+                GlobalWmoBounds = ReadGlobalWmoBounds(root),
+                ActiveTiles = Enumerable.Range(0, Math.Min(4096, root.Tiles.Count))
+                    .Where(index => (Convert.ToUInt32(root.Tiles[index].Flags) & 1) != 0)
                     .Select(index => new WorldMapTile(index % 64, index / 64))
-                    .ToArray()
+                    .ToArray(),
+                MinimapTextureFileDataIds = ReadMinimapTextureFileDataIds(root)
             };
         }
         catch (Exception exception)
@@ -99,5 +102,26 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
             return null;
         var bounds = root.GlobalWmo[0].Extents;
         return MapCoordinates.PlacementBoundsToTile(bounds.Min.X, bounds.Min.Z, bounds.Max.X, bounds.Max.Z);
+    }
+
+    internal static IReadOnlyDictionary<WorldMapTile, uint> ReadMinimapTextureFileDataIds(
+        Formats.WDT.Root.WDTRoot root)
+    {
+        ReadOnlySpan<Formats.WDT.Root.Chunks.MapFileDataIDs.Data> entries = root switch
+        {
+            Formats.WDT.Root.WDTRootBfa value => value.MapFdids.AsDataSpan(),
+            Formats.WDT.Root.WDTRootShadowlandsPlus value => value.MapFdids.AsDataSpan(),
+            _ => []
+        };
+
+        var result = new Dictionary<WorldMapTile, uint>();
+        for (var index = 0; index < Math.Min(4096, entries.Length); index++)
+        {
+            var fileDataId = entries[index].MinimapTexture;
+            if (fileDataId != 0)
+                result[new WorldMapTile(index % 64, index / 64)] = fileDataId;
+        }
+
+        return result;
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WTEditor.Avalonia.Models;
 using WTEditor.Avalonia.Services;
 using WTEditor.Avalonia.ViewModels;
+using WoWRenderLib.Services;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -122,12 +123,71 @@ public sealed class MinimapSmokeTests
     }
 
     [TestMethod]
-    public void TilePaths_UseInternalDirectoryAndTwoDigitCoordinates()
+    public void WdtChunkDiagnostics_ReportsOnlyUnhandledChunks()
     {
-        Assert.AreEqual("world/minimaps/Azeroth/map00_09.blp",
-            MinimapService.GetTilePath("Azeroth", new WorldMapTile(0, 9)));
-        Assert.AreEqual("world/minimaps/Azeroth/map63_42.blp",
-            MinimapService.GetTilePath("Azeroth", new WorldMapTile(63, 42)));
+        var bytes = new List<byte>();
+        AddWdtChunk(bytes, "MVER", [18, 0, 0, 0]);
+        AddWdtChunk(bytes, "MAID", []);
+        AddWdtChunk(bytes, "TEST", [1]);
+        AddWdtChunk(bytes, "TEST", [2]);
+
+        CollectionAssert.AreEqual(new[] { "TEST", "TEST" },
+            WdtChunkDiagnostics.FindUnhandledChunks(bytes.ToArray()).ToArray());
+    }
+
+    [TestMethod]
+    public void WdtMetadata_MapsMaidMinimapFileDataIdsByTileCoordinates()
+    {
+        using var root = new WoWLib.Formats.WDT.Root.WDTRootBfa();
+        for (var index = 0; index <= 65; index++)
+        {
+            using var entry = new WoWLib.Formats.WDT.Root.Chunks.MapFileDataIDs
+            {
+                MinimapTexture = index == 65 ? 987654u : 0
+            };
+            root.MapFdids.Add(entry);
+        }
+
+        var fileDataIds = MapTerrainMetadataCacheService.ReadMinimapTextureFileDataIds(root);
+
+        Assert.AreEqual(1, fileDataIds.Count);
+        Assert.AreEqual(987654u, fileDataIds[new WorldMapTile(1, 1)]);
+    }
+
+    [TestMethod]
+    public void MapCatalog_RejectsDefinitionWithoutNamedWdtColumn()
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Directory",
+            "Field_1_60_1_69876_021"
+        };
+
+        var exception = Assert.ThrowsException<InvalidDataException>(() =>
+            MapCatalogService.ValidateMapSchema("1.60.1.69876", columns));
+
+        StringAssert.Contains(exception.Message, "required WdtFileDataID column is missing");
+        StringAssert.Contains(exception.Message, "outdated");
+    }
+
+    [TestMethod]
+    public void MapCatalog_RejectsDefinitionsThatYieldNoWdtFileDataIds()
+    {
+        var maps = new[]
+        {
+            new WorldMapRecord(0, "Azeroth", "Azeroth", 0, 0, 0),
+            new WorldMapRecord(1, "Kalimdor", "Kalimdor", 0, 0, 0)
+        };
+
+        var exception = Assert.ThrowsException<InvalidDataException>(() =>
+            MapCatalogService.ValidateMapRecords(
+                "1.60.1.69876",
+                maps,
+                new HashSet<string>(["Directory", "WdtFileDataID"], StringComparer.OrdinalIgnoreCase),
+                _ => false));
+
+        StringAssert.Contains(exception.Message, "only zero WDT FileDataIDs");
+        StringAssert.Contains(exception.Message, "outdated");
     }
 
     [TestMethod]
@@ -227,7 +287,18 @@ public sealed class MinimapSmokeTests
 
     private static WorldMapCatalogEntry Map(int id) => new(
         new WorldMapRecord(id, $"Map {id}", "Azeroth", (uint)id, 0, 0),
-        new WorldMapWdtMetadata((uint)id, 0) { ActiveTiles = [new(3, 7)] });
+        new WorldMapWdtMetadata((uint)id, 0)
+        {
+            ActiveTiles = [new(3, 7)],
+            MinimapTextureFileDataIds = new Dictionary<WorldMapTile, uint> { [new(3, 7)] = 123 }
+        });
+
+    private static void AddWdtChunk(List<byte> target, string fourCc, byte[] payload)
+    {
+        target.AddRange(System.Text.Encoding.ASCII.GetBytes(fourCc).Reverse());
+        target.AddRange(BitConverter.GetBytes((uint)payload.Length));
+        target.AddRange(payload);
+    }
 
     private sealed class DeferredService : IMinimapService
     {

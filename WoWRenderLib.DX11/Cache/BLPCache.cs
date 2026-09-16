@@ -69,7 +69,7 @@ namespace WoWRenderLib.DX11.Cache
         private static DecodedBLP Decode(uint fileDataId)
         {
             using var blp = new Formats.BLP.BLP();
-            blp.Read(WowlibFileSystem.Current, new FileKey(new FileDataId(fileDataId)));
+            blp.Read(CascFileReader.ReadFile(fileDataId));
 
             if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1 ||
                 blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3 ||
@@ -155,6 +155,13 @@ namespace WoWRenderLib.DX11.Cache
 
                 if (item.Error != null)
                 {
+                    if (item.Error is FileNotFoundException)
+                    {
+                        Console.WriteLine($"Unable to load local BLP {item.Request}: {item.Error.Message}");
+                        inFlight.TryRemove(item.Request, out _);
+                        continue;
+                    }
+
                     Console.WriteLine($"Failed to decode BLP {item.Request}: {item.Error.Message}");
                     if (!failures.TryScheduleRetry(
                             item.Request,

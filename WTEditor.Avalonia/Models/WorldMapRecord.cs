@@ -19,6 +19,8 @@ public sealed record WorldMapRecord(
 public sealed record WorldMapWdtMetadata(uint FileDataId, uint Flags)
 {
     public IReadOnlyList<WorldMapTile> ActiveTiles { get; init; } = [];
+    public IReadOnlyDictionary<WorldMapTile, uint> MinimapTextureFileDataIds { get; init; } =
+        new Dictionary<WorldMapTile, uint>();
     public TileBounds? GlobalWmoBounds { get; init; }
 
     // A WDT with the global-WMO flag set does not contain terrain tiles.

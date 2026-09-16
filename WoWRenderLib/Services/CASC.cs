@@ -2,13 +2,21 @@
 
 namespace WoWRenderLib.Services
 {
-    public sealed record CASCInitializationResult(BuildInstance BuildInstance, string BuildName);
+    public sealed record CASCInitializationResult(
+        BuildInstance BuildInstance,
+        string BuildName,
+        string LocalStoragePath,
+        string Product);
 
     public static class CASC
     {
         public static BuildInstance buildInstance = null!;
         public static bool IsInitialized { get; private set; } = false;
         public static string BuildName { get; private set; } = "";
+        private static readonly object LocalStorageLock = new();
+        private static CASCLib.CASCHandler? localStorage;
+        private static string localStoragePath = "";
+        private static string localStorageProduct = "";
 
         public static async Task Initialize(string wowProduct, string wowDir = "", string buildConfig = "", string cdnConfig = "")
         {
@@ -108,19 +116,75 @@ namespace WoWRenderLib.Services
             var splitName = fullBuildName.Replace("WOW-", "").Split("patch");
             var buildName = splitName[1].Split("_")[0] + "." + splitName[0];
 
-            return new CASCInitializationResult(candidate, buildName);
+            return new CASCInitializationResult(candidate, buildName, wowDir, wowProduct);
         }
 
         public static void Activate(CASCInitializationResult result)
         {
+            IsInitialized = false;
             buildInstance = result.BuildInstance;
             BuildName = result.BuildName;
+            lock (LocalStorageLock)
+            {
+                localStorage?.Clear();
+                localStoragePath = result.LocalStoragePath;
+                localStorageProduct = result.Product;
+                localStorage = Directory.Exists(localStoragePath)
+                    ? CASCLib.CASCHandler.OpenLocalStorage(localStoragePath, localStorageProduct)
+                    : null;
+            }
             IsInitialized = true;
         }
 
         public static bool FileExists(uint fileDataID)
         {
             return buildInstance!.Root!.FileExists(fileDataID);
+        }
+
+        /// <summary>
+        /// Reads an installed payload through the CASCExplorer-compatible local
+        /// storage implementation. Local mode is prevented from falling back to
+        /// its online reader in CASCHandlerBase.
+        /// </summary>
+        public static bool TryReadLocalFile(uint fileDataId, out byte[] bytes, out string failureReason)
+        {
+            bytes = [];
+            failureReason = string.Empty;
+
+            if (!IsInitialized)
+            {
+                failureReason = "the active CASC build is not initialized";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(localStoragePath) || !Directory.Exists(localStoragePath))
+            {
+                failureReason = "the selected client installation path is unavailable";
+                return false;
+            }
+
+            lock (LocalStorageLock)
+            {
+                try
+                {
+                    localStorage ??= CASCLib.CASCHandler.OpenLocalStorage(localStoragePath, localStorageProduct);
+                    if (!localStorage.FileExists(checked((int)fileDataId)))
+                    {
+                        failureReason = "the FileDataID is absent from the selected client's local CASC root";
+                        return false;
+                    }
+
+                    using var stream = localStorage.OpenFile(checked((int)fileDataId));
+                    using var memory = new MemoryStream();
+                    stream.CopyTo(memory);
+                    bytes = memory.ToArray();
+                    return true;
+                }
+                catch (Exception exception)
+                {
+                    failureReason = $"the local CASC storage could not read the payload: {exception.Message}";
+                    return false;
+                }
+            }
         }
 
         public static bool LoadKeys(bool forceRedownload = false)
