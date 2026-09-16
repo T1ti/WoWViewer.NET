@@ -28,4 +28,15 @@ public partial class TextureBrowserControl : UserControl
             DataContext is TextureEditingViewModel editor)
             editor.SelectTextureCommand.Execute(texture);
     }
+
+    private void FolderEntry_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton == MouseButton.Left &&
+            sender is Control { DataContext: TextureBrowserFolderViewModel folder } &&
+            DataContext is TextureEditingViewModel { Browser: { } browser })
+        {
+            browser.NavigateFolderCommand.Execute(folder);
+            e.Handled = true;
+        }
+    }
 }

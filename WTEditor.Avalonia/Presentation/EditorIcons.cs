@@ -28,6 +28,8 @@ public static class EditorIcons
     public static Geometry Add { get; } = Geometry.Parse("M11,4 H13 V11 H20 V13 H13 V20 H11 V13 H4 V11 H11 Z");
     public static Geometry ChevronDown { get; } = Geometry.Parse("M5,8 L12,15 L19,8 L17.5,6.5 L12,12 L6.5,6.5 Z");
     public static Geometry Picker { get; } = Geometry.Parse("M16.7,2.3 A2.4,2.4 0 0 1 20.1,5.7 L17.4,8.4 L18.8,9.8 L16.7,11.9 L15.3,10.5 L8.1,17.7 L5,18.5 L5.8,15.4 L13,8.2 L11.6,6.8 L13.7,4.7 L15.1,6.1 Z M4,19 H10 V21 H4 Z");
+    public static Geometry Folder { get; } = Geometry.Parse("M3,5 H10 L12,8 H21 V20 H3 Z M3,7 V4 H11 L13,7 Z");
+    public static Geometry ParentFolder { get; } = Geometry.Parse("M11,20 V8 L6.5,12.5 L5,11 L12,4 L19,11 L17.5,12.5 L13,8 V20 Z");
     public static Geometry ExpansionCircle { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z");
     public static Geometry ExpansionDiamond { get; } = Geometry.Parse("M12,2 L22,12 L12,22 L2,12 Z");
     public static Geometry ExpansionHexagon { get; } = Geometry.Parse("M12,2 L20.5,7 L20.5,17 L12,22 L3.5,17 L3.5,7 Z");

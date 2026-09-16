@@ -131,6 +131,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsTextureBrowserPanelVisible));
             OnPropertyChanged(nameof(IsTextureBrowserPanelHidden));
         }
+
+        if (e.PropertyName == nameof(TextureEditingViewModel.IsBrowserExpanded))
+            OnPropertyChanged(nameof(IsTextureBrowserPanelVisible));
     }
 
     private void OnBrushSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)

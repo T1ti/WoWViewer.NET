@@ -35,7 +35,7 @@
 
     <!-- Mode selection belongs to the viewport and floats above it so future
          modes do not consume permanent editor workspace. -->
-    <Border HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0"
+    <Border x:Name="ViewportModeToolbar" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0"
             Padding="4" CornerRadius="6" Background="#E61A2027"
             BorderBrush="#526170" BorderThickness="1" ZIndex="40">
       <StackPanel Spacing="4">
@@ -73,25 +73,25 @@
       </StackPanel>
     </Border>
 
-    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0"
+    <Button x:Name="InspectorToggleButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Inspector" Command="{Binding Inspector.TogglePanelCommand}"
             IsVisible="{Binding IsSelectionModeActive}"/>
 
-    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
+    <Button x:Name="TerrainToolsToggleButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Terrain tools" Command="{Binding TerrainEditor.TogglePanelCommand}"
             IsVisible="{Binding IsTerrainModeActive}"/>
 
-    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
+    <Button x:Name="TextureToolsToggleButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Texture tools" Command="{Binding TextureEditor.TogglePanelCommand}"
             IsVisible="{Binding IsTextureModeActive}"/>
 
-    <Button HorizontalAlignment="Left" VerticalAlignment="Top" Margin="56,10,0,0"
+    <Button x:Name="TextureBrowserShowButton" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="56,10,0,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Texture browser" Command="{Binding TextureEditor.ShowTextureBrowserCommand}"
@@ -100,6 +100,9 @@
     <!-- The active mode owns the visible panel. Both panels share the same
          drag/resize behavior and remain independent of document state. -->
     <Canvas x:Name="PanelCanvas" ZIndex="50">
+      <Border x:Name="TextureBrowserDockPreview" IsVisible="False" IsHitTestVisible="False"
+              Background="#443A8FC2" BorderBrush="#B885CBEF"
+              BorderThickness="2" CornerRadius="4"/>
       <Border x:Name="InspectorPanel" Width="330" Height="620"
               IsVisible="{Binding IsSelectionPanelVisible}">
         <Grid>
@@ -150,6 +153,7 @@
       </Border>
 
       <Border x:Name="TextureBrowserPanel" Width="500" MinHeight="44"
+              Canvas.Left="10" Canvas.Top="10"
               Height="{Binding TextureEditor.BrowserHeight, Mode=TwoWay}"
               IsVisible="{Binding IsTextureBrowserPanelVisible}"
               Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
@@ -178,21 +182,51 @@
                   Background="Transparent" BorderThickness="0" Foreground="#BFD0DC"
                   Content="×" Command="{Binding TextureEditor.HideTextureBrowserCommand}"
                   ToolTip.Tip="Hide texture browser"/>
-          <Thumb x:Name="TextureBrowserLeftResizeHandle" Grid.RowSpan="2" Width="7"
+        </Grid>
+      </Border>
+
+      <!-- Kept outside the browser content so texture lists and scroll viewers can
+           never intercept the resize hit targets. -->
+      <Grid x:Name="TextureBrowserResizeLayer"
+            IsVisible="{Binding IsTextureBrowserPanelVisible}">
+          <Thumb x:Name="TextureBrowserLeftResizeHandle" Width="12" ZIndex="90"
                  HorizontalAlignment="Left" Background="#35526170" Cursor="SizeWestEast"
                  IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
-          <Thumb x:Name="TextureBrowserRightResizeHandle" Grid.RowSpan="2" Width="7"
+          <Thumb x:Name="TextureBrowserRightResizeHandle" Width="12" ZIndex="90"
                  HorizontalAlignment="Right" Background="#35526170" Cursor="SizeWestEast"
                  IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
-          <Thumb x:Name="TextureBrowserBottomResizeHandle" Grid.Row="1" Height="7"
+          <Thumb x:Name="TextureBrowserBottomResizeHandle" Height="12" ZIndex="90"
                  HorizontalAlignment="Stretch" VerticalAlignment="Bottom"
                  Background="#35526170" Cursor="SizeNorthSouth"
                  IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
-        </Grid>
-      </Border>
+          <Thumb x:Name="TextureBrowserTopResizeHandle" Height="12" ZIndex="90"
+                 HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                 Background="#35526170" Cursor="SizeNorthSouth" IsVisible="False"
+                 DragDelta="PanelTopResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserBottomLeftResizeHandle"
+                 Width="16" Height="16" ZIndex="100"
+                 HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                 Background="#55526170" Cursor="BottomLeftCorner"
+                 DragDelta="PanelCornerResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserBottomRightResizeHandle"
+                 Width="16" Height="16" ZIndex="100"
+                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                 Background="#55526170" Cursor="BottomRightCorner"
+                 DragDelta="PanelCornerResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserTopLeftResizeHandle"
+                 Width="16" Height="16" ZIndex="100"
+                 HorizontalAlignment="Left" VerticalAlignment="Top"
+                 Background="#55526170" Cursor="TopLeftCorner"
+                 DragDelta="PanelCornerResize_OnDragDelta"/>
+          <Thumb x:Name="TextureBrowserTopRightResizeHandle"
+                 Width="16" Height="16" ZIndex="100"
+                 HorizontalAlignment="Right" VerticalAlignment="Top"
+                 Background="#55526170" Cursor="TopRightCorner"
+                 DragDelta="PanelCornerResize_OnDragDelta"/>
+      </Grid>
     </Canvas>
 
     <Canvas x:Name="TextureDragLayer" ZIndex="200" IsHitTestVisible="False">

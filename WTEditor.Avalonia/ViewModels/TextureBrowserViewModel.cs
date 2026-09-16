@@ -5,28 +5,40 @@ using WTEditor.Avalonia.Services;
 
 namespace WTEditor.Avalonia.ViewModels;
 
-internal readonly record struct TextureBrowserCatalogEntry(uint FileDataId, string Path);
+internal readonly record struct TextureBrowserCatalogEntry(
+    uint FileDataId,
+    string Path,
+    bool HasSpecularVariant = false,
+    bool HasHeightVariant = false);
+
+internal readonly record struct TextureVariantAvailability(bool HasSpecular, bool HasHeight);
 
 public sealed class TextureBrowserFolderViewModel
 {
-    internal TextureBrowserFolderViewModel(string name, string fullPath)
+    internal TextureBrowserFolderViewModel(
+        string name,
+        string fullPath,
+        TextureBrowserFolderViewModel? parent = null)
     {
         Name = name;
         FullPath = fullPath;
+        Parent = parent;
     }
 
     public string Name { get; }
     public string FullPath { get; }
+    public TextureBrowserFolderViewModel? Parent { get; }
+    public bool HasDirectTextures => Textures.Count > 0;
     public ObservableCollection<TextureBrowserFolderViewModel> Children { get; } = [];
     internal List<TextureBrowserCatalogEntry> Textures { get; } = [];
 }
 
 public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
 {
-    private const int MaximumResults = 80;
     private readonly ITerrainTextureThumbnailService _thumbnailService;
     private readonly IClientFileCatalogService _fileCatalog;
     private readonly Action<TexturePaletteItemViewModel>? _configureTexture;
+    private readonly Action<IReadOnlyList<TexturePaletteItemViewModel>>? _replaceFavorites;
     private TextureBrowserCatalogEntry[] _textures = [];
     private CancellationTokenSource? _catalogCancellation;
     private CancellationTokenSource? _thumbnailCancellation;
@@ -37,19 +49,23 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
     public TextureBrowserViewModel(
         ITerrainTextureThumbnailService thumbnailService,
         IClientFileCatalogService fileCatalog,
-        Action<TexturePaletteItemViewModel>? configureTexture = null)
+        Action<TexturePaletteItemViewModel>? configureTexture = null,
+        Action<IReadOnlyList<TexturePaletteItemViewModel>>? replaceFavorites = null)
     {
         _thumbnailService = thumbnailService;
         _fileCatalog = fileCatalog;
         _configureTexture = configureTexture;
+        _replaceFavorites = replaceFavorites;
     }
 
     public ObservableCollection<TexturePaletteItemViewModel> Results { get; } = [];
     public ObservableCollection<TextureBrowserFolderViewModel> RootFolders { get; } = [];
     public ObservableCollection<TextureBrowserFolderViewModel> CurrentFolders { get; } = [];
     public ObservableCollection<TexturePaletteItemViewModel> FolderResults { get; } = [];
+    public ObservableCollection<object> CurrentEntries { get; } = [];
     public bool IsSimpleMode => !IsExplorerMode;
     public string CurrentFolderPath => SelectedFolder?.FullPath ?? "tileset";
+    public bool CanNavigateToParent => SelectedFolder?.Parent != null;
 
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private TexturePaletteItemViewModel? _selectedTexture;
@@ -86,6 +102,8 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
     partial void OnSelectedFolderChanged(TextureBrowserFolderViewModel? value)
     {
         OnPropertyChanged(nameof(CurrentFolderPath));
+        OnPropertyChanged(nameof(CanNavigateToParent));
+        NavigateToParentCommand.NotifyCanExecuteChanged();
         if (_isActivated && value != null && IsExplorerMode && !_isRebuildingFolders)
             RefreshResults();
     }
@@ -109,6 +127,22 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             SelectedFolder = folder;
     }
 
+    [RelayCommand(CanExecute = nameof(CanNavigateToParent))]
+    private void NavigateToParent()
+    {
+        if (SelectedFolder?.Parent is { } parent)
+            SelectedFolder = parent;
+    }
+
+    [RelayCommand]
+    private void SetFolderAsFavorites(TextureBrowserFolderViewModel? folder)
+    {
+        if (folder == null || _replaceFavorites == null)
+            return;
+
+        _replaceFavorites(folder.Textures.Select(CreateTextureItem).ToArray());
+    }
+
     public void Activate() => _ = ActivateAsync();
 
     internal static bool IsBrowsableTerrainTexture(string path, bool includeSpecular = false)
@@ -118,6 +152,22 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
                normalized.EndsWith(".blp", StringComparison.OrdinalIgnoreCase) &&
                !normalized.EndsWith("_h.blp", StringComparison.OrdinalIgnoreCase) &&
                (includeSpecular || !normalized.EndsWith("_s.blp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static TextureVariantAvailability GetVariantAvailability(
+        string path,
+        IReadOnlySet<string> clientPaths)
+    {
+        var normalized = path.Replace('\\', '/');
+        if (!normalized.EndsWith(".blp", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("_s.blp", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("_h.blp", StringComparison.OrdinalIgnoreCase))
+            return default;
+
+        var basePath = normalized[..^4];
+        return new TextureVariantAvailability(
+            clientPaths.Contains(basePath + "_s.blp"),
+            clientPaths.Contains(basePath + "_h.blp"));
     }
 
     private async Task ActivateAsync()
@@ -135,10 +185,21 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             if (_isActivated && ReferenceEquals(catalog, _activeCatalog))
                 return;
 
+            var clientPaths = catalog
+                .Select(entry => entry.Path.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             _textures = catalog
                 .Where(entry => entry.FileDataId.HasValue &&
                                 IsBrowsableTerrainTexture(entry.Path, includeSpecular: true))
-                .Select(entry => new TextureBrowserCatalogEntry(entry.FileDataId!.Value, entry.Path))
+                .Select(entry =>
+                {
+                    var variants = GetVariantAvailability(entry.Path, clientPaths);
+                    return new TextureBrowserCatalogEntry(
+                        entry.FileDataId!.Value,
+                        entry.Path,
+                        variants.HasSpecular,
+                        variants.HasHeight);
+                })
                 .OrderBy(texture => texture.Path, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             _activeCatalog = catalog;
@@ -156,6 +217,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             RootFolders.Clear();
             CurrentFolders.Clear();
             FolderResults.Clear();
+            CurrentEntries.Clear();
         }
         finally
         {
@@ -181,16 +243,9 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
         Results.Clear();
         foreach (var texture in _textures.Where(texture =>
                      IsBrowsableTerrainTexture(texture.Path, IncludeSpecularTextures) &&
-                     words.All(word => texture.Path.Contains(word, StringComparison.OrdinalIgnoreCase)))
-                 .Take(MaximumResults))
+                     words.All(word => texture.Path.Contains(word, StringComparison.OrdinalIgnoreCase))))
         {
-            var item = new TexturePaletteItemViewModel(
-                $"fdid:{texture.FileDataId}",
-                TexturePaletteNaming.FromPath(texture.Path),
-                FileDataId: texture.FileDataId,
-                FullPath: texture.Path);
-            _configureTexture?.Invoke(item);
-            Results.Add(item);
+            Results.Add(CreateTextureItem(texture));
         }
 
         _ = LoadThumbnailsAsync(Results.ToArray(), token);
@@ -239,7 +294,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
                 path += $"/{parts[index]}";
                 if (!folders.TryGetValue(path, out var folder))
                 {
-                    folder = new TextureBrowserFolderViewModel(parts[index], path);
+                    folder = new TextureBrowserFolderViewModel(parts[index], path, parent);
                     folders.Add(path, folder);
                     parent.Children.Add(folder);
                 }
@@ -272,22 +327,35 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
     {
         CurrentFolders.Clear();
         FolderResults.Clear();
+        CurrentEntries.Clear();
         if (SelectedFolder is not { } folder)
             return;
 
         foreach (var child in folder.Children)
+        {
             CurrentFolders.Add(child);
+            CurrentEntries.Add(child);
+        }
         foreach (var texture in folder.Textures)
         {
-            var item = new TexturePaletteItemViewModel(
-                $"fdid:{texture.FileDataId}",
-                TexturePaletteNaming.FromPath(texture.Path),
-                FileDataId: texture.FileDataId,
-                FullPath: texture.Path);
-            _configureTexture?.Invoke(item);
+            var item = CreateTextureItem(texture);
             FolderResults.Add(item);
+            CurrentEntries.Add(item);
         }
         _ = LoadThumbnailsAsync(FolderResults.ToArray(), token);
+    }
+
+    private TexturePaletteItemViewModel CreateTextureItem(TextureBrowserCatalogEntry texture)
+    {
+        var item = new TexturePaletteItemViewModel(
+            $"fdid:{texture.FileDataId}",
+            TexturePaletteNaming.FromPath(texture.Path),
+            FileDataId: texture.FileDataId,
+            FullPath: texture.Path,
+            HasSpecularVariant: texture.HasSpecularVariant,
+            HasHeightVariant: texture.HasHeightVariant);
+        _configureTexture?.Invoke(item);
+        return item;
     }
 
     private async Task LoadThumbnailsAsync(

@@ -1553,9 +1553,12 @@ public sealed class EditorSettingsSmokeTests
             new[] { "elwynn", "outland" },
             root.Children.Select(folder => folder.Name).ToArray());
         var elwynn = root.Children[0];
+        Assert.AreSame(root, elwynn.Parent);
         Assert.AreEqual("tileset/elwynn", elwynn.FullPath);
         Assert.AreEqual("tileset/elwynn/grass.blp", elwynn.Textures.Single().Path);
-        Assert.AreEqual("tileset/elwynn/road", elwynn.Children.Single().FullPath);
+        var road = elwynn.Children.Single();
+        Assert.AreSame(elwynn, road.Parent);
+        Assert.AreEqual("tileset/elwynn/road", road.FullPath);
 
         var item = new TexturePaletteItemViewModel(
             "fdid:10",
@@ -1563,6 +1566,54 @@ public sealed class EditorSettingsSmokeTests
             FileDataId: 10,
             FullPath: "tileset/elwynn/grass.blp");
         StringAssert.Contains(item.Tooltip, "tileset/elwynn/grass.blp");
+    }
+
+    [TestMethod]
+    public void TextureBrowserVariantBadges_OnlyDescribeExistingBaseTextureVariants()
+    {
+        IReadOnlySet<string> files = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "tileset/elwynn/grass.blp",
+            "tileset/elwynn/grass_s.blp",
+            "tileset/elwynn/grass_h.blp",
+            "tileset/elwynn/road.blp"
+        };
+
+        var grass = TextureBrowserViewModel.GetVariantAvailability(
+            @"tileset\elwynn\grass.blp",
+            files);
+        Assert.IsTrue(grass.HasSpecular);
+        Assert.IsTrue(grass.HasHeight);
+
+        Assert.AreEqual(
+            default,
+            TextureBrowserViewModel.GetVariantAvailability("tileset/elwynn/grass_s.blp", files));
+        Assert.AreEqual(
+            default,
+            TextureBrowserViewModel.GetVariantAvailability("tileset/elwynn/grass_h.blp", files));
+
+        var road = TextureBrowserViewModel.GetVariantAvailability("tileset/elwynn/road.blp", files);
+        Assert.IsFalse(road.HasSpecular);
+        Assert.IsFalse(road.HasHeight);
+    }
+
+    [TestMethod]
+    public void TextureBrowserFolderFavorite_ReplacesFavoritesWithDirectTexturesOnly()
+    {
+        using var editor = new TextureEditingViewModel(
+            thumbnailService: new NullTextureThumbnailService());
+        var root = TextureBrowserViewModel.BuildFolderTree([
+            new TextureBrowserCatalogEntry(10, "tileset/elwynn/grass.blp"),
+            new TextureBrowserCatalogEntry(11, "tileset/elwynn/road/stone.blp")
+        ]);
+        var elwynn = root.Children.Single();
+        editor.Favorites.Add(new TexturePaletteItemViewModel("old", "old", FileDataId: 99));
+
+        editor.Browser!.SetFolderAsFavoritesCommand.Execute(elwynn);
+
+        Assert.AreEqual(1, editor.Favorites.Count);
+        Assert.AreEqual(10u, editor.Favorites.Single().FileDataId);
+        Assert.IsFalse(editor.Favorites.Any(texture => texture.FileDataId == 11));
     }
 
     [TestMethod]

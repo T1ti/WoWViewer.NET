@@ -18,13 +18,17 @@ public partial class TexturePaletteItemViewModel : ViewModelBase
         string DisplayName,
         IImage? Thumbnail = null,
         uint? FileDataId = null,
-        string? FullPath = null)
+        string? FullPath = null,
+        bool HasSpecularVariant = false,
+        bool HasHeightVariant = false)
     {
         this.Id = Id;
         this.DisplayName = DisplayName;
         _thumbnail = Thumbnail;
         this.FileDataId = FileDataId;
         this.FullPath = FullPath;
+        this.HasSpecularVariant = HasSpecularVariant;
+        this.HasHeightVariant = HasHeightVariant;
         PreviewCommand = new AsyncRelayCommand(
             () => _previewHandler?.Invoke(this) ?? Task.CompletedTask,
             () => FileDataId.HasValue && _previewHandler != null);
@@ -34,6 +38,8 @@ public partial class TexturePaletteItemViewModel : ViewModelBase
     public string DisplayName { get; }
     public uint? FileDataId { get; }
     public string? FullPath { get; }
+    public bool HasSpecularVariant { get; }
+    public bool HasHeightVariant { get; }
     public IAsyncRelayCommand PreviewCommand { get; }
     [ObservableProperty] private IImage? _thumbnail;
     public string Tooltip
@@ -95,7 +101,8 @@ public partial class TextureEditingViewModel : BrushToolViewModelBase, IDisposab
             Browser = new TextureBrowserViewModel(
                 thumbnailService,
                 fileCatalog ?? new ClientFileCatalogService(),
-                ConfigureTexture);
+                ConfigureTexture,
+                ReplaceFavorites);
             Browser.PropertyChanged += OnBrowserPropertyChanged;
         }
     }
@@ -172,6 +179,21 @@ public partial class TextureEditingViewModel : BrushToolViewModelBase, IDisposab
             if (ReferenceEquals(SelectedFavorite, texture))
                 SelectedFavorite = null;
         }
+    }
+
+    private void ReplaceFavorites(IReadOnlyList<TexturePaletteItemViewModel> textures)
+    {
+        Favorites.Clear();
+        foreach (var texture in textures
+                     .DistinctBy(texture => texture.FileDataId ?? uint.MaxValue))
+        {
+            ConfigureTexture(texture);
+            Favorites.Add(texture);
+            if (texture.Thumbnail == null && _thumbnailService != null)
+                _ = LoadSelectedThumbnailAsync(texture);
+        }
+
+        SelectedFavorite = SelectedTexture == null ? null : FindFavorite(SelectedTexture);
     }
 
     [RelayCommand]
