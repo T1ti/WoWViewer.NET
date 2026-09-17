@@ -40,6 +40,7 @@ public sealed record RenderingConfiguration
     public float MovementSpeed { get; init; } = 150f;
     public float MouseSensitivity { get; init; } = 0.1f;
     public bool RenderADT { get; init; } = true;
+    public bool RenderLiquid { get; init; } = true;
     public bool RenderWMO { get; init; } = true;
     public bool RenderM2 { get; init; } = true;
     public bool EnableWmoPortalCulling { get; init; }

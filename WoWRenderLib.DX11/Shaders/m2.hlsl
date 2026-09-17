@@ -23,7 +23,10 @@ Texture2D texture1 : register(t0);
 Texture2D texture2 : register(t1);
 Texture2D texture3 : register(t2);
 Texture2D texture4 : register(t3);
-SamplerState texSampler : register(s0);
+SamplerState texSampler1 : register(s0);
+SamplerState texSampler2 : register(s1);
+SamplerState texSampler3 : register(s2);
+SamplerState texSampler4 : register(s3);
 
 struct VSInput
 {
@@ -239,10 +242,10 @@ float4 PS_Main(VSOutput input) : SV_TARGET
         uv3 = input.TexCoord1;
     }
 
-    float4 tex1 = texture1.Sample(texSampler, uv1);
-    float4 tex2 = texture2.Sample(texSampler, uv2);
-    float4 tex3 = texture3.Sample(texSampler, uv3);
-    float4 tex4 = texture4.Sample(texSampler, input.TexCoord2);
+    float4 tex1 = texture1.Sample(texSampler1, uv1);
+    float4 tex2 = texture2.Sample(texSampler2, uv2);
+    float4 tex3 = texture3.Sample(texSampler3, uv3);
+    float4 tex4 = texture4.Sample(texSampler4, input.TexCoord2);
 
     float3 mesh_color = MeshColor.rgb;
     float mesh_opacity = MeshColor.a * input.EdgeFade;

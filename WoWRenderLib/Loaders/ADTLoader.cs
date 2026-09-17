@@ -12,6 +12,7 @@ namespace WoWRenderLib.Loaders;
 
 public static class ADTLoader
 {
+    private static readonly object SplitAdtRegistrationLock = new();
     private const int MaxChunksPerTile = 256;
     private const int VerticesPerChunk = 145;
     private const int IndicesPerChunk = 768;
@@ -51,11 +52,15 @@ public static class ADTLoader
              Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_height_texturing)) != 0
             ? Formats.ADT.AlphaFormat.highres_8bit
             : Formats.ADT.AlphaFormat.lowres_4bit;
-        adt.Read(fileSystem, ResolveFileKey(fileSystem, files.RootAdt), alphaFormat);
+        var rootKey = wdt.HasSplitAdts
+            ? RegisterSplitAdtFiles(fileSystem, mapTile, files)
+            : ResolveFileKey(fileSystem, files.RootAdt);
+        adt.Read(fileSystem, rootKey, alphaFormat);
 
         var parsed = new ParsedADT
         {
-            rootADTFileDataID = files.RootAdt
+            rootADTFileDataID = files.RootAdt,
+            worldLiquid = ParsedWorldLiquid.Empty
         };
 
         // ADT itself exposes placement, string, and terrain-chunk fields
@@ -208,6 +213,10 @@ public static class ADTLoader
         parsed.farLodIndiceBuffer = MemoryMarshal.AsBytes(farLodIndices.AsSpan()).ToArray();
         parsed.renderBatches = renderBatches;
         parsed.chunkBounds = chunkBounds;
+        WorldLiquidMaterialCatalog.Shared.Configure(fileSystem);
+        parsed.worldLiquid = WorldLiquidMeshBuilder.Build(
+            adt,
+            WorldLiquidMaterialCatalog.Shared);
         parsed.doodads = BuildDoodads(
             fileSystem,
             adt.DoodadPlacements.AsDataSpan(),
@@ -218,6 +227,12 @@ public static class ADTLoader
             adt.WmoPlacements.AsDataSpan(),
             wmoFilenames,
             wmoNameOffsets.AsSpan());
+        foreach (var textureId in parsed.worldLiquid.TextureFileDataIds)
+        {
+            if (textureId != 0)
+                fileIds.Add(textureId);
+        }
+
         parsed.blpFileDataIDs = [.. fileIds];
         return parsed;
     }
@@ -557,5 +572,48 @@ public static class ADTLoader
         return string.IsNullOrWhiteSpace(key.Path)
             ? new FileKey(new FileDataId(fileDataId))
             : key;
+    }
+
+    /// <summary>
+    /// WowLib's split ADT parser locates siblings by appending _tex0/_obj0/etc.
+    /// to the root path. Modern WDTs identify those files only through MAID, so
+    /// register deterministic in-memory aliases backed by those exact FDIDs.
+    /// This is a parser adapter, not a listfile lookup.
+    /// </summary>
+    private static FileKey RegisterSplitAdtFiles(
+        Fs.FileSystem fileSystem,
+        MapTile mapTile,
+        MapFileDataIds files)
+    {
+        var rootPath = GetSplitAdtRootPath(mapTile);
+        lock (SplitAdtRegistrationLock)
+        {
+            RegisterSplitAdtFile(fileSystem, rootPath, files.RootAdt);
+            RegisterSplitAdtFile(fileSystem, AddAdtSuffix(rootPath, "_tex0"), files.Tex0Adt);
+            RegisterSplitAdtFile(fileSystem, AddAdtSuffix(rootPath, "_obj0"), files.Obj0Adt);
+            RegisterSplitAdtFile(fileSystem, AddAdtSuffix(rootPath, "_obj1"), files.Obj1Adt);
+            RegisterSplitAdtFile(fileSystem, AddAdtSuffix(rootPath, "_lod"), files.LodAdt);
+        }
+
+        return new FileKey(rootPath);
+    }
+
+    internal static string GetSplitAdtRootPath(MapTile mapTile) =>
+        $"__fdid_maps/{mapTile.wdtFileDataID}/{mapTile.tileX}_{mapTile.tileY}.adt";
+
+    internal static string AddAdtSuffix(string rootPath, string suffix) =>
+        rootPath.EndsWith(".adt", StringComparison.OrdinalIgnoreCase)
+            ? $"{rootPath[..^4]}{suffix}.adt"
+            : $"{rootPath}{suffix}.adt";
+
+    private static void RegisterSplitAdtFile(
+        Fs.FileSystem fileSystem,
+        string path,
+        uint fileDataId)
+    {
+        if (fileDataId == 0 || fileSystem.Exists(new FileKey(path)))
+            return;
+
+        fileSystem.AddFile(path, CascFileReader.ReadFile(fileDataId));
     }
 }

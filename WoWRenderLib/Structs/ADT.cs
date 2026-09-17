@@ -39,6 +39,7 @@ namespace WoWRenderLib.Structs
         public Vector4 heights;
         public Vector4 weights;
         public BoundingBox[] chunkBounds;
+        public ParsedWorldLiquid? worldLiquid;
     }
 
     public struct ParsedADTRenderBatch

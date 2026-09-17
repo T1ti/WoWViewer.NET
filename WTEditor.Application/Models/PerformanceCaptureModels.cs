@@ -26,6 +26,7 @@ public sealed record PerformanceCaptureContext(
 {
     public string BuildConfiguration { get; init; } = "Unknown";
     public bool D3D11DebugLayerEnabled { get; init; }
+    public bool RenderLiquid { get; init; } = true;
     public float MinimumModelScreenSizePixels { get; init; }
     public float TerrainLodTransitionPixels { get; init; }
 }

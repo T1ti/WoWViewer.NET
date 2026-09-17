@@ -4,6 +4,27 @@ namespace WoWRenderLib.DX11.Renderer;
 
 public static class ScreenSpaceCulling
 {
+    public static bool IntersectsRenderDistance(
+        Vector3 cameraPosition,
+        Vector3 sphereCenter,
+        float sphereRadius,
+        float renderDistance)
+    {
+        var maxDistance = Math.Max(0f, renderDistance) + Math.Max(0f, sphereRadius);
+        return Vector3.DistanceSquared(cameraPosition, sphereCenter) <= maxDistance * maxDistance;
+    }
+
+    public static bool IsFullyWithinRenderDistance(
+        Vector3 cameraPosition,
+        Vector3 sphereCenter,
+        float sphereRadius,
+        float renderDistance)
+    {
+        var innerDistance = Math.Max(0f, renderDistance) - Math.Max(0f, sphereRadius);
+        return innerDistance >= 0f &&
+            Vector3.DistanceSquared(cameraPosition, sphereCenter) <= innerDistance * innerDistance;
+    }
+
     public static float EstimateProjectedDiameterPixels(
         Vector3 cameraPosition,
         Vector3 cameraForward,

@@ -13,6 +13,21 @@ namespace WTEditor.Avalonia.Tests;
 public sealed class TileStreamingSmokeTests
 {
     [TestMethod]
+    public void SplitAdtAliases_AreDeterministicAndMatchWowLibSiblingNames()
+    {
+        var root = CoreADTLoader.GetSplitAdtRootPath(new MapTile
+        {
+            wdtFileDataID = 775971,
+            tileX = 38,
+            tileY = 24
+        });
+
+        Assert.AreEqual("__fdid_maps/775971/38_24.adt", root);
+        Assert.AreEqual("__fdid_maps/775971/38_24_tex0.adt", CoreADTLoader.AddAdtSuffix(root, "_tex0"));
+        Assert.AreEqual("__fdid_maps/775971/38_24_obj0.adt", CoreADTLoader.AddAdtSuffix(root, "_obj0"));
+    }
+
+    [TestMethod]
     public void DesiredTilesAreOrderedFromTheCameraOutward()
     {
         var available = new HashSet<(byte X, byte Y)>();

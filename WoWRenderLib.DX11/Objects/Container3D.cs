@@ -88,6 +88,15 @@ namespace WoWRenderLib.DX11.Objects
             return null;
         }
 
+        public virtual bool TryRaycastTriangles(
+            Ray ray,
+            float maximumDistance,
+            out float distance)
+        {
+            distance = maximumDistance;
+            return false;
+        }
+
         public void InvalidateTransform()
         {
             _modelMatrix = null;

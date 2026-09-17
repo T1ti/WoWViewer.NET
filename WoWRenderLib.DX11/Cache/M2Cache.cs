@@ -206,7 +206,9 @@ namespace WoWRenderLib.DX11.Cache
         {
             submeshes = [],
             mats = [],
-            geosets = []
+            geosets = [],
+            raycastVertices = [],
+            raycastIndices = []
         };
 
         public static void CheckUsers()

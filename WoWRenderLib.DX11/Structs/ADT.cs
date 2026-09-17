@@ -26,6 +26,7 @@ namespace WoWRenderLib.DX11.Structs
         public Vector4 heights;
         public Vector4 weights;
         public BoundingBox[] chunkBounds;
+        public WorldLiquidResources worldLiquid;
         // CPU-side terrain data is retained for editor raycasts and brush
         // edits. The GPU buffer holds a compact projection of these vertices.
         public ADTVertex[] vertices;
@@ -33,6 +34,8 @@ namespace WoWRenderLib.DX11.Structs
         public BoundingSphere[] chunkBoundingSpheres;
         public BoundingBox terrainBounds;
         public BoundingSphere terrainBoundingSphere;
+        public BoundingBox liquidBounds;
+        public BoundingSphere liquidBoundingSphere;
     }
 
     public struct ADTRenderBatch

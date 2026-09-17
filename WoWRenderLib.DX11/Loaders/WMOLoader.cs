@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using WoWLib;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Structs;
@@ -39,6 +40,10 @@ namespace WoWRenderLib.DX11.Loaders
             for (var g = 0; g < preppedWMO.PreppedWMOGroups.Length; g++)
             {
                 var preppedGroup = preppedWMO.PreppedWMOGroups[g];
+                var raycastVertices = ExtractRaycastVertices(preppedGroup.vertexBuffer);
+                var raycastIndices = MemoryMarshal
+                    .Cast<byte, ushort>(preppedGroup.indiceBuffer)
+                    .ToArray();
 
                 ComPtr<ID3D11Buffer> vertexBuffer = default;
 
@@ -84,6 +89,8 @@ namespace WoWRenderLib.DX11.Loaders
                     mogiGroupName = preppedGroup.mogiGroupName,
                     vertexBuffer = vertexBuffer,
                     indiceBuffer = indiceBuffer,
+                    raycastVertices = raycastVertices,
+                    raycastIndices = raycastIndices,
                     verticeCount = (uint)preppedGroup.vertexBuffer.Length / (uint)sizeof(WMOVertex),
                     boundingBox = preppedGroup.boundingBox,
                     sourceGroupIndex = preppedGroup.sourceGroupIndex,
@@ -161,6 +168,15 @@ namespace WoWRenderLib.DX11.Loaders
                 }
             }
             return wmoBatch;
+        }
+
+        private static Vector3[] ExtractRaycastVertices(byte[] vertexBytes)
+        {
+            var source = MemoryMarshal.Cast<byte, WMOVertex>(vertexBytes);
+            var positions = new Vector3[source.Length];
+            for (var index = 0; index < source.Length; index++)
+                positions[index] = source[index].Position;
+            return positions;
         }
 
         private static WmoPortal[] BuildPortals(in PreppedWMO preppedWMO)

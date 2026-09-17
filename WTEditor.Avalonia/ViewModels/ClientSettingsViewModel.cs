@@ -72,6 +72,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
             MovementSpeed = MovementSpeed,
             MouseSensitivity = MouseSensitivity,
             RenderADT = original.Rendering.RenderADT,
+            RenderLiquid = original.Rendering.RenderLiquid,
             RenderWMO = original.Rendering.RenderWMO,
             RenderM2 = original.Rendering.RenderM2,
             EnableWmoPortalCulling = original.Rendering.EnableWmoPortalCulling,

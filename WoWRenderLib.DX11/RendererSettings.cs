@@ -38,6 +38,7 @@ public sealed class RendererSettings
     public float MouseSensitivity { get; set; } = 0.1f;
 
     public bool RenderADT { get; set; } = true;
+    public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
@@ -58,6 +59,7 @@ public sealed class RendererSettings
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,
         RenderADT = RenderADT,
+        RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
         EnableWmoPortalCulling = EnableWmoPortalCulling,

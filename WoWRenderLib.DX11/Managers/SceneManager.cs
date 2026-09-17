@@ -1,4 +1,4 @@
-﻿using Silk.NET.Core.Native;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using System.Diagnostics;
@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MapObjDefFlags = WoWLib.Formats.Common.MapObjDefFlags;
+using M2MaterialFlags = WoWLib.Formats.M2.Root.Record.MaterialFlags;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11;
@@ -23,9 +24,11 @@ using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Managers
 {
-    public class SceneManager(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> deviceContext, ShaderManager shaderManager) : IDisposable
+    public partial class SceneManager : IDisposable
     {
-        private readonly ShaderManager _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
+        private readonly ComPtr<ID3D11Device> _device;
+        private readonly ComPtr<ID3D11DeviceContext> _deviceContext;
+        private readonly ShaderManager _shaderManager;
         public List<Container3D> SceneObjects { get; } = [];
         public Lock SceneObjectLock { get; } = new();
 
@@ -65,6 +68,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool ShowTerrainWireframe { get; set; }
 
         public bool RenderADT { get; set; } = true;
+        public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
         public bool EnableWmoPortalCulling { get; set; }
@@ -88,6 +92,7 @@ namespace WoWRenderLib.DX11.Managers
         public Vector3 LightDirection { get; set; } = new(-0.5f, -0.5f, 0.70710678f);
         public Vector3 AmbientColor { get; set; } = new(104f / 255f, 130f / 255f, 154f / 255f);
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
+        public WorldLightingData? ClientWorldLighting { get; private set; }
 
         private const int MaxInstancesPerBatch = 1024;
         private const int MaxTerrainChunksPerTile = 256;
@@ -105,8 +110,20 @@ namespace WoWRenderLib.DX11.Managers
         private readonly CompiledShader[] adtLayerShaderPrograms = new CompiledShader[MaxTerrainLayers];
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
-        private CompiledShader debugShaderProgram;
-        private CompiledShader bboxShaderProgram;
+        private readonly WorldLiquidRenderer _worldLiquidRenderer;
+        private readonly DebugBoundsRenderer _debugBoundsRenderer;
+
+        public SceneManager(
+            ComPtr<ID3D11Device> device,
+            ComPtr<ID3D11DeviceContext> deviceContext,
+            ShaderManager shaderManager)
+        {
+            _device = device;
+            _deviceContext = deviceContext;
+            _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
+            _worldLiquidRenderer = new WorldLiquidRenderer(device, deviceContext);
+            _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
+        }
 
         private sealed class PendingAdtPopulation(
             ADTContainer container,
@@ -156,23 +173,24 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> instanceMatrixBuffer = default;
         private ComPtr<ID3D11DepthStencilView> depthStencilView = default;
-        private ComPtr<ID3D11DepthStencilState> bboxDepthStencilState = default;
         private ComPtr<ID3D11Texture2D> depthTexture = default;
         private ComPtr<ID3D11SamplerState> textureSampler = default;
         private ComPtr<ID3D11SamplerState> clampSampler = default;
+        private readonly ComPtr<ID3D11SamplerState>[] m2TextureSamplers =
+            new ComPtr<ID3D11SamplerState>[4];
         private ComPtr<ID3D11RenderTargetView> renderTargetView = default;
         private ComPtr<ID3D11RasterizerState> rasterizerState = default;
         private ComPtr<ID3D11RasterizerState> wmoRasterizerState = default;
-        private ComPtr<ID3D11RasterizerState> wireframeRasterizerState = default;
+        private ComPtr<ID3D11RasterizerState> m2TwoSidedRasterizerState = default;
         private ComPtr<ID3D11ClassInstance> nullClassInstance = default;
         private ComPtr<ID3D11ShaderResourceView> missingTexture;
         private ComPtr<ID3D11ShaderResourceView> emptyTerrainTexture;
-        private ComPtr<ID3D11Buffer> bboxConstantBuffer = default;
-        private ComPtr<ID3D11Buffer> bboxVertexBuffer = default;
         private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
 
         private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch =
             new ComPtr<ID3D11ShaderResourceView>[ShaderResourceSlotCount];
+        private readonly ComPtr<ID3D11SamplerState>[] _samplerScratch =
+            new ComPtr<ID3D11SamplerState>[4];
         private readonly Dictionary<uint, ComPtr<ID3D11ShaderResourceView>> _frameTextureSrvs = [];
         private readonly List<int> _visibleIndices = new(64);
         private readonly List<bool> _visibleTerrainFarLod = new(MaxTerrainChunksPerTile);
@@ -209,11 +227,14 @@ namespace WoWRenderLib.DX11.Managers
         public double M2SubmissionTimeMs { get; private set; }
         public double TerrainCullingTimeMs { get; private set; }
         public double TerrainSubmissionTimeMs { get; private set; }
+        public double LiquidCullingTimeMs { get; private set; }
+        public double LiquidSubmissionTimeMs { get; private set; }
         public double TileHierarchyCullingTimeMs { get; private set; }
         public double DebugSubmissionTimeMs { get; private set; }
         public uint WmoDrawCalls { get; private set; }
         public uint M2DrawCalls { get; private set; }
         public uint TerrainDrawCalls { get; private set; }
+        public uint LiquidDrawCalls { get; private set; }
         public uint DebugDrawCalls { get; private set; }
         public uint WmoSubmittedInstances { get; private set; }
         public uint M2SubmittedInstances { get; private set; }
@@ -221,6 +242,9 @@ namespace WoWRenderLib.DX11.Managers
         public ulong WmoSubmittedIndices { get; private set; }
         public ulong M2SubmittedIndices { get; private set; }
         public ulong TerrainSubmittedIndices { get; private set; }
+        public ulong LiquidSubmittedIndices { get; private set; }
+        public int candidateLiquidBatches { get; private set; }
+        public int visibleLiquidBatches { get; private set; }
         public uint InstanceBufferMapCalls { get; private set; }
         public uint ConstantBufferUpdates { get; private set; }
         public uint TextureBindingCalls { get; private set; }
@@ -231,17 +255,31 @@ namespace WoWRenderLib.DX11.Managers
         public bool SceneLoaded => loadedTiles.Count > 0; // this won't work for WMO only maps
         public string StatusMessage { get; private set; } = "";
 
+        /// <summary>
+        /// Applies the temporary fixed LightData profile to the shared world
+        /// lighting inputs used by terrain, models, and MH2O liquids. The
+        /// settings/default values remain the fallback when the optional
+        /// client database row cannot be loaded.
+        /// </summary>
+        public void ApplyClientWorldLighting(WorldLightingData lighting)
+        {
+            ArgumentNullException.ThrowIfNull(lighting);
+            ClientWorldLighting = lighting;
+
+            if (lighting.TryGetNumeric("ambient_color", out _))
+                AmbientColor = lighting.AmbientColor;
+            if (lighting.TryGetNumeric("direct_color", out _))
+                DiffuseColor = lighting.DirectColor;
+        }
+
         public void Initialize(ShaderManager shaderManager, CompiledShader adtShader, CompiledShader wmoShader, CompiledShader m2Shader, CompiledShader bboxShader)
         {
             adtShaderProgram = adtShader;
             LoadAdtLayerShaders();
             wmoShaderProgram = wmoShader;
             m2ShaderProgram = m2Shader;
-            bboxShaderProgram = bboxShader;
-
-            // debugRenderer = new DebugRenderer(_gl, debugShaderProgram);
-            missingTexture = BLPLoader.CreatePlaceholderTexture(device);
-            emptyTerrainTexture = BLPLoader.CreateWhiteTexture(device);
+            missingTexture = BLPLoader.CreatePlaceholderTexture(_device);
+            emptyTerrainTexture = BLPLoader.CreateWhiteTexture(_device);
 
             // Create PerObject constant buffer (matches cbuffer PerObject in adt.hlsl)
             unsafe
@@ -263,7 +301,7 @@ namespace WoWRenderLib.DX11.Managers
                 samplerDesc.BorderColor[2] = 0.0f;
                 samplerDesc.BorderColor[3] = 1.0f;
 
-                SilkMarshal.ThrowHResult(device.CreateSamplerState(in samplerDesc, ref textureSampler));
+                SilkMarshal.ThrowHResult(_device.CreateSamplerState(in samplerDesc, ref textureSampler));
 
                 var clampSamplerDesc = new SamplerDesc
                 {
@@ -281,7 +319,30 @@ namespace WoWRenderLib.DX11.Managers
                 clampSamplerDesc.BorderColor[2] = 0.0f;
                 clampSamplerDesc.BorderColor[3] = 1.0f;
 
-                SilkMarshal.ThrowHResult(device.CreateSamplerState(in clampSamplerDesc, ref clampSampler));
+                SilkMarshal.ThrowHResult(_device.CreateSamplerState(in clampSamplerDesc, ref clampSampler));
+
+                // M2Texture flags select wrapping independently on U and V.
+                // Keep all four combinations available; using the terrain's
+                // wrap/wrap sampler for clamp-addressed foliage repeats its
+                // atlas outside the intended leaf card UV range.
+                for (var wrapX = 0; wrapX <= 1; wrapX++)
+                {
+                    for (var wrapY = 0; wrapY <= 1; wrapY++)
+                    {
+                        var m2SamplerDesc = samplerDesc;
+                        m2SamplerDesc.AddressU = wrapX != 0
+                            ? TextureAddressMode.Wrap
+                            : TextureAddressMode.Clamp;
+                        m2SamplerDesc.AddressV = wrapY != 0
+                            ? TextureAddressMode.Wrap
+                            : TextureAddressMode.Clamp;
+                        m2SamplerDesc.AddressW = TextureAddressMode.Clamp;
+                        var samplerIndex = (wrapX << 1) | wrapY;
+                        SilkMarshal.ThrowHResult(_device.CreateSamplerState(
+                            in m2SamplerDesc,
+                            ref m2TextureSamplers[samplerIndex]));
+                    }
+                }
 
                 // PER OBJECT CONSTANT BUFFERS
                 var bufferDesc = new BufferDesc
@@ -291,7 +352,7 @@ namespace WoWRenderLib.DX11.Managers
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref adtPerObjectConstantBuffer));
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref adtPerObjectConstantBuffer));
 
                 bufferDesc = new BufferDesc
                 {
@@ -300,7 +361,7 @@ namespace WoWRenderLib.DX11.Managers
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref wmoPerObjectConstantBuffer));
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref wmoPerObjectConstantBuffer));
 
                 bufferDesc = new BufferDesc
                 {
@@ -309,7 +370,7 @@ namespace WoWRenderLib.DX11.Managers
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref m2PerObjectConstantBuffer));
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref m2PerObjectConstantBuffer));
 
                 // Instance buffer
                 bufferDesc = new BufferDesc
@@ -320,7 +381,7 @@ namespace WoWRenderLib.DX11.Managers
                     CPUAccessFlags = (uint)CpuAccessFlag.Write
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref instanceMatrixBuffer));
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref instanceMatrixBuffer));
 
                 // ADT layer data
                 bufferDesc = new BufferDesc
@@ -330,17 +391,7 @@ namespace WoWRenderLib.DX11.Managers
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref layerDataConstantBuffer));
-
-                // Bounding box 
-                bufferDesc = new BufferDesc
-                {
-                    ByteWidth = (uint)sizeof(BBoxCB),
-                    Usage = Usage.Dynamic,
-                    BindFlags = (uint)BindFlag.ConstantBuffer,
-                    CPUAccessFlags = (uint)CpuAccessFlag.Write
-                };
-                SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, null, ref bboxConstantBuffer));
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref layerDataConstantBuffer));
 
                 // Rasterizers, need to be merged once ADTs are fixed
                 var rastDesc = new RasterizerDesc
@@ -351,8 +402,8 @@ namespace WoWRenderLib.DX11.Managers
                     DepthClipEnable = true
                 };
 
-                SilkMarshal.ThrowHResult(device.CreateRasterizerState(in rastDesc, ref rasterizerState));
-                deviceContext.RSSetState(rasterizerState);
+                SilkMarshal.ThrowHResult(_device.CreateRasterizerState(in rastDesc, ref rasterizerState));
+                _deviceContext.RSSetState(rasterizerState);
 
                 var wmoRastDesc = new RasterizerDesc
                 {
@@ -365,42 +416,23 @@ namespace WoWRenderLib.DX11.Managers
                     FrontCounterClockwise = true,
                     DepthClipEnable = true
                 };
-                SilkMarshal.ThrowHResult(device.CreateRasterizerState(in wmoRastDesc, ref wmoRasterizerState));
+                SilkMarshal.ThrowHResult(_device.CreateRasterizerState(in wmoRastDesc, ref wmoRasterizerState));
 
-                var wireframeDesc = new RasterizerDesc
-                {
-                    FillMode = FillMode.Wireframe,
-                    CullMode = CullMode.None,
-                    FrontCounterClockwise = false,
-                    DepthClipEnable = true
-                };
-                SilkMarshal.ThrowHResult(device.CreateRasterizerState(in wireframeDesc, ref wireframeRasterizerState));
-
-                var bboxStencilDesc = new DepthStencilDesc
-                {
-                    DepthEnable = false,
-                    DepthWriteMask = DepthWriteMask.Zero,
-                    DepthFunc = ComparisonFunc.Always,
-                    StencilEnable = false
-                };
-                SilkMarshal.ThrowHResult(device.CreateDepthStencilState(in bboxStencilDesc, ref bboxDepthStencilState));
+                var m2TwoSidedRastDesc = wmoRastDesc;
+                m2TwoSidedRastDesc.CullMode = CullMode.None;
+                SilkMarshal.ThrowHResult(_device.CreateRasterizerState(
+                    in m2TwoSidedRastDesc,
+                    ref m2TwoSidedRasterizerState));
 
                 ComPtr<ID3D11RasterizerState> rastState = default;
-                device.CreateRasterizerState(in rastDesc, ref rastState);
-                deviceContext.RSSetState(rastState);
+                _device.CreateRasterizerState(in rastDesc, ref rastState);
+                _deviceContext.RSSetState(rastState);
 
-                CreateBBoxBuffers();
                 CreateBlendStates();
             }
-        }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct BBoxCB
-        {
-            public Matrix4x4 projection_matrix;
-            public Matrix4x4 view_matrix;
-            public Matrix4x4 model_matrix;
-            public Vector4 color;
+            _worldLiquidRenderer.Initialize(shaderManager);
+            _debugBoundsRenderer.Initialize(bboxShader);
         }
 
         private unsafe void CreateBlendStates()
@@ -440,7 +472,7 @@ namespace WoWRenderLib.DX11.Managers
                 var (enabled, src, dst, srcA, dstA) = configs[i];
                 var blendDesc = new BlendDesc { AlphaToCoverageEnable = 0, IndependentBlendEnable = 0 };
                 blendDesc.RenderTarget[0] = MakeRTBlend(enabled, src, dst, srcA, dstA);
-                SilkMarshal.ThrowHResult(device.CreateBlendState(in blendDesc, ref _blendStates[i]));
+                SilkMarshal.ThrowHResult(_device.CreateBlendState(in blendDesc, ref _blendStates[i]));
             }
         }
 
@@ -452,13 +484,25 @@ namespace WoWRenderLib.DX11.Managers
             if (currentBlendType != blendType)
             {
                 float blendFactor = 1f;
-                deviceContext.OMSetBlendState(_blendStates[blendType], ref blendFactor, 0xFFFFFFFF);
+                _deviceContext.OMSetBlendState(_blendStates[blendType], ref blendFactor, 0xFFFFFFFF);
                 currentBlendType = blendType;
                 BlendStateBindings++;
             }
 
-            return blendType == 1 ? 0.90393700787f : -1.0f;
+            return GetAlphaReference(blendType);
         }
+
+        // Alpha-key materials use the client midpoint (128/255). The former
+        // 0.904 threshold discarded nearly every texel in foliage textures.
+        internal static float GetAlphaReference(int blendType) =>
+            blendType == 1 ? 128f / 255f : -1.0f;
+
+        internal static bool IsM2TwoSided(ushort renderFlags) =>
+            (renderFlags & (ushort)M2MaterialFlags.TwoSided) != 0;
+
+        internal static int GetM2SamplerIndex(uint textureFlags) =>
+            ((textureFlags & 0x1) != 0 ? 2 : 0) |
+            ((textureFlags & 0x2) != 0 ? 1 : 0);
 
         private ComPtr<ID3D11ShaderResourceView> ResolveFrameTexture(uint fileDataId)
         {
@@ -557,22 +601,10 @@ namespace WoWRenderLib.DX11.Managers
             for (var index = 0; index < layerCounts.Length; index++)
             {
                 adtLayerShaderPrograms[index] =
-                    shaderManager.GetOrCompileAdtShader(layerCounts[index], false);
+                    _shaderManager.GetOrCompileAdtShader(layerCounts[index], false);
                 adtLayerShaderPrograms[index + 4] =
-                    shaderManager.GetOrCompileAdtShader(layerCounts[index], true);
+                    _shaderManager.GetOrCompileAdtShader(layerCounts[index], true);
             }
-        }
-
-        private unsafe void CreateBBoxBuffers()
-        {
-            var vbDesc = new BufferDesc
-            {
-                ByteWidth = (uint)(24 * sizeof(Vector3)),
-                Usage = Usage.Dynamic,
-                BindFlags = (uint)BindFlag.VertexBuffer,
-                CPUAccessFlags = (uint)CpuAccessFlag.Write
-            };
-            SilkMarshal.ThrowHResult(device.CreateBuffer(in vbDesc, null, ref bboxVertexBuffer));
         }
 
         private unsafe void CreateSizeDependentResources(uint width, uint height, ComPtr<ID3D11RenderTargetView> rtv)
@@ -593,8 +625,8 @@ namespace WoWRenderLib.DX11.Managers
                 Usage = Usage.Default,
                 BindFlags = (uint)BindFlag.DepthStencil,
             };
-            SilkMarshal.ThrowHResult(device.CreateTexture2D(in depthDesc, null, ref depthTexture));
-            SilkMarshal.ThrowHResult(device.CreateDepthStencilView(depthTexture, null, ref depthStencilView));
+            SilkMarshal.ThrowHResult(_device.CreateTexture2D(in depthDesc, null, ref depthTexture));
+            SilkMarshal.ThrowHResult(_device.CreateDepthStencilView(depthTexture, null, ref depthStencilView));
 
             var viewport = new Viewport
             {
@@ -605,7 +637,7 @@ namespace WoWRenderLib.DX11.Managers
                 MinDepth = 0.0f,
                 MaxDepth = 1.0f
             };
-            deviceContext.RSSetViewports(1, in viewport);
+            _deviceContext.RSSetViewports(1, in viewport);
 
             _renderWidth = width;
             _renderHeight = height;
@@ -616,8 +648,8 @@ namespace WoWRenderLib.DX11.Managers
             if (width == 0 || height == 0)
                 return;
 
-            deviceContext.OMSetRenderTargets(0, (ID3D11RenderTargetView**)null, (ID3D11DepthStencilView*)null);
-            deviceContext.ClearState();
+            _deviceContext.OMSetRenderTargets(0, (ID3D11RenderTargetView**)null, (ID3D11DepthStencilView*)null);
+            _deviceContext.ClearState();
 
             renderTargetView = default; // don't dispose, we dont own it!
             if (depthStencilView.Handle != null) { depthStencilView.Dispose(); depthStencilView = default; }
@@ -635,1662 +667,6 @@ namespace WoWRenderLib.DX11.Managers
         {
             renderTargetView = rtv;
         }
-
-        public void LoadWDT(uint wdtFileDataID)
-        {
-            if (CurrentWDTFileDataID != wdtFileDataID)
-            {
-                loadedTiles.Clear();
-                tilesToLoad.Clear();
-                tilesQueuedForLoad.Clear();
-                tilesInFlight.Clear();
-                desiredTiles.Clear();
-                failedDesiredTiles.Clear();
-                availableWdtTiles.Clear();
-
-                foreach (var bounds in tileSceneBounds.Values)
-                    bounds.Dispose();
-                tileSceneBounds.Clear();
-                tileSceneBoundsByRoot.Clear();
-
-                CompletePendingTileUnloads();
-                lock (SceneObjectLock)
-                {
-                    foreach (var adt in adtContainers)
-                    {
-                        adt.LoadCallback -= OnADTContainerLoaded;
-                        adt.LoadFailedCallback -= OnADTContainerLoadFailed;
-                        adt.Unload();
-                    }
-                    foreach (var wmo in SceneObjects.OfType<WMOContainer>())
-                        WMOCache.Release(wmo.FileDataId, wmo.ParentFileDataId);
-                    foreach (var m2 in SceneObjects.OfType<M2Container>())
-                        M2Cache.Release(m2.FileDataId, m2.ParentFileDataId);
-                    SceneObjects.Clear();
-                    adtContainers.Clear();
-                }
-                pendingAdtPopulations.Clear();
-                pendingWMODoodads.Clear();
-                uuidUsers.Clear();
-                wmoInstances.Clear();
-                m2Instances.Clear();
-                m2InstancePackets.Clear();
-                SelectedObject = null;
-
-                CurrentWDTFileDataID = wdtFileDataID;
-                currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
-                UpdateMapHighestUniqueId();
-                RebuildAvailableTileIndex();
-                SpawnGlobalWmo();
-                WMOCache.CheckUsers();
-                M2Cache.CheckUsers();
-                BLPCache.CheckUsers();
-            }
-        }
-
-        private void SpawnGlobalWmo()
-        {
-            if (currentWDT?.GlobalWmoPlacement is not { FileDataId: not 0 } placement)
-                return;
-
-            var container = new WMOContainer(device, placement.FileDataId, CurrentWDTFileDataID)
-            {
-                Position = placement.Position,
-                Rotation = placement.Rotation,
-                Scale = placement.Scale,
-                UniqueID = placement.UniqueId,
-                PlacementFlags = placement.Flags,
-                PlacementDoodadSet = placement.DoodadSet,
-                PlacementNameSet = placement.NameSet,
-                OnDoodadSetsChanged = RefreshWMODoodads,
-                OnGroupsChanged = _ => UpdateWMOInstanceList()
-            };
-            container.SetDoodadSetsToEnable([placement.DoodadSet]);
-            lock (SceneObjectLock)
-                SceneObjects.Add(container);
-            pendingWMODoodads.Enqueue(new PendingWmoDoodadPopulation(container));
-            UpdateWMOInstanceList();
-        }
-
-        public void PreloadTEX()
-        {
-            if (currentWDT == null)
-                return;
-
-            var texFileDataID = currentWDT.TexFileDataId;
-            if (texFileDataID != 0)
-                TEXCache.Preload(texFileDataID);
-        }
-
-        public WdtFile? GetCurrentWDT()
-        {
-            if (currentWDT == null)
-            {
-                currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
-                UpdateMapHighestUniqueId();
-                RebuildAvailableTileIndex();
-                SpawnGlobalWmo();
-            }
-            return currentWDT;
-        }
-
-        private void UpdateMapHighestUniqueId()
-        {
-            if (currentWDT != null)
-                CurrentMapHighestUniqueId = MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT);
-        }
-
-        private void RebuildAvailableTileIndex()
-        {
-            availableWdtTiles.Clear();
-            if (currentWDT == null)
-                return;
-
-            foreach (var tile in currentWDT.Tiles)
-                availableWdtTiles.Add((tile.tileX, tile.tileY));
-        }
-
-        public (byte x, byte y) GetFirstMapTile()
-        {
-            if (currentWDT == null || currentWDT.Tiles.Count == 0)
-                return (0, 0);
-
-            var tile = currentWDT.Tiles[0];
-            return (tile.tileX, tile.tileY);
-        }
-
-        public void UpdateTilesByCameraPos(Vector3 cameraPosition)
-        {
-            if (currentWDT == null)
-                return;
-
-            var (x, y) = GetTileFromPosition(cameraPosition);
-
-            var orderedDesiredTiles = TileStreamingPolicy.BuildDesiredTiles(
-                CurrentWDTFileDataID,
-                x,
-                y,
-                TileLoadingDistance,
-                availableWdtTiles);
-            var nextDesiredTiles = orderedDesiredTiles.ToHashSet();
-            var desiredTilesChanged = !desiredTiles.SetEquals(nextDesiredTiles);
-            failedDesiredTiles.RemoveWhere(tile => !nextDesiredTiles.Contains(tile));
-
-            desiredTiles.Clear();
-            desiredTiles.UnionWith(nextDesiredTiles);
-
-            if (desiredTilesChanged)
-            {
-                RebuildPendingLoadQueue(orderedDesiredTiles);
-            }
-            else
-            {
-                foreach (var mapTile in orderedDesiredTiles)
-                    QueueTileForLoadIfNeeded(mapTile);
-            }
-
-            foreach (var adt in adtContainers)
-            {
-                if (desiredTiles.Contains(adt.mapTile) || adt.IsModified)
-                    adt.CancelUnload();
-                else
-                    adt.ScheduleUnload(streamingClock);
-            }
-        }
-
-        private void QueueTileForLoadIfNeeded(MapTile mapTile)
-        {
-            if (!loadedTiles.Contains(mapTile) &&
-                !tilesQueuedForLoad.Contains(mapTile) &&
-                !tilesInFlight.Contains(mapTile) &&
-                !failedDesiredTiles.Contains(mapTile))
-            {
-                tilesToLoad.Enqueue(mapTile);
-                tilesQueuedForLoad.Add(mapTile);
-            }
-        }
-
-        private void RebuildPendingLoadQueue(IReadOnlyList<MapTile> orderedDesiredTiles)
-        {
-            tilesToLoad.Clear();
-            tilesQueuedForLoad.Clear();
-            foreach (var tile in orderedDesiredTiles)
-                QueueTileForLoadIfNeeded(tile);
-        }
-
-        public void ProcessUnloadQueue()
-        {
-            var unloadTimer = Stopwatch.StartNew();
-            ProcessUnloadQueue(unloadTimer, 10d);
-        }
-
-        private void ProcessUnloadQueue(Stopwatch queueTimer, double budgetMilliseconds)
-        {
-            if (queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-            {
-                var adtToRemove = adtContainers.FirstOrDefault(adt =>
-                    adt.IsUnloadDue(streamingClock, TileUnloadDelay));
-                if (adtToRemove != null)
-                {
-                    if (adtToRemove.IsModified)
-                    {
-                        adtToRemove.CancelUnload();
-                    }
-                    else
-                    {
-                        BeginTileUnload(adtToRemove);
-                    }
-                }
-            }
-
-            ProcessPendingTileUnloads(queueTimer, budgetMilliseconds);
-        }
-
-        private void BeginTileUnload(ADTContainer container)
-        {
-            var tile = container.mapTile;
-            tilesInFlight.Remove(tile);
-            loadedTiles.Remove(tile);
-            container.LoadCallback -= OnADTContainerLoaded;
-            container.LoadFailedCallback -= OnADTContainerLoadFailed;
-
-            lock (SceneObjectLock)
-            {
-                SceneObjects.Remove(container);
-                adtContainers.Remove(container);
-            }
-
-            if (!container.IsLoaded)
-            {
-                container.Unload();
-                return;
-            }
-
-            var rootId = container.Terrain.rootADTFileDataID;
-            RemovePendingAdtPopulation(tile);
-            RemovePendingWmosForTile(rootId);
-            var worldModels = new List<WMOContainer>();
-            var doodads = new List<M2Container>();
-            lock (SceneObjectLock)
-            {
-                for (var index = SceneObjects.Count - 1; index >= 0; index--)
-                {
-                    switch (SceneObjects[index])
-                    {
-                        case WMOContainer worldModel when worldModel.ParentFileDataId == rootId:
-                            worldModels.Add(worldModel);
-                            SceneObjects.RemoveAt(index);
-                            break;
-                        case M2Container doodad when doodad.ParentFileDataId == rootId:
-                            doodads.Add(doodad);
-                            SceneObjects.RemoveAt(index);
-                            break;
-                    }
-                }
-            }
-            foreach (var worldModel in worldModels)
-                uuidUsers.Remove(worldModel.UniqueID);
-            HideTileInstances(rootId);
-
-            if (tileSceneBounds.Remove(GetTileBoundsKey(tile), out var bounds))
-            {
-                tileSceneBoundsByRoot.Remove(rootId);
-                bounds.Dispose();
-            }
-
-            pendingTileUnloads.Enqueue(new PendingTileUnload(
-                container,
-                worldModels,
-                doodads));
-        }
-
-        private void HideTileInstances(uint rootFileDataId)
-        {
-            foreach (var key in wmoInstances.Keys.ToArray())
-            {
-                var instances = wmoInstances[key];
-                instances.RemoveAll(instance => instance.ParentFileDataId == rootFileDataId);
-                if (instances.Count == 0)
-                    wmoInstances.Remove(key);
-            }
-
-            foreach (var fileDataId in m2Instances.Keys.ToArray())
-            {
-                var instances = m2Instances[fileDataId];
-                instances.RemoveAll(instance => instance.ParentFileDataId == rootFileDataId);
-                if (instances.Count == 0)
-                {
-                    m2Instances.Remove(fileDataId);
-                    m2InstancePackets.Remove(fileDataId);
-                }
-                else if (m2InstancePackets.TryGetValue(fileDataId, out var packet))
-                {
-                    packet.Invalidate();
-                }
-            }
-        }
-
-        private void ProcessPendingTileUnloads(Stopwatch queueTimer, double budgetMilliseconds)
-        {
-            while (pendingTileUnloads.Count > 0 &&
-                   queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-            {
-                var pending = pendingTileUnloads.Peek();
-                if (pending.NextWorldModel < pending.WorldModels.Count)
-                {
-                    ReleaseWorldModel(pending.WorldModels[pending.NextWorldModel++]);
-                    continue;
-                }
-
-                if (pending.NextDoodad < pending.Doodads.Count)
-                {
-                    ReleaseDoodad(pending.Doodads[pending.NextDoodad++]);
-                    continue;
-                }
-
-                pending.Container.Unload();
-                pendingTileUnloads.Dequeue();
-            }
-        }
-
-        private void CompletePendingTileUnloads()
-        {
-            while (pendingTileUnloads.TryDequeue(out var pending))
-            {
-                while (pending.NextWorldModel < pending.WorldModels.Count)
-                    ReleaseWorldModel(pending.WorldModels[pending.NextWorldModel++]);
-                while (pending.NextDoodad < pending.Doodads.Count)
-                    ReleaseDoodad(pending.Doodads[pending.NextDoodad++]);
-                pending.Container.Unload();
-            }
-        }
-
-        private void ReleaseWorldModel(WMOContainer container)
-        {
-            container.ActiveDoodads.Clear();
-            WMOCache.Release(container.FileDataId, container.ParentFileDataId);
-        }
-
-        private void ReleaseDoodad(M2Container container)
-        {
-            M2Cache.Release(container.FileDataId, container.ParentFileDataId);
-        }
-
-        private void RemovePendingWmosForTile(uint rootAdtFileDataId)
-        {
-            var remaining = pendingWMODoodads.Count;
-            for (var index = 0; index < remaining; index++)
-            {
-                var pending = pendingWMODoodads.Dequeue();
-                if (pending.Container.ParentFileDataId != rootAdtFileDataId)
-                    pendingWMODoodads.Enqueue(pending);
-            }
-        }
-
-        private void RemovePendingAdtPopulation(MapTile tile)
-        {
-            var remaining = pendingAdtPopulations.Count;
-            for (var index = 0; index < remaining; index++)
-            {
-                var pending = pendingAdtPopulations.Dequeue();
-                if (pending.Container.mapTile != tile)
-                    pendingAdtPopulations.Enqueue(pending);
-            }
-        }
-
-        public void UpdateM2InstanceList()
-        {
-            m2Instances.Clear();
-            foreach (var sceneObject in SceneObjects)
-            {
-                if (sceneObject is M2Container m2)
-                {
-                    if (!m2Instances.ContainsKey(m2.FileDataId))
-                        m2Instances[m2.FileDataId] = [];
-                    m2Instances[m2.FileDataId].Add(m2);
-                }
-            }
-            RebuildM2InstancePackets();
-        }
-
-        public void UpdateWMOInstanceList()
-        {
-            wmoInstances.Clear();
-            foreach (var sceneObject in SceneObjects)
-            {
-                if (sceneObject is WMOContainer wmo)
-                {
-                    var key = (wmo.FileDataId, WMOContainer.CreateEnabledGroupSignature(wmo.EnabledGroups));
-                    if (!wmoInstances.ContainsKey(key))
-                        wmoInstances[key] = [];
-                    wmoInstances[key].Add(wmo);
-                }
-            }
-        }
-
-        public void UpdateInstanceList()
-        {
-            wmoInstances.Clear();
-            m2Instances.Clear();
-
-            foreach (var sceneObject in SceneObjects)
-            {
-                if (sceneObject is WMOContainer wmo)
-                {
-                    var key = (wmo.FileDataId, WMOContainer.CreateEnabledGroupSignature(wmo.EnabledGroups));
-                    if (!wmoInstances.ContainsKey(key))
-                        wmoInstances[key] = [];
-
-                    wmoInstances[key].Add(wmo);
-                }
-                else if (sceneObject is M2Container m2)
-                {
-                    if (!m2Instances.ContainsKey(m2.FileDataId))
-                        m2Instances[m2.FileDataId] = [];
-
-                    m2Instances[m2.FileDataId].Add(m2);
-                }
-            }
-            RebuildM2InstancePackets();
-        }
-
-        private void RebuildM2InstancePackets()
-        {
-            m2InstancePackets.Clear();
-            foreach (var (fileDataId, instances) in m2Instances)
-                m2InstancePackets.Add(fileDataId, new M2InstancePacket(instances));
-        }
-
-        private void RegisterWmoInstance(WMOContainer container)
-        {
-            var key = (
-                container.FileDataId,
-                WMOContainer.CreateEnabledGroupSignature(container.EnabledGroups));
-            if (!wmoInstances.TryGetValue(key, out var instances))
-            {
-                instances = [];
-                wmoInstances.Add(key, instances);
-            }
-
-            instances.Add(container);
-        }
-
-        private void RegisterLoadedWmoInstance(WMOContainer container)
-        {
-            UnregisterWmoInstance(container);
-            RegisterWmoInstance(container);
-        }
-
-        private void UnregisterWmoInstance(WMOContainer container)
-        {
-            foreach (var key in wmoInstances.Keys.ToArray())
-            {
-                var instances = wmoInstances[key];
-                instances.Remove(container);
-                if (instances.Count == 0)
-                    wmoInstances.Remove(key);
-            }
-        }
-
-        private void RegisterM2Instance(M2Container container)
-        {
-            if (!m2Instances.TryGetValue(container.FileDataId, out var instances))
-            {
-                instances = [];
-                m2Instances.Add(container.FileDataId, instances);
-                m2InstancePackets.Add(container.FileDataId, new M2InstancePacket(instances));
-            }
-
-            instances.Add(container);
-            m2InstancePackets[container.FileDataId].Invalidate();
-        }
-
-        private void UnregisterM2Instance(M2Container container)
-        {
-            if (!m2Instances.TryGetValue(container.FileDataId, out var instances))
-                return;
-
-            instances.Remove(container);
-            if (instances.Count == 0)
-            {
-                m2Instances.Remove(container.FileDataId);
-                m2InstancePackets.Remove(container.FileDataId);
-            }
-            else if (m2InstancePackets.TryGetValue(container.FileDataId, out var packet))
-            {
-                packet.Invalidate();
-            }
-        }
-
-        private void SpawnWMODoodads(WMOContainer wmoContainer)
-        {
-            var wmo = wmoContainer.GetWMO();
-            var enabledSets = wmoContainer.EnabledDoodadSets;
-            tileSceneBoundsByRoot.TryGetValue(wmoContainer.ParentFileDataId, out var owningTileBounds);
-
-            wmoContainer.ActiveDoodads.Clear();
-
-            for (var doodadIndex = 0; doodadIndex < wmo.doodads.Length; doodadIndex++)
-            {
-                var doodad = wmo.doodads[doodadIndex];
-                if (!IsWmoDoodadSpawnable(doodad, enabledSets))
-                    continue;
-
-                var m2Container = new M2Container(device, doodad.filedataid, wmoContainer.ParentFileDataId)
-                {
-                    ParentWMO = wmoContainer,
-                    LocalPosition = doodad.position,
-                    LocalRotation = doodad.rotation,
-                    LocalScale = doodad.scale,
-                    WmoDoodadIndex = doodadIndex,
-                };
-
-                lock (SceneObjectLock)
-                    SceneObjects.Add(m2Container);
-
-                wmoContainer.ActiveDoodads.Add(m2Container);
-                owningTileBounds?.AddObject(m2Container);
-            }
-        }
-
-        internal static bool IsWmoDoodadSpawnable(in WMODoodad doodad, IReadOnlyList<bool> enabledSets) =>
-            doodad.filedataid != 0 &&
-            doodad.doodadSet < enabledSets.Count &&
-            enabledSets[(int)doodad.doodadSet];
-
-        public void RefreshWMODoodads(WMOContainer wmoContainer)
-        {
-            if (!wmoContainer.IsLoaded)
-                return;
-
-            lock (SceneObjectLock)
-            {
-                tileSceneBoundsByRoot.TryGetValue(wmoContainer.ParentFileDataId, out var owningTileBounds);
-                foreach (var doodad in wmoContainer.ActiveDoodads)
-                {
-                    owningTileBounds?.RemoveObject(doodad);
-                    SceneObjects.Remove(doodad);
-                    M2Cache.Release(doodad.FileDataId, doodad.ParentFileDataId);
-                }
-
-                SpawnWMODoodads(wmoContainer);
-
-                UpdateInstanceList();
-            }
-        }
-
-        public bool ProcessQueue(double synchronousBudgetMilliseconds = 10d)
-        {
-            if (!double.IsFinite(synchronousBudgetMilliseconds))
-                synchronousBudgetMilliseconds = 10d;
-            synchronousBudgetMilliseconds = Math.Clamp(synchronousBudgetMilliseconds, 0d, 10d);
-            var queueTimer = Stopwatch.StartNew();
-
-            // Filling the bounded parse window is intentionally independent of
-            // the synchronous GPU budget. The channel workers keep parsing even
-            // if presentation slows to a longer viewport interval.
-            QueuePendingTileLoads();
-
-            var unloadDeadline = AllocatePhaseDeadline(
-                queueTimer.Elapsed.TotalMilliseconds,
-                synchronousBudgetMilliseconds,
-                0.2d);
-            ProcessUnloadQueue(queueTimer, unloadDeadline);
-
-            var firstWorkPhaseDeadline = AllocatePhaseDeadline(
-                queueTimer.Elapsed.TotalMilliseconds,
-                synchronousBudgetMilliseconds,
-                0.5d);
-            var uploaded = 0;
-            if (nextStreamingPhase == 0)
-            {
-                uploaded += UploadQueuedResources(queueTimer, firstWorkPhaseDeadline);
-                ProcessPopulationQueues(queueTimer, synchronousBudgetMilliseconds);
-            }
-            else
-            {
-                ProcessPopulationQueues(queueTimer, firstWorkPhaseDeadline);
-                uploaded += UploadQueuedResources(queueTimer, synchronousBudgetMilliseconds);
-            }
-            nextStreamingPhase = (nextStreamingPhase + 1) % 2;
-            UploadedResourcesLastFrame = uploaded;
-
-            return GetPendingOperationCount() > 0;
-        }
-
-        private void ProcessPopulationQueues(Stopwatch queueTimer, double deadlineMilliseconds)
-        {
-            if (nextPopulationQueue == 0)
-            {
-                ProcessPendingAdtPopulations(queueTimer, deadlineMilliseconds);
-                ProcessPendingWmoDoodads(queueTimer, deadlineMilliseconds);
-            }
-            else
-            {
-                ProcessPendingWmoDoodads(queueTimer, deadlineMilliseconds);
-                ProcessPendingAdtPopulations(queueTimer, deadlineMilliseconds);
-            }
-            nextPopulationQueue = (nextPopulationQueue + 1) % 2;
-        }
-
-        private void ProcessPendingAdtPopulations(Stopwatch queueTimer, double budgetMilliseconds)
-        {
-            while (pendingAdtPopulations.Count > 0 &&
-                   queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-            {
-                var pending = pendingAdtPopulations.Dequeue();
-                if (!adtContainers.Contains(pending.Container))
-                    continue;
-
-                var terrain = pending.Terrain;
-                while (queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-                {
-                    if (pending.NextWorldModel < terrain.worldModelBatches.Length)
-                    {
-                        AddWorldModelPlacement(
-                            terrain.worldModelBatches[pending.NextWorldModel++],
-                            terrain.rootADTFileDataID,
-                            pending.Bounds);
-                        continue;
-                    }
-
-                    if (pending.NextDoodad < terrain.doodads.Length)
-                    {
-                        AddDoodadPlacement(
-                            terrain.doodads[pending.NextDoodad++],
-                            terrain.rootADTFileDataID,
-                            pending.Bounds);
-                        continue;
-                    }
-
-                    break;
-                }
-
-                if (pending.NextWorldModel < terrain.worldModelBatches.Length ||
-                    pending.NextDoodad < terrain.doodads.Length)
-                {
-                    pendingAdtPopulations.Enqueue(pending);
-                }
-            }
-        }
-
-        private void ProcessPendingWmoDoodads(Stopwatch queueTimer, double budgetMilliseconds)
-        {
-            var remaining = pendingWMODoodads.Count;
-            for (var pendingIndex = 0;
-                 pendingIndex < remaining &&
-                 queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds;
-                 pendingIndex++)
-            {
-                var pending = pendingWMODoodads.Dequeue();
-                var container = pending.Container;
-                if (!SceneObjects.Contains(container))
-                    continue;
-                if (!container.IsLoaded)
-                {
-                    pendingWMODoodads.Enqueue(pending);
-                    continue;
-                }
-
-                if (!pending.RegisteredLoadedGroups)
-                {
-                    RegisterLoadedWmoInstance(container);
-                    pending.RegisteredLoadedGroups = true;
-                }
-
-                var wmo = container.GetWMO();
-                var enabledSets = container.EnabledDoodadSets;
-                tileSceneBoundsByRoot.TryGetValue(container.ParentFileDataId, out var owningTileBounds);
-                if (!pending.Initialized)
-                {
-                    container.ActiveDoodads.Clear();
-                    pending.Initialized = true;
-                }
-
-                while (pending.NextDoodad < wmo.doodads.Length &&
-                       queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-                {
-                    var doodadIndex = pending.NextDoodad++;
-                    var doodad = wmo.doodads[doodadIndex];
-                    if (!IsWmoDoodadSpawnable(doodad, enabledSets))
-                        continue;
-
-                    var doodadContainer = new M2Container(
-                        device,
-                        doodad.filedataid,
-                        container.ParentFileDataId)
-                    {
-                        ParentWMO = container,
-                        LocalPosition = doodad.position,
-                        LocalRotation = doodad.rotation,
-                        LocalScale = doodad.scale,
-                        WmoDoodadIndex = doodadIndex,
-                    };
-
-                    lock (SceneObjectLock)
-                        SceneObjects.Add(doodadContainer);
-                    container.ActiveDoodads.Add(doodadContainer);
-                    owningTileBounds?.AddObject(doodadContainer);
-                    RegisterM2Instance(doodadContainer);
-                }
-
-                if (pending.NextDoodad < wmo.doodads.Length)
-                    pendingWMODoodads.Enqueue(pending);
-                else
-                    container.DoodadsSpawned = true;
-            }
-        }
-
-        private void QueuePendingTileLoads()
-        {
-            while (tilesToLoad.Count > 0 &&
-                   tilesInFlight.Count < ADTCache.MaxRequestsInFlight)
-            {
-                var mapTile = tilesToLoad.Dequeue();
-                tilesQueuedForLoad.Remove(mapTile);
-                tilesInFlight.Add(mapTile);
-
-                try
-                {
-                    var adtContainer = new ADTContainer(device, mapTile);
-                    adtContainer.LoadCallback += OnADTContainerLoaded;
-                    adtContainer.LoadFailedCallback += OnADTContainerLoadFailed;
-
-                    ADTCache.GetOrLoad(
-                        mapTile,
-                        mapTile.wdtFileDataID,
-                        adtContainer.OnLoaded,
-                        adtContainer.OnLoadFailed);
-                    adtContainer.MarkCacheReferenceHeld();
-
-                    lock (SceneObjectLock)
-                    {
-                        SceneObjects.Add(adtContainer);
-                        adtContainers.Add(adtContainer);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    tilesInFlight.Remove(mapTile);
-                    Console.WriteLine("Error queuing ADT: " + ex.ToString());
-                }
-            }
-        }
-
-        private int UploadQueuedResources(Stopwatch queueTimer, double budgetMilliseconds)
-        {
-            var uploaded = 0;
-            var firstQueue = nextUploadQueue;
-
-            // Revisit every cache fairly until the deadline. Limiting each
-            // cache to one item per round prevents starvation without limiting
-            // texture/model throughput to one item per presented frame.
-            while (queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds)
-            {
-                var pendingBefore = GetPendingResourceQueueCount();
-                var uploadedThisRound = 0;
-                for (var offset = 0;
-                     offset < 4 && queueTimer.Elapsed.TotalMilliseconds < budgetMilliseconds;
-                     offset++)
-                {
-                    var queueIndex = GetUploadQueueIndex(firstQueue, offset);
-                    uploadedThisRound += queueIndex switch
-                    {
-                        0 => ADTCache.Upload(queueTimer, device, budgetMilliseconds, maxItems: 1),
-                        1 => WMOCache.Upload(queueTimer, budgetMilliseconds, maxItems: 1),
-                        2 => M2Cache.Upload(queueTimer, budgetMilliseconds, maxItems: 1),
-                        _ => BLPCache.Upload(queueTimer, budgetMilliseconds, maxItems: 1)
-                    };
-                }
-
-                uploaded += uploadedThisRound;
-                firstQueue = GetUploadQueueIndex(firstQueue, 1);
-
-                // Counts also include workers currently parsing. If no upload
-                // completed and no stale/error result was drained, there is no
-                // render-thread work ready yet; try again on the next frame.
-                if (uploadedThisRound == 0 &&
-                    GetPendingResourceQueueCount() >= pendingBefore)
-                {
-                    break;
-                }
-            }
-
-            nextUploadQueue = firstQueue;
-            return uploaded;
-        }
-
-        private static int GetPendingResourceQueueCount() =>
-            ADTCache.GetLoadQueueCount() +
-            WMOCache.GetLoadQueueCount() +
-            M2Cache.GetLoadQueueCount() +
-            BLPCache.GetQueueCount();
-
-        internal static int GetUploadQueueIndex(int firstQueue, int offset) =>
-            (firstQueue + offset) % 4;
-
-        internal static double AllocatePhaseDeadline(
-            double elapsedMilliseconds,
-            double budgetMilliseconds,
-            double share)
-        {
-            var remaining = Math.Max(0d, budgetMilliseconds - elapsedMilliseconds);
-            return Math.Min(
-                budgetMilliseconds,
-                elapsedMilliseconds + remaining * Math.Clamp(share, 0d, 1d));
-        }
-
-        public int GetPendingOperationCount() =>
-            tilesToLoad.Count +
-            tilesInFlight.Count +
-            pendingAdtPopulations.Count +
-            pendingTileUnloads.Count +
-            pendingWMODoodads.Count +
-            ADTCache.GetLoadQueueCount() +
-            WMOCache.GetLoadQueueCount() +
-            M2Cache.GetLoadQueueCount() +
-            BLPCache.GetQueueCount();
-
-        public static AssetStreamingMetrics GetAssetStreamingMetrics() => new(
-            ADTCache.GetQueueMetrics(),
-            BLPCache.GetQueueMetrics(),
-            M2Cache.GetQueueMetrics(),
-            WMOCache.GetQueueMetrics());
-
-        public bool TryGetTerrainTileMaxHeight(uint wdtFileDataId, byte tileX, byte tileY, out float height)
-        {
-            var container = adtContainers.FirstOrDefault(candidate =>
-                candidate.IsLoaded && candidate.mapTile.wdtFileDataID == wdtFileDataId &&
-                candidate.mapTile.tileX == tileX && candidate.mapTile.tileY == tileY);
-            if (container == null)
-            {
-                height = 0;
-                return false;
-            }
-
-            height = container.Terrain.terrainBounds.Max.Z;
-            return true;
-        }
-
-        private void OnADTContainerLoaded(ADTContainer adtContainer, Terrain terrain)
-        {
-            // unregister the callback, adts only load once, probably
-            adtContainer.LoadCallback -= OnADTContainerLoaded;
-            adtContainer.LoadFailedCallback -= OnADTContainerLoadFailed;
-
-            var tileBoundsKey = GetTileBoundsKey(adtContainer.mapTile);
-            if (!tileSceneBounds.TryGetValue(tileBoundsKey, out var owningTileBounds))
-            {
-                owningTileBounds = new TileSceneBounds(adtContainer.mapTile);
-                tileSceneBounds.Add(tileBoundsKey, owningTileBounds);
-            }
-            owningTileBounds.SetTerrain(terrain.rootADTFileDataID, terrain.terrainBounds);
-            tileSceneBoundsByRoot[terrain.rootADTFileDataID] = owningTileBounds;
-            TerrainTileHeightAvailable?.Invoke(adtContainer.mapTile, terrain.terrainBounds.Max.Z);
-            pendingAdtPopulations.Enqueue(new PendingAdtPopulation(
-                adtContainer,
-                terrain,
-                owningTileBounds));
-            tilesInFlight.Remove(adtContainer.mapTile);
-            loadedTiles.Add(adtContainer.mapTile);
-            failedDesiredTiles.Remove(adtContainer.mapTile);
-        }
-
-        private void AddWorldModelPlacement(
-            in WorldModelBatch worldModel,
-            uint rootAdtFileDataId,
-            TileSceneBounds owningTileBounds)
-        {
-            if (uuidUsers.ContainsKey(worldModel.uniqueID))
-                return;
-
-            var container = new WMOContainer(device, worldModel.fileDataID, rootAdtFileDataId)
-            {
-                Position = worldModel.position,
-                Rotation = worldModel.rotation,
-                Scale = worldModel.scale == 0 ? 1 : worldModel.scale,
-                UniqueID = worldModel.uniqueID,
-                PlacementFlags = worldModel.flags,
-                PlacementDoodadSet = worldModel.doodadSet,
-                PlacementNameSet = worldModel.nameSet,
-                OnDoodadSetsChanged = RefreshWMODoodads,
-                OnGroupsChanged = _ => UpdateWMOInstanceList()
-            };
-            container.SetDoodadSetsToEnable(worldModel.doodadSetIDs);
-
-            lock (SceneObjectLock)
-                SceneObjects.Add(container);
-            owningTileBounds.AddObject(container);
-            uuidUsers[worldModel.uniqueID] = 1;
-            pendingWMODoodads.Enqueue(new PendingWmoDoodadPopulation(container));
-            RegisterWmoInstance(container);
-        }
-
-        private void AddDoodadPlacement(
-            in Doodad doodad,
-            uint rootAdtFileDataId,
-            TileSceneBounds owningTileBounds)
-        {
-            var container = new M2Container(device, doodad.fileDataID, rootAdtFileDataId)
-            {
-                Position = doodad.position,
-                Rotation = doodad.rotation,
-                Scale = doodad.scale,
-                UniqueID = doodad.uniqueID,
-                PlacementFlags = doodad.flags
-            };
-
-            lock (SceneObjectLock)
-                SceneObjects.Add(container);
-            owningTileBounds.AddObject(container);
-            RegisterM2Instance(container);
-        }
-
-        private void OnADTContainerLoadFailed(ADTContainer adtContainer, Exception exception)
-        {
-            adtContainer.LoadCallback -= OnADTContainerLoaded;
-            adtContainer.LoadFailedCallback -= OnADTContainerLoadFailed;
-            tilesInFlight.Remove(adtContainer.mapTile);
-            loadedTiles.Remove(adtContainer.mapTile);
-            failedDesiredTiles.Add(adtContainer.mapTile);
-            RemovePendingAdtPopulation(adtContainer.mapTile);
-
-            lock (SceneObjectLock)
-            {
-                SceneObjects.Remove(adtContainer);
-                adtContainers.Remove(adtContainer);
-            }
-
-            adtContainer.Unload();
-            Console.WriteLine(
-                $"Failed to load ADT {adtContainer.mapTile.tileX}, {adtContainer.mapTile.tileY}: {exception}");
-        }
-
-        public void MoveSelectedObject(Vector3 delta)
-        {
-            if (SelectedObject == null)
-                return;
-
-            SelectedObject.Position += delta;
-            MarkTileBoundsDirty(SelectedObject.ParentFileDataId);
-
-            if (SelectedObject is M2Container selectedM2)
-            {
-                if (m2InstancePackets.TryGetValue(selectedM2.FileDataId, out var packet))
-                    packet.Invalidate();
-            }
-            else if (SelectedObject is WMOContainer)
-            {
-                // Parent WMO movement changes every active doodad matrix.
-                foreach (var packet in m2InstancePackets.Values)
-                    packet.Invalidate();
-            }
-        }
-
-        public void UpdateSelectedObjectTransform(
-            Vector3 position,
-            Vector3 rotationDegrees,
-            float scale,
-            bool lockWorldModelScale)
-        {
-            if (SelectedObject == null)
-                return;
-
-            SelectedObject.Position = position;
-            SelectedObject.Rotation = rotationDegrees;
-            SelectedObject.Scale = lockWorldModelScale && SelectedObject is WMOContainer
-                ? 1f
-                : Math.Max(0.001f, scale);
-            MarkTileBoundsDirty(SelectedObject.ParentFileDataId);
-
-            if (SelectedObject is M2Container selectedM2 &&
-                m2InstancePackets.TryGetValue(selectedM2.FileDataId, out var packet))
-                packet.Invalidate();
-            else if (SelectedObject is WMOContainer)
-                foreach (var m2Packet in m2InstancePackets.Values)
-                    m2Packet.Invalidate();
-        }
-
-        public void UpdateSelectedWmoPlacement(ushort doodadSet, ushort nameSet)
-        {
-            if (SelectedObject is not WMOContainer worldModel)
-                return;
-
-            worldModel.PlacementDoodadSet = doodadSet;
-            worldModel.PlacementNameSet = nameSet;
-            if ((worldModel.PlacementFlags & (uint)MapObjDefFlags.use_sets_from_mwds) == 0)
-                worldModel.SetDoodadSetsToEnable([doodadSet]);
-        }
-
-        /// <summary>
-        /// Invalidates the conservative scene aggregate for an ADT. Object
-        /// editing and future terrain/liquid mutation paths must call this
-        /// after changing world-space bounds.
-        /// </summary>
-        public void MarkTileBoundsDirty(uint rootAdtFileDataId)
-        {
-            if (tileSceneBoundsByRoot.TryGetValue(rootAdtFileDataId, out var bounds))
-                bounds.MarkDirty();
-        }
-
-        public bool IsTerrainTileModified(MapTile tile)
-        {
-            var container = adtContainers.FirstOrDefault(adt => adt.mapTile == tile);
-            return container?.IsModified == true;
-        }
-
-        public bool HasUnsavedTerrainChanges =>
-            adtContainers.Any(adt => adt.IsModified);
-
-        public IReadOnlyList<ModifiedTerrainTile> GetModifiedTerrainTiles()
-        {
-            return adtContainers
-                .Where(adt => adt.IsModified && adt.Terrain.vertices is { Length: > 0 })
-                .Select(adt => new ModifiedTerrainTile(
-                    TerrainTileId.From(adt.mapTile),
-                    adt.Terrain.rootADTFileDataID,
-                    adt.Terrain.vertices.ToArray()))
-                .ToArray();
-        }
-
-        public void MarkTerrainChangesSaved()
-        {
-            foreach (var adt in adtContainers.Where(adt => adt.IsModified))
-                adt.MarkSaved();
-        }
-
-        public void BeginTerrainStroke()
-        {
-            lock (SceneObjectLock)
-            {
-                _flattenStrokeHeight = null;
-                _activeTerrainStrokeBefore = [];
-            }
-        }
-
-        public TerrainStrokeDelta? EndTerrainStroke()
-        {
-            lock (SceneObjectLock)
-            {
-                if (_activeTerrainStrokeBefore == null)
-                    return null;
-
-                var edits = new List<TerrainTileEdit>(_activeTerrainStrokeBefore.Count);
-                foreach (var (tile, before) in _activeTerrainStrokeBefore)
-                {
-                    var adt = adtContainers.FirstOrDefault(candidate =>
-                        TerrainTileId.From(candidate.mapTile) == tile);
-                    if (adt?.Terrain.vertices is not { Length: > 0 } after ||
-                        before.SequenceEqual(after))
-                    {
-                        continue;
-                    }
-
-                    edits.Add(new TerrainTileEdit(
-                        tile,
-                        adt.Terrain.rootADTFileDataID,
-                        before,
-                        after.ToArray()));
-                }
-
-                _activeTerrainStrokeBefore = null;
-                return edits.Count == 0 ? null : new TerrainStrokeDelta(edits);
-            }
-        }
-
-        public void ApplyTerrainStroke(TerrainStrokeDelta delta, bool useAfter)
-        {
-            ArgumentNullException.ThrowIfNull(delta);
-            lock (SceneObjectLock)
-            {
-                foreach (var edit in delta.Tiles)
-                {
-                    var adt = adtContainers.FirstOrDefault(candidate =>
-                        TerrainTileId.From(candidate.mapTile) == edit.Tile);
-                    if (adt?.Terrain.vertices is not { Length: > 0 })
-                        continue;
-
-                    var terrain = adt.Terrain;
-                    adt.EnsureOriginalVerticesCaptured();
-                    terrain.vertices = (useAfter ? edit.After : edit.Before).ToArray();
-                    RebuildTerrainBounds(ref terrain);
-                    UploadTerrainVertices(terrain);
-                    adt.UpdateTerrain(terrain);
-                    adt.RefreshModifiedState();
-                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
-                }
-            }
-        }
-
-        public void PerformRaycast(float mouseX, float mouseY, Camera camera, int windowWidth, int windowHeight)
-        {
-            var ray = camera.GetRayFromScreen(mouseX, mouseY, windowWidth, windowHeight);
-
-            Container3D? closestObject = null;
-            float closestDistance = float.MaxValue;
-
-            lock (SceneObjectLock)
-            {
-                // Terrain is opaque for selection: an object's bounds may only win
-                // when their first intersection is closer than the terrain surface.
-                if (RenderADT && TryRaycastTerrainLocked(ray, out var terrainHit))
-                    closestDistance = Vector3.Distance(ray.Origin, terrainHit.WorldPosition);
-
-                foreach (var sceneObject in SceneObjects)
-                {
-                    if (sceneObject is ADTContainer)
-                        continue;
-
-                    if (!RenderWMO && sceneObject is WMOContainer)
-                        continue;
-
-                    if (!RenderM2 && sceneObject is M2Container)
-                        continue;
-
-                    // Make doodads unselectable
-                    if (sceneObject is M2Container m2container && m2container.ParentWMO != null)
-                        continue;
-
-                    var sphere = sceneObject.GetBoundingSphere();
-                    if (sphere.HasValue)
-                    {
-                        if (!IsWithinRenderDistance(
-                                ray.Origin,
-                                sphere.Value.Center,
-                                sphere.Value.Radius,
-                                ModelRenderDistance))
-                            continue;
-
-                        if (IntersectionTests.RayIntersectsSphere(ray, sphere.Value, out float sphereDistance))
-                        {
-                            if (sphereDistance < closestDistance)
-                            {
-                                var box = sceneObject.GetBoundingBox();
-                                if (box.HasValue && IntersectionTests.RayIntersectsBox(ray, box.Value, out float boxDistance))
-                                {
-                                    if (boxDistance < closestDistance)
-                                    {
-                                        closestDistance = boxDistance;
-                                        closestObject = sceneObject;
-                                    }
-                                }
-                                else if (!box.HasValue)
-                                {
-                                    closestDistance = sphereDistance;
-                                    closestObject = sceneObject;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            SelectedObject?.IsSelected = false;
-            SelectedObject = closestObject;
-            SelectedObject?.IsSelected = true;
-        }
-
-        public void ClearBrushPreview()
-        {
-            BrushWorldPosition = null;
-            BrushRadius = 0f;
-            BrushFalloff = 0f;
-            BrushHasFalloff = false;
-        }
-
-        public bool UpdateBrushPreview(
-            Vector2 mousePosition,
-            Camera camera,
-            int windowWidth,
-            int windowHeight,
-            in BrushInput brush,
-            Vector4 color)
-        {
-            if (!TryUpdateBrushPreview(mousePosition, camera, windowWidth, windowHeight, brush, color, out _))
-            {
-                ClearBrushPreview();
-                return false;
-            }
-
-            return true;
-        }
-
-        public void UpdateTerrainBrush(
-            Vector2 mousePosition,
-            Camera camera,
-            int windowWidth,
-            int windowHeight,
-            in BrushInput brush,
-            TerrainBrushInput input,
-            bool apply,
-            float deltaTime)
-        {
-            var previewColor = TerrainBrushTools.Get(input.ToolMode).PreviewColor;
-            if (!TryUpdateBrushPreview(
-                    mousePosition,
-                    camera,
-                    windowWidth,
-                    windowHeight,
-                    brush,
-                    previewColor,
-                    out var hit))
-            {
-                ClearBrushPreview();
-                return;
-            }
-
-            if (apply)
-                ApplyTerrainBrush(hit, brush, input, Math.Clamp(deltaTime, 0f, 0.1f));
-        }
-
-        private bool TryUpdateBrushPreview(
-            Vector2 mousePosition,
-            Camera camera,
-            int windowWidth,
-            int windowHeight,
-            in BrushInput brush,
-            Vector4 color,
-            out TerrainRayHit hit)
-        {
-            var ray = camera.GetRayFromScreen(
-                mousePosition.X,
-                mousePosition.Y,
-                windowWidth,
-                windowHeight);
-
-            if (!TryRaycastTerrain(ray, out hit))
-                return false;
-
-            BrushWorldPosition = hit.WorldPosition;
-            BrushRadius = Math.Clamp(brush.Radius, 1f, 1000f);
-            BrushFalloff = Math.Clamp(brush.Falloff, 0f, 1f);
-            BrushHasFalloff = brush.HasFalloff;
-            BrushShape = brush.Shape;
-            BrushFalloffProfile = brush.HasFalloff
-                ? brush.FalloffProfile
-                : BrushFalloffProfile.Hard;
-            BrushColor = color;
-            return true;
-        }
-
-        private bool TryRaycastTerrain(Ray ray, out TerrainRayHit closestHit)
-        {
-            lock (SceneObjectLock)
-                return TryRaycastTerrainLocked(ray, out closestHit);
-        }
-
-        /// <summary>
-        /// Raycasts only loaded terrain and returns the hit chunk's active textures
-        /// in material-layer order. Scene objects intentionally do not participate.
-        /// </summary>
-        public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainChunkTextures(
-            Vector2 mousePosition,
-            Camera camera,
-            int windowWidth,
-            int windowHeight)
-        {
-            if (windowWidth <= 0 || windowHeight <= 0)
-                return Array.Empty<TerrainChunkTextureLayer>();
-
-            var ray = camera.GetRayFromScreen(
-                mousePosition.X,
-                mousePosition.Y,
-                windowWidth,
-                windowHeight);
-
-            lock (SceneObjectLock)
-            {
-                if (!TryRaycastTerrainLocked(ray, out var hit))
-                    return Array.Empty<TerrainChunkTextureLayer>();
-
-                var batches = hit.Container.Terrain.renderBatches;
-                if (batches == null || (uint)hit.ChunkIndex >= (uint)batches.Length)
-                    return Array.Empty<TerrainChunkTextureLayer>();
-
-                var materials = batches[hit.ChunkIndex].materialFDIDs;
-                if (materials == null || materials.Length == 0)
-                    return Array.Empty<TerrainChunkTextureLayer>();
-
-                return materials
-                    .Select((fileDataId, layerIndex) => (fileDataId, layerIndex))
-                    .Where(layer => layer.fileDataId > 0)
-                    .Select(layer => new TerrainChunkTextureLayer(
-                        layer.layerIndex,
-                        checked((uint)layer.fileDataId)))
-                    .ToArray();
-            }
-        }
-
-        public TerrainChunkTextureLayer? GetDominantTerrainTexture(
-            Vector2 mousePosition,
-            Camera camera,
-            int windowWidth,
-            int windowHeight)
-        {
-            if (windowWidth <= 0 || windowHeight <= 0)
-                return null;
-
-            var ray = camera.GetRayFromScreen(
-                mousePosition.X,
-                mousePosition.Y,
-                windowWidth,
-                windowHeight);
-
-            lock (SceneObjectLock)
-            {
-                if (!TryRaycastTerrainLocked(ray, out var hit))
-                    return null;
-
-                var batches = hit.Container.Terrain.renderBatches;
-                if (batches == null || (uint)hit.ChunkIndex >= (uint)batches.Length)
-                    return null;
-
-                var batch = batches[hit.ChunkIndex];
-                var weights = TerrainAlphaMapSampler.SampleWeights(
-                    batch.alphaMaterials,
-                    batch.layerCount,
-                    hit.TextureCoordinate);
-                var dominantLayer = TerrainAlphaMapSampler.FindDominantLayer(
-                    weights,
-                    batch.materialFDIDs);
-
-                return dominantLayer >= 0
-                    ? new TerrainChunkTextureLayer(
-                        dominantLayer,
-                        checked((uint)batch.materialFDIDs[dominantLayer]))
-                    : null;
-            }
-        }
-
-        public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainTileTextures(Vector3 worldPosition)
-        {
-            var (tileX, tileY) = GetTileFromPosition(worldPosition);
-            lock (SceneObjectLock)
-            {
-                var adt = adtContainers.FirstOrDefault(candidate =>
-                    candidate.IsLoaded &&
-                    candidate.mapTile.wdtFileDataID == CurrentWDTFileDataID &&
-                    candidate.mapTile.tileX == tileX &&
-                    candidate.mapTile.tileY == tileY);
-                if (adt == null)
-                    return Array.Empty<TerrainChunkTextureLayer>();
-
-                var seen = new HashSet<uint>();
-                var textures = new List<TerrainChunkTextureLayer>();
-                foreach (var batch in adt.Terrain.renderBatches ?? [])
-                {
-                    var materials = batch.materialFDIDs;
-                    if (materials == null)
-                        continue;
-                    var layerCount = Math.Min(batch.layerCount, materials.Length);
-                    for (var layerIndex = 0; layerIndex < layerCount; layerIndex++)
-                    {
-                        var fileDataId = materials[layerIndex];
-                        if (fileDataId <= 0 || !seen.Add(checked((uint)fileDataId)))
-                            continue;
-                        textures.Add(new TerrainChunkTextureLayer(
-                            layerIndex,
-                            checked((uint)fileDataId)));
-                    }
-                }
-
-                return textures;
-            }
-        }
-
-        private bool TryRaycastTerrainLocked(Ray ray, out TerrainRayHit closestHit)
-        {
-            closestHit = default;
-            if (!RenderADT)
-                return false;
-
-            var closestDistance = float.MaxValue;
-
-            foreach (var adt in adtContainers)
-            {
-                if (!adt.IsLoaded || adt.Terrain.vertices == null || adt.Terrain.indices == null)
-                    continue;
-
-                if (!Matrix4x4.Invert(adt.GetModelMatrix(), out var inverseModel))
-                    continue;
-
-                var modelMatrix = adt.GetModelMatrix();
-                var localRay = new Ray(
-                    Vector3.Transform(ray.Origin, inverseModel),
-                    Vector3.Normalize(Vector3.TransformNormal(ray.Direction, inverseModel)));
-                var terrain = adt.Terrain;
-                if (!IsWithinRenderDistance(
-                        ray.Origin,
-                        terrain.terrainBoundingSphere.Center,
-                        terrain.terrainBoundingSphere.Radius,
-                        TerrainRenderDistance))
-                    continue;
-                if (!IntersectionTests.RayIntersectsBox(localRay, terrain.terrainBounds, out _))
-                    continue;
-                var candidate = new TerrainRaycastChunk(adt, modelMatrix, inverseModel, -1);
-
-                for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
-                {
-                    var chunkSphere = terrain.chunkBoundingSpheres[chunkIndex];
-                    if (!IsWithinRenderDistance(
-                            ray.Origin,
-                            chunkSphere.Center,
-                            chunkSphere.Radius,
-                            TerrainRenderDistance))
-                        continue;
-                    TryRaycastTerrainChunk(
-                        candidate,
-                        ray,
-                        chunkIndex,
-                        ref closestDistance,
-                        ref closestHit);
-                }
-            }
-
-            return closestDistance < float.MaxValue;
-        }
-
-        private static void TryRaycastTerrainChunk(
-            TerrainRaycastChunk candidate,
-            Ray worldRay,
-            int chunkIndex,
-            ref float closestDistance,
-            ref TerrainRayHit closestHit)
-        {
-            var terrain = candidate.Container.Terrain;
-            var localRay = new Ray(
-                Vector3.Transform(worldRay.Origin, candidate.InverseModel),
-                Vector3.Normalize(Vector3.TransformNormal(worldRay.Direction, candidate.InverseModel)));
-            if (!IntersectionTests.RayIntersectsBox(
-                    localRay,
-                    terrain.chunkBounds[chunkIndex],
-                    out _))
-            {
-                return;
-            }
-
-            var indexStart = chunkIndex * (int)TerrainIndicesPerChunk;
-            var indexEnd = Math.Min(indexStart + (int)TerrainIndicesPerChunk, terrain.indices.Length);
-            for (var index = indexStart; index < indexEnd; index += 3)
-            {
-                var i0 = terrain.indices[index];
-                var i1 = terrain.indices[index + 1];
-                var i2 = terrain.indices[index + 2];
-                if (i0 == i1 || i1 == i2 || i0 == i2 ||
-                    i0 < 0 || i1 < 0 || i2 < 0 ||
-                    i0 >= terrain.vertices.Length ||
-                    i1 >= terrain.vertices.Length ||
-                    i2 >= terrain.vertices.Length)
-                {
-                    continue;
-                }
-
-                if (!RayIntersectsTriangle(
-                        localRay,
-                        terrain.vertices[i0].Position,
-                        terrain.vertices[i1].Position,
-                        terrain.vertices[i2].Position,
-                        out var distance,
-                        out var localPosition,
-                        out var triangleU,
-                        out var triangleV) ||
-                    distance >= closestDistance)
-                {
-                    continue;
-                }
-
-                var worldPosition = Vector3.Transform(localPosition, candidate.ModelMatrix);
-                var localNormal = Vector3.Normalize(Vector3.Cross(
-                    terrain.vertices[i1].Position - terrain.vertices[i0].Position,
-                    terrain.vertices[i2].Position - terrain.vertices[i0].Position));
-                var worldNormal = Vector3.Normalize(Vector3.TransformNormal(
-                    localNormal,
-                    Matrix4x4.Transpose(candidate.InverseModel)));
-                if (worldNormal.Z < 0f)
-                    worldNormal = -worldNormal;
-
-                closestDistance = Vector3.Distance(worldRay.Origin, worldPosition);
-                closestHit = new TerrainRayHit(
-                    candidate.Container,
-                    chunkIndex,
-                    localPosition,
-                    terrain.vertices[i0].TexCoord * (1f - triangleU - triangleV) +
-                    terrain.vertices[i1].TexCoord * triangleU +
-                    terrain.vertices[i2].TexCoord * triangleV,
-                    worldPosition,
-                    worldNormal);
-            }
-        }
-
-        private void ApplyTerrainBrush(
-            TerrainRayHit hit, BrushInput brush, TerrainBrushInput input, float deltaTime)
-        {
-            brush = brush with { Radius = Math.Clamp(brush.Radius, 1f, 1000f) };
-            lock (SceneObjectLock)
-            {
-                // Include a halo for smoothing neighbours and seam-normal triangles.
-                var tiles = new HashSet<ADTContainer>();
-                WorldChunkRange.ForEachChunkInRange(
-                    adtContainers, hit.WorldPosition, brush.Radius * MathF.Sqrt(2f) + 16f,
-                    static adt => adt.IsLoaded && adt.Terrain.vertices is { Length: > 0 },
-                    static adt => adt.GetModelMatrix(),
-                    static adt => adt.Terrain.terrainBounds,
-                    static adt => adt.Terrain.chunkBounds,
-                    static bounds => bounds,
-                    context => { tiles.Add(context.Tile); return false; },
-                    _ => { });
-                if (input.ToolMode == TerrainBrushMode.Flatten &&
-                    input.FlattenTarget == TerrainFlattenTarget.BrushCenter)
-                {
-                    _flattenStrokeHeight ??= hit.WorldPosition.Z;
-                    input.FlattenHeight = _flattenStrokeHeight.Value;
-                }
-                foreach (var tile in tiles)
-                {
-                    tile.EnsureOriginalVerticesCaptured();
-                    var id = TerrainTileId.From(tile.mapTile);
-                    if (_activeTerrainStrokeBefore is { } before && !before.ContainsKey(id))
-                        before[id] = tile.Terrain.vertices.ToArray();
-                }
-                var surfaces = tiles.Select(tile => new TerrainSurfaceEditor.Surface(
-                    tile.Terrain.vertices, tile.Terrain.indices, tile.GetModelMatrix())).ToArray();
-                if (!TerrainSurfaceEditor.Apply(surfaces, hit.WorldPosition, brush, input, deltaTime))
-                    return;
-                foreach (var tile in tiles)
-                {
-                    var terrain = tile.Terrain;
-                    RebuildTerrainBounds(ref terrain);
-                    UploadTerrainVertices(terrain);
-                    tile.UpdateTerrain(terrain);
-                    tile.RefreshModifiedState();
-                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
-                }
-            }
-        }
-
-        private unsafe void UploadTerrainVertices(Terrain terrain)
-        {
-            if (terrain.vertexBuffer.Handle == null || terrain.vertices == null)
-                return;
-
-            MappedSubresource mapped = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(
-                terrain.vertexBuffer,
-                0,
-                Map.WriteDiscard,
-                0,
-                ref mapped));
-            var destination = new Span<ADTGpuVertex>(mapped.PData, terrain.vertices.Length);
-            for (var index = 0; index < terrain.vertices.Length; index++)
-                destination[index] = ADTGpuVertex.FromCpu(terrain.vertices[index]);
-            deviceContext.Unmap(terrain.vertexBuffer, 0);
-        }
-
-        private static void RebuildTerrainBounds(ref Terrain terrain)
-        {
-            for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
-                RebuildTerrainChunkBounds(ref terrain, chunkIndex);
-
-            RebuildTerrainAggregateBounds(ref terrain);
-        }
-
-        private static void RebuildTerrainChunkBounds(ref Terrain terrain, int chunkIndex)
-        {
-            var start = chunkIndex * TerrainVerticesPerChunk;
-            var end = Math.Min(start + TerrainVerticesPerChunk, terrain.vertices.Length);
-            if (start >= end || chunkIndex >= terrain.chunkBounds.Length)
-                return;
-
-            var min = terrain.vertices[start].Position;
-            var max = min;
-            for (var index = start + 1; index < end; index++)
-            {
-                min = Vector3.Min(min, terrain.vertices[index].Position);
-                max = Vector3.Max(max, terrain.vertices[index].Position);
-            }
-
-            terrain.chunkBounds[chunkIndex] = new BoundingBox { Min = min, Max = max };
-            var center = (min + max) * 0.5f;
-            terrain.chunkBoundingSpheres[chunkIndex] = new BoundingSphere(
-                center,
-                Vector3.Distance(center, max));
-        }
-
-        private static void RebuildTerrainAggregateBounds(ref Terrain terrain)
-        {
-            if (terrain.chunkBounds.Length == 0)
-                return;
-
-            var terrainMin = terrain.chunkBounds[0].Min;
-            var terrainMax = terrain.chunkBounds[0].Max;
-            for (var index = 1; index < terrain.chunkBounds.Length; index++)
-            {
-                terrainMin = Vector3.Min(terrainMin, terrain.chunkBounds[index].Min);
-                terrainMax = Vector3.Max(terrainMax, terrain.chunkBounds[index].Max);
-            }
-            terrain.terrainBounds = new BoundingBox { Min = terrainMin, Max = terrainMax };
-            var terrainCenter = (terrainMin + terrainMax) * 0.5f;
-            terrain.terrainBoundingSphere = new BoundingSphere(
-                terrainCenter,
-                Vector3.Distance(terrainCenter, terrainMax));
-        }
-
-        private static bool RayIntersectsTriangle(
-            Ray ray,
-            Vector3 v0,
-            Vector3 v1,
-            Vector3 v2,
-            out float distance,
-            out Vector3 hit,
-            out float barycentricU,
-            out float barycentricV)
-        {
-            const float epsilon = 0.000001f;
-            distance = 0f;
-            hit = default;
-            barycentricU = 0f;
-            barycentricV = 0f;
-            var edge1 = v1 - v0;
-            var edge2 = v2 - v0;
-            var p = Vector3.Cross(ray.Direction, edge2);
-            var determinant = Vector3.Dot(edge1, p);
-            if (MathF.Abs(determinant) < epsilon)
-                return false;
-
-            var inverse = 1f / determinant;
-            var t = ray.Origin - v0;
-            var u = Vector3.Dot(t, p) * inverse;
-            if (u < 0f || u > 1f)
-                return false;
-
-            var q = Vector3.Cross(t, edge1);
-            var v = Vector3.Dot(ray.Direction, q) * inverse;
-            if (v < 0f || u + v > 1f)
-                return false;
-
-            distance = Vector3.Dot(edge2, q) * inverse;
-            if (distance < 0f)
-                return false;
-
-            hit = ray.GetPoint(distance);
-            barycentricU = u;
-            barycentricV = v;
-            return true;
-        }
-
-        private readonly record struct TerrainRayHit(
-            ADTContainer Container,
-            int ChunkIndex,
-            Vector3 LocalPosition,
-            Vector2 TextureCoordinate,
-            Vector3 WorldPosition,
-            Vector3 WorldNormal);
-
-        private readonly record struct TerrainRaycastChunk(
-            ADTContainer Container,
-            Matrix4x4 ModelMatrix,
-            Matrix4x4 InverseModel,
-            int ChunkIndex);
 
         public (uint drawCalls, ulong submittedIndices) RenderScene(Camera camera, out bool gizmoWasUsing, out bool gizmoWasOver) =>
             RenderScene(camera, out gizmoWasUsing, out gizmoWasOver, null);
@@ -2314,11 +690,14 @@ namespace WoWRenderLib.DX11.Managers
             M2SubmissionTimeMs = 0;
             TerrainCullingTimeMs = 0;
             TerrainSubmissionTimeMs = 0;
+            LiquidCullingTimeMs = 0;
+            LiquidSubmissionTimeMs = 0;
             TileHierarchyCullingTimeMs = 0;
             DebugSubmissionTimeMs = 0;
             WmoDrawCalls = 0;
             M2DrawCalls = 0;
             TerrainDrawCalls = 0;
+            LiquidDrawCalls = 0;
             DebugDrawCalls = 0;
             WmoSubmittedInstances = 0;
             M2SubmittedInstances = 0;
@@ -2326,6 +705,7 @@ namespace WoWRenderLib.DX11.Managers
             WmoSubmittedIndices = 0;
             M2SubmittedIndices = 0;
             TerrainSubmittedIndices = 0;
+            LiquidSubmittedIndices = 0;
             InstanceBufferMapCalls = 0;
             ConstantBufferUpdates = 0;
             TextureBindingCalls = 0;
@@ -2335,15 +715,16 @@ namespace WoWRenderLib.DX11.Managers
             _frameTextureSrvs.Clear();
             var currentBlendType = -1;
 
-            deviceContext.RSSetState(rasterizerState);
+            _deviceContext.RSSetState(rasterizerState);
 
 #if DEBUG
-            if (shaderManager.CheckForChanges())
+            if (_shaderManager.CheckForChanges())
             {
-                adtShaderProgram = shaderManager.GetOrCompileShader("adt");
+                adtShaderProgram = _shaderManager.GetOrCompileShader("adt");
                 LoadAdtLayerShaders();
-                wmoShaderProgram = shaderManager.GetOrCompileShader("wmo");
-                m2ShaderProgram = shaderManager.GetOrCompileShader("m2");
+                wmoShaderProgram = _shaderManager.GetOrCompileShader("wmo");
+                m2ShaderProgram = _shaderManager.GetOrCompileShader("m2");
+                _worldLiquidRenderer.RefreshShader();
             }
 #endif
 
@@ -2364,6 +745,8 @@ namespace WoWRenderLib.DX11.Managers
             sizeCulledWMOs = 0;
             sizeCulledM2s = 0;
             farLodTerrainChunks = 0;
+            candidateLiquidBatches = 0;
+            visibleLiquidBatches = 0;
             candidateTiles = tileSceneBounds.Count;
             coarseCulledTiles = 0;
             portalCulledWmoGroups = 0;
@@ -2378,16 +761,16 @@ namespace WoWRenderLib.DX11.Managers
             var backgroundColour = new[] { 0f, 0f, 0f, 1.0f };
 
             ComPtr<ID3D11ShaderResourceView> nullSRV = default;
-            deviceContext.PSSetShaderResources(0, 1, ref nullSRV);
+            _deviceContext.PSSetShaderResources(0, 1, ref nullSRV);
 
-            deviceContext.ClearRenderTargetView(renderTargetView, ref backgroundColour[0]);
-            deviceContext.OMSetRenderTargets(1, ref renderTargetView, depthStencilView);
-            deviceContext.ClearDepthStencilView(depthStencilView, (uint)ClearFlag.Depth, 1.0f, 0);
+            _deviceContext.ClearRenderTargetView(renderTargetView, ref backgroundColour[0]);
+            _deviceContext.OMSetRenderTargets(1, ref renderTargetView, depthStencilView);
+            _deviceContext.ClearDepthStencilView(depthStencilView, (uint)ClearFlag.Depth, 1.0f, 0);
 
-            deviceContext.PSSetSamplers(0, 1, ref textureSampler);
-            deviceContext.PSSetSamplers(1, 1, ref clampSampler);
+            _deviceContext.PSSetSamplers(0, 1, ref textureSampler);
+            _deviceContext.PSSetSamplers(1, 1, ref clampSampler);
 
-            deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+            _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
 
             var adtVertexStride = (uint)Marshal.SizeOf<ADTGpuVertex>();
             var adtVertexOffset = 0U;
@@ -2430,13 +813,13 @@ namespace WoWRenderLib.DX11.Managers
             // Set up WMO stuff, we do this before the loop since they're all shared
             var passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginWorldModels();
-            deviceContext.RSSetState(wmoRasterizerState);
-            deviceContext.IASetInputLayout(wmoShaderProgram.InputLayout);
-            deviceContext.VSSetShader(wmoShaderProgram.VertexShader, ref nullClassInstance, 0);
-            deviceContext.PSSetShader(wmoShaderProgram.PixelShader, ref nullClassInstance, 0);
-            deviceContext.PSSetSamplers(0, 1, ref textureSampler);
-            deviceContext.VSSetConstantBuffers(0, 1, ref wmoPerObjectConstantBuffer);
-            deviceContext.PSSetConstantBuffers(0, 1, ref wmoPerObjectConstantBuffer);
+            _deviceContext.RSSetState(wmoRasterizerState);
+            _deviceContext.IASetInputLayout(wmoShaderProgram.InputLayout);
+            _deviceContext.VSSetShader(wmoShaderProgram.VertexShader, ref nullClassInstance, 0);
+            _deviceContext.PSSetShader(wmoShaderProgram.PixelShader, ref nullClassInstance, 0);
+            _deviceContext.PSSetSamplers(0, 1, ref textureSampler);
+            _deviceContext.VSSetConstantBuffers(0, 1, ref wmoPerObjectConstantBuffer);
+            _deviceContext.PSSetConstantBuffers(0, 1, ref wmoPerObjectConstantBuffer);
 
             var wmoConstantBuffer = new WMOPerObjectCB
             {
@@ -2475,7 +858,7 @@ namespace WoWRenderLib.DX11.Managers
                     var sphere = instance.CachedBoundingSphere ?? instance.GetBoundingSphere();
                     var cameraSphere = sphere.GetValueOrDefault();
                     var cameraVisible = sphere.HasValue &&
-                        IsWithinRenderDistance(camera.Position, cameraSphere.Center, cameraSphere.Radius, ModelRenderDistance) &&
+                        ScreenSpaceCulling.IntersectsRenderDistance(camera.Position, cameraSphere.Center, cameraSphere.Radius, ModelRenderDistance) &&
                         frustum.IsSphereVisible(cameraSphere.Center, cameraSphere.Radius);
                     instance.SetCameraVisibilityFrame(_renderFrameNumber, cameraVisible);
                     if (cameraVisible)
@@ -2566,17 +949,17 @@ namespace WoWRenderLib.DX11.Managers
                         unsafe
                         {
                             MappedSubresource mapped = default;
-                            SilkMarshal.ThrowHResult(deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+                            SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
 
                             var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
                             for (int i = 0; i < batchSize; i++)
                                 dest[i] = instances[visibleInstanceIndices[batchStart + i]].GetModelMatrix();
 
-                            deviceContext.Unmap(instanceMatrixBuffer, 0);
+                            _deviceContext.Unmap(instanceMatrixBuffer, 0);
                             InstanceBufferMapCalls++;
                         }
 
-                        deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                        _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
                         VertexBufferBindings++;
 
                         var currentGroupId = uint.MaxValue;
@@ -2592,8 +975,8 @@ namespace WoWRenderLib.DX11.Managers
                                 var group = wmo.groupBatches[batch.groupID];
                                 var vertexBuffer = group.vertexBuffer;
                                 var indiceBuffer = group.indiceBuffer;
-                                deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
-                                deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
+                                _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
+                                _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
                                 VertexBufferBindings++;
                                 IndexBufferBindings++;
                                 currentGroupId = batch.groupID;
@@ -2609,7 +992,7 @@ namespace WoWRenderLib.DX11.Managers
                                 wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
                                 wmoConstantBuffer.alphaRef != lastWmoAlphaRef)
                             {
-                                deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
+                                _deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
                                 ConstantBufferUpdates++;
                                 lastWmoVertexShader = wmoConstantBuffer.vertexShader;
                                 lastWmoPixelShader = wmoConstantBuffer.pixelShader;
@@ -2620,11 +1003,11 @@ namespace WoWRenderLib.DX11.Managers
                                 _srvScratch[s] = ResolveFrameTexture(batch.materialFDIDs[s]);
                             if (batch.materialFDIDs.Length > 0)
                             {
-                                deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
+                                _deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
                                 TextureBindingCalls++;
                             }
 
-                            deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
+                            _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
 
                             drawCalls++;
                             WmoDrawCalls++;
@@ -2644,13 +1027,12 @@ namespace WoWRenderLib.DX11.Managers
             // Set up M2 stuff (unchanged per M2 so we do it before we loop)
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginDoodads();
-            deviceContext.RSSetState(wmoRasterizerState);
-            deviceContext.IASetInputLayout(m2ShaderProgram.InputLayout);
-            deviceContext.VSSetShader(m2ShaderProgram.VertexShader, ref nullClassInstance, 0);
-            deviceContext.PSSetShader(m2ShaderProgram.PixelShader, ref nullClassInstance, 0);
-            deviceContext.PSSetSamplers(0, 1, ref textureSampler);
-            deviceContext.VSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
-            deviceContext.PSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
+            _deviceContext.RSSetState(wmoRasterizerState);
+            _deviceContext.IASetInputLayout(m2ShaderProgram.InputLayout);
+            _deviceContext.VSSetShader(m2ShaderProgram.VertexShader, ref nullClassInstance, 0);
+            _deviceContext.PSSetShader(m2ShaderProgram.PixelShader, ref nullClassInstance, 0);
+            _deviceContext.VSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
+            _deviceContext.PSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
 
             var m2ConstantBuffer = new M2PerObjectCB
             {
@@ -2674,6 +1056,7 @@ namespace WoWRenderLib.DX11.Managers
             var lastM2VertexShader = int.MinValue;
             var lastM2PixelShader = int.MinValue;
             var lastM2AlphaRef = float.NaN;
+            bool? lastM2TwoSided = null;
 
             foreach (var packet in m2InstancePackets.Values)
             {
@@ -2706,7 +1089,7 @@ namespace WoWRenderLib.DX11.Managers
                         continue;
                     }
                     var sphere = packet.WorldBounds[i];
-                    if (IsWithinRenderDistance(camera.Position, sphere.Center, sphere.Radius, ModelRenderDistance) &&
+                    if (ScreenSpaceCulling.IntersectsRenderDistance(camera.Position, sphere.Center, sphere.Radius, ModelRenderDistance) &&
                         frustum.IsSphereVisible(sphere.Center, sphere.Radius))
                     {
                         if (!instance.IsSelected && ScreenSpaceCulling.IsBelowPixelThresholdNormalized(
@@ -2736,8 +1119,8 @@ namespace WoWRenderLib.DX11.Managers
                 var vertexBuffer = m2.vertexBuffer;
                 var indiceBuffer = m2.indiceBuffer;
 
-                deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
-                deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
+                _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
+                _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
                 VertexBufferBindings++;
                 IndexBufferBindings++;
 
@@ -2748,22 +1131,30 @@ namespace WoWRenderLib.DX11.Managers
                     unsafe
                     {
                         MappedSubresource mapped = default;
-                        SilkMarshal.ThrowHResult(deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+                        SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
 
                         var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
                         for (int i = 0; i < batchCount; i++)
                             dest[i] = packet.WorldMatrices[_visibleIndices[batchStart + i]];
 
-                        deviceContext.Unmap(instanceMatrixBuffer, 0);
+                        _deviceContext.Unmap(instanceMatrixBuffer, 0);
                         InstanceBufferMapCalls++;
                     }
 
-                    deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                    _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
                     VertexBufferBindings++;
 
                     for (int j = 0; j < m2.submeshes.Length; j++)
                     {
                         var batch = m2.submeshes[j];
+
+                        var isTwoSided = IsM2TwoSided(batch.renderFlags);
+                        if (lastM2TwoSided != isTwoSided)
+                        {
+                            _deviceContext.RSSetState(
+                                isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
+                            lastM2TwoSided = isTwoSided;
+                        }
 
                         m2ConstantBuffer.blendMode = batch.blendType;
                         m2ConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
@@ -2775,7 +1166,7 @@ namespace WoWRenderLib.DX11.Managers
                             m2ConstantBuffer.pixelShader != lastM2PixelShader ||
                             m2ConstantBuffer.alphaRef != lastM2AlphaRef)
                         {
-                            deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
+                            _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
                             ConstantBufferUpdates++;
                             lastM2BlendMode = m2ConstantBuffer.blendMode;
                             lastM2VertexShader = m2ConstantBuffer.vertexShader;
@@ -2787,11 +1178,20 @@ namespace WoWRenderLib.DX11.Managers
                             _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
                         if (batch.material.Length > 0)
                         {
-                            deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
+                            _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
+                            var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
+                            for (var s = 0; s < samplerCount; s++)
+                            {
+                                var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
+                                    ? textureFlags[s]
+                                    : 0;
+                                _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
+                            }
+                            _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
                             TextureBindingCalls++;
                         }
 
-                        deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
+                        _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
                         drawCalls++;
                         M2DrawCalls++;
                         M2SubmittedInstances += (uint)batchCount;
@@ -2812,18 +1212,25 @@ namespace WoWRenderLib.DX11.Managers
             gpuTimer?.BeginTerrain();
             if (RenderADT)
             {
-                deviceContext.RSSetState(rasterizerState);
-                deviceContext.IASetInputLayout(adtShaderProgram.InputLayout);
-                deviceContext.VSSetShader(adtShaderProgram.VertexShader, ref nullClassInstance, 0);
+                _deviceContext.RSSetState(rasterizerState);
+                // The M2 pass binds per-material address modes to s0-s3. Terrain
+                // has a different sampler contract (wrapped layers at s0 and a
+                // clamped alpha map at s1), so restore it at the pass boundary.
+                // Without this, the final M2 batch can clamp terrain layers and
+                // expose square seams at chunk edges.
+                _deviceContext.PSSetSamplers(0, 1, ref textureSampler);
+                _deviceContext.PSSetSamplers(1, 1, ref clampSampler);
+                _deviceContext.IASetInputLayout(adtShaderProgram.InputLayout);
+                _deviceContext.VSSetShader(adtShaderProgram.VertexShader, ref nullClassInstance, 0);
                 var terrainGeometryShader = ShowTerrainWireframe
                     ? adtShaderProgram.GeometryShader
                     : default;
-                deviceContext.GSSetShader(terrainGeometryShader, ref nullClassInstance, 0);
-                deviceContext.PSSetShader(adtShaderProgram.PixelShader, ref nullClassInstance, 0);
-                deviceContext.VSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
-                deviceContext.PSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
-                deviceContext.VSSetConstantBuffers(1, 1, ref layerDataConstantBuffer);
-                deviceContext.PSSetConstantBuffers(1, 1, ref layerDataConstantBuffer);
+                _deviceContext.GSSetShader(terrainGeometryShader, ref nullClassInstance, 0);
+                _deviceContext.PSSetShader(adtShaderProgram.PixelShader, ref nullClassInstance, 0);
+                _deviceContext.VSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
+                _deviceContext.PSSetConstantBuffers(0, 1, ref adtPerObjectConstantBuffer);
+                _deviceContext.VSSetConstantBuffers(1, 1, ref layerDataConstantBuffer);
+                _deviceContext.PSSetConstantBuffers(1, 1, ref layerDataConstantBuffer);
 
                 var layerCB = new LayerData
                 {
@@ -2838,7 +1245,7 @@ namespace WoWRenderLib.DX11.Managers
                     layerScales0 = Vector4.One,
                     layerScales1 = Vector4.One,
                 };
-                deviceContext.UpdateSubresource(
+                _deviceContext.UpdateSubresource(
                     layerDataConstantBuffer,
                     0,
                     ref Unsafe.NullRef<Box>(),
@@ -2872,7 +1279,7 @@ namespace WoWRenderLib.DX11.Managers
                         adt.Terrain.terrainBounds.Min,
                         adt.Terrain.terrainBounds.Max);
                     if (terrainFrustumIntersection != Frustum.BoxIntersection.Outside &&
-                        IsWithinRenderDistance(
+                        ScreenSpaceCulling.IntersectsRenderDistance(
                             camera.Position,
                             terrainSphere.Center,
                             terrainSphere.Radius,
@@ -2880,7 +1287,7 @@ namespace WoWRenderLib.DX11.Managers
                     {
                         var skipChunkFrustumTests =
                             terrainFrustumIntersection == Frustum.BoxIntersection.Inside;
-                        var skipChunkDistanceTests = IsFullyWithinRenderDistance(
+                        var skipChunkDistanceTests = ScreenSpaceCulling.IsFullyWithinRenderDistance(
                             camera.Position,
                             terrainSphere.Center,
                             terrainSphere.Radius,
@@ -2890,7 +1297,7 @@ namespace WoWRenderLib.DX11.Managers
                         {
                             var bounds = adt.Terrain.chunkBounds[c];
                             var boundsSphere = adt.Terrain.chunkBoundingSpheres[c];
-                            if ((!skipChunkDistanceTests && !IsWithinRenderDistance(
+                            if ((!skipChunkDistanceTests && !ScreenSpaceCulling.IntersectsRenderDistance(
                                     camera.Position,
                                     boundsSphere.Center,
                                     boundsSphere.Radius,
@@ -2963,16 +1370,16 @@ namespace WoWRenderLib.DX11.Managers
                         brushColor = BrushColor
                     };
 
-                    deviceContext.UpdateSubresource(adtPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref cb, 0, 0);
+                    _deviceContext.UpdateSubresource(adtPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref cb, 0, 0);
                     ConstantBufferUpdates++;
-                    deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in adtVertexStride, in adtVertexOffset);
+                    _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in adtVertexStride, in adtVertexOffset);
                     VertexBufferBindings++;
                     var alphaMaterialArray = adt.Terrain.alphaMaterialArray;
-                    deviceContext.PSSetShaderResources(TerrainAlphaTextureSlot, 1, ref alphaMaterialArray);
+                    _deviceContext.PSSetShaderResources(TerrainAlphaTextureSlot, 1, ref alphaMaterialArray);
                     var alphaSliceBuffer = adt.Terrain.alphaSliceBuffer;
-                    deviceContext.PSSetConstantBuffers(2, 1, ref alphaSliceBuffer);
+                    _deviceContext.PSSetConstantBuffers(2, 1, ref alphaSliceBuffer);
                     var chunkLayerDataBuffer = adt.Terrain.chunkLayerDataBuffer;
-                    deviceContext.PSSetConstantBuffers(3, 1, ref chunkLayerDataBuffer);
+                    _deviceContext.PSSetConstantBuffers(3, 1, ref chunkLayerDataBuffer);
                     TextureBindingCalls++;
 
                     bool? currentFarLod = null;
@@ -2990,7 +1397,7 @@ namespace WoWRenderLib.DX11.Managers
                             var indexBuffer = useFarLod
                                 ? adt.Terrain.farLodIndiceBuffer
                                 : adt.Terrain.indiceBuffer;
-                            deviceContext.IASetIndexBuffer(indexBuffer, Format.FormatR32Uint, 0);
+                            _deviceContext.IASetIndexBuffer(indexBuffer, Format.FormatR32Uint, 0);
                             IndexBufferBindings++;
                             currentFarLod = useFarLod;
                         }
@@ -3010,7 +1417,7 @@ namespace WoWRenderLib.DX11.Managers
                             if (batch.usesHeightTextures)
                                 shaderIndex += 4;
                             var shader = adtLayerShaderPrograms[shaderIndex];
-                            deviceContext.PSSetShader(shader.PixelShader, ref nullClassInstance, 0);
+                            _deviceContext.PSSetShader(shader.PixelShader, ref nullClassInstance, 0);
                             currentAdtShaderLayerCount = shaderLayerCount;
                             currentAdtUsesHeightTextures = batch.usesHeightTextures;
                         }
@@ -3019,7 +1426,7 @@ namespace WoWRenderLib.DX11.Managers
                             _srvScratch[s] = s < batch.materialFDIDs.Length
                                 ? ResolveTerrainDiffuseTexture(batch.materialFDIDs[s])
                                 : emptyTerrainTexture;
-                        deviceContext.PSSetShaderResources(0, (uint)shaderLayerCount, ref _srvScratch[0]);
+                        _deviceContext.PSSetShaderResources(0, (uint)shaderLayerCount, ref _srvScratch[0]);
                         TextureBindingCalls++;
 
                         if (batch.usesHeightTextures)
@@ -3028,7 +1435,7 @@ namespace WoWRenderLib.DX11.Managers
                                 _srvScratch[s] = s < batch.heightMaterialFDIDs.Length
                                     ? ResolveFrameTexture((uint)batch.heightMaterialFDIDs[s])
                                     : missingTexture;
-                            deviceContext.PSSetShaderResources(
+                            _deviceContext.PSSetShaderResources(
                                 TerrainHeightTextureSlot,
                                 (uint)shaderLayerCount,
                                 ref _srvScratch[0]);
@@ -3038,7 +1445,7 @@ namespace WoWRenderLib.DX11.Managers
                         var indexCount = useFarLod
                             ? TerrainFarLodIndicesPerChunk
                             : TerrainIndicesPerChunk;
-                        deviceContext.DrawIndexed(
+                        _deviceContext.DrawIndexed(
                             indexCount * (uint)compatibleChunkCount,
                             (uint)c * indexCount,
                             0);
@@ -3053,84 +1460,67 @@ namespace WoWRenderLib.DX11.Managers
                 }
             }
             ComPtr<ID3D11GeometryShader> nullGeometryShader = default;
-            deviceContext.GSSetShader(nullGeometryShader, ref nullClassInstance, 0);
+            _deviceContext.GSSetShader(nullGeometryShader, ref nullClassInstance, 0);
             gpuTimer?.EndTerrain();
             TerrainSubmissionTimeMs = RenderADT
                 ? Math.Max(0, Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - TerrainCullingTimeMs)
                 : 0;
 
-            // Bounding box rendering
+            // MH2O is a separate translucent pass. It deliberately does not
+            // depend on RenderADT so terrain can be hidden while liquid stays
+            // visible for inspection.
+            if (RenderLiquid)
+            {
+                var liquidStats = _worldLiquidRenderer.Render(
+                    camera,
+                    adtContainers,
+                    coarseCulledTileRoots,
+                    TerrainRenderDistance,
+                    (float)(Environment.TickCount64 * 0.001),
+                    LightDirection,
+                    AmbientColor,
+                    DiffuseColor,
+                    ClientWorldLighting);
+                candidateLiquidBatches = liquidStats.CandidateBatches;
+                visibleLiquidBatches = liquidStats.VisibleBatches;
+                LiquidDrawCalls = liquidStats.DrawCalls;
+                LiquidSubmittedIndices = liquidStats.SubmittedIndices;
+                LiquidCullingTimeMs = liquidStats.CullingMilliseconds;
+                LiquidSubmissionTimeMs = liquidStats.SubmissionMilliseconds;
+                drawCalls += liquidStats.DrawCalls;
+                submittedIndexCount += liquidStats.SubmittedIndices;
+                CullingTimeMs += liquidStats.CullingMilliseconds;
+
+                // The liquid renderer owns transient state while submitting
+                // MH2O. Restore the scene's opaque raster/depth defaults even
+                // when the debug pass is disabled so later passes and callers
+                // observe the same state contract as before liquid support.
+                _deviceContext.RSSetState(rasterizerState);
+                ComPtr<ID3D11DepthStencilState> nullLiquidDepthState = default;
+                _deviceContext.OMSetDepthStencilState(nullLiquidDepthState, 0);
+            }
+
+            // Debug bounds rendering
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginDebug();
-            var drawCallsBeforeDebug = drawCalls;
             if (ShowBoundingBoxes || ShowBoundingSpheres ||
                 (SelectionVisualsEnabled && SelectedObject != null))
             {
-                deviceContext.RSSetState(wireframeRasterizerState);
-                deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
-                deviceContext.IASetInputLayout(bboxShaderProgram.InputLayout);
-                deviceContext.VSSetShader(bboxShaderProgram.VertexShader, ref nullClassInstance, 0);
-                deviceContext.PSSetShader(bboxShaderProgram.PixelShader, ref nullClassInstance, 0);
-                deviceContext.OMSetDepthStencilState(bboxDepthStencilState, 0);
-
                 lock (SceneObjectLock)
                 {
-                    foreach (var sceneObject in SceneObjects)
-                    {
-                        if (sceneObject is ADTContainer) continue;
-                        if (!SelectionVisualsEnabled && sceneObject.IsSelected) continue;
-                        if (!ShowBoundingBoxes && !ShowBoundingSpheres &&
-                            !(SelectionVisualsEnabled && sceneObject.IsSelected)) continue;
-
-                        var color = SelectionVisualsEnabled && sceneObject.IsSelected
-                            ? new Vector4(0, 1, 0, 1)
-                            : new Vector4(1, 1, 0, 1);
-
-                        if (ShowBoundingBoxes || (SelectionVisualsEnabled && sceneObject.IsSelected))
-                        {
-                            var box = sceneObject.GetBoundingBox();
-                            if (box.HasValue && float.IsFinite(box.Value.Min.X) && float.IsFinite(box.Value.Max.X))
-                            {
-                                BoundingBox localBox;
-                                Matrix4x4 modelMatrix;
-
-                                if (sceneObject is WMOContainer wmo)
-                                {
-                                    localBox = wmo.GetLocalBoundingBox();
-                                    modelMatrix = wmo.GetModelMatrix();
-                                }
-                                else if (sceneObject is M2Container m2)
-                                {
-                                    localBox = m2.GetLocalBoundingBox();
-                                    modelMatrix = m2.GetModelMatrix();
-                                }
-                                else continue;
-
-                                (var boxDrawCalls, _) = DrawBoundingBox(localBox, modelMatrix, color, projectionMatrix, cameraMatrix);
-                                drawCalls += boxDrawCalls;
-                            }
-                        }
-
-                        if (ShowBoundingSpheres || (SelectionVisualsEnabled && sceneObject.IsSelected))
-                        {
-                            var sphere = sceneObject.GetBoundingSphere();
-                            if (sphere.HasValue)
-                            {
-                                (var sphereDrawCalls, _) = DrawBoundingSphere(sphere.Value, new Vector4(0, 0.5f, 1, 1), projectionMatrix, cameraMatrix);
-                                drawCalls += sphereDrawCalls;
-                            }
-                        }
-                    }
+                    DebugDrawCalls = _debugBoundsRenderer.Render(
+                        SceneObjects,
+                        ShowBoundingBoxes,
+                        ShowBoundingSpheres,
+                        SelectionVisualsEnabled && SelectedObject != null,
+                        projectionMatrix,
+                        cameraMatrix,
+                        rasterizerState);
                 }
-
-                deviceContext.RSSetState(rasterizerState);
-                deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
-                ComPtr<ID3D11DepthStencilState> nullDSS = default;
-                deviceContext.OMSetDepthStencilState(nullDSS, 0);
+                drawCalls += DebugDrawCalls;
             }
             gpuTimer?.EndDebug();
             DebugSubmissionTimeMs = Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds;
-            DebugDrawCalls = drawCalls - drawCallsBeforeDebug;
 
             //swapchain.Present(1, 0);
 
@@ -3138,170 +1528,6 @@ namespace WoWRenderLib.DX11.Managers
             gizmoWasOver = false;
 
             return (drawCalls, submittedIndexCount);
-        }
-
-        private static bool IsWithinRenderDistance(Vector3 cameraPosition, Vector3 center, float radius, float distance)
-        {
-            var maxDistance = Math.Max(0f, distance) + Math.Max(0f, radius);
-            return Vector3.DistanceSquared(cameraPosition, center) <= maxDistance * maxDistance;
-        }
-
-        private static bool IsFullyWithinRenderDistance(
-            Vector3 cameraPosition,
-            Vector3 center,
-            float radius,
-            float distance)
-        {
-            var innerDistance = Math.Max(0f, distance) - Math.Max(0f, radius);
-            return innerDistance >= 0f &&
-                Vector3.DistanceSquared(cameraPosition, center) <= innerDistance * innerDistance;
-        }
-
-        private unsafe (uint drawCalls, uint verticeCount) DrawBoundingSphere(BoundingSphere sphere, Vector4 color, Matrix4x4 projection, Matrix4x4 view)
-        {
-            uint drawCalls = 0;
-            uint verticeCount = 0;
-
-            const int segments = 32;
-            var verts = new List<Vector3>();
-
-            for (int pass = 0; pass < 3; pass++)
-            {
-                for (int s = 0; s < segments; s++)
-                {
-                    float a0 = (MathF.PI * 2f / segments) * s;
-                    float a1 = (MathF.PI * 2f / segments) * (s + 1);
-
-                    Vector3 p0, p1;
-                    switch (pass)
-                    {
-                        case 0: // XY
-                            p0 = new Vector3(MathF.Cos(a0), MathF.Sin(a0), 0);
-                            p1 = new Vector3(MathF.Cos(a1), MathF.Sin(a1), 0);
-                            break;
-                        case 1: // XZ
-                            p0 = new Vector3(MathF.Cos(a0), 0, MathF.Sin(a0));
-                            p1 = new Vector3(MathF.Cos(a1), 0, MathF.Sin(a1));
-                            break;
-                        default: // YZ
-                            p0 = new Vector3(0, MathF.Cos(a0), MathF.Sin(a0));
-                            p1 = new Vector3(0, MathF.Cos(a1), MathF.Sin(a1));
-                            break;
-                    }
-
-                    verts.Add(sphere.Center + p0 * sphere.Radius);
-                    verts.Add(sphere.Center + p1 * sphere.Radius);
-                }
-            }
-
-            int vertCount = verts.Count; // 3 * segments * 2 = 192 for segments=32
-            var sphereVerts = verts.ToArray();
-            verticeCount += (uint)vertCount;
-            var vbDesc = new BufferDesc
-            {
-                ByteWidth = (uint)(vertCount * sizeof(Vector3)),
-                Usage = Usage.Dynamic,
-                BindFlags = (uint)BindFlag.VertexBuffer,
-                CPUAccessFlags = (uint)CpuAccessFlag.Write
-            };
-
-            ComPtr<ID3D11Buffer> sphereVB = default;
-            SilkMarshal.ThrowHResult(device.CreateBuffer(in vbDesc, null, ref sphereVB));
-
-            MappedSubresource mappedVB = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(sphereVB, 0, Map.WriteDiscard, 0, ref mappedVB));
-            var dest = new Span<Vector3>(mappedVB.PData, vertCount);
-            sphereVerts.CopyTo(dest);
-            deviceContext.Unmap(sphereVB, 0);
-
-            var cb = new BBoxCB
-            {
-                projection_matrix = projection,
-                view_matrix = view,
-                model_matrix = Matrix4x4.Identity,
-                color = color
-            };
-
-            MappedSubresource mappedCB = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(bboxConstantBuffer, 0, Map.WriteDiscard, 0, ref mappedCB));
-            *(BBoxCB*)mappedCB.PData = cb;
-            deviceContext.Unmap(bboxConstantBuffer, 0);
-
-            uint stride = (uint)sizeof(Vector3);
-            uint offset = 0;
-            deviceContext.IASetVertexBuffers(0, 1, ref sphereVB, in stride, in offset);
-            deviceContext.VSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-            deviceContext.PSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-
-            ComPtr<ID3D11Buffer> nullBuffer = default;
-            uint nullStride = 0, nullOffset = 0;
-            deviceContext.IASetVertexBuffers(1, 1, ref nullBuffer, in nullStride, in nullOffset);
-
-            deviceContext.Draw((uint)vertCount, 0);
-            drawCalls++;
-            sphereVB.Dispose();
-
-            return (drawCalls, verticeCount);
-        }
-
-        private unsafe (uint drawCalls, uint verticeCount) DrawBoundingBox(BoundingBox localBox, Matrix4x4 modelMatrix, Vector4 color, Matrix4x4 projection, Matrix4x4 view)
-        {
-            uint drawCalls = 0;
-            uint verticeCount = 0;
-
-            var min = localBox.Min;
-            var max = localBox.Max;
-
-            var verts = new Vector3[24];
-            int i = 0;
-
-            verts[i++] = new(min.X, min.Y, min.Z); verts[i++] = new(max.X, min.Y, min.Z);
-            verts[i++] = new(max.X, min.Y, min.Z); verts[i++] = new(max.X, min.Y, max.Z);
-            verts[i++] = new(max.X, min.Y, max.Z); verts[i++] = new(min.X, min.Y, max.Z);
-            verts[i++] = new(min.X, min.Y, max.Z); verts[i++] = new(min.X, min.Y, min.Z);
-            verts[i++] = new(min.X, max.Y, min.Z); verts[i++] = new(max.X, max.Y, min.Z);
-            verts[i++] = new(max.X, max.Y, min.Z); verts[i++] = new(max.X, max.Y, max.Z);
-            verts[i++] = new(max.X, max.Y, max.Z); verts[i++] = new(min.X, max.Y, max.Z);
-            verts[i++] = new(min.X, max.Y, max.Z); verts[i++] = new(min.X, max.Y, min.Z);
-            verts[i++] = new(min.X, min.Y, min.Z); verts[i++] = new(min.X, max.Y, min.Z);
-            verts[i++] = new(max.X, min.Y, min.Z); verts[i++] = new(max.X, max.Y, min.Z);
-            verts[i++] = new(max.X, min.Y, max.Z); verts[i++] = new(max.X, max.Y, max.Z);
-            verts[i++] = new(min.X, min.Y, max.Z); verts[i++] = new(min.X, max.Y, max.Z);
-
-            MappedSubresource mappedVB = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(bboxVertexBuffer, 0, Map.WriteDiscard, 0, ref mappedVB));
-            var dest = new Span<Vector3>(mappedVB.PData, 24);
-            verts.CopyTo(dest);
-            deviceContext.Unmap(bboxVertexBuffer, 0);
-
-            var cb = new BBoxCB
-            {
-                projection_matrix = projection,
-                view_matrix = view,
-                model_matrix = modelMatrix,
-                color = color
-            };
-
-            MappedSubresource mappedCB = default;
-            SilkMarshal.ThrowHResult(deviceContext.Map(bboxConstantBuffer, 0, Map.WriteDiscard, 0, ref mappedCB));
-            *(BBoxCB*)mappedCB.PData = cb;
-            deviceContext.Unmap(bboxConstantBuffer, 0);
-
-            uint stride = (uint)sizeof(Vector3);
-            uint offset = 0;
-            deviceContext.IASetVertexBuffers(0, 1, ref bboxVertexBuffer, in stride, in offset);
-            deviceContext.VSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-            deviceContext.PSSetConstantBuffers(0, 1, ref bboxConstantBuffer);
-
-            ComPtr<ID3D11Buffer> nullBuffer = default;
-            uint nullStride = 0, nullOffset = 0;
-            deviceContext.IASetVertexBuffers(1, 1, ref nullBuffer, in nullStride, in nullOffset);
-
-            deviceContext.Draw(24, 0);
-            drawCalls++;
-            verticeCount += 24;
-
-            return (drawCalls, verticeCount);
         }
 
         public static (byte x, byte y) GetTileFromPosition(Vector3 position)
@@ -3340,6 +1566,8 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (disposing)
             {
+                _debugBoundsRenderer.Dispose();
+                _worldLiquidRenderer.Dispose();
                 foreach (var bounds in tileSceneBounds.Values)
                     bounds.Dispose();
                 tileSceneBounds.Clear();
@@ -3347,6 +1575,8 @@ namespace WoWRenderLib.DX11.Managers
 
                 textureSampler.Dispose();
                 clampSampler.Dispose();
+                foreach (var sampler in m2TextureSamplers)
+                    sampler.Dispose();
                 depthStencilView.Dispose();
                 depthTexture.Dispose();
                 adtPerObjectConstantBuffer.Dispose();
@@ -3356,12 +1586,9 @@ namespace WoWRenderLib.DX11.Managers
                 instanceMatrixBuffer.Dispose();
                 emptyTerrainTexture.Dispose();
                 missingTexture.Dispose();
-                bboxDepthStencilState.Dispose();
-                bboxConstantBuffer.Dispose();
-                bboxVertexBuffer.Dispose();
                 rasterizerState.Dispose();
                 wmoRasterizerState.Dispose();
-                wireframeRasterizerState.Dispose();
+                m2TwoSidedRasterizerState.Dispose();
                 foreach (var bs in _blendStates)
                     bs.Dispose();
             }

@@ -55,6 +55,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
     {
         RenderADT = RenderTerrain,
+        RenderLiquid = RenderLiquid,
         RenderWMO = RenderWorldModels,
         RenderM2 = RenderDoodads,
         EnableWmoPortalCulling = WmoPortalCullingEnabled,
@@ -98,6 +99,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _isRendererStatusVisible = true;
     [ObservableProperty] private bool _isMetricsPanelVisible;
     [ObservableProperty] private bool _renderTerrain;
+    [ObservableProperty] private bool _renderLiquid;
     [ObservableProperty] private bool _renderWorldModels;
     [ObservableProperty] private bool _renderDoodads;
     [ObservableProperty] private bool _wmoPortalCullingEnabled;
@@ -181,6 +183,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _moveSpeed = session.Current.Rendering.MovementSpeed;
         _mouseSensitivity = session.Current.Rendering.MouseSensitivity;
         _renderTerrain = session.Current.Rendering.RenderADT;
+        _renderLiquid = session.Current.Rendering.RenderLiquid;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
         _renderDoodads = session.Current.Rendering.RenderM2;
         _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
@@ -244,6 +247,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     }
 
     partial void OnRenderTerrainChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnRenderLiquidChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderWorldModelsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderDoodadsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnWmoPortalCullingEnabledChanged(bool value) => PublishViewportRenderingConfiguration();
@@ -519,7 +523,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             BuildConfiguration = Dx11RuntimeOptions.BuildConfiguration,
             D3D11DebugLayerEnabled = Dx11RuntimeOptions.IsDebugLayerRequested,
             MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
-            TerrainLodTransitionPixels = TerrainLodTransitionPixels
+            TerrainLodTransitionPixels = TerrainLodTransitionPixels,
+            RenderLiquid = RenderLiquid
         };
         IsPerformanceCaptureActive = true;
         IsProfilingPaused = false;
@@ -643,14 +648,15 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     }
 
     private string DescribeVisibilityScenario() =>
-        (RenderTerrain, RenderWorldModels, RenderDoodads) switch
+        (RenderTerrain, RenderLiquid, RenderWorldModels, RenderDoodads) switch
         {
-            (true, false, false) => "terrain-only",
-            (false, true, false) => "wmo-only",
-            (false, false, true) => "m2-only",
-            (true, true, true) => "mixed-world",
-            (false, false, false) => "empty-world",
-            _ => $"terrain-{RenderTerrain}-wmo-{RenderWorldModels}-m2-{RenderDoodads}"
+            (true, true, false, false) => "terrain-liquid-only",
+            (true, false, false, false) => "terrain-only",
+            (false, _, true, false) => "wmo-only",
+            (false, _, false, true) => "m2-only",
+            (true, true, true, true) => "mixed-world",
+            (false, false, false, false) => "empty-world",
+            _ => $"terrain-{RenderTerrain}-liquid-{RenderLiquid}-wmo-{RenderWorldModels}-m2-{RenderDoodads}"
         };
 
     private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
@@ -669,6 +675,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             TerrainRenderDistance = configuration.TerrainRenderDistance;
             ModelRenderDistance = configuration.ModelRenderDistance;
             TileLoadingDistance = configuration.TileLoadingDistance;
+            RenderLiquid = configuration.RenderLiquid;
             ShowBoundingBoxes = configuration.ShowBoundingBoxes;
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;

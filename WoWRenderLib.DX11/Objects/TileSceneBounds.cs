@@ -11,6 +11,7 @@ public sealed class TileSceneBounds : IDisposable
 {
     private readonly HashSet<Container3D> _objects = [];
     private BoundingBox? _terrainBounds;
+    private BoundingBox? _liquidBounds;
     private BoundingBox _combinedBounds;
     private bool _dirty = true;
 
@@ -26,9 +27,16 @@ public sealed class TileSceneBounds : IDisposable
     public bool IsCoarseCulledThisFrame { get; internal set; }
 
     public void SetTerrain(uint rootAdtFileDataId, BoundingBox terrainBounds)
+        => SetTerrain(rootAdtFileDataId, terrainBounds, null);
+
+    public void SetTerrain(
+        uint rootAdtFileDataId,
+        BoundingBox terrainBounds,
+        BoundingBox? liquidBounds)
     {
         RootAdtFileDataId = rootAdtFileDataId;
         _terrainBounds = terrainBounds;
+        _liquidBounds = liquidBounds;
         MarkDirty();
     }
 
@@ -67,6 +75,8 @@ public sealed class TileSceneBounds : IDisposable
         }
 
         var combined = _terrainBounds.Value;
+        if (_liquidBounds.HasValue)
+            combined = Union(combined, _liquidBounds.Value);
         foreach (var sceneObject in _objects)
         {
             var objectBounds = sceneObject.GetBoundingBox();
@@ -91,6 +101,7 @@ public sealed class TileSceneBounds : IDisposable
     {
         _objects.Clear();
         _terrainBounds = null;
+        _liquidBounds = null;
         _dirty = true;
         IsCoarseCulledThisFrame = false;
     }

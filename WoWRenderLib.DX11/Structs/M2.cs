@@ -1,5 +1,6 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
+using System.Numerics;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Structs
@@ -9,6 +10,8 @@ namespace WoWRenderLib.DX11.Structs
         public uint fileDataID;
         public ComPtr<ID3D11Buffer> vertexBuffer;
         public ComPtr<ID3D11Buffer> indiceBuffer;
+        public Vector3[] raycastVertices;
+        public ushort[] raycastIndices;
         public BoundingBox boundingBox;
         public float boundingRadius;
         public Submesh[] submeshes;

@@ -12,6 +12,7 @@ using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.DX11.Streaming;
+using WoWRenderLib.Loaders;
 using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
@@ -110,11 +111,14 @@ namespace WoWRenderLib.DX11
         public double M2SubmissionTimeMs { get; internal set; }
         public double TerrainCullingTimeMs { get; internal set; }
         public double TerrainSubmissionTimeMs { get; internal set; }
+        public double LiquidCullingTimeMs { get; internal set; }
+        public double LiquidSubmissionTimeMs { get; internal set; }
         public double TileHierarchyCullingTimeMs { get; internal set; }
         public double DebugSubmissionTimeMs { get; internal set; }
         public uint WmoDrawCalls { get; internal set; }
         public uint M2DrawCalls { get; internal set; }
         public uint TerrainDrawCalls { get; internal set; }
+        public uint LiquidDrawCalls { get; internal set; }
         public uint DebugDrawCalls { get; internal set; }
         public uint WmoSubmittedInstances { get; internal set; }
         public uint M2SubmittedInstances { get; internal set; }
@@ -122,6 +126,9 @@ namespace WoWRenderLib.DX11
         public ulong WmoSubmittedIndices { get; internal set; }
         public ulong M2SubmittedIndices { get; internal set; }
         public ulong TerrainSubmittedIndices { get; internal set; }
+        public ulong LiquidSubmittedIndices { get; internal set; }
+        public int VisibleLiquidBatches { get; internal set; }
+        public int CandidateLiquidBatches { get; internal set; }
         public uint InstanceBufferMapCalls { get; internal set; }
         public uint ConstantBufferUpdates { get; internal set; }
         public uint TextureBindingCalls { get; internal set; }
@@ -168,6 +175,7 @@ namespace WoWRenderLib.DX11
         private readonly long _generation;
         private readonly CancellationTokenSource _lifetimeCancellation = new();
         private Task? _contentInitializationTask;
+        public WorldLightingData? ClientWorldLighting { get; private set; }
 
         private Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
 
@@ -657,11 +665,14 @@ namespace WoWRenderLib.DX11
                     Stats.M2SubmissionTimeMs = sceneManager.M2SubmissionTimeMs;
                     Stats.TerrainCullingTimeMs = sceneManager.TerrainCullingTimeMs;
                     Stats.TerrainSubmissionTimeMs = sceneManager.TerrainSubmissionTimeMs;
+                    Stats.LiquidCullingTimeMs = sceneManager.LiquidCullingTimeMs;
+                    Stats.LiquidSubmissionTimeMs = sceneManager.LiquidSubmissionTimeMs;
                     Stats.TileHierarchyCullingTimeMs = sceneManager.TileHierarchyCullingTimeMs;
                     Stats.DebugSubmissionTimeMs = sceneManager.DebugSubmissionTimeMs;
                     Stats.WmoDrawCalls = sceneManager.WmoDrawCalls;
                     Stats.M2DrawCalls = sceneManager.M2DrawCalls;
                     Stats.TerrainDrawCalls = sceneManager.TerrainDrawCalls;
+                    Stats.LiquidDrawCalls = sceneManager.LiquidDrawCalls;
                     Stats.DebugDrawCalls = sceneManager.DebugDrawCalls;
                     Stats.WmoSubmittedInstances = sceneManager.WmoSubmittedInstances;
                     Stats.M2SubmittedInstances = sceneManager.M2SubmittedInstances;
@@ -669,6 +680,9 @@ namespace WoWRenderLib.DX11
                     Stats.WmoSubmittedIndices = sceneManager.WmoSubmittedIndices;
                     Stats.M2SubmittedIndices = sceneManager.M2SubmittedIndices;
                     Stats.TerrainSubmittedIndices = sceneManager.TerrainSubmittedIndices;
+                    Stats.LiquidSubmittedIndices = sceneManager.LiquidSubmittedIndices;
+                    Stats.VisibleLiquidBatches = sceneManager.visibleLiquidBatches;
+                    Stats.CandidateLiquidBatches = sceneManager.candidateLiquidBatches;
                     Stats.InstanceBufferMapCalls = sceneManager.InstanceBufferMapCalls;
                     Stats.ConstantBufferUpdates = sceneManager.ConstantBufferUpdates;
                     Stats.TextureBindingCalls = sceneManager.TextureBindingCalls;
@@ -864,6 +878,20 @@ namespace WoWRenderLib.DX11
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
+                    // Temporary fixed profile requested while the world-lighting
+                    // selection path is being implemented. Keep every row value
+                    // in the managed snapshot, and feed direct/ambient colors
+                    // into the shared renderer lighting inputs.
+                    var clientLighting = WorldLightingDataLoader.LoadTemporaryDefault(
+                        WowlibFileSystem.Current);
+                    if (clientLighting != null)
+                    {
+                        ClientWorldLighting = clientLighting;
+                        Settings.AmbientColor = clientLighting.AmbientColor;
+                        Settings.DiffuseColor = clientLighting.DirectColor;
+                        sceneManager.ApplyClientWorldLighting(clientLighting);
+                    }
+
                     sceneManager.GetCurrentWDT();
                     sceneManager.PreloadTEX();
 
@@ -940,6 +968,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.MinimumModelScreenSizePixels = Math.Clamp(Settings.MinimumModelScreenSizePixels, 0f, 16f);
                 sceneManager.TerrainLodTransitionPixels = Math.Clamp(Settings.TerrainLodTransitionPixels, 0f, 256f);
                 sceneManager.RenderADT = Settings.RenderADT;
+                sceneManager.RenderLiquid = Settings.RenderLiquid;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;
                 sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;

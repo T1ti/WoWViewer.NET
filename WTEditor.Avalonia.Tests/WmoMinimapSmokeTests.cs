@@ -10,6 +10,15 @@ namespace WTEditor.Avalonia.Tests;
 [TestClass]
 public sealed class WmoMinimapSmokeTests
 {
+    [DataTestMethod]
+    [DataRow("7.3.0.24472", false)]
+    [DataRow("7.3.0.24473", true)]
+    [DataRow("1.15.7.60000", true)]
+    [DataRow("1.60.1.69876", true)]
+    [DataRow("", false)]
+    public void ModernTextureTable_IsSelectedAtSupportedBuild(string buildName, bool expected) =>
+        Assert.AreEqual(expected, WmoMinimapLoader.UsesModernTextureTable(buildName));
+
     [TestMethod]
     public void NamesAndTranslations_PreserveSourceGroupIndexAndDefaultOffsets()
     {

@@ -84,6 +84,10 @@
                       ToolTip.Tip="Show or hide terrain in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Terrain}"/>
         </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderLiquid}"
+                      ToolTip.Tip="Show or hide MH2O world liquids in this world viewport">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Smooth}"/>
+        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderWorldModels}"
                       ToolTip.Tip="Show or hide WMO buildings in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Wmo}"/>

@@ -10,6 +10,8 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint vao { get; init; }
         public readonly ComPtr<ID3D11Buffer> vertexBuffer { get; init; }
         public readonly ComPtr<ID3D11Buffer> indiceBuffer { get; init; }
+        public readonly Vector3[] raycastVertices { get; init; }
+        public readonly ushort[] raycastIndices { get; init; }
         public readonly uint verticeCount { get; init; }
         public readonly string groupName { get; init; }
         public readonly string mogiGroupName { get; init; }

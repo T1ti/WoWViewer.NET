@@ -55,6 +55,9 @@ public static class M2Loader
         // a live data span.
         var textures = root.Textures;
         var rootMaterials = root.Materials.AsDataSpan();
+        var renderMaterials = new M2RenderMaterial[rootMaterials.Length];
+        for (var i = 0; i < renderMaterials.Length; i++)
+            renderMaterials[i] = new(rootMaterials[i].Flags, rootMaterials[i].BlendingMode);
         var textureFileDataIds = ResolveTextureFileDataIds(fileSystem, model, textures);
         parsed.mats = new M2Material[textures.Count];
         for (var i = 0; i < parsed.mats.Length; i++)
@@ -76,7 +79,7 @@ public static class M2Loader
         parsed.vertexCount = profile.Vertices.Length;
         parsed.indexCount = profile.Indices.Length;
         parsed.geosets = ReadGeosets(profile);
-        parsed.submeshes = ReadSubmeshes(root, profile, parsed.mats);
+        parsed.submeshes = ReadSubmeshes(root, profile, parsed.mats, renderMaterials);
 
         var renderVertices = new M2Vertex[profile.Vertices.Length];
         for (var i = 0; i < renderVertices.Length; i++)
@@ -127,6 +130,8 @@ public static class M2Loader
         ushort TextureCount,
         ushort TextureComboIndex,
         ushort MaterialIndex);
+
+    internal readonly record struct M2RenderMaterial(ushort Flags, ushort BlendMode);
 
     private static ProfileData? ReadProfile(Formats.M2.M2 model)
     {
@@ -270,7 +275,8 @@ public static class M2Loader
     private static Submesh[] ReadSubmeshes(
         Formats.M2.Root.M2Root root,
         ProfileData profile,
-        M2Material[] materials)
+        M2Material[] textures,
+        ReadOnlySpan<M2RenderMaterial> materials)
     {
         var textureLookupTable = root.TextureLookupTable.AsSpan();
         var result = new List<Submesh>(profile.Batches.Length);
@@ -283,6 +289,7 @@ public static class M2Loader
             var section = profile.Sections[batch.SectionIndex];
             var textureIndices = new int[batch.TextureCount];
             var materialIds = new uint[batch.TextureCount];
+            var textureFlags = new uint[batch.TextureCount];
             for (var texture = 0; texture < batch.TextureCount; texture++)
             {
                 var lookupIndex = batch.TextureComboIndex + texture;
@@ -290,20 +297,24 @@ public static class M2Loader
                     ? textureLookupTable[lookupIndex]
                     : (ushort)0;
                 textureIndices[texture] = textureIndex;
-                materialIds[texture] = textureIndex < materials.Length
-                    ? materials[textureIndex].fileDataID
+                materialIds[texture] = textureIndex < textures.Length
+                    ? textures[textureIndex].fileDataID
                     : FallbackTextureFileDataId;
+                textureFlags[texture] = textureIndex < textures.Length
+                    ? textures[textureIndex].flags
+                    : 0;
             }
 
-            var blendType = batch.MaterialIndex < materials.Length ? materials[batch.MaterialIndex].blendMode : 0;
+            var material = ResolveRenderMaterial(batch.MaterialIndex, materials);
             result.Add(new Submesh
             {
                 firstFace = section.FirstIndex,
                 numFaces = section.IndexCount,
                 material = materialIds,
                 textureIndices = textureIndices,
-                blendType = blendType,
-                renderFlags = batch.MaterialIndex < materials.Length ? (ushort)materials[batch.MaterialIndex].flags : (ushort)0,
+                textureFlags = textureFlags,
+                blendType = material.BlendMode,
+                renderFlags = material.Flags,
                 geosetId = section.Id,
                 index = i,
                 vertexShaderID = (uint)GetVertexShaderID(batch.TextureCount, batch.ShaderId),
@@ -313,6 +324,11 @@ public static class M2Loader
 
         return [.. result];
     }
+
+    internal static M2RenderMaterial ResolveRenderMaterial(
+        ushort materialIndex,
+        ReadOnlySpan<M2RenderMaterial> materials) =>
+        materialIndex < materials.Length ? materials[materialIndex] : default;
 
     public static (BoundingBox BoundingBox, float Radius) CalculateRenderBounds(ReadOnlySpan<Vector3> vertices)
     {

@@ -76,6 +76,7 @@ namespace WoWRenderLib.Structs
         public readonly uint numFaces { get; init; }
         public readonly uint[] material { get; init; }
         public readonly int[] textureIndices { get; init; }
+        public readonly uint[] textureFlags { get; init; }
         public readonly uint blendType { get; init; }
         public readonly ushort renderFlags { get; init; }
         public readonly ushort geosetId { get; init; }

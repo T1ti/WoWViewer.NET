@@ -37,6 +37,9 @@
     <None Update="Shaders\m2.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Shaders\liquid.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Shaders\wmo.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

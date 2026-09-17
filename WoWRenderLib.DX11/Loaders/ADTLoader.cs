@@ -102,7 +102,16 @@ namespace WoWRenderLib.DX11.Loaders
                 SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, in subresourceData, ref result.farLodIndiceBuffer));
             }
 
-            foreach (var usedBLP in parsedADT.blpFileDataIDs)
+            // Liquid textures are owned by WorldLiquidResources. Keep them
+            // out of the terrain release set so a texture shared by terrain
+            // and liquid still has exactly one owner for this ADT upload.
+            var liquidTextureIds = parsedADT.worldLiquid?.TextureFileDataIds ?? [];
+            var liquidTextureSet = liquidTextureIds.ToHashSet();
+            var terrainTextureIds = parsedADT.blpFileDataIDs
+                .Where(id => id != 0 && !liquidTextureSet.Contains(id))
+                .Distinct()
+                .ToArray();
+            foreach (var usedBLP in terrainTextureIds)
                 BLPCache.GetOrLoad(device, usedBLP, parsedADT.rootADTFileDataID);
 
             result.doodads = parsedADT.doodads;
@@ -117,7 +126,16 @@ namespace WoWRenderLib.DX11.Loaders
             result.chunkBoundingSpheres = CreateChunkBoundingSpheres(parsedADT.chunkBounds);
             (result.terrainBounds, result.terrainBoundingSphere) =
                 CreateTerrainBounds(parsedADT.chunkBounds);
-            result.blpFileDataIDs = parsedADT.blpFileDataIDs;
+            result.blpFileDataIDs = terrainTextureIds;
+            result.worldLiquid = WorldLiquidLoader.Upload(
+                device,
+                parsedADT.worldLiquid ?? ParsedWorldLiquid.Empty,
+                result.rootADTFileDataID);
+            if (result.worldLiquid.hasBounds)
+            {
+                result.liquidBounds = result.worldLiquid.bounds;
+                result.liquidBoundingSphere = CreateBoundingSphere(result.liquidBounds);
+            }
 
             return result;
         }
@@ -167,6 +185,8 @@ namespace WoWRenderLib.DX11.Loaders
             terrain.alphaSliceBuffer.Dispose();
             terrain.chunkLayerDataBuffer.Dispose();
             terrain.alphaMaterialArray.Dispose();
+
+            WorldLiquidLoader.Unload(ref terrain.worldLiquid, terrain.rootADTFileDataID);
 
             foreach (var usedBLP in terrain.blpFileDataIDs)
                 BLPCache.Release(usedBLP, terrain.rootADTFileDataID);
@@ -319,6 +339,12 @@ namespace WoWRenderLib.DX11.Loaders
             values is { Length: >= MaxTextureLayers }
                 ? new Vector4(values[start], values[start + 1], values[start + 2], values[start + 3])
                 : fallback;
+
+        private static BoundingSphere CreateBoundingSphere(BoundingBox bounds)
+        {
+            var center = (bounds.Min + bounds.Max) * 0.5f;
+            return new BoundingSphere(center, Vector3.Distance(center, bounds.Max));
+        }
     }
 
 }

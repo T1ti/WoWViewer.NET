@@ -14,12 +14,14 @@ using WTEditor.Application.Models;
 using WTEditor.Application.Services;
 using WTEditor.Avalonia.Services;
 using WTEditor.Avalonia.Rendering;
+using WTEditor.Avalonia.Presentation;
 using WTEditor.Avalonia.Controls;
 using WTEditor.Avalonia.ViewModels;
 using WTEditor.Avalonia.Views;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Editing;
+using WoWRenderLib.DX11.Raycasting;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Structs;
@@ -199,6 +201,7 @@ public sealed class EditorSettingsSmokeTests
                 MovementSpeed = 225f,
                 MouseSensitivity = 0.25f,
                 RenderADT = false,
+                RenderLiquid = false,
                 RenderWMO = true,
                 RenderM2 = false,
                 EnableWmoPortalCulling = true,
@@ -806,7 +809,7 @@ public sealed class EditorSettingsSmokeTests
             ]
         };
 
-        var data = Dx11View.ProjectLoadedWorldModelObjectData(
+        var data = WorldModelSelectionDisplayDataFactory.CreateLoaded(
             rendererModel, 123, 999, 42, 0, 1, 0, 1);
         Assert.IsTrue(data.IsLoaded);
         Assert.AreEqual(2, data.DoodadSets!.Count);
@@ -873,6 +876,76 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual("world\\a.m2", names[0].Name);
         Assert.AreEqual(0u, names[0].Offset);
         Assert.AreEqual((uint)"world\\a.mdx".Length + 1u, names[1].Offset);
+    }
+
+    [TestMethod]
+    public void ScreenSpaceCulling_AccountsForSphereRadiusAtRenderDistanceBoundary()
+    {
+        Assert.IsTrue(ScreenSpaceCulling.IntersectsRenderDistance(
+            Vector3.Zero,
+            new Vector3(110f, 0f, 0f),
+            10f,
+            100f));
+        Assert.IsFalse(ScreenSpaceCulling.IntersectsRenderDistance(
+            Vector3.Zero,
+            new Vector3(110.01f, 0f, 0f),
+            10f,
+            100f));
+
+        Assert.IsTrue(ScreenSpaceCulling.IsFullyWithinRenderDistance(
+            Vector3.Zero,
+            new Vector3(90f, 0f, 0f),
+            10f,
+            100f));
+        Assert.IsFalse(ScreenSpaceCulling.IsFullyWithinRenderDistance(
+            Vector3.Zero,
+            new Vector3(90.01f, 0f, 0f),
+            10f,
+            100f));
+        Assert.IsFalse(ScreenSpaceCulling.IsFullyWithinRenderDistance(
+            Vector3.Zero,
+            Vector3.Zero,
+            101f,
+            100f));
+    }
+
+    [TestMethod]
+    public void TriangleMeshRaycaster_RejectsBoundsOnlyHitsAndReturnsWorldDistance()
+    {
+        Vector3[] vertices =
+        [
+            new(0f, 0f, 0f),
+            new(1f, 0f, 0f),
+            new(0f, 1f, 0f)
+        ];
+        ushort[] indices = [0, 1, 2];
+        var modelMatrix = Matrix4x4.CreateScale(2f) * Matrix4x4.CreateTranslation(0f, 0f, 5f);
+        var hitRay = new Ray(new Vector3(0.5f, 0.5f, 10f), -Vector3.UnitZ);
+
+        Assert.IsTrue(TriangleMeshRaycaster.TryCreateContext(hitRay, modelMatrix, out var hitContext));
+        Assert.IsTrue(TriangleMeshRaycaster.TryIntersectTriangles(
+            hitContext,
+            vertices,
+            indices,
+            float.MaxValue,
+            out var distance));
+        Assert.AreEqual(5f, distance, 1e-4f);
+        Assert.IsFalse(TriangleMeshRaycaster.TryIntersectTriangles(
+            hitContext,
+            vertices,
+            indices,
+            4.99f,
+            out _));
+
+        // This ray crosses the transformed mesh bounds, but not the triangle itself.
+        var boundsOnlyRay = new Ray(new Vector3(1.5f, 1.5f, 10f), -Vector3.UnitZ);
+        Assert.IsTrue(TriangleMeshRaycaster.TryCreateContext(boundsOnlyRay, modelMatrix, out var missContext));
+        Assert.IsFalse(TriangleMeshRaycaster.TryIntersectTriangles(
+            missContext,
+            vertices,
+            indices,
+            float.MaxValue,
+            out _));
     }
 
     [TestMethod]
@@ -1740,6 +1813,28 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(777u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(777, 11, 0));
         Assert.AreEqual(888u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(0, 0, 888));
         Assert.AreEqual(186184u, WoWRenderLib.Loaders.M2Loader.SelectTextureFileDataId(0, 11, 888));
+    }
+
+    [TestMethod]
+    public void M2RenderMaterial_UsesBatchMaterialFlagsRatherThanTextureFlags()
+    {
+        M2Loader.M2RenderMaterial[] materials =
+        [
+            new(0, 0),
+            new(4, 1)
+        ];
+
+        var leaves = M2Loader.ResolveRenderMaterial(1, materials);
+        Assert.AreEqual((ushort)4, leaves.Flags);
+        Assert.AreEqual((ushort)1, leaves.BlendMode);
+        Assert.IsTrue(SceneManager.IsM2TwoSided(leaves.Flags));
+        Assert.IsFalse(SceneManager.IsM2TwoSided(0));
+        Assert.AreEqual(128f / 255f, SceneManager.GetAlphaReference(1));
+        Assert.AreEqual(-1f, SceneManager.GetAlphaReference(0));
+        Assert.AreEqual(0, SceneManager.GetM2SamplerIndex(0));
+        Assert.AreEqual(2, SceneManager.GetM2SamplerIndex(1));
+        Assert.AreEqual(1, SceneManager.GetM2SamplerIndex(2));
+        Assert.AreEqual(3, SceneManager.GetM2SamplerIndex(3));
     }
 
     [TestMethod]

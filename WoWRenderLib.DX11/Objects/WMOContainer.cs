@@ -2,6 +2,7 @@
 using Silk.NET.Direct3D11;
 using System.Numerics;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11.Raycasting;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
@@ -236,6 +237,54 @@ namespace WoWRenderLib.DX11.Objects
         {
             var wmo = GetWMO();
             return new BoundingBox(wmo.boundingBox.Min, wmo.boundingBox.Max);
+        }
+
+        public override bool TryRaycastTriangles(
+            Ray ray,
+            float maximumDistance,
+            out float distance)
+        {
+            distance = maximumDistance;
+            if (!IsLoaded ||
+                !TriangleMeshRaycaster.TryCreateContext(ray, GetModelMatrix(), out var context))
+            {
+                return false;
+            }
+
+            var hit = false;
+            var wmo = GetWMO();
+            var enabledGroups = EnabledGroups;
+            for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+            {
+                if (groupIndex >= enabledGroups.Length || !enabledGroups[groupIndex])
+                    continue;
+
+                var group = wmo.groupBatches[groupIndex];
+                if (group.raycastVertices is not { Length: > 0 } vertices ||
+                    group.raycastIndices is not { Length: > 2 } indices ||
+                    !IntersectionTests.RayIntersectsBox(
+                        context.LocalRay,
+                        group.boundingBox,
+                        out _))
+                {
+                    continue;
+                }
+
+                if (!TriangleMeshRaycaster.TryIntersectTriangles(
+                        context,
+                        vertices,
+                        indices,
+                        distance,
+                        out var groupDistance))
+                {
+                    continue;
+                }
+
+                distance = groupDistance;
+                hit = true;
+            }
+
+            return hit;
         }
 
         public static string CreateEnabledGroupSignature(ReadOnlySpan<bool> groups)

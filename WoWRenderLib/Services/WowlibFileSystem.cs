@@ -27,6 +27,10 @@ public static class WowlibFileSystem
     public static Fs.FileSystem OpenForClient(string clientPath, string cascProduct)
     {
         var installPath = ResolveInstallPath(clientPath, cascProduct);
+        // CASC roots frequently omit name hashes.  The database and asset
+        // loaders therefore need the community listfile available before the
+        // filesystem is opened so FileSystem.Resolve can fill in FileDataIDs.
+        Listfile.EnsureLoadedAsync().GetAwaiter().GetResult();
         var projectDirectory = GetProjectDirectory(cascProduct);
         var listfilePath = GetListfilePath();
         using var settings = Fs.FileSystemSettings.Detect(

@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +15,7 @@ using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using WTEditor.Application.Models;
 using WTEditor.Application.Services;
+using WTEditor.Avalonia.Presentation;
 using WTEditor.Avalonia.Rendering;
 using WTEditor.Avalonia.ViewModels;
 using WoWRenderLib.DX11;
@@ -79,11 +78,8 @@ namespace WTEditor.Avalonia.Controls
         private ClientConfiguration _clientConfiguration = new();
         private readonly AutomatedBenchmarkOptions _benchmarkOptions = AutomatedBenchmarkOptions.Current;
         private readonly AutomatedBenchmarkCoordinator? _benchmarkCoordinator;
+        private readonly SelectedObjectDisplayProjection _selectionDisplayProjection = new();
         private int _lastBenchmarkStatusSecond = -1;
-        private Container3D? _lastSelectedObject;
-        private EditorObjectId _lastSelectedObjectId;
-        private IEditorObjectData? _lastSelectedObjectData;
-        private bool _lastSelectionHadListfile;
         private bool _terrainStrokeActive;
         private IUndoTransaction? _terrainStrokeTransaction;
         private bool? _lastPublishedTerrainDirtyState;
@@ -642,7 +638,7 @@ namespace WTEditor.Avalonia.Controls
             _last = now;
 
             var inputStarted = Stopwatch.GetTimestamp();
-            var inputFrame = BuildInputFrame();
+            var inputFrame = ViewportInputProjection.Create(_vm);
             var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
             var terrainStrokeRequested = inputFrame.Mode == EditorModeId.Terrain &&
                                          inputFrame.LeftMouseDown &&
@@ -723,149 +719,20 @@ namespace WTEditor.Avalonia.Controls
                         engine.CurrentWdtFileDataId));
                 }
 
-                var gpuUploadMilliseconds = engine.Stats.GpuUploadTimeMs ?? 0;
-                var gpuWorldModelMilliseconds = engine.Stats.GpuWorldModelTimeMs ?? 0;
-                var gpuDoodadMilliseconds = engine.Stats.GpuDoodadTimeMs ?? 0;
-                var gpuTerrainMilliseconds = engine.Stats.GpuTerrainTimeMs ?? 0;
-                var gpuDebugMilliseconds = engine.Stats.GpuDebugTimeMs ?? 0;
-                var hasDetailedGpuTiming =
-                    engine.Stats.GpuWorldModelTimeMs.HasValue ||
-                    engine.Stats.GpuDoodadTimeMs.HasValue ||
-                    engine.Stats.GpuTerrainTimeMs.HasValue ||
-                    engine.Stats.GpuDebugTimeMs.HasValue;
-                var gpuOtherMilliseconds = Math.Max(
-                    0,
-                    (engine.Stats.GpuFrameTimeMs ?? 0) - gpuUploadMilliseconds -
-                    (hasDetailedGpuTiming
-                        ? gpuWorldModelMilliseconds + gpuDoodadMilliseconds +
-                          gpuTerrainMilliseconds + gpuDebugMilliseconds
-                        : engine.Stats.GpuDrawTimeMs ?? 0));
-                var profiledSceneCpuMilliseconds =
-                    engine.Stats.SceneSetupTimeMs +
-                    engine.Stats.TileHierarchyCullingTimeMs +
-                    engine.Stats.WmoCullingTimeMs + engine.Stats.WmoSubmissionTimeMs +
-                    engine.Stats.M2CullingTimeMs + engine.Stats.M2SubmissionTimeMs +
-                    engine.Stats.TerrainCullingTimeMs + engine.Stats.TerrainSubmissionTimeMs +
-                    engine.Stats.DebugSubmissionTimeMs;
-                var sceneSetupDebugAndOtherMilliseconds =
-                    engine.Stats.SceneSetupTimeMs + engine.Stats.DebugSubmissionTimeMs +
-                    Math.Max(0, engine.Stats.SceneRenderTimeMs - profiledSceneCpuMilliseconds);
-                var steps = new List<FrameTimingStep>
-                {
-                    new("World streaming (CPU)", engine.Stats.TileUpdateTimeMs),
-                    new("Resource upload submission (CPU)", engine.Stats.AssetUploadTimeMs),
-                    new("Tile hierarchy culling (CPU)", engine.Stats.TileHierarchyCullingTimeMs),
-                    new("WMO culling (CPU)", engine.Stats.WmoCullingTimeMs),
-                    new("WMO command submission (CPU)", engine.Stats.WmoSubmissionTimeMs),
-                    new("M2 culling (CPU)", engine.Stats.M2CullingTimeMs),
-                    new("M2 command submission (CPU)", engine.Stats.M2SubmissionTimeMs),
-                    new("Terrain culling (CPU)", engine.Stats.TerrainCullingTimeMs),
-                    new("Terrain command submission (CPU)", engine.Stats.TerrainSubmissionTimeMs),
-                    new("Scene setup / debug (CPU)", sceneSetupDebugAndOtherMilliseconds),
-                    new("Other frame work (CPU)", inputMilliseconds + engine.Stats.UpdateTimeMs + engine.Stats.RenderOverheadTimeMs),
-                    new("Resource uploads (GPU timeline)", gpuUploadMilliseconds, FrameTimingDomain.Gpu)
-                };
-                if (hasDetailedGpuTiming)
-                {
-                    steps.Add(new("WMO span (GPU timeline)", gpuWorldModelMilliseconds, FrameTimingDomain.Gpu));
-                    steps.Add(new("M2 span (GPU timeline)", gpuDoodadMilliseconds, FrameTimingDomain.Gpu));
-                    steps.Add(new("Terrain span (GPU timeline)", gpuTerrainMilliseconds, FrameTimingDomain.Gpu));
-                    steps.Add(new("Debug span (GPU timeline)", gpuDebugMilliseconds, FrameTimingDomain.Gpu));
-                }
-                else
-                {
-                    steps.Add(new("World span (GPU timeline)", engine.Stats.GpuDrawTimeMs ?? 0, FrameTimingDomain.Gpu));
-                }
-                steps.Add(new("Other GPU timeline", gpuOtherMilliseconds, FrameTimingDomain.Gpu));
-                steps.Add(new("Producer mutex wait", engine.Stats.MutexWaitTimeMs, FrameTimingDomain.Presentation));
-                var profileSnapshot = new FrameProfileSnapshot(
+                var profileSnapshot = FrameProfileSnapshotFactory.Create(
                     ++_profileFrameNumber,
                     DateTimeOffset.UtcNow,
-                    delta * 1_000d,
-                    inputMilliseconds + engine.Stats.CpuFrameTimeMs,
-                    engine.Stats.GpuFrameTimeMs,
-                    steps,
-                    (int)engine.Stats.DrawCalls,
-                    checked((long)engine.Stats.SubmittedIndexCount),
-                    engine.Stats.PendingAssetOperations)
-                {
-                    EngineFrameMilliseconds = engineFrameMilliseconds,
-                    StreamingBudgetMilliseconds = streamingBudgetMilliseconds,
-                    UploadedResources = engine.Stats.UploadedResources,
-                    ViewportWidth = width,
-                    ViewportHeight = height,
-                    Culling = new CullingMetrics(
-                        engine.Stats.VisibleTerrainChunks,
-                        engine.Stats.CandidateTerrainChunks,
-                        engine.Stats.VisibleWorldModels,
-                        engine.Stats.CandidateWorldModels,
-                        engine.Stats.VisibleDoodads,
-                        engine.Stats.CandidateDoodads,
-                        engine.Stats.SizeCulledWorldModels,
-                        engine.Stats.SizeCulledDoodads,
-                        engine.Stats.FarLodTerrainChunks,
-                        engine.Stats.CandidateTiles,
-                        engine.Stats.CoarseCulledTiles,
-                        engine.Stats.PortalCulledWmoGroups,
-                        engine.Stats.PortalCulledDoodads,
-                        engine.Stats.TraversedWmoPortalReferences),
-                    RenderWorkload = new RenderWorkloadMetrics(
-                        new RenderPassMetrics[]
-                        {
-                            new(
-                                "World models (WMO)",
-                                engine.Stats.WmoCullingTimeMs,
-                                engine.Stats.WmoSubmissionTimeMs,
-                                engine.Stats.GpuWorldModelTimeMs,
-                                (int)engine.Stats.WmoDrawCalls,
-                                (int)engine.Stats.WmoSubmittedInstances,
-                                "instance-batch submissions",
-                                checked((long)engine.Stats.WmoSubmittedIndices)),
-                            new(
-                                "Doodads (M2)",
-                                engine.Stats.M2CullingTimeMs,
-                                engine.Stats.M2SubmissionTimeMs,
-                                engine.Stats.GpuDoodadTimeMs,
-                                (int)engine.Stats.M2DrawCalls,
-                                (int)engine.Stats.M2SubmittedInstances,
-                                "instance-batch submissions",
-                                checked((long)engine.Stats.M2SubmittedIndices)),
-                            new(
-                                "Terrain (ADT)",
-                                engine.Stats.TerrainCullingTimeMs,
-                                engine.Stats.TerrainSubmissionTimeMs,
-                                engine.Stats.GpuTerrainTimeMs,
-                                (int)engine.Stats.TerrainDrawCalls,
-                                (int)engine.Stats.TerrainSubmittedChunks,
-                                "visible chunks",
-                                checked((long)engine.Stats.TerrainSubmittedIndices))
-                        },
-                        (int)engine.Stats.InstanceBufferMapCalls,
-                        (int)engine.Stats.ConstantBufferUpdates,
-                        (int)engine.Stats.TextureBindingCalls,
-                        (int)engine.Stats.BlendStateBindings,
-                        (int)engine.Stats.VertexBufferBindings,
-                        (int)engine.Stats.IndexBufferBindings),
-                    AssetStreaming = new AssetStreamingProfile(
-                        ToProfile(engine.Stats.AssetStreaming.Adt),
-                        ToProfile(engine.Stats.AssetStreaming.Blp),
-                        ToProfile(engine.Stats.AssetStreaming.M2),
-                        ToProfile(engine.Stats.AssetStreaming.Wmo))
-                };
+                    delta,
+                    inputMilliseconds,
+                    engineFrameMilliseconds,
+                    streamingBudgetMilliseconds,
+                    width,
+                    height,
+                    engine.Stats);
                 _vm.UpdatePerformanceProfile(profileSnapshot);
                 UpdateAutomatedBenchmark(profileSnapshot);
             }
         }
-
-        private static AssetPipelineProfile ToProfile(
-            WoWRenderLib.DX11.Streaming.AssetPipelineMetrics metrics) => new(
-                metrics.Pending,
-                metrics.Active,
-                metrics.Completed,
-                metrics.Skipped,
-                metrics.Failed,
-                metrics.LastProcessingMilliseconds,
-                metrics.MaximumProcessingMilliseconds);
 
         private void QueueNextRenderFrame()
         {
@@ -911,400 +778,9 @@ namespace WTEditor.Avalonia.Controls
             if (_vm == null)
                 return;
 
-            if (selectedObject == null)
-            {
-                _lastSelectedObject = null;
-                _vm.UpdateSelectedObject(null);
-                return;
-            }
-
-            if (!ReferenceEquals(_lastSelectedObject, selectedObject))
-            {
-                _lastSelectedObject = selectedObject;
-                _lastSelectedObjectId = EditorObjectId.New();
-                _lastSelectedObjectData = CreateObjectData(selectedObject);
-                _lastSelectionHadListfile = WoWRenderLib.Listfile.IsLoaded;
-            }
-            else if (!_lastSelectionHadListfile && WoWRenderLib.Listfile.IsLoaded)
-            {
-                _lastSelectedObjectData = CreateObjectData(selectedObject);
-                _lastSelectionHadListfile = true;
-            }
-            else if (selectedObject is WMOContainer selectedWmo &&
-                     _lastSelectedObjectData is WorldModelObjectData { IsLoaded: false } &&
-                     selectedWmo.IsLoaded)
-            {
-                _lastSelectedObjectData = CreateObjectData(selectedObject);
-            }
-            else if (selectedObject is ADTContainer selectedAdt &&
-                     _lastSelectedObjectData is TerrainObjectData terrainData &&
-                     terrainData.IsModified != selectedAdt.IsModified)
-            {
-                _lastSelectedObjectData = CreateObjectData(selectedAdt);
-            }
-
-            var rotation = selectedObject.Rotation * (MathF.PI / 180f);
-            var transform = new ObjectTransform(
-                selectedObject.Position,
-                Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z),
-                new Vector3(selectedObject.Scale));
-
-            var snapshot = new EditorObjectSnapshot(
-                _lastSelectedObjectId,
-                GetObjectDisplayName(selectedObject, _lastSelectedObjectData),
-                selectedObject switch
-                {
-                    M2Container => "M2 model",
-                    WMOContainer => "World model",
-                    ADTContainer => "Terrain tile",
-                    _ => selectedObject.GetType().Name
-                },
-                transform,
-                _lastSelectedObjectData);
-
-            _vm.UpdateSelectedObject(snapshot);
+            _vm.UpdateSelectedObject(
+                _selectionDisplayProjection.CreateDisplaySnapshot(selectedObject));
         }
-
-        private static IEditorObjectData? CreateObjectData(Container3D selectedObject) => selectedObject switch
-        {
-            M2Container m2 => CreateM2ObjectData(m2),
-            WMOContainer wmo => CreateWorldModelObjectData(wmo),
-            ADTContainer adt => new TerrainObjectData(
-                adt.FileDataId,
-                adt.mapTile.tileX,
-                adt.mapTile.tileY,
-                adt.IsLoaded,
-                adt.IsModified),
-            _ => null
-        };
-
-        private static M2ObjectData CreateM2ObjectData(M2Container m2)
-        {
-            try
-            {
-                var model = m2.GetM2();
-                var textureDetails = model.mats.Select((texture, index) => new ModelTextureData(
-                    index,
-                    new AssetReference(texture.fileDataID, WoWRenderLib.Listfile.GetDisplayName(texture.fileDataID)),
-                    (uint)texture.flags)).ToArray();
-                var materials = model.submeshes.Select((batch, index) => new ModelMaterialData(
-                    index,
-                    batch.blendType,
-                    batch.renderFlags,
-                    string.Empty,
-                    EnumName<ShaderEnums.M2VertexShader>(batch.vertexShaderID),
-                    EnumName<ShaderEnums.M2PixelShader>(batch.pixelShaderID),
-                    SafeAssets(() => batch.material),
-                    TextureSlots: SafeM2TextureSlots(() => batch.textureIndices, textureDetails))).ToArray();
-                var batches = model.submeshes.Select((batch, index) => new ModelBatchData(
-                    index,
-                    null,
-                    index,
-                    batch.firstFace,
-                    batch.numFaces,
-                    batch.blendType,
-                    batch.renderFlags,
-                    string.Empty,
-                    EnumName<ShaderEnums.M2VertexShader>(batch.vertexShaderID),
-                    EnumName<ShaderEnums.M2PixelShader>(batch.pixelShaderID),
-                    SafeAssets(() => batch.material))).ToArray();
-                var enabledGeosets = m2.EnabledGeosets;
-                var geosets = model.geosets.Select((geoset, index) => new ModelGeosetData(
-                    index,
-                    geoset.id,
-                    GetGeosetType(geoset.id),
-                    geoset.level,
-                    geoset.firstVertex,
-                    geoset.vertexCount,
-                    geoset.firstIndex,
-                    geoset.indexCount,
-                    index < enabledGeosets.Length && enabledGeosets[index])).ToArray();
-                return new M2ObjectData(
-                    m2.FileDataId,
-                    m2.ParentFileDataId,
-                    m2.EnabledGeosets.Length,
-                    m2.ParentWMO != null,
-                    WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
-                    SafeAssets(() => model.mats.Select(material => material.fileDataID)),
-                    m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                    WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
-                    new ModelAdvancedData(
-                        model.submeshes?.Length ?? 0,
-                        model.vertexCount,
-                        model.indexCount / 3,
-                        model.animationCount,
-                        model.particleEmitterCount,
-                        model.boneCount,
-                        model.attachmentCount),
-                    m2.ParentWMO == null
-                        ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)
-                        : null,
-                    materials,
-                    batches,
-                    geosets,
-                    textureDetails);
-            }
-            catch
-            {
-                return new M2ObjectData(
-                    m2.FileDataId,
-                    m2.ParentFileDataId,
-                    0,
-                    m2.ParentWMO != null,
-                    WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
-                    [],
-                    m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                    WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
-                    null,
-                    m2.ParentWMO == null
-                        ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)
-                        : null);
-            }
-        }
-
-        private static WorldModelObjectData CreateWorldModelObjectData(WMOContainer wmo)
-        {
-            if (!wmo.IsLoaded)
-                return CreateUnloadedWorldModelObjectData(wmo);
-
-            try
-            {
-                return ProjectLoadedWorldModelObjectData(
-                    wmo.GetWMO(),
-                    wmo.FileDataId,
-                    wmo.ParentFileDataId,
-                    wmo.UniqueID,
-                    wmo.PlacementFlags,
-                    wmo.PlacementDoodadSet,
-                    wmo.PlacementNameSet,
-                    wmo.ActiveDoodads.Count);
-            }
-            catch (Exception exception)
-            {
-                Debug.WriteLine($"Unable to project loaded WMO {wmo.FileDataId} for the inspector: {exception}");
-                Console.Error.WriteLine($"Unable to project loaded WMO {wmo.FileDataId} for the inspector: {exception.Message}");
-                return CreateUnloadedWorldModelObjectData(wmo);
-            }
-        }
-
-        internal static WorldModelObjectData ProjectLoadedWorldModelObjectData(
-            WoWRenderLib.DX11.Structs.WorldModel model,
-            uint fileDataId,
-            uint parentFileDataId,
-            uint uniqueId,
-            ushort placementFlags,
-            ushort placementDoodadSet,
-            ushort placementNameSet,
-            int activeDoodadCount)
-        {
-                var preppedMaterials = model.preppedMats ?? [];
-                var materials = preppedMaterials.Select((material, index) => new ModelMaterialData(
-                    index,
-                    material.BlendMode,
-                    material.Flags,
-                    EnumName<MOMTShader>((uint)material.Shader),
-                    material.VertexShader.ToString(),
-                    material.PixelShader.ToString(),
-                    SafeAssets(() => GetWmoTextureIds(material)),
-                    Color1: material.Color1,
-                    Color1B: material.Color1B,
-                    Color2: material.Color2,
-                    Color3: material.Color3,
-                    GroundType: material.GroundType,
-                    ExtendedFlags: material.Flags3,
-                    TextureSlots: GetWmoTextureSlots(material))).ToArray();
-                var renderBatches = model.wmoRenderBatches ?? [];
-                var detailedBatches = renderBatches.Select((batch, index) => new ModelBatchData(
-                    index,
-                    checked((int)batch.groupID),
-                    batch.materialIndex,
-                    batch.firstFace,
-                    batch.numFaces,
-                    batch.blendType,
-                    0,
-                    EnumName<MOMTShader>(batch.shader),
-                    batch.materialIndex >= 0 && batch.materialIndex < preppedMaterials.Length
-                        ? preppedMaterials[batch.materialIndex].VertexShader.ToString()
-                        : string.Empty,
-                    batch.materialIndex >= 0 && batch.materialIndex < preppedMaterials.Length
-                        ? preppedMaterials[batch.materialIndex].PixelShader.ToString()
-                        : string.Empty,
-                    SafeAssets(() => batch.materialFDIDs))).ToArray();
-                var groups = (model.groupBatches ?? []).Select((group, index) =>
-                {
-                    var batches = renderBatches
-                        .Where(batch => batch.groupID == (uint)index)
-                        .ToArray();
-                    return new WorldModelGroupData(
-                        index,
-                        string.IsNullOrWhiteSpace(group.groupName) ? $"Group {index}" : group.groupName,
-                        group.mogiGroupName ?? string.Empty,
-                        group.groupID,
-                        batches.Length,
-                        checked((int)group.verticeCount),
-                        checked((int)(batches.Sum(batch => (long)batch.numFaces) / 3)),
-                        group.doodadReferences?.Length ?? 0,
-                        group.flags);
-                }).ToArray();
-                return new WorldModelObjectData(
-                    fileDataId,
-                    parentFileDataId,
-                    groups.Length,
-                    model.doodadSets?.Length ?? 0,
-                    activeDoodadCount,
-                    model.rootWMOFileDataID == fileDataId,
-                    WoWRenderLib.Listfile.GetDisplayName(fileDataId),
-                    SafeAssets(() => preppedMaterials.SelectMany(GetWmoTextureIds)),
-                    uniqueId,
-                    WoWRenderLib.Listfile.GetDisplayName(parentFileDataId),
-                    groups,
-                    new MapPlacementData(
-                        MapPlacementKind.Modf,
-                        uniqueId,
-                        placementFlags,
-                        placementDoodadSet,
-                        placementNameSet),
-                    new WorldModelRootData(model.ambientColor, model.flags),
-                    materials,
-                    detailedBatches,
-                    (model.doodadSets ?? []).Select((name, index) =>
-                        string.IsNullOrWhiteSpace(name) ? $"Set {index}" : name).ToArray());
-        }
-
-        private static WorldModelObjectData CreateUnloadedWorldModelObjectData(WMOContainer wmo) =>
-            new(
-                    wmo.FileDataId,
-                    wmo.ParentFileDataId,
-                    0,
-                    0,
-                    wmo.ActiveDoodads.Count,
-                    false,
-                    WoWRenderLib.Listfile.GetDisplayName(wmo.FileDataId),
-                    [],
-                    wmo.UniqueID,
-                    WoWRenderLib.Listfile.GetDisplayName(wmo.ParentFileDataId),
-                    [],
-                    new MapPlacementData(
-                        MapPlacementKind.Modf,
-                        wmo.UniqueID,
-                        wmo.PlacementFlags,
-                        wmo.PlacementDoodadSet,
-                        wmo.PlacementNameSet));
-
-        private static string GetObjectDisplayName(Container3D selectedObject, IEditorObjectData? data)
-        {
-            var fileName = data switch
-            {
-                M2ObjectData m2 => m2.FileName,
-                WorldModelObjectData wmo => wmo.FileName,
-                _ => string.Empty
-            };
-            return string.IsNullOrWhiteSpace(fileName) || fileName.StartsWith("FDID ", StringComparison.Ordinal)
-                ? $"{selectedObject.GetType().Name.Replace("Container", string.Empty)} {selectedObject.FileDataId}"
-                : Path.GetFileName(fileName);
-        }
-
-        private static IEnumerable<uint> GetWmoTextureIds(WoWRenderLib.Structs.PreppedWMOMaterial material)
-        {
-            yield return material.TexFileDataID0;
-            yield return material.TexFileDataID1;
-            yield return material.TexFileDataID2;
-            yield return material.TexFileDataID3;
-            yield return material.TexFileDataID4;
-            yield return material.TexFileDataID5;
-            yield return material.TexFileDataID6;
-            yield return material.TexFileDataID7;
-            yield return material.TexFileDataID8;
-        }
-
-        private static IReadOnlyList<ModelTextureData> GetWmoTextureSlots(
-            WoWRenderLib.Structs.PreppedWMOMaterial material)
-        {
-            var ids = new[]
-            {
-                material.TexFileDataID0, material.TexFileDataID1, material.TexFileDataID2,
-                material.TexFileDataID3, material.TexFileDataID4, material.TexFileDataID5,
-                material.TexFileDataID6, material.TexFileDataID7, material.TexFileDataID8
-            };
-            return ids.Select((fileDataId, index) => (fileDataId, index))
-                .Where(item => item.fileDataId is not 0 and not uint.MaxValue)
-                .Select(item => new ModelTextureData(
-                    item.index + 1,
-                    new AssetReference(item.fileDataId, WoWRenderLib.Listfile.GetDisplayName(item.fileDataId))))
-                .ToArray();
-        }
-
-        private static IReadOnlyList<AssetReference> SafeAssets(Func<IEnumerable<uint>> getIds)
-        {
-            try
-            {
-                return getIds()
-                    .Where(fileDataId => fileDataId is not 0 and not uint.MaxValue)
-                    .Distinct()
-                    .Select(fileDataId => new AssetReference(
-                        fileDataId,
-                        WoWRenderLib.Listfile.GetDisplayName(fileDataId)))
-                    .ToArray();
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        private static IReadOnlyList<ModelTextureData> SafeM2TextureSlots(
-            Func<IEnumerable<int>> getIndices,
-            IReadOnlyList<ModelTextureData> textures)
-        {
-            try
-            {
-                return getIndices()
-                    .Where(index => index >= 0 && index < textures.Count)
-                    .Select((index, slot) => new ModelTextureData(
-                        slot + 1,
-                        textures[index].Asset,
-                        textures[index].Flags))
-                    .ToArray();
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        private static string EnumName<TEnum>(uint value) where TEnum : struct, Enum
-        {
-            var enumValue = (TEnum)Enum.ToObject(typeof(TEnum), value);
-            return Enum.IsDefined(enumValue) ? enumValue.ToString() : value.ToString();
-        }
-
-        private static string GetGeosetType(ushort id) => (id / 100) switch
-        {
-            0 => "Base skin",
-            1 => "Hair",
-            2 => "Facial hair 1",
-            3 => "Facial hair 2",
-            4 => "Facial hair 3",
-            5 => "Gloves",
-            6 => "Boots",
-            7 => "Ears",
-            8 => "Wristbands",
-            9 => "Kneepads",
-            10 => "Chest",
-            11 => "Pants",
-            12 => "Tabard",
-            13 => "Trousers",
-            14 => "Cloak",
-            16 => "Eye effects",
-            17 => "Belt",
-            18 => "Bones",
-            19 => "Feet",
-            20 => "Head",
-            21 => "Torso",
-            22 => "Hand attachment",
-            23 => "Head attachment",
-            var category => $"Category {category}"
-        };
 
         private void OnSelectedObjectTransformRequested(object? sender, ObjectTransform transform)
         {
@@ -1377,8 +853,8 @@ namespace WTEditor.Avalonia.Controls
         private void OnSelectedWmoPlacementRequested(object? sender, ViewModels.WmoPlacementSelection selection)
         {
             _rendererSession.Engine?.UpdateSelectedWmoPlacement(selection.DoodadSet, selection.NameSet);
-            if (_lastSelectedObject is WMOContainer wmo)
-                _lastSelectedObjectData = CreateWorldModelObjectData(wmo);
+            if (_rendererSession.Engine?.SelectedObject is WMOContainer wmo)
+                _selectionDisplayProjection.RefreshDisplayData(wmo);
         }
 
         private static Vector3 ToEulerDegrees(Quaternion quaternion)
@@ -1395,30 +871,6 @@ namespace WTEditor.Avalonia.Controls
                 2f * (quaternion.W * quaternion.Z + quaternion.X * quaternion.Y),
                 1f - 2f * (quaternion.X * quaternion.X + quaternion.Z * quaternion.Z));
             return new Vector3(pitch, yaw, roll) * (180f / MathF.PI);
-        }
-
-        private static int SafeCount(Func<int> getCount)
-        {
-            try
-            {
-                return getCount();
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        private static bool SafeValue(Func<bool> getValue)
-        {
-            try
-            {
-                return getValue();
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private void UpdateAutomatedBenchmark(FrameProfileSnapshot snapshot)
@@ -1454,55 +906,6 @@ namespace WTEditor.Avalonia.Controls
                         "before the world workload became idle and stable.");
                     break;
             }
-        }
-
-        private InputFrame BuildInputFrame()
-        {
-            var keysDown = new HashSet<Silk.NET.Input.Key>();
-
-            if (_vm != null)
-            {
-                if (_vm.Forward) keysDown.Add(Silk.NET.Input.Key.W);
-                if (_vm.Backward) keysDown.Add(Silk.NET.Input.Key.S);
-                if (_vm.Left) keysDown.Add(Silk.NET.Input.Key.A);
-                if (_vm.Right) keysDown.Add(Silk.NET.Input.Key.D);
-                if (_vm.Up) keysDown.Add(Silk.NET.Input.Key.Q);
-                if (_vm.Down) keysDown.Add(Silk.NET.Input.Key.E);
-                if (_vm.Shift) keysDown.Add(Silk.NET.Input.Key.ShiftLeft);
-                if (_vm.Ctrl) keysDown.Add(Silk.NET.Input.Key.ControlLeft);
-                if (_vm.Space) keysDown.Add(Silk.NET.Input.Key.Space);
-            }
-
-            return new InputFrame
-            {
-                MousePosition = _vm?.MousePosition ?? Vector2.Zero,
-                LeftMouseDown = _vm?.LeftMouseDown ?? false,
-                RightMouseDown = _vm?.RightMouseDown ?? false,
-                Mode = _vm?.EditorMode ?? EditorModeId.Selection,
-                Modifiers = (_vm?.Shift == true ? InputModifiers.Shift : InputModifiers.None) |
-                            (_vm?.Ctrl == true ? InputModifiers.Control : InputModifiers.None),
-                Brush = new BrushInput(
-                    (float)(_vm?.BrushSize ?? 10),
-                    (float)(_vm?.BrushFalloff ?? 0.35),
-                    _vm?.BrushHasFalloff ?? true,
-                    _vm?.BrushShape ?? BrushShape.Circle,
-                    _vm?.BrushFalloffProfile ?? BrushFalloffProfile.Smooth),
-                TerrainBrush = new TerrainBrushInput
-                {
-                    ToolMode = (TerrainBrushMode)(_vm?.TerrainBrushToolMode ?? 0),
-                    Speed = (float)(_vm?.TerrainBrushSpeed ?? 5),
-                    FlattenHeight = (float)(_vm?.TerrainFlattenHeight ?? 0),
-                    FlattenTarget = (TerrainFlattenTarget)(_vm?.TerrainFlattenTarget ?? 0),
-                    SmoothIterations = _vm?.TerrainSmoothIterations ?? 1
-                },
-                TextureBrush = new TextureBrushInput(
-                    (TextureBrushMode)(_vm?.TextureBrushToolMode ?? 0),
-                    _vm?.TextureBrushTextureFileDataId ?? 0,
-                    (byte)Math.Clamp((int)Math.Round(_vm?.TextureBrushOpacity ?? 255), 0, 255),
-                    (float)(_vm?.TextureBrushStrength ?? 1)),
-                MouseWheel = _vm?.MouseWheel ?? 0f,
-                KeysDown = keysDown
-            };
         }
 
         private void OnRendererStatusChanged(object? sender, RendererStatus status)

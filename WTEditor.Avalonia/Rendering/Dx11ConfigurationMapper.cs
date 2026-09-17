@@ -25,6 +25,7 @@ internal static class Dx11ConfigurationMapper
         MovementSpeed = configuration.MovementSpeed,
         MouseSensitivity = configuration.MouseSensitivity,
         RenderADT = configuration.RenderADT,
+        RenderLiquid = configuration.RenderLiquid,
         RenderWMO = configuration.RenderWMO,
         RenderM2 = configuration.RenderM2,
         EnableWmoPortalCulling = configuration.EnableWmoPortalCulling,

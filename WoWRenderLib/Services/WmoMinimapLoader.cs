@@ -1,6 +1,8 @@
 using System.Numerics;
 using System.Text;
 using WoWLib;
+using WoWLib.Database;
+using WoWRenderLib.Database;
 using Formats = WoWLib.Formats;
 
 namespace WoWRenderLib.Services;
@@ -18,6 +20,21 @@ public interface IWmoMinimapLoader
 /// <summary>CPU-only wowlib adapter. No renderer initialization or UI objects are needed.</summary>
 public sealed class WmoMinimapLoader : IWmoMinimapLoader
 {
+    // Stable DBFilesClient FileDataID used by every build that contains this
+    // table (7.3.0.24473 and later, including modern Classic branches).
+    private const uint WmoMinimapTextureTableFileDataId = 1323241;
+    private const int FirstWmoMinimapTextureBuild = 24473;
+    private static readonly object ModernTextureCacheLock = new();
+    private static string modernTextureCacheBuild = string.Empty;
+    private static IReadOnlyDictionary<uint, WmoMinimapTextureRecord[]>? modernTextureCache;
+
+    internal readonly record struct WmoMinimapTextureRecord(
+        uint WmoId,
+        int GroupIndex,
+        int BlockX,
+        int BlockY,
+        uint FileDataId);
+
     public static string GetTexturePath(string wmoPath, int groupIndex, int offsetX = 0, int offsetY = 0)
     {
         var path = wmoPath.Replace('\\', '/');
@@ -46,16 +63,27 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
         var placement = wdt.Root.GlobalWmo[0];
         var nameBlock = wdt.Root.GlobalWmoName;
         var path = nameBlock.Empty ? string.Empty : nameBlock.At(0);
-        var key = string.IsNullOrWhiteSpace(path)
-            ? new FileKey(new FileDataId(placement.NameId)) : new FileKey(path);
-        if (string.IsNullOrWhiteSpace(path)) Listfile.TryGetFilename(placement.NameId, out path);
-        if (string.IsNullOrWhiteSpace(path))
-            throw new FileNotFoundException("The global WMO filename is unavailable in MWMO and the listfile.");
 
         token.ThrowIfCancellationRequested();
         // MOGI contains each source group's local bounds. Avoid loading meshes/materials.
         using var root = Formats.WMO.Root.WMORoot.ForVersion(fs.Version);
-        root.Read(fs.ReadFile(key));
+        if (UsesModernTextureTable(CASC.BuildName))
+            root.Read(CascFileReader.ReadFile(placement.NameId));
+        else
+        {
+            var key = string.IsNullOrWhiteSpace(path)
+                ? new FileKey(new FileDataId(placement.NameId))
+                : new FileKey(path);
+            if (string.IsNullOrWhiteSpace(path))
+                Listfile.TryGetFilename(placement.NameId, out path);
+            if (string.IsNullOrWhiteSpace(path))
+                throw new FileNotFoundException("The global WMO filename is unavailable in MWMO and the listfile.");
+            root.Read(fs.ReadFile(key));
+        }
+
+        if (UsesModernTextureTable(CASC.BuildName))
+            return LoadModern(root, placement, token);
+
         var groups = new List<WmoMinimapGroup>();
         var missing = 0;
         Dictionary<string, string>? translations = null;
@@ -111,6 +139,113 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
         var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
             ? placement.Scale / 1024f : 1f;
         return new(ToVector(placement.Position), ToVector(placement.Rotation), scale, groups, missing);
+    }
+
+    private static WmoMinimapData LoadModern(
+        Formats.WMO.Root.WMORoot root,
+        Formats.Common.SmMapObjDef placement,
+        CancellationToken token)
+    {
+        var records = GetModernTextureRecords(root.Header.WmoId);
+        var groups = new List<WmoMinimapGroup>(records.Count);
+        var missing = 0;
+        foreach (var record in records)
+        {
+            token.ThrowIfCancellationRequested();
+            if (record.GroupIndex < 0 || record.GroupIndex >= root.GroupInfos.Count || record.FileDataId == 0)
+            {
+                missing++;
+                continue;
+            }
+
+            var bounds = root.GroupInfos[record.GroupIndex].BoundingBox;
+            try
+            {
+                using var blp = new Formats.BLP.BLP();
+                blp.Read(CascFileReader.ReadFile(record.FileDataId));
+                using var image = blp.Decode(0);
+                groups.Add(new(record.GroupIndex, ToVector(bounds.Min), ToVector(bounds.Max),
+                    image.Pixels.AsSpan().ToArray(), (int)image.Width, (int)image.Height,
+                    record.BlockX, record.BlockY));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                missing++;
+                System.Diagnostics.Debug.WriteLine(
+                    $"WMO minimap FileDataID {record.FileDataId}: {exception.Message}");
+            }
+        }
+
+        token.ThrowIfCancellationRequested();
+        var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
+            ? placement.Scale / 1024f
+            : 1f;
+        return new(ToVector(placement.Position), ToVector(placement.Rotation), scale, groups, missing);
+    }
+
+    private static IReadOnlyList<WmoMinimapTextureRecord> GetModernTextureRecords(uint wmoId)
+    {
+        var buildName = CASC.BuildName;
+        lock (ModernTextureCacheLock)
+        {
+            if (modernTextureCache == null ||
+                !string.Equals(modernTextureCacheBuild, buildName, StringComparison.Ordinal))
+            {
+                modernTextureCache = ReadModernTextureTable();
+                modernTextureCacheBuild = buildName;
+            }
+
+            return modernTextureCache.TryGetValue(wmoId, out var records)
+                ? records
+                : [];
+        }
+    }
+
+    private static IReadOnlyDictionary<uint, WmoMinimapTextureRecord[]> ReadModernTextureTable()
+    {
+        const string tableName = "WMOMinimapTexture";
+        var fs = WowlibFileSystem.Current;
+        using var lineage = fs.Version.FormatLineage;
+        using var table = Table.Open(tableName, lineage);
+        table.Read(CascFileReader.ReadFile(WmoMinimapTextureTableFileDataId));
+
+        var wmoIdColumn = Db2Schema.RequireColumn(table, tableName, "wmoid");
+        var groupColumn = Db2Schema.RequireColumn(table, tableName, "group_num");
+        var blockXColumn = Db2Schema.RequireColumn(table, tableName, "block_x");
+        var blockYColumn = Db2Schema.RequireColumn(table, tableName, "block_y");
+        var fileDataIdColumn = Db2Schema.RequireColumn(table, tableName, "file_data_id");
+        var records = new Dictionary<uint, List<WmoMinimapTextureRecord>>();
+
+        for (var row = 0UL; row < table.RowCount; row++)
+        {
+            var wmoIdValue = table.GetInt(row, wmoIdColumn, 0);
+            var fileDataIdValue = table.GetInt(row, fileDataIdColumn, 0);
+            if (wmoIdValue <= 0 || wmoIdValue > uint.MaxValue ||
+                fileDataIdValue <= 0 || fileDataIdValue > uint.MaxValue)
+                continue;
+
+            var wmoId = (uint)wmoIdValue;
+            if (!records.TryGetValue(wmoId, out var wmoRecords))
+                records.Add(wmoId, wmoRecords = []);
+            wmoRecords.Add(new(
+                wmoId,
+                checked((int)table.GetInt(row, groupColumn, 0)),
+                checked((int)table.GetInt(row, blockXColumn, 0)),
+                checked((int)table.GetInt(row, blockYColumn, 0)),
+                (uint)fileDataIdValue));
+        }
+
+        return records.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+    }
+
+    internal static bool UsesModernTextureTable(string buildName)
+    {
+        if (string.IsNullOrWhiteSpace(buildName))
+            return false;
+        var separator = buildName.LastIndexOf('.');
+        return separator >= 0 &&
+            int.TryParse(buildName.AsSpan(separator + 1), out var build) &&
+            build >= FirstWmoMinimapTextureBuild;
     }
 
     /// <summary>The generator splits group bounds into ceil(width/128) by ceil(height/128) tiles.</summary>

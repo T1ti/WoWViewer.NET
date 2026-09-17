@@ -24,6 +24,7 @@ public sealed class PersistedRenderingSettings
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
     public bool RenderADT { get; set; } = true;
+    public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
@@ -47,6 +48,7 @@ public sealed class PersistedRenderingSettings
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,
         RenderADT = RenderADT,
+        RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
@@ -75,6 +77,7 @@ public sealed class PersistedRenderingSettings
         MovementSpeed = rendering.MovementSpeed,
         MouseSensitivity = rendering.MouseSensitivity,
         RenderADT = rendering.RenderADT,
+        RenderLiquid = rendering.RenderLiquid,
         RenderWMO = rendering.RenderWMO,
         RenderM2 = rendering.RenderM2,
         EnableWmoPortalCulling = rendering.EnableWmoPortalCulling,

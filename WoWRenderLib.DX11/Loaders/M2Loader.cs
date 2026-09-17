@@ -1,5 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
+using System.Numerics;
+using System.Runtime.InteropServices;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
@@ -17,6 +19,8 @@ namespace WoWRenderLib.DX11.Loaders
                 boundingBox = parsedM2.boundingBox,
                 boundingRadius = parsedM2.boundingRadius,
                 fileDataID = parsedM2.fileDataID,
+                raycastVertices = ExtractRaycastVertices(parsedM2.vertexBytes),
+                raycastIndices = MemoryMarshal.Cast<byte, ushort>(parsedM2.indiceBytes).ToArray(),
                 mats = parsedM2.mats,
                 geosets = parsedM2.geosets,
                 submeshes = parsedM2.submeshes,
@@ -82,6 +86,15 @@ namespace WoWRenderLib.DX11.Loaders
             doodadBatch.indiceBuffer = indiceBuffer;
 
             return doodadBatch;
+        }
+
+        private static Vector3[] ExtractRaycastVertices(byte[] vertexBytes)
+        {
+            var source = MemoryMarshal.Cast<byte, M2Vertex>(vertexBytes);
+            var positions = new Vector3[source.Length];
+            for (var index = 0; index < source.Length; index++)
+                positions[index] = source[index].Position;
+            return positions;
         }
 
         public static void UnloadM2(ParsedDoodadBatch model)

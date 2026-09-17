@@ -134,6 +134,8 @@ namespace WoWRenderLib.DX11.Managers
                         GetOrCompileShader("wmo", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
                         GetOrCompileShader("m2", true);
+                    else if (Path.GetFileNameWithoutExtension(file).StartsWith("liquid"))
+                        GetOrCompileShader("liquid", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
                         GetOrCompileShader("debug", true);
 
@@ -630,6 +632,68 @@ namespace WoWRenderLib.DX11.Managers
                             InputSlotClass = InputClassification.PerVertexData,
                             InstanceDataStepRate = 0
                         },
+                    };
+
+                    SilkMarshal.ThrowHResult
+                    (
+                        device.CreateInputLayout
+                        (
+                            in inputElements[0],
+                            (uint)inputElements.Length,
+                            vertexCode.GetBufferPointer(),
+                            vertexCode.GetBufferSize(),
+                            ref inputLayout
+                        )
+                    );
+                }
+            }
+            else if (type == "liquid")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
+                {
+                    var inputElements = new InputElementDesc[]
+                    {
+                        new()
+                        {
+                            SemanticName = posName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 0,
+                            InputSlotClass = InputClassification.PerVertexData,
+                            InstanceDataStepRate = 0
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData,
+                            InstanceDataStepRate = 0
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName,
+                            SemanticIndex = 1,
+                            Format = Format.FormatR32G32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData,
+                            InstanceDataStepRate = 0
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName,
+                            SemanticIndex = 2,
+                            Format = Format.FormatR32G32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData,
+                            InstanceDataStepRate = 0
+                        }
                     };
 
                     SilkMarshal.ThrowHResult
