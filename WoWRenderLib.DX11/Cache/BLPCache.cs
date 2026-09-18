@@ -130,6 +130,16 @@ namespace WoWRenderLib.DX11.Cache
             return fallback;
         }
 
+        /// <summary>
+        /// Returns only a fully decoded and uploaded texture. Callers that
+        /// need to distinguish the diagnostic placeholder from real texture
+        /// data can provide their own fallback when this returns false.
+        /// </summary>
+        public static bool TryGetLoaded(
+            uint fileDataId,
+            out ComPtr<ID3D11ShaderResourceView> texture) =>
+            Cache.TryGetValue(fileDataId, out texture);
+
         public static int Upload(
             Stopwatch queueTimer,
             double budgetMilliseconds = 10d,

@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WTEditor.Application;
 using WTEditor.Application.Commands;
@@ -66,6 +67,125 @@ public sealed class EditorSettingsSmokeTests
         CollectionAssert.AreEqual(
             new[] { "World Selection", "Main Editor", "Data Tools" },
             items.Select(tab => tab.Header).Cast<string>().ToArray());
+    }
+
+    [TestMethod]
+    public void LightingPanel_XamlCanBePopulatedAtRuntime()
+    {
+        var panel = new LightingPanel();
+
+        Assert.IsNotNull(panel.FindControl<Border>("LightingPanelRoot"));
+    }
+
+    [TestMethod]
+    public void LightingViewModel_SynchronizesRendererStateWithoutEchoingAndPublishesEdits()
+    {
+        var expected = new LightingSettingsSnapshot(
+            12,
+            1440,
+            Vector3.Normalize(new Vector3(-0.5f, -0.5f, 1f)),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.8f, 0.7f, 0.6f),
+            new Vector3(0.05f, 0.3f, 0.5f),
+            new Vector3(0.01f, 0.1f, 0.2f),
+            new Vector3(0.2f, 0.4f, 0.1f),
+            new Vector3(0.1f, 0.2f, 0.15f),
+            0.7f,
+            0.9f,
+            0.75f,
+            1f,
+            true,
+            true);
+        var viewModel = new LightingViewModel();
+        LightingSettingsSnapshot? published = null;
+        viewModel.Changed += (_, lighting) => published = lighting;
+
+        // Control initialization must not overwrite the client profile with
+        // the view model's placeholder alpha values.
+        viewModel.OceanDeepAlpha = 0.25f;
+        Assert.IsNull(published);
+
+        viewModel.Update(expected);
+
+        Assert.IsNull(published);
+        Assert.AreEqual("LightData parameter 12, time 1440", viewModel.ProfileDescription);
+        Assert.AreEqual(expected.OceanCloseColor.Z, viewModel.OceanCloseB);
+
+        viewModel.OceanCloseColor = Color.FromRgb(26, 128, 204);
+
+        Assert.IsNotNull(published);
+        Assert.AreEqual(26f / 255f, published.OceanCloseColor.X, 0.0001f);
+        Assert.AreEqual(128f / 255f, published.OceanCloseColor.Y, 0.0001f);
+        Assert.AreEqual(204f / 255f, published.OceanCloseColor.Z, 0.0001f);
+        Assert.AreEqual(0.75f, published.OceanShallowAlpha);
+    }
+
+    [TestMethod]
+    public void LightingPanel_ColorPickerPublishesTheCompleteClientLightingSnapshot()
+    {
+        var session = new EditorSession(new MemorySettingsStore(new EditorSettingsSnapshot()));
+        using var viewModel = new Editor3DViewModel(session);
+        var expected = new LightingSettingsSnapshot(
+            12,
+            1440,
+            Vector3.UnitZ,
+            new Vector3(0.1f),
+            new Vector3(0.2f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.2f, 0.3f, 0.4f),
+            new Vector3(0.3f, 0.4f, 0.5f),
+            new Vector3(0.4f, 0.5f, 0.6f),
+            0.5f,
+            1f,
+            0.75f,
+            1f,
+            true,
+            true);
+        viewModel.UpdateActiveLighting(expected);
+        var panel = new LightingPanel { DataContext = viewModel };
+        LightingSettingsSnapshot? published = null;
+        viewModel.LightingSettingsChanged += (_, lighting) => published = lighting;
+
+        Assert.AreEqual(0.5d, panel.FindControl<CompactNumberBox>(
+            "WaterShallowAlphaBox")!.Value, 0.0001d);
+        Assert.AreEqual(0.75d, panel.FindControl<CompactNumberBox>(
+            "OceanShallowAlphaBox")!.Value, 0.0001d);
+
+        panel.FindControl<ColorPicker>("OceanCloseColorPicker")!
+            .SetCurrentValue(ColorPicker.ColorProperty, Color.FromRgb(32, 96, 224));
+
+        Assert.IsNotNull(published);
+        Assert.AreEqual(32f / 255f, published.OceanCloseColor.X, 0.0001f);
+        Assert.AreEqual(96f / 255f, published.OceanCloseColor.Y, 0.0001f);
+        Assert.AreEqual(224f / 255f, published.OceanCloseColor.Z, 0.0001f);
+        Assert.AreEqual(0.5f, published.WaterShallowAlpha, 0.0001f);
+        Assert.AreEqual(0.75f, published.OceanShallowAlpha, 0.0001f);
+    }
+
+    [TestMethod]
+    public void LightingProjection_RoundTripsEveryActiveRendererValue()
+    {
+        var renderer = new WorldLightingSettings(
+            12,
+            1440,
+            Vector3.UnitZ,
+            new Vector3(0.1f),
+            new Vector3(0.2f),
+            new Vector3(0.3f),
+            new Vector3(0.4f),
+            new Vector3(0.5f),
+            new Vector3(0.6f),
+            0.7f,
+            0.8f,
+            0.75f,
+            1f,
+            true,
+            true);
+
+        var roundTrip = LightingSettingsProjection.ToRenderer(
+            LightingSettingsProjection.ToDisplay(renderer));
+
+        Assert.AreEqual(renderer, roundTrip);
     }
 
     [TestMethod]

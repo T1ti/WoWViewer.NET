@@ -74,6 +74,10 @@
       </StackPanel>
     </Border>
 
+    <controls:LightingPanel HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="10" ZIndex="25"
+                            IsVisible="{Binding IsLightingPanelVisible}"/>
+
     <!-- These controls belong to this world viewport instance. Other viewport types
          can provide their own visibility tools without inheriting these switches. -->
     <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
@@ -161,6 +165,10 @@
           </Button.Flyout>
         </Button>
         <Border Width="1" Margin="3,3" Background="#526170"/>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsLightingPanelVisible}"
+                      ToolTip.Tip="Show active lighting values and edit them live">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Lighting}"/>
+        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsMetricsPanelVisible}"
                       ToolTip.Tip="Show the profiler for this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Metrics}"/>

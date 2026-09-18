@@ -37,6 +37,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public event EventHandler<ClientConfiguration>? ClientConfigurationChanged;
     public event EventHandler<RenderingConfiguration>? RenderingConfigurationChanged;
+    public event EventHandler<LightingSettingsSnapshot>? LightingSettingsChanged;
     public event EventHandler<KeyboardLayoutMode>? KeyboardLayoutChanged;
     public event EventHandler<string>? AutomatedPerformanceCaptureSaved;
     public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
@@ -50,6 +51,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler? CurrentTerrainTileTexturesRequested;
     public event EventHandler<IReadOnlyList<TerrainChunkTextureLayer>>? CurrentTerrainTileTexturesPicked;
     public UndoService UndoService { get; }
+    public LightingViewModel Lighting { get; } = new();
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
@@ -98,6 +100,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string? _rendererError;
     [ObservableProperty] private bool _isRendererStatusVisible = true;
     [ObservableProperty] private bool _isMetricsPanelVisible;
+    [ObservableProperty] private bool _isLightingPanelVisible;
     [ObservableProperty] private bool _renderTerrain;
     [ObservableProperty] private bool _renderLiquid;
     [ObservableProperty] private bool _renderWorldModels;
@@ -200,6 +203,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _cameraDirection = session.Current.Camera?.Direction ?? Vector3.Zero;
         _lastProcessCpuTime = _currentProcess.TotalProcessorTime;
         _lastAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false);
+        Lighting.Changed += OnLightingChanged;
 
         session.ClientConfigurationChanged += OnClientConfigurationChanged;
         session.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
@@ -300,6 +304,31 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         DrawCalls = telemetry.DrawCalls;
         SubmittedTriangleCount = telemetry.SubmittedTriangleCount;
         _session.UpdateCamera(telemetry.CameraPosition, telemetry.CameraDirection);
+    }
+
+    public void UpdateActiveLighting(LightingSettingsSnapshot lighting)
+    {
+        if (RenderingConfiguration.AmbientColor != lighting.AmbientColor ||
+            RenderingConfiguration.DiffuseColor != lighting.DiffuseColor)
+        {
+            _session.UpdateRendering(RenderingConfiguration with
+            {
+                AmbientColor = lighting.AmbientColor,
+                DiffuseColor = lighting.DiffuseColor
+            });
+        }
+
+        Lighting.Update(lighting);
+    }
+
+    private void OnLightingChanged(object? sender, LightingSettingsSnapshot lighting)
+    {
+        _session.UpdateRendering(RenderingConfiguration with
+        {
+            AmbientColor = lighting.AmbientColor,
+            DiffuseColor = lighting.DiffuseColor
+        });
+        LightingSettingsChanged?.Invoke(this, lighting);
     }
 
     public void UpdateRendererStatus(RendererStatus status)
@@ -476,6 +505,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     [RelayCommand]
     private void CloseMetricsPanel() => IsMetricsPanelVisible = false;
+
+    [RelayCommand]
+    private void CloseLightingPanel() => IsLightingPanelVisible = false;
 
     private bool CanStartPerformanceCapture() =>
         !IsPerformanceCaptureActive && _latestProfileSnapshot != null;
@@ -697,6 +729,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _session.ClientConfigurationChanged -= OnClientConfigurationChanged;
         _session.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
         _session.KeyboardLayoutChanged -= OnKeyboardLayoutChanged;
+        Lighting.Changed -= OnLightingChanged;
         _currentProcess.Dispose();
     }
 }

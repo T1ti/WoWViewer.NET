@@ -6,14 +6,14 @@ cbuffer PerObject : register(b0)
     float4 shallowColor;
     float4 deepColor;
     float4 flowParameters;   // time, UV scale, direction, speed
-    float4 familyParameters; // water, emissive, reserved, reserved
+    float4 familyParameters; // water, emissive, real texture loaded, reserved
     float4 lightingAmbient;
     float4 lightingDiffuse;
     float4 oceanCloseColor;
     float4 oceanFarColor;
     float4 riverCloseColor;
     float4 riverFarColor;
-    float4 liquidColorParameters; // use LightData colors, river flag, reserved
+    float4 liquidColorParameters; // use LightData colors, river flag, use LightParams alpha, reserved
     float4 depthCoefficients;     // LiquidType.Coefficient[0..3]
     float4 lightDirection;        // normalized world-space exterior light
     float4 liquidAlphaParameters; // ocean shallow/deep, river shallow/deep
@@ -83,11 +83,32 @@ float4 PS_Main(VSOut input) : SV_Target
         // reference viewer: zero is close/shallow and 255 is far/deep.
         surface.rgb = lerp(closeColor, farColor, depthMix);
     }
-    float3 litSurface = surface.rgb * sampled.rgb;
+    if (isWater && liquidColorParameters.z > 0.5f)
+    {
+        float closeAlpha = liquidColorParameters.y > 0.5f
+            ? liquidAlphaParameters.z
+            : liquidAlphaParameters.x;
+        float farAlpha = liquidColorParameters.y > 0.5f
+            ? liquidAlphaParameters.w
+            : liquidAlphaParameters.y;
+        surface.a = lerp(closeAlpha, farAlpha, depthMix);
+    }
+
+    // LiquidType's animated water texture is wave data, not an RGB albedo.
+    // Preserve the LightData hue and use only its luminance for subtle wave
+    // brightness. An unresolved asset still uses its full magenta diagnostic.
+    bool hasLoadedTexture = familyParameters.z > 0.5f;
+    float waveLuminance = dot(sampled.rgb, float3(0.2126f, 0.7152f, 0.0722f));
+    float waveDetail = lerp(0.9f, 1.1f, saturate(waveLuminance));
+    float3 litSurface = isWater && hasLoadedTexture
+        ? surface.rgb * waveDetail
+        : surface.rgb * sampled.rgb;
     float3 normalizedLight = normalize(lightDirection.xyz);
-    float directional = 0.35f + 0.65f * max(dot(input.normal, normalizedLight), 0.0f);
+    // Match the reference exterior-light composition: the LightData liquid
+    // tint is modulated by ambient plus the Lambertian direct contribution.
+    float directional = max(dot(input.normal, normalizedLight), 0.0f);
     float3 lighting = lightingAmbient.rgb + lightingDiffuse.rgb * directional;
-    litSurface *= max(lighting, 0.05.xxx);
+    litSurface *= lighting;
 
     if (familyParameters.y > 0.5f)
     {
@@ -98,12 +119,10 @@ float4 PS_Main(VSOut input) : SV_Target
         return float4(litSurface, 1.0f);
     }
 
-    // This pass has no scene-color/refraction input. LightParams liquid alpha
-    // and the animated texture alpha therefore cannot be used as framebuffer
-    // coverage: that was the regression that reduced water to a moving ink
-    // mask. Coverage remains the material fallback used by the original
-    // simple forward path; MH2O depth only adjusts its shallow/deep response.
-    float finalCoverage = saturate(surface.a * lerp(0.75f, 1.0f, depthMix));
+    // Source-alpha blending is the simple-pass equivalent of mixing the water
+    // tint over the existing scene. Never multiply by sampled.a: its sparse
+    // wave mask caused the transparency regression.
+    float finalCoverage = saturate(surface.a);
     return float4(
         litSurface,
         finalCoverage);

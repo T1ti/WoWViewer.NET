@@ -1,4 +1,5 @@
 using DBCD.IO;
+using DBCD.IO.Attributes;
 using Fs = WoWLib.Filesystem;
 using WoWRenderLib.Database;
 
@@ -13,11 +14,9 @@ namespace WoWRenderLib.Loaders;
 /// </summary>
 internal static class ModernLightParamsLoader
 {
-    // This layout is used by the Classic client currently supported by the
-    // renderer (layout hash 0x51C96BAD). The first two fields are arrays and
-    // therefore count as one structural field each in WDC5 metadata.
-    private const uint CurrentLayoutHash = 0x51C96BAD;
-    private const int CurrentIdFieldIndex = 2;
+    // The first two fields are arrays and therefore count as one structural
+    // field each in WDC5 metadata. Only validate the prefix consumed below;
+    // client versions may append or alter unrelated fields after it.
     private const int CurrentRequiredPrefixFields = 11;
 
     public static bool TryLoad(
@@ -45,9 +44,8 @@ internal static class ModernLightParamsLoader
             var parser = new DBParser(stream);
             ValidatePayload(parser);
 
-            var rows = new Dictionary<int, LightParamsPrefix>();
-            parser.PopulateRecords(rows);
-            if (!rows.TryGetValue(checked((int)lightParamId), out var row))
+            var alphas = ReadAlphaRow(parser, checked((int)lightParamId));
+            if (alphas == null)
             {
                 values = null;
                 diagnostic =
@@ -59,10 +57,10 @@ internal static class ModernLightParamsLoader
 
             values = new Dictionary<string, double>(StringComparer.Ordinal)
             {
-                ["water_shallow_alpha"] = row.WaterShallowAlpha,
-                ["water_deep_alpha"] = row.WaterDeepAlpha,
-                ["ocean_shallow_alpha"] = row.OceanShallowAlpha,
-                ["ocean_deep_alpha"] = row.OceanDeepAlpha
+                ["water_shallow_alpha"] = alphas.Value.WaterShallowAlpha,
+                ["water_deep_alpha"] = alphas.Value.WaterDeepAlpha,
+                ["ocean_shallow_alpha"] = alphas.Value.OceanShallowAlpha,
+                ["ocean_deep_alpha"] = alphas.Value.OceanDeepAlpha
             };
             diagnostic = "Loaded client database table 'LightParams'.";
             return true;
@@ -84,22 +82,6 @@ internal static class ModernLightParamsLoader
                 $"LightParams compatibility reader expected WDC5, found " +
                 $"'{parser.Identifier}'.");
 
-        if (parser.LayoutHash != CurrentLayoutHash)
-        {
-            throw new InvalidDataException(
-                $"LightParams compatibility reader has no explicit mapping for " +
-                $"layout hash 0x{parser.LayoutHash:X8}; expected one of " +
-                $"0x{CurrentLayoutHash:X8} for the supported client layout.");
-        }
-
-        if (parser.IdFieldIndex != CurrentIdFieldIndex)
-        {
-            throw new InvalidDataException(
-                $"LightParams layout 0x{parser.LayoutHash:X8} reports ID field " +
-                $"index {parser.IdFieldIndex}, but the explicit mapping requires " +
-                $"index {CurrentIdFieldIndex}.");
-        }
-
         if (parser.FieldsCount < CurrentRequiredPrefixFields)
         {
             throw new InvalidDataException(
@@ -107,6 +89,41 @@ internal static class ModernLightParamsLoader
                 $"{parser.FieldsCount} inline fields, but the alpha prefix " +
                 $"requires {CurrentRequiredPrefixFields}.");
         }
+    }
+
+    private static LiquidAlphas? ReadAlphaRow(DBParser parser, int lightParamId)
+    {
+        if (parser.Flags.HasFlag(DB2Flags.Index) && parser.IdFieldIndex == 0)
+        {
+            var rows = new Dictionary<int, NonInlineIdLightParamsPrefix>();
+            parser.PopulateRecords(rows);
+            return rows.TryGetValue(lightParamId, out var row)
+                ? new LiquidAlphas(
+                    row.WaterShallowAlpha,
+                    row.WaterDeepAlpha,
+                    row.OceanShallowAlpha,
+                    row.OceanDeepAlpha)
+                : null;
+        }
+
+        if (!parser.Flags.HasFlag(DB2Flags.Index) && parser.IdFieldIndex == 2)
+        {
+            var rows = new Dictionary<int, InlineIdLightParamsPrefix>();
+            parser.PopulateRecords(rows);
+            return rows.TryGetValue(lightParamId, out var row)
+                ? new LiquidAlphas(
+                    row.WaterShallowAlpha,
+                    row.WaterDeepAlpha,
+                    row.OceanShallowAlpha,
+                    row.OceanDeepAlpha)
+                : null;
+        }
+
+        throw new InvalidDataException(
+            $"LightParams layout 0x{parser.LayoutHash:X8} has unsupported ID " +
+            $"storage (id_field_index={parser.IdFieldIndex}, flags={parser.Flags}). " +
+            "Supported mappings are a non-inline ID at field 0 and an inline " +
+            "ID after the two override-vector fields.");
     }
 
     private static string FormatException(Exception exception)
@@ -119,7 +136,13 @@ internal static class ModernLightParamsLoader
     }
 
 #pragma warning disable CS0649
-    private sealed class LightParamsPrefix
+    private readonly record struct LiquidAlphas(
+        float WaterShallowAlpha,
+        float WaterDeepAlpha,
+        float OceanShallowAlpha,
+        float OceanDeepAlpha);
+
+    private sealed class InlineIdLightParamsPrefix
     {
         public float[] OverrideCelestialSphere = new float[3];
         public float[] OverrideSunPosition = new float[3];
@@ -127,6 +150,22 @@ internal static class ModernLightParamsLoader
         public int HighlightSky;
         public int LightSkyboxId;
         public int CloudTypeId;
+        public float Glow;
+        public float WaterShallowAlpha;
+        public float WaterDeepAlpha;
+        public float OceanShallowAlpha;
+        public float OceanDeepAlpha;
+    }
+
+    private sealed class NonInlineIdLightParamsPrefix
+    {
+        [Index(true)]
+        public int Id;
+        public float[] OverrideCelestialSphere = new float[3];
+        public float[] OverrideSunPosition = new float[3];
+        public byte HighlightSky;
+        public ushort LightSkyboxId;
+        public byte CloudTypeId;
         public float Glow;
         public float WaterShallowAlpha;
         public float WaterDeepAlpha;

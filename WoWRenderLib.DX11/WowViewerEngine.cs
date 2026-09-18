@@ -12,6 +12,7 @@ using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.DX11.Streaming;
+using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
@@ -202,6 +203,8 @@ namespace WoWRenderLib.DX11
         public Vector3? InitialCameraDirection { get; set; }
         public uint CurrentMapHighestUniqueId => sceneManager?.CurrentMapHighestUniqueId ?? 0;
         public uint CurrentWdtFileDataId => sceneManager?.CurrentWDTFileDataID ?? 0;
+        public WorldLightingSettings ActiveWorldLighting =>
+            sceneManager?.ActiveWorldLighting ?? WorldLightingSettings.Defaults;
         public WowViewerEngineStatus Status { get; private set; } =
             new(WowViewerEngineState.Created, "Renderer created.");
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;
@@ -276,6 +279,12 @@ namespace WoWRenderLib.DX11
         public void ApplyTerrainStroke(TerrainStrokeDelta delta, bool useAfter) =>
             sceneManager?.ApplyTerrainStroke(delta, useAfter);
         public void MarkTerrainChangesSaved() => sceneManager?.MarkTerrainChangesSaved();
+        public void ApplyWorldLighting(WorldLightingSettings lighting)
+        {
+            Settings.AmbientColor = lighting.AmbientColor;
+            Settings.DiffuseColor = lighting.DiffuseColor;
+            sceneManager?.ApplyWorldLighting(lighting);
+        }
         public IReadOnlyList<TerrainChunkTextureLayer> GetTerrainChunkTextures(Vector2 mousePosition) =>
             sceneManager?.GetTerrainChunkTextures(
                 mousePosition,

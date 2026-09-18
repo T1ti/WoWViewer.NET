@@ -93,6 +93,14 @@ namespace WoWRenderLib.DX11.Managers
         public Vector3 AmbientColor { get; set; } = new(104f / 255f, 130f / 255f, 154f / 255f);
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
         public WorldLightingData? ClientWorldLighting { get; private set; }
+        private WorldLightingSettings _activeWorldLighting = WorldLightingSettings.Defaults;
+
+        public WorldLightingSettings ActiveWorldLighting => _activeWorldLighting with
+        {
+            LightDirection = LightDirection,
+            AmbientColor = AmbientColor,
+            DiffuseColor = DiffuseColor
+        };
 
         private const int MaxInstancesPerBatch = 1024;
         private const int MaxTerrainChunksPerTile = 256;
@@ -270,7 +278,56 @@ namespace WoWRenderLib.DX11.Managers
                 AmbientColor = lighting.AmbientColor;
             if (lighting.TryGetNumeric("direct_color", out _))
                 DiffuseColor = lighting.DirectColor;
+
+            _activeWorldLighting = new WorldLightingSettings(
+                lighting.LightParamId,
+                lighting.Time,
+                LightDirection,
+                AmbientColor,
+                DiffuseColor,
+                lighting.OceanCloseColor,
+                lighting.OceanFarColor,
+                lighting.RiverCloseColor,
+                lighting.RiverFarColor,
+                lighting.WaterShallowAlpha,
+                lighting.WaterDeepAlpha,
+                lighting.OceanShallowAlpha,
+                lighting.OceanDeepAlpha,
+                lighting.HasLiquidColorData,
+                lighting.HasLiquidAlphaData);
         }
+
+        /// <summary>Applies a user-edited lighting snapshot immediately.</summary>
+        public void ApplyWorldLighting(WorldLightingSettings lighting)
+        {
+            var directionLengthSquared = lighting.LightDirection.LengthSquared();
+            LightDirection = directionLengthSquared > 0.000001f
+                ? lighting.LightDirection / MathF.Sqrt(directionLengthSquared)
+                : Vector3.UnitZ;
+            AmbientColor = ClampLightingColor(lighting.AmbientColor);
+            DiffuseColor = ClampLightingColor(lighting.DiffuseColor);
+            _activeWorldLighting = lighting with
+            {
+                LightDirection = LightDirection,
+                AmbientColor = AmbientColor,
+                DiffuseColor = DiffuseColor,
+                OceanCloseColor = ClampLightingColor(lighting.OceanCloseColor),
+                OceanFarColor = ClampLightingColor(lighting.OceanFarColor),
+                RiverCloseColor = ClampLightingColor(lighting.RiverCloseColor),
+                RiverFarColor = ClampLightingColor(lighting.RiverFarColor),
+                WaterShallowAlpha = Math.Clamp(lighting.WaterShallowAlpha, 0f, 1f),
+                WaterDeepAlpha = Math.Clamp(lighting.WaterDeepAlpha, 0f, 1f),
+                OceanShallowAlpha = Math.Clamp(lighting.OceanShallowAlpha, 0f, 1f),
+                OceanDeepAlpha = Math.Clamp(lighting.OceanDeepAlpha, 0f, 1f),
+                HasLiquidColorData = true,
+                HasLiquidAlphaData = true
+            };
+        }
+
+        private static Vector3 ClampLightingColor(Vector3 color) => new(
+            Math.Clamp(color.X, 0f, 4f),
+            Math.Clamp(color.Y, 0f, 4f),
+            Math.Clamp(color.Z, 0f, 4f));
 
         public void Initialize(ShaderManager shaderManager, CompiledShader adtShader, CompiledShader wmoShader, CompiledShader m2Shader, CompiledShader bboxShader)
         {
@@ -1480,7 +1537,7 @@ namespace WoWRenderLib.DX11.Managers
                     LightDirection,
                     AmbientColor,
                     DiffuseColor,
-                    ClientWorldLighting);
+                    ActiveWorldLighting);
                 candidateLiquidBatches = liquidStats.CandidateBatches;
                 visibleLiquidBatches = liquidStats.VisibleBatches;
                 LiquidDrawCalls = liquidStats.DrawCalls;

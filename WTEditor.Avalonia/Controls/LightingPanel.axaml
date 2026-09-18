@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:icons="using:WTEditor.Avalonia.Presentation"
+             x:Class="WTEditor.Avalonia.Controls.LightingPanel"
+             x:DataType="vm:Editor3DViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="Foreground" Value="#9FC6E8"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,5,0,2"/>
+    </Style>
+    <Style Selector="ColorPicker.lighting-color">
+      <Setter Property="IsAlphaEnabled" Value="False"/>
+      <Setter Property="IsAlphaVisible" Value="False"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border x:Name="LightingPanelRoot" Width="430" MaxHeight="720" Padding="12" CornerRadius="7"
+          Background="#F21A2027" BorderBrush="#526170" BorderThickness="1">
+    <Grid RowDefinitions="Auto,*">
+      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+        <StackPanel Spacing="2">
+          <TextBlock Text="Lighting view" Foreground="White" FontWeight="SemiBold" FontSize="15"/>
+          <TextBlock Text="{Binding Lighting.ProfileDescription}" Foreground="#AFC0CF" FontSize="11"/>
+        </StackPanel>
+        <Button Grid.Column="1" Width="28" Height="28" Padding="5"
+                Command="{Binding CloseLightingPanelCommand}" ToolTip.Tip="Close lighting view">
+          <PathIcon Data="{x:Static icons:EditorIcons.Close}"/>
+        </Button>
+      </Grid>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="5">
+          <TextBlock Text="World lighting" Classes="section-title"/>
+          <Grid ColumnDefinitions="155,*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="5">
+            <TextBlock Text="Light direction" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <controls:CompactNumberBox Grid.Column="1" Value="{Binding Lighting.DirectionX}" Minimum="-1" Maximum="1" Increment="0.01"/>
+            <controls:CompactNumberBox Grid.Column="2" Value="{Binding Lighting.DirectionY}" Minimum="-1" Maximum="1" Increment="0.01"/>
+            <controls:CompactNumberBox Grid.Column="3" Value="{Binding Lighting.DirectionZ}" Minimum="-1" Maximum="1" Increment="0.01"/>
+
+            <TextBlock Grid.Row="1" Text="Ambient color" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Classes="lighting-color"
+                         Color="{Binding Lighting.AmbientColor, Mode=TwoWay}"/>
+
+            <TextBlock Grid.Row="2" Text="Direct color" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Classes="lighting-color"
+                         Color="{Binding Lighting.DiffuseColor, Mode=TwoWay}"/>
+          </Grid>
+
+          <Separator Margin="0,5"/>
+          <TextBlock Text="Liquid colors" Classes="section-title"/>
+          <TextBlock Text="{Binding Lighting.HasLiquidColorData, StringFormat='Client color data active: {0}'}"
+                     Foreground="#7890A5" FontSize="10"/>
+          <Grid ColumnDefinitions="155,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="5">
+            <TextBlock Text="Ocean close" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker x:Name="OceanCloseColorPicker" Grid.Column="1" Classes="lighting-color"
+                         Color="{Binding Lighting.OceanCloseColor, Mode=TwoWay}"/>
+
+            <TextBlock Grid.Row="1" Text="Ocean far" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker Grid.Row="1" Grid.Column="1" Classes="lighting-color" Color="{Binding Lighting.OceanFarColor, Mode=TwoWay}"/>
+
+            <TextBlock Grid.Row="2" Text="River close" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker x:Name="RiverCloseColorPicker" Grid.Row="2" Grid.Column="1" Classes="lighting-color"
+                         Color="{Binding Lighting.RiverCloseColor, Mode=TwoWay}"/>
+
+            <TextBlock Grid.Row="3" Text="River far" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <ColorPicker Grid.Row="3" Grid.Column="1" Classes="lighting-color" Color="{Binding Lighting.RiverFarColor, Mode=TwoWay}"/>
+          </Grid>
+
+          <Separator Margin="0,5"/>
+          <TextBlock Text="Liquid alpha" Classes="section-title"/>
+          <TextBlock Text="{Binding Lighting.HasLiquidAlphaData, StringFormat='Client alpha data active: {0}'}"
+                     Foreground="#7890A5" FontSize="10"/>
+          <Grid ColumnDefinitions="*,90" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="5">
+            <TextBlock Text="Water shallow" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <controls:CompactNumberBox x:Name="WaterShallowAlphaBox" Grid.Column="1"
+                                       Value="{Binding Lighting.WaterShallowAlpha}" Minimum="0" Maximum="1" Increment="0.01"/>
+            <TextBlock Grid.Row="1" Text="Water deep" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <controls:CompactNumberBox Grid.Row="1" Grid.Column="1" Value="{Binding Lighting.WaterDeepAlpha}" Minimum="0" Maximum="1" Increment="0.01"/>
+            <TextBlock Grid.Row="2" Text="Ocean shallow" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <controls:CompactNumberBox x:Name="OceanShallowAlphaBox" Grid.Row="2" Grid.Column="1"
+                                       Value="{Binding Lighting.OceanShallowAlpha}" Minimum="0" Maximum="1" Increment="0.01"/>
+            <TextBlock Grid.Row="3" Text="Ocean deep" Foreground="#D7E2EC" VerticalAlignment="Center"/>
+            <controls:CompactNumberBox Grid.Row="3" Grid.Column="1" Value="{Binding Lighting.OceanDeepAlpha}" Minimum="0" Maximum="1" Increment="0.01"/>
+          </Grid>
+
+          <TextBlock Margin="0,7,0,0" Foreground="#7890A5" FontSize="10" TextWrapping="Wrap"
+                     Text="Changes are applied to the active renderer immediately. Direction is normalized by the renderer."/>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

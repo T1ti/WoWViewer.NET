@@ -103,6 +103,7 @@ namespace WTEditor.Avalonia.Controls
             {
                 _vm.ClientConfigurationChanged -= OnClientConfigurationChanged;
                 _vm.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
+                _vm.LightingSettingsChanged -= OnLightingSettingsChanged;
                 _vm.SelectedObjectTransformRequested -= OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested -= OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested -= OnWorldNavigationRequested;
@@ -120,6 +121,7 @@ namespace WTEditor.Avalonia.Controls
                 _renderingConfiguration = _vm.RenderingConfiguration;
                 _vm.ClientConfigurationChanged += OnClientConfigurationChanged;
                 _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
+                _vm.LightingSettingsChanged += OnLightingSettingsChanged;
                 _vm.SelectedObjectTransformRequested += OnSelectedObjectTransformRequested;
                 _vm.SelectedWmoPlacementRequested += OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested += OnWorldNavigationRequested;
@@ -303,6 +305,28 @@ namespace WTEditor.Avalonia.Controls
             Dispatcher.UIThread.Post(
                 () => _rendererSession.Engine?.ApplySettings(_renderingConfiguration.ToDx11()),
                 DispatcherPriority.Render);
+        }
+
+        private void OnLightingSettingsChanged(
+            object? sender,
+            LightingSettingsSnapshot lighting)
+        {
+            if (_rendererSession.Engine == null)
+                return;
+
+            void ApplyLighting() => _rendererSession.Engine?.ApplyWorldLighting(
+                LightingSettingsProjection.ToRenderer(lighting));
+
+            // ColorPicker changes originate on the UI/render thread. Apply
+            // them before the next telemetry snapshot instead of queueing a
+            // Render-priority callback that can let the old renderer state
+            // overwrite the editor while a color is being dragged.
+            if (Dispatcher.UIThread.CheckAccess())
+                ApplyLighting();
+            else
+                Dispatcher.UIThread.Post(ApplyLighting, DispatcherPriority.Render);
+            if (_initialized && _attached && RenderActivity != ViewportRenderActivity.Suspended)
+                RequestRenderFrame();
         }
 
         private void CreateEngine(ClientConfiguration configuration)
@@ -717,6 +741,8 @@ namespace WTEditor.Avalonia.Controls
                         checked((long)engine.Stats.SubmittedTriangleCount),
                         delta * 1_000d,
                         engine.CurrentWdtFileDataId));
+                    _vm.UpdateActiveLighting(
+                        LightingSettingsProjection.ToDisplay(engine.ActiveWorldLighting));
                 }
 
                 var profileSnapshot = FrameProfileSnapshotFactory.Create(

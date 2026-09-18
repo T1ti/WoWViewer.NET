@@ -188,7 +188,7 @@ internal sealed class WorldLiquidRenderer(
         Vector3 lightDirection,
         Vector3 ambientColor,
         Vector3 diffuseColor,
-        WorldLightingData? clientLighting)
+        WorldLightingSettings clientLighting)
     {
         if (!_initialized || adtContainers.Count == 0)
             return default;
@@ -275,29 +275,29 @@ internal sealed class WorldLiquidRenderer(
 
         var drawCalls = 0U;
         ulong submittedIndices = 0;
-        var useClientLiquidColors = clientLighting?.HasLiquidColorData == true;
+        var useClientLiquidColors = clientLighting.HasLiquidColorData;
         var oceanCloseColor = useClientLiquidColors
-            ? clientLighting!.OceanCloseColor
+            ? clientLighting.OceanCloseColor
             : Vector3.Zero;
         var oceanFarColor = useClientLiquidColors
-            ? clientLighting!.OceanFarColor
+            ? clientLighting.OceanFarColor
             : Vector3.Zero;
         var riverCloseColor = useClientLiquidColors
-            ? clientLighting!.RiverCloseColor
+            ? clientLighting.RiverCloseColor
             : Vector3.Zero;
         var riverFarColor = useClientLiquidColors
-            ? clientLighting!.RiverFarColor
+            ? clientLighting.RiverFarColor
             : Vector3.Zero;
-        var oceanShallowAlpha = clientLighting?.HasLiquidAlphaData == true
+        var oceanShallowAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.OceanShallowAlpha
             : 1f;
-        var oceanDeepAlpha = clientLighting?.HasLiquidAlphaData == true
+        var oceanDeepAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.OceanDeepAlpha
             : 1f;
-        var riverShallowAlpha = clientLighting?.HasLiquidAlphaData == true
+        var riverShallowAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.WaterShallowAlpha
             : 1f;
-        var riverDeepAlpha = clientLighting?.HasLiquidAlphaData == true
+        var riverDeepAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.WaterDeepAlpha
             : 1f;
         ADTContainer? boundContainer = null;
@@ -349,6 +349,18 @@ internal sealed class WorldLiquidRenderer(
                 currentBlend = blendKey;
             }
 
+            // The first LiquidType texture is animated wave data, not water
+            // albedo. Tell the shader whether it is real data so the magenta
+            // diagnostic remains visible while an asset is absent/loading.
+            var textureId = material.TextureFileDataIds is { Length: > 0 }
+                ? material.TextureFileDataIds[0]
+                : 0u;
+            ComPtr<ID3D11ShaderResourceView> texture = default;
+            var hasLoadedTexture = textureId != 0 &&
+                BLPCache.TryGetLoaded(textureId, out texture);
+            if (!hasLoadedTexture)
+                texture = _missingTexture;
+
             var cb = new WorldLiquidPerObjectCB
             {
                 Model = visible.Container.GetModelMatrix(),
@@ -364,25 +376,21 @@ internal sealed class WorldLiquidRenderer(
                 FamilyParameters = new Vector4(
                     isWater ? 1f : 0f,
                     material.Family == WorldLiquidMaterialFamily.Magma ? 1f : 0f,
-                    0f,
+                    hasLoadedTexture ? 1f : 0f,
                     0f),
                 LightingAmbient = new Vector4(ClampColor(ambientColor), 0f),
                 LightingDiffuse = new Vector4(ClampColor(diffuseColor), 0f),
-                // LightParams alpha belongs to the reference shader's
-                // scene-color/refraction mix. It is not surface coverage for
-                // this simpler pass. Keep these color constants opaque so it
-                // cannot accidentally replace the material fallback alpha.
+                // Keep RGB and alpha as separate inputs. The simple pass uses
+                // standard source-alpha blending to approximate the reference
+                // shader's water-tint-over-scene/refraction mix.
                 OceanCloseColor = new Vector4(ClampColor(oceanCloseColor), 1f),
                 OceanFarColor = new Vector4(ClampColor(oceanFarColor), 1f),
                 RiverCloseColor = new Vector4(ClampColor(riverCloseColor), 1f),
                 RiverFarColor = new Vector4(ClampColor(riverFarColor), 1f),
                 LiquidColorParameters = new Vector4(
-                    useClientLiquidColors && isWater &&
-                    material.WaterType != WorldLiquidWaterType.Wmo
-                        ? 1f
-                        : 0f,
-                    material.WaterType == WorldLiquidWaterType.River ? 1f : 0f,
-                    0f,
+                    useClientLiquidColors && isWater ? 1f : 0f,
+                    UsesRiverLightingPalette(material.WaterType) ? 1f : 0f,
+                    clientLighting.HasLiquidAlphaData && isWater ? 1f : 0f,
                     0f),
                 DepthCoefficients = material.DepthCoefficients,
                 LightDirection = new Vector4(NormalizeLightDirection(lightDirection), 0f),
@@ -400,16 +408,8 @@ internal sealed class WorldLiquidRenderer(
                 0,
                 0);
 
-            // Restore the simple forward fallback used before the regression:
-            // its single sampler consumes the first LiquidType texture. The
-            // high-detail reference material's slot 2/3 normal and foam inputs
-            // are only valid together with its scene backbuffer/depth inputs.
-            var textureId = material.TextureFileDataIds is { Length: > 0 }
-                ? material.TextureFileDataIds[0]
-                : 0u;
-            var texture = textureId == 0
-                ? _missingTexture
-                : BLPCache.GetCurrent(textureId, _missingTexture);
+            // The high-detail reference material's slot 2/3 normal and foam
+            // inputs are only valid together with scene backbuffer/depth.
             _deviceContext.PSSetShaderResources(0, 1, ref texture);
             _deviceContext.DrawIndexed(
                 batch.IndexCount,
@@ -473,7 +473,8 @@ internal sealed class WorldLiquidRenderer(
     /// Only intrinsically opaque liquid families use the opaque path. Water
     /// stays on the simple alpha-blended fallback until the renderer supplies
     /// the scene-color/depth inputs required by the client refraction shader.
-    /// Client LightParams alpha values are not framebuffer coverage values.
+    /// In the simple fallback, source-alpha blending approximates the
+    /// reference shader's LightParams-controlled tint-over-scene mix.
     /// </summary>
     internal static bool UsesOpaqueComposition(WorldLiquidMaterialFamily family) =>
         family is WorldLiquidMaterialFamily.Magma or
@@ -483,6 +484,11 @@ internal sealed class WorldLiquidRenderer(
     internal static bool IsWaterMaterial(WorldLiquidMaterialDescriptor material) =>
         material.Family == WorldLiquidMaterialFamily.Water ||
         material.WaterType != WorldLiquidWaterType.Unknown;
+
+    // The reference material selects the ocean palette only for waterType 0.
+    // River, WMO, and unclassified non-ocean water use the river palette.
+    internal static bool UsesRiverLightingPalette(WorldLiquidWaterType waterType) =>
+        waterType != WorldLiquidWaterType.Ocean;
 
     private static Vector3 ClampColor(Vector3 color) => new(
         float.IsFinite(color.X) ? Math.Clamp(color.X, 0f, 4f) : 0f,

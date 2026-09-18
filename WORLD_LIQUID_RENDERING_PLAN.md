@@ -25,9 +25,9 @@ The working tree now contains the MH2O baseline: managed parsing and mesh genera
 session-scoped WowLib material/texture catalog with deterministic fallbacks, ADT-owned DX11 upload
 and teardown, a separate translucent/emissive liquid pass, tile-bound union, `RenderLiquid` MVVM
 settings, live metrics, client LightData colors, first-surface texture resolution, and synthetic smoke
-coverage. LightParams liquid alpha is loaded for a future scene-color/refraction implementation, but
-must not be used as framebuffer coverage by the current simple pass; likewise, texture alpha must not
-mask that pass. Advanced refraction, animated multi-slot wave/foam composition, shoreline intersection,
+coverage. The simple pass represents LightParams liquid alpha through source-alpha blending over the
+already-rendered scene; animated texture alpha must never mask that coverage. Advanced refraction,
+animated multi-slot wave/foam composition, shoreline intersection,
 underwater post-processing, reflections, and per-id diagnostics remain future work. Future agents should
 extend those items in the ordered phases below while preserving the MH2O-only boundary.
 

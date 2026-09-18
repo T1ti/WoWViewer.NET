@@ -76,4 +76,16 @@ public sealed class WorldLightingSmokeTests
         Assert.AreEqual(0x22 / 255f, snapshot.DirectColor.Y, 0.0001f);
         Assert.AreEqual(0x33 / 255f, snapshot.DirectColor.Z, 0.0001f);
     }
+
+    [TestMethod]
+    public void TemporaryProfileOceanColorRetainsItsBlueChannel()
+    {
+        // LightData profile 12 at time 1440 in Classic 1.60.1.69876.
+        var oceanClose = WorldLightingData.UnpackRgb(0x00114B59);
+
+        Assert.AreEqual(0x11 / 255f, oceanClose.X, 0.0001f);
+        Assert.AreEqual(0x4B / 255f, oceanClose.Y, 0.0001f);
+        Assert.AreEqual(0x59 / 255f, oceanClose.Z, 0.0001f);
+        Assert.IsTrue(oceanClose.Z > oceanClose.X);
+    }
 }

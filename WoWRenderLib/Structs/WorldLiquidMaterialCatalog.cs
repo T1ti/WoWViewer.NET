@@ -125,7 +125,7 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         var family = ClassifyFamily(effectiveTypeId);
         var (shallow, deep, scale) = GetFallbackAppearance(family);
         var (textureIds, textureSlots) = ResolveTextures(effectiveTypeId);
-        var waterType = ResolveWaterType(effectiveTypeId);
+        var waterType = ResolveWaterType(effectiveTypeId, family);
         var depthCoefficients = ReadDepthCoefficients(effectiveTypeId);
         return new WorldLiquidMaterialDescriptor(
             new WorldLiquidMaterialKey(effectiveTypeId, requestedKey.LiquidObjectOrLvf),
@@ -153,12 +153,11 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             TryFindRow(_liquidTypeTable, typeId, out var row) &&
             TryGetInt(_liquidTypeTable, row, _liquidTypeMaterialColumn, out var materialId))
         {
-            // The type id mapping is the stable fallback across client eras.
-            // Keep a small set of well-known material ids as a supplement for
-            // newer/custom LiquidType rows whose numeric type is not known.
-            var materialFamily = ClassifyMaterialId(materialId);
-            if (materialFamily != WorldLiquidMaterialFamily.Unknown)
-                return materialFamily;
+            // The reference renderer dispatches known material ids explicitly
+            // and sends every other valid LiquidType material through its
+            // water implementation. This matters for newer clients whose
+            // water material ids are not part of the older fixed enum.
+            return ClassifyMaterialId(materialId);
         }
 
         return ClassifyTypeId(typeId);
@@ -760,7 +759,9 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         }
     }
 
-    private WorldLiquidWaterType ResolveWaterType(ushort liquidTypeId)
+    private WorldLiquidWaterType ResolveWaterType(
+        ushort liquidTypeId,
+        WorldLiquidMaterialFamily family)
     {
         if (_modernWaterTypes.TryGetValue(liquidTypeId, out var modernWaterType))
             return modernWaterType;
@@ -768,14 +769,14 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         if (TryResolveProceduralWaterType(liquidTypeId, out var legacyWaterType))
             return legacyWaterType;
 
-        // Legacy LiquidType rows do not carry the procedural-depth enum. The
-        // reference viewer treats type 2 (and the historical 14 ocean row) as
-        // ocean; the other water families use the river palette.
-        if (liquidTypeId is 2 or 14)
-            return WorldLiquidWaterType.Ocean;
-        if (ClassifyTypeId(liquidTypeId) == WorldLiquidMaterialFamily.Water)
-            return WorldLiquidWaterType.River;
-        return WorldLiquidWaterType.Unknown;
+        // The reference water material initializes this value to 0 (ocean)
+        // before an optional procedural texture row overrides it. Modern
+        // fixed-texture liquids such as Classic Era type 1250 have no
+        // procedural row and must retain that ocean default.
+        return DefaultWaterType(
+            liquidTypeId,
+            family,
+            _modernTextureIds.ContainsKey(liquidTypeId));
     }
 
     private bool TryResolveProceduralWaterType(
@@ -850,11 +851,10 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         _ => WorldLiquidMaterialFamily.Unknown
     };
 
-    private static WorldLiquidMaterialFamily ClassifyMaterialId(long materialId) => materialId switch
+    internal static WorldLiquidMaterialFamily ClassifyMaterialId(long materialId) => materialId switch
     {
         // LiquidMaterial/MaterialID values used by the reference viewer and
-        // the retail LiquidType tables. Unknown/custom values deliberately
-        // fall through to the stable LiquidType mapping.
+        // retail LiquidType tables.
         1 or 3 => WorldLiquidMaterialFamily.Water,
         2 or 4 => WorldLiquidMaterialFamily.Magma,
         5 => WorldLiquidMaterialFamily.Mercury,
@@ -863,8 +863,26 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         13 => WorldLiquidMaterialFamily.Fel,
         14 => WorldLiquidMaterialFamily.Swamp,
         18 => WorldLiquidMaterialFamily.Azerite,
-        _ => WorldLiquidMaterialFamily.Unknown
+        // LiquidMaterialManager::getLiquidTypeData in the reference renderer
+        // defaults unrecognized material ids to createWaterLiquidData.
+        _ => WorldLiquidMaterialFamily.Water
     };
+
+    internal static WorldLiquidWaterType DefaultWaterType(
+        ushort liquidTypeId,
+        WorldLiquidMaterialFamily family,
+        bool hasModernTextureData)
+    {
+        if (family != WorldLiquidMaterialFamily.Water)
+            return WorldLiquidWaterType.Unknown;
+
+        // Modern fixed-texture water retains createWaterLiquidData's initial
+        // waterType=0. Legacy rows have no XTexture evidence, so preserve the
+        // historical type-id fallback used before that table existed.
+        if (hasModernTextureData || liquidTypeId is 2 or 14)
+            return WorldLiquidWaterType.Ocean;
+        return WorldLiquidWaterType.River;
+    }
 
     private static (Vector4 Shallow, Vector4 Deep, float Scale) GetFallbackAppearance(
         WorldLiquidMaterialFamily family) => family switch

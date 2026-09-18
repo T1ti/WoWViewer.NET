@@ -268,7 +268,7 @@ public sealed class WorldLiquidSmokeTests
     }
 
     [TestMethod]
-    public void WaterWaveTextureDoesNotMaskSurfaceCoverage()
+    public void WaterUsesLightParamsAlphaWithoutWaveTextureMaskingCoverage()
     {
         var shaderPath = Path.Combine(AppContext.BaseDirectory, "Shaders", "liquid.hlsl");
         var shaderSource = File.ReadAllText(shaderPath);
@@ -277,18 +277,60 @@ public sealed class WorldLiquidSmokeTests
             shaderSource.Contains("surface.a * sampled.a", StringComparison.Ordinal),
             "The water wave texture alpha must not make the MH2O surface transparent.");
         Assert.IsFalse(
-            shaderSource.Contains("surface.a = lerp(closeAlpha", StringComparison.Ordinal),
-            "LightParams alpha is a refraction mix input, not simple-pass coverage.");
-        Assert.IsFalse(
             shaderSource.Contains("sampled.a *", StringComparison.Ordinal),
             "The animated liquid texture alpha must not mask the MH2O surface.");
         StringAssert.Contains(
             shaderSource,
-            "float finalCoverage = saturate(surface.a * lerp");
+            "surface.a = lerp(closeAlpha, farAlpha, depthMix);");
+        StringAssert.Contains(
+            shaderSource,
+            "float finalCoverage = saturate(surface.a);");
+        StringAssert.Contains(
+            shaderSource,
+            "? surface.rgb * waveDetail");
+        StringAssert.Contains(
+            shaderSource,
+            "float3 lighting = lightingAmbient.rgb + lightingDiffuse.rgb * directional;");
+        Assert.IsFalse(
+            shaderSource.Contains("0.35f + 0.65f", StringComparison.Ordinal),
+            "Direct lighting must use the reference Lambert term without a fabricated minimum.");
         Assert.IsFalse(
             WorldLiquidRenderer.UsesOpaqueComposition(WorldLiquidMaterialFamily.Water));
         Assert.IsFalse(
             WorldLiquidRenderer.UsesOpaqueComposition(WorldLiquidMaterialFamily.Swamp));
+    }
+
+    [TestMethod]
+    public void LiquidLightingPaletteMatchesReferenceWaterTypeSelection()
+    {
+        Assert.IsFalse(WorldLiquidRenderer.UsesRiverLightingPalette(
+            WorldLiquidWaterType.Ocean));
+        Assert.IsTrue(WorldLiquidRenderer.UsesRiverLightingPalette(
+            WorldLiquidWaterType.River));
+        Assert.IsTrue(WorldLiquidRenderer.UsesRiverLightingPalette(
+            WorldLiquidWaterType.Wmo));
+        Assert.IsTrue(WorldLiquidRenderer.UsesRiverLightingPalette(
+            WorldLiquidWaterType.Unknown));
+    }
+
+    [TestMethod]
+    public void UnknownClientMaterialIdsFollowReferenceWaterFallback()
+    {
+        Assert.AreEqual(
+            WorldLiquidMaterialFamily.Water,
+            WorldLiquidMaterialCatalog.ClassifyMaterialId(130));
+        Assert.AreEqual(
+            WorldLiquidWaterType.Ocean,
+            WorldLiquidMaterialCatalog.DefaultWaterType(
+                1250,
+                WorldLiquidMaterialFamily.Water,
+                hasModernTextureData: true));
+        Assert.AreEqual(
+            WorldLiquidWaterType.Unknown,
+            WorldLiquidMaterialCatalog.DefaultWaterType(
+                3,
+                WorldLiquidMaterialFamily.Magma,
+                hasModernTextureData: false));
     }
 
     [TestMethod]
