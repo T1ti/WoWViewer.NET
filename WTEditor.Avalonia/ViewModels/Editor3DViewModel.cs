@@ -52,6 +52,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<IReadOnlyList<TerrainChunkTextureLayer>>? CurrentTerrainTileTexturesPicked;
     public UndoService UndoService { get; }
     public LightingViewModel Lighting { get; } = new();
+    public WorldNavigationRequest? CurrentWorldNavigation { get; private set; }
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
     public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
@@ -359,8 +360,16 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public void RequestSelectedWmoPlacement(WmoPlacementSelection selection) =>
         SelectedWmoPlacementRequested?.Invoke(this, selection);
 
-    public void RequestWorldNavigation(WorldNavigationRequest request) =>
+    public void RequestWorldNavigation(WorldNavigationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        // Navigation is state, not a transient notification. The renderer view
+        // may still be attaching or restarting when the first map is chosen;
+        // retaining the target lets that renderer replay the selection instead
+        // of silently dropping the only request that supplies the map ID.
+        CurrentWorldNavigation = request;
         WorldNavigationRequested?.Invoke(this, request);
+    }
 
     partial void OnBrushSizeChanged(double value)
     {
@@ -691,8 +700,11 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             _ => $"terrain-{RenderTerrain}-liquid-{RenderLiquid}-wmo-{RenderWorldModels}-m2-{RenderDoodads}"
         };
 
-    private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
+    private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration)
+    {
+        CurrentWorldNavigation = null;
         ClientConfigurationChanged?.Invoke(this, configuration);
+    }
 
     private void OnRenderingConfigurationChanged(object? sender, RenderingConfiguration configuration)
     {

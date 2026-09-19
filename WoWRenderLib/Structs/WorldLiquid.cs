@@ -33,6 +33,20 @@ public enum WorldLiquidWaterType
     Wmo = 2
 }
 
+/// <summary>
+/// Effective water palette used when a LightData profile deliberately leaves
+/// all four legacy liquid colors at zero. These values are shared by the
+/// catalog/UI snapshot and the per-material renderer fallback so both surfaces
+/// report and render the same non-black result.
+/// </summary>
+public static class WorldLiquidColorDefaults
+{
+    public static readonly Vector3 OceanClose = new(0.16f, 0.48f, 0.82f);
+    public static readonly Vector3 OceanFar = new(0.015f, 0.09f, 0.32f);
+    public static readonly Vector3 RiverClose = OceanClose;
+    public static readonly Vector3 RiverFar = OceanFar;
+}
+
 public readonly record struct WorldLiquidMaterialKey(
     ushort LiquidTypeId,
     ushort LiquidObjectOrLvf);

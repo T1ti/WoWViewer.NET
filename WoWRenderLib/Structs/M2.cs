@@ -22,7 +22,7 @@ namespace WoWRenderLib.Structs
         public float blendMode;
         public Vector3 _pad;
         public Vector3 ambientColor;
-        public float _pad1;
+        public float globalOpacity;
         public Vector3 diffuseColor;
         public float _pad2;
     }

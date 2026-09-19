@@ -46,9 +46,42 @@
     <Style Selector="ListBox.world-map-list ListBoxItem:selected">
       <Setter Property="Background" Value="#245F8D"/>
     </Style>
+    <Style Selector="TextBlock.settings-section-heading">
+      <Setter Property="Foreground" Value="#BFD0DC"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="TextBlock.settings-label">
+      <Setter Property="Foreground" Value="#8FA5B5"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="TextBlock.settings-value">
+      <Setter Property="Foreground" Value="#EEF4F7"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="Border.settings-card">
+      <Setter Property="Background" Value="#222C34"/>
+      <Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="Padding" Value="10,7"/>
+    </Style>
+    <Style Selector="ListBox.wdt-tile-list">
+      <Setter Property="Background" Value="#222C34"/>
+      <Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="Foreground" Value="#EEF4F7"/>
+    </Style>
+    <Style Selector="ListBox.wdt-tile-list ListBoxItem">
+      <Setter Property="Padding" Value="7,6"/>
+      <Setter Property="Margin" Value="0,0,0,1"/>
+      <Setter Property="Foreground" Value="#EEF4F7"/>
+    </Style>
+    <Style Selector="ListBox.wdt-tile-list ListBoxItem:pointerover">
+      <Setter Property="Background" Value="#2E424F"/>
+    </Style>
   </UserControl.Styles>
 
-  <Grid Background="#11171C" ColumnDefinitions="460,8,*" Margin="16">
+  <Grid Background="#11171C" ColumnDefinitions="460,8,*,8,390" Margin="16">
     <Border Grid.Column="0" Background="#18232C" BorderBrush="#4B6172" BorderThickness="1"
             CornerRadius="7" Padding="14">
       <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
@@ -165,7 +198,7 @@
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel Spacing="3">
             <TextBlock Text="MINIMAP" FontWeight="Bold"/>
-            <TextBlock Text="Wheel to zoom · Drag to pan · Double-click to fit"
+            <TextBlock Text="Wheel to zoom Â· Drag to pan Â· Double-click to fit"
                        FontSize="11" Foreground="#AFC0CB"/>
           </StackPanel>
           <Button Grid.Column="1" Content="Fit map" Command="{Binding Minimap.ResetViewCommand}"/>
@@ -173,6 +206,94 @@
         <controls:MinimapControl Grid.Row="1" DataContext="{Binding Minimap}"/>
         <TextBlock Grid.Row="2" Text="{Binding Minimap.Status}" FontSize="11"
                    Foreground="#AFC0CB" TextWrapping="Wrap"/>
+      </Grid>
+    </Border>
+
+    <Border Grid.Column="4" Background="#18232C" BorderBrush="#4B6172" BorderThickness="1"
+            CornerRadius="7" Padding="14">
+      <Grid RowDefinitions="Auto,*" RowSpacing="10">
+        <StackPanel Spacing="3">
+          <TextBlock Text="MAP SETTINGS" FontWeight="Bold" Foreground="#F0F6F9"/>
+          <TextBlock Text="{Binding MapSettings.SelectedMapName}" FontSize="13"
+                     Foreground="#E1EBF0" TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding MapSettings.SelectedMapName}"/>
+          <TextBlock Text="{Binding MapSettings.SelectedMapSubtitle}" FontSize="11"
+                     Foreground="#AFC0CB" TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding MapSettings.SelectedMapSubtitle}"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="12">
+            <StackPanel IsVisible="{Binding MapSettings.HasNoSelectedMap}" Spacing="5"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="280">
+              <TextBlock Text="Select a map to inspect its data." TextAlignment="Center"
+                         Foreground="#D8E3E9"/>
+              <TextBlock Text="The panel includes every Map DB2 field and the parsed WDT records."
+                         TextAlignment="Center" TextWrapping="Wrap" FontSize="11"
+                         Foreground="#9EB1BD"/>
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding MapSettings.HasSelectedMap}" Spacing="6">
+              <TextBlock Classes="settings-section-heading"
+                         Text="{Binding MapSettings.MapDbSettingsHeader}"/>
+              <Border Classes="settings-card" IsVisible="{Binding MapSettings.HasMapDbSettings}">
+                <ItemsControl ItemsSource="{Binding MapSettings.MapDbSettings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MapSettingDisplayViewModel">
+                      <Grid ColumnDefinitions="145,*" Margin="0,3">
+                        <TextBlock Classes="settings-label" Text="{Binding Label}"
+                                   TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTip}"/>
+                        <TextBlock Grid.Column="1" Classes="settings-value" Text="{Binding Value}"
+                                   TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTip}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Border>
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding MapSettings.HasSelectedMap}" Spacing="6">
+              <TextBlock Classes="settings-section-heading"
+                         Text="{Binding MapSettings.WdtSettingsHeader}"/>
+              <Border Classes="settings-card" IsVisible="{Binding MapSettings.HasWdtSettings}">
+                <ItemsControl ItemsSource="{Binding MapSettings.WdtSettings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MapSettingDisplayViewModel">
+                      <Grid ColumnDefinitions="145,*" Margin="0,3">
+                        <TextBlock Classes="settings-label" Text="{Binding Label}"
+                                   TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTip}"/>
+                        <TextBlock Grid.Column="1" Classes="settings-value" Text="{Binding Value}"
+                                   TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTip}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Border>
+              <TextBlock Text="{Binding MapSettings.WdtStatus}" IsVisible="{Binding MapSettings.HasWdtError}"
+                         Foreground="#F0A0A0" FontSize="11" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding MapSettings.HasWdtTiles}" Spacing="6">
+              <TextBlock Classes="settings-section-heading"
+                         Text="{Binding MapSettings.WdtTilesHeader}"/>
+              <ListBox Classes="wdt-tile-list" ItemsSource="{Binding MapSettings.WdtTiles}"
+                       MaxHeight="330">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WdtTileDisplayViewModel">
+                    <Grid ColumnDefinitions="70,*" VerticalAlignment="Top">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Position}" Foreground="#E1EBF0" FontSize="11"/>
+                        <TextBlock Text="{Binding Flags}" Foreground="#8FA5B5" FontSize="10"/>
+                      </StackPanel>
+                      <TextBlock Grid.Column="1" Text="{Binding FileDataIds}" Foreground="#C9D8E0"
+                                 FontSize="10" TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTip}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
       </Grid>
     </Border>
   </Grid>

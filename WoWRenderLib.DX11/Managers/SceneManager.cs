@@ -94,6 +94,9 @@ namespace WoWRenderLib.DX11.Managers
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
         public WorldLightingData? ClientWorldLighting { get; private set; }
         private WorldLightingSettings _activeWorldLighting = WorldLightingSettings.Defaults;
+        private IReadOnlyList<WorldLightingContribution> _activeWorldLightingContributions =
+            Array.Empty<WorldLightingContribution>();
+        private WorldSkyLighting _activeWorldSky = WorldSkyLighting.None;
 
         public WorldLightingSettings ActiveWorldLighting => _activeWorldLighting with
         {
@@ -101,6 +104,9 @@ namespace WoWRenderLib.DX11.Managers
             AmbientColor = AmbientColor,
             DiffuseColor = DiffuseColor
         };
+        public IReadOnlyList<WorldLightingContribution> ActiveWorldLightingContributions =>
+            _activeWorldLightingContributions;
+        public WorldSkyLighting ActiveWorldSky => _activeWorldSky;
 
         private const int MaxInstancesPerBatch = 1024;
         private const int MaxTerrainChunksPerTile = 256;
@@ -119,6 +125,7 @@ namespace WoWRenderLib.DX11.Managers
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private readonly WorldLiquidRenderer _worldLiquidRenderer;
+        private readonly SkyRenderer _skyRenderer;
         private readonly DebugBoundsRenderer _debugBoundsRenderer;
 
         public SceneManager(
@@ -130,6 +137,7 @@ namespace WoWRenderLib.DX11.Managers
             _deviceContext = deviceContext;
             _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
             _worldLiquidRenderer = new WorldLiquidRenderer(device, deviceContext);
+            _skyRenderer = new SkyRenderer(device, deviceContext);
             _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
         }
 
@@ -237,12 +245,14 @@ namespace WoWRenderLib.DX11.Managers
         public double TerrainSubmissionTimeMs { get; private set; }
         public double LiquidCullingTimeMs { get; private set; }
         public double LiquidSubmissionTimeMs { get; private set; }
+        public double SkySubmissionTimeMs { get; private set; }
         public double TileHierarchyCullingTimeMs { get; private set; }
         public double DebugSubmissionTimeMs { get; private set; }
         public uint WmoDrawCalls { get; private set; }
         public uint M2DrawCalls { get; private set; }
         public uint TerrainDrawCalls { get; private set; }
         public uint LiquidDrawCalls { get; private set; }
+        public uint SkyDrawCalls { get; private set; }
         public uint DebugDrawCalls { get; private set; }
         public uint WmoSubmittedInstances { get; private set; }
         public uint M2SubmittedInstances { get; private set; }
@@ -251,6 +261,7 @@ namespace WoWRenderLib.DX11.Managers
         public ulong M2SubmittedIndices { get; private set; }
         public ulong TerrainSubmittedIndices { get; private set; }
         public ulong LiquidSubmittedIndices { get; private set; }
+        public ulong SkySubmittedIndices { get; private set; }
         public int candidateLiquidBatches { get; private set; }
         public int visibleLiquidBatches { get; private set; }
         public uint InstanceBufferMapCalls { get; private set; }
@@ -294,34 +305,29 @@ namespace WoWRenderLib.DX11.Managers
                 lighting.OceanShallowAlpha,
                 lighting.OceanDeepAlpha,
                 lighting.HasLiquidColorData,
-                lighting.HasLiquidAlphaData);
+                lighting.HasLiquidAlphaData,
+                false);
+            _activeWorldLightingContributions = Array.Empty<WorldLightingContribution>();
         }
 
         /// <summary>Applies a user-edited lighting snapshot immediately.</summary>
-        public void ApplyWorldLighting(WorldLightingSettings lighting)
+        public void ApplyWorldLighting(
+            WorldLightingSettings lighting,
+            IReadOnlyList<WorldLightingContribution>? activeLightContributions = null)
         {
-            var directionLengthSquared = lighting.LightDirection.LengthSquared();
-            LightDirection = directionLengthSquared > 0.000001f
-                ? lighting.LightDirection / MathF.Sqrt(directionLengthSquared)
-                : Vector3.UnitZ;
-            AmbientColor = ClampLightingColor(lighting.AmbientColor);
-            DiffuseColor = ClampLightingColor(lighting.DiffuseColor);
-            _activeWorldLighting = lighting with
-            {
-                LightDirection = LightDirection,
-                AmbientColor = AmbientColor,
-                DiffuseColor = DiffuseColor,
-                OceanCloseColor = ClampLightingColor(lighting.OceanCloseColor),
-                OceanFarColor = ClampLightingColor(lighting.OceanFarColor),
-                RiverCloseColor = ClampLightingColor(lighting.RiverCloseColor),
-                RiverFarColor = ClampLightingColor(lighting.RiverFarColor),
-                WaterShallowAlpha = Math.Clamp(lighting.WaterShallowAlpha, 0f, 1f),
-                WaterDeepAlpha = Math.Clamp(lighting.WaterDeepAlpha, 0f, 1f),
-                OceanShallowAlpha = Math.Clamp(lighting.OceanShallowAlpha, 0f, 1f),
-                OceanDeepAlpha = Math.Clamp(lighting.OceanDeepAlpha, 0f, 1f),
-                HasLiquidColorData = true,
-                HasLiquidAlphaData = true
-            };
+            _activeWorldLighting = lighting.NormalizeForRendering();
+            _activeWorldLightingContributions = activeLightContributions is { Count: > 0 }
+                ? activeLightContributions.ToArray()
+                : Array.Empty<WorldLightingContribution>();
+            LightDirection = _activeWorldLighting.LightDirection;
+            AmbientColor = _activeWorldLighting.AmbientColor;
+            DiffuseColor = _activeWorldLighting.DiffuseColor;
+        }
+
+        public void ApplyWorldSky(WorldSkyLighting sky)
+        {
+            _activeWorldSky = sky;
+            _skyRenderer.SetLighting(sky);
         }
 
         private static Vector3 ClampLightingColor(Vector3 color) => new(
@@ -489,6 +495,7 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             _worldLiquidRenderer.Initialize(shaderManager);
+            _skyRenderer.Initialize(shaderManager, m2Shader);
             _debugBoundsRenderer.Initialize(bboxShader);
         }
 
@@ -749,12 +756,14 @@ namespace WoWRenderLib.DX11.Managers
             TerrainSubmissionTimeMs = 0;
             LiquidCullingTimeMs = 0;
             LiquidSubmissionTimeMs = 0;
+            SkySubmissionTimeMs = 0;
             TileHierarchyCullingTimeMs = 0;
             DebugSubmissionTimeMs = 0;
             WmoDrawCalls = 0;
             M2DrawCalls = 0;
             TerrainDrawCalls = 0;
             LiquidDrawCalls = 0;
+            SkyDrawCalls = 0;
             DebugDrawCalls = 0;
             WmoSubmittedInstances = 0;
             M2SubmittedInstances = 0;
@@ -763,6 +772,7 @@ namespace WoWRenderLib.DX11.Managers
             M2SubmittedIndices = 0;
             TerrainSubmittedIndices = 0;
             LiquidSubmittedIndices = 0;
+            SkySubmittedIndices = 0;
             InstanceBufferMapCalls = 0;
             ConstantBufferUpdates = 0;
             TextureBindingCalls = 0;
@@ -782,6 +792,7 @@ namespace WoWRenderLib.DX11.Managers
                 wmoShaderProgram = _shaderManager.GetOrCompileShader("wmo");
                 m2ShaderProgram = _shaderManager.GetOrCompileShader("m2");
                 _worldLiquidRenderer.RefreshShader();
+                _skyRenderer.RefreshShaders();
             }
 #endif
 
@@ -828,6 +839,13 @@ namespace WoWRenderLib.DX11.Managers
             _deviceContext.PSSetSamplers(1, 1, ref clampSampler);
 
             _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+
+            var skyStats = _skyRenderer.Render(camera);
+            SkyDrawCalls = skyStats.DrawCalls;
+            SkySubmittedIndices = skyStats.SubmittedIndices;
+            SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
+            drawCalls += skyStats.DrawCalls;
+            submittedIndexCount += skyStats.SubmittedIndices;
 
             var adtVertexStride = (uint)Marshal.SizeOf<ADTGpuVertex>();
             var adtVertexOffset = 0U;
@@ -1104,6 +1122,7 @@ namespace WoWRenderLib.DX11.Managers
                 hasTexMatrix2 = 0,
                 lightDirection = LightDirection,
                 ambientColor = AmbientColor,
+                globalOpacity = 1f,
                 diffuseColor = DiffuseColor,
                 alphaRef = 1.0f,
                 blendMode = 0,
@@ -1624,6 +1643,7 @@ namespace WoWRenderLib.DX11.Managers
             if (disposing)
             {
                 _debugBoundsRenderer.Dispose();
+                _skyRenderer.Dispose();
                 _worldLiquidRenderer.Dispose();
                 foreach (var bounds in tileSceneBounds.Values)
                     bounds.Dispose();

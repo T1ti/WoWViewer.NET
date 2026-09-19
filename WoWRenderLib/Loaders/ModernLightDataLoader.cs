@@ -18,8 +18,9 @@ internal static class ModernLightDataLoader
 {
     // LightData 1.60.1.69876 stores these values in the first 20 inline cells.
     // The eleven sky/color cells between AmbientColor and OceanCloseColor are
-    // structural slots: DBCD.IO must consume them to reach the four liquid
-    // colors, but they are not semantic requirements for this renderer.
+    // structural slots. They are retained here because the lighting panel
+    // reports the final blended sky, sun, and cloud values as well as the
+    // world-light shader inputs.
     private const int RequiredInlineFieldCount = 20;
 
     private static readonly string[] PrefixMemberNames =
@@ -53,6 +54,17 @@ internal static class ModernLightDataLoader
         "time",
         "direct_color",
         "ambient_color",
+        "sky_top_color",
+        "sky_middle_color",
+        "sky_band_1_color",
+        "sky_band_2_color",
+        "sky_smog_color",
+        "sky_fog_color",
+        "sun_color",
+        "cloud_sun_color",
+        "cloud_emissive_color",
+        "cloud_layer_1_ambient_color",
+        "cloud_layer_2_ambient_color",
         "ocean_close_color",
         "ocean_far_color",
         "river_close_color",
@@ -183,10 +195,21 @@ internal static class ModernLightDataLoader
             [UsedColumnNames[2]] = unchecked((ushort)row.Time),
             [UsedColumnNames[3]] = row.DirectColor,
             [UsedColumnNames[4]] = row.AmbientColor,
-            [UsedColumnNames[5]] = row.OceanCloseColor,
-            [UsedColumnNames[6]] = row.OceanFarColor,
-            [UsedColumnNames[7]] = row.RiverCloseColor,
-            [UsedColumnNames[8]] = row.RiverFarColor
+            [UsedColumnNames[5]] = row.SkyTopColor,
+            [UsedColumnNames[6]] = row.SkyMiddleColor,
+            [UsedColumnNames[7]] = row.SkyBand1Color,
+            [UsedColumnNames[8]] = row.SkyBand2Color,
+            [UsedColumnNames[9]] = row.SkySmogColor,
+            [UsedColumnNames[10]] = row.SkyFogColor,
+            [UsedColumnNames[11]] = row.SunColor,
+            [UsedColumnNames[12]] = row.CloudSunColor,
+            [UsedColumnNames[13]] = row.CloudEmissiveColor,
+            [UsedColumnNames[14]] = row.CloudLayer1AmbientColor,
+            [UsedColumnNames[15]] = row.CloudLayer2AmbientColor,
+            [UsedColumnNames[16]] = row.OceanCloseColor,
+            [UsedColumnNames[17]] = row.OceanFarColor,
+            [UsedColumnNames[18]] = row.RiverCloseColor,
+            [UsedColumnNames[19]] = row.RiverFarColor
         };
     }
 

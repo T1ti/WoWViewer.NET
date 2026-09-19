@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:WTEditor.Avalonia.Controls"
+        xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+        x:Class="WTEditor.Avalonia.Views.LightingWindow"
+        x:DataType="vm:Editor3DViewModel"
+        Title="Lighting view"
+        Width="980" Height="760" MinWidth="640" MinHeight="420"
+        CanResize="True" Background="#1A2027">
+  <controls:LightingPanel HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+</Window>

@@ -177,6 +177,14 @@ namespace WoWRenderLib.DX11
         private readonly CancellationTokenSource _lifetimeCancellation = new();
         private Task? _contentInitializationTask;
         public WorldLightingData? ClientWorldLighting { get; private set; }
+        private readonly WorldLightingCatalogPublication _worldLightingCatalog = new();
+        private readonly WorldNavigationPublication _worldNavigation = new();
+        private readonly Stopwatch _worldLightingUpdateTimer = Stopwatch.StartNew();
+        private Vector3 _lastWorldLightingPosition = new(float.NaN);
+        private int _lastWorldLightingTime = -1;
+        private int _currentMapId = -1;
+        private bool _dynamicWorldLightingEnabled;
+        private int _contentInitializationComplete;
 
         private Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
 
@@ -205,6 +213,11 @@ namespace WoWRenderLib.DX11
         public uint CurrentWdtFileDataId => sceneManager?.CurrentWDTFileDataID ?? 0;
         public WorldLightingSettings ActiveWorldLighting =>
             sceneManager?.ActiveWorldLighting ?? WorldLightingSettings.Defaults;
+        public IReadOnlyList<WorldLightingContribution> ActiveWorldLightingContributions =>
+            sceneManager?.ActiveWorldLightingContributions ??
+            Array.Empty<WorldLightingContribution>();
+        public WorldSkyLighting ActiveWorldSky =>
+            sceneManager?.ActiveWorldSky ?? WorldSkyLighting.None;
         public WowViewerEngineStatus Status { get; private set; } =
             new(WowViewerEngineState.Created, "Renderer created.");
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;
@@ -281,6 +294,31 @@ namespace WoWRenderLib.DX11
         public void MarkTerrainChangesSaved() => sceneManager?.MarkTerrainChangesSaved();
         public void ApplyWorldLighting(WorldLightingSettings lighting)
         {
+            if (lighting.IsDynamic)
+            {
+                _dynamicWorldLightingEnabled = true;
+                UpdateDynamicWorldLighting(force: true);
+                return;
+            }
+
+            _dynamicWorldLightingEnabled = false;
+            var catalog = _worldLightingCatalog.Current;
+            if (catalog != null &&
+                _currentMapId >= 0 &&
+                lighting.Time != ActiveWorldLighting.Time)
+            {
+                var worldPosition = RendererToWorldLightingPosition(activeCamera.Position);
+                var evaluated = catalog.Evaluate(
+                    _currentMapId,
+                    worldPosition,
+                    checked((int)lighting.Time));
+                if (evaluated.HasValue)
+                {
+                    ApplyEvaluatedWorldLighting(evaluated.Value, isDynamic: false);
+                    return;
+                }
+            }
+
             Settings.AmbientColor = lighting.AmbientColor;
             Settings.DiffuseColor = lighting.DiffuseColor;
             sceneManager?.ApplyWorldLighting(lighting);
@@ -548,8 +586,10 @@ namespace WoWRenderLib.DX11
 
             sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;
 
+            ProcessPendingWorldNavigation();
             HandleClickSelection(input, false);
             HandleKeyboardMovement(input, (float)deltaTime);
+            UpdateDynamicWorldLighting(force: false);
 
 
             /*
@@ -859,6 +899,7 @@ namespace WoWRenderLib.DX11
 
         private void StartCASCInitialization()
         {
+            Volatile.Write(ref _contentInitializationComplete, 0);
             SetStatus(WowViewerEngineState.LoadingContent, $"Loading {_wowConfig.wowProduct} content...");
             _contentInitializationTask = Task.Run(async () =>
             {
@@ -887,23 +928,27 @@ namespace WoWRenderLib.DX11
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
-                    // Temporary fixed profile requested while the world-lighting
-                    // selection path is being implemented. Keep every row value
-                    // in the managed snapshot, and feed direct/ambient colors
-                    // into the shared renderer lighting inputs.
-                    var clientLighting = WorldLightingDataLoader.LoadTemporaryDefault(
-                        WowlibFileSystem.Current);
-                    if (clientLighting != null)
+                    try
                     {
-                        ClientWorldLighting = clientLighting;
-                        Settings.AmbientColor = clientLighting.AmbientColor;
-                        Settings.DiffuseColor = clientLighting.DirectColor;
-                        sceneManager.ApplyClientWorldLighting(clientLighting);
+                        var catalog = WorldLightingCatalogLoader.Load(
+                            WowlibFileSystem.Current,
+                            result.BuildName);
+                        _worldLightingCatalog.Publish(catalog);
+                    }
+                    catch (Exception lightingException)
+                    {
+                        Console.Error.WriteLine(
+                            $"Dynamic client lighting is unavailable; renderer defaults remain active. " +
+                            $"{lightingException.GetType().Name}: {lightingException.Message}");
                     }
 
                     sceneManager.GetCurrentWDT();
                     sceneManager.PreloadTEX();
 
+                    // Navigation is consumed by the render thread only after
+                    // all client-backed databases and scene dependencies have
+                    // completed their first initialization pass.
+                    Volatile.Write(ref _contentInitializationComplete, 1);
                     SetStatus(WowViewerEngineState.Ready, $"{result.BuildName} ready.");
                 }
                 catch (OperationCanceledException)
@@ -990,41 +1035,145 @@ namespace WoWRenderLib.DX11
             }
         }
 
-        public void NavigateTo(uint wdtFileDataId, double tileX, double tileY, bool isGlobalWmo)
+        public void NavigateTo(
+            int mapId,
+            uint wdtFileDataId,
+            double tileX,
+            double tileY,
+            bool isGlobalWmo)
         {
-            if (!IsInitialized || sceneManager == null || activeCamera == null)
+            _worldNavigation.Publish(new WorldNavigationTarget(
+                mapId,
+                wdtFileDataId,
+                tileX,
+                tileY,
+                isGlobalWmo));
+        }
+
+        private void ProcessPendingWorldNavigation()
+        {
+            var navigation = _worldNavigation.ConsumeWhenReady(
+                IsInitialized &&
+                sceneManager != null &&
+                activeCamera != null &&
+                Volatile.Read(ref _contentInitializationComplete) != 0);
+            if (navigation == null)
                 return;
 
-            sceneManager.LoadWDT(wdtFileDataId);
+            ApplyWorldNavigation(navigation);
+        }
+
+        private void ApplyWorldNavigation(WorldNavigationTarget navigation)
+        {
+            sceneManager.LoadWDT(navigation.WdtFileDataId);
             sceneManager.PreloadTEX();
             _pendingTerrainNavigation = null;
+            _currentMapId = navigation.MapId;
+            _dynamicWorldLightingEnabled = true;
 
-            if (isGlobalWmo && sceneManager.GetCurrentWDT()?.GlobalWmoExtents is { } extents)
+            if (navigation.IsGlobalWmo && sceneManager.GetCurrentWDT()?.GlobalWmoExtents is { } extents)
             {
                 // MODF ground X/Z map to renderer Y/X respectively; renderer Z is elevation.
                 var position = new Vector3(-extents.Min.Z, -extents.Min.X, extents.Max.Y);
                 var opposite = new Vector3(-extents.Max.Z, -extents.Max.X, extents.Min.Y);
                 activeCamera.Position = position;
                 activeCamera.SetDirection(opposite - position);
+                UpdateDynamicWorldLighting(force: true);
                 return;
             }
 
-            var clampedX = Math.Clamp(tileX, 0d, 63.999999d);
-            var clampedY = Math.Clamp(tileY, 0d, 63.999999d);
+            var clampedX = Math.Clamp(navigation.TileX, 0d, 63.999999d);
+            var clampedY = Math.Clamp(navigation.TileY, 0d, 63.999999d);
             var worldX = (float)((32d - clampedY) * 533.33333d);
             var worldY = (float)((32d - clampedX) * 533.33333d);
             var tile = ((byte)Math.Floor(clampedX), (byte)Math.Floor(clampedY));
-            _pendingTerrainNavigation = (wdtFileDataId, tile.Item1, tile.Item2, new Vector2(worldX, worldY));
+            _pendingTerrainNavigation = (navigation.WdtFileDataId, tile.Item1, tile.Item2, new Vector2(worldX, worldY));
             // Move immediately so this exact tile enters the loading queue.
             activeCamera.Position = new Vector3(worldX, worldY, activeCamera.Position.Z);
-            if (sceneManager.TryGetTerrainTileMaxHeight(wdtFileDataId, tile.Item1, tile.Item2, out var height))
+            UpdateDynamicWorldLighting(force: true);
+            if (sceneManager.TryGetTerrainTileMaxHeight(navigation.WdtFileDataId, tile.Item1, tile.Item2, out var height))
                 OnTerrainTileHeightAvailable(new MapTile
                 {
-                    wdtFileDataID = wdtFileDataId,
+                    wdtFileDataID = navigation.WdtFileDataId,
                     tileX = tile.Item1,
                     tileY = tile.Item2
                 }, height);
         }
+
+        private void UpdateDynamicWorldLighting(bool force)
+        {
+            if (_currentMapId < 0 ||
+                activeCamera == null)
+            {
+                return;
+            }
+
+            var catalog = _worldLightingCatalog.Current;
+            if (catalog == null)
+                return;
+
+            // Catalog loading happens after the first map can be selected.
+            // Consume this only once the map and camera are ready so the first
+            // render-thread evaluation cannot be lost to initialization order.
+            force |= _worldLightingCatalog.ConsumeRefreshRequest();
+
+            if (!force && _worldLightingUpdateTimer.ElapsedMilliseconds < 100)
+                return;
+            _worldLightingUpdateTimer.Restart();
+
+            var time = _dynamicWorldLightingEnabled
+                ? WorldLightingCatalog.FromLocalTime(DateTime.Now.TimeOfDay)
+                : 1440;
+            var worldPosition = RendererToWorldLightingPosition(activeCamera.Position);
+            if (!force &&
+                time == _lastWorldLightingTime &&
+                Vector3.DistanceSquared(worldPosition, _lastWorldLightingPosition) < 0.25f)
+            {
+                return;
+            }
+
+            var evaluated = catalog.Evaluate(_currentMapId, worldPosition, time);
+            if (!evaluated.HasValue)
+                return;
+
+            _lastWorldLightingTime = time;
+            _lastWorldLightingPosition = worldPosition;
+            ApplyEvaluatedWorldLighting(evaluated.Value, isDynamic: _dynamicWorldLightingEnabled);
+        }
+
+        private void ApplyEvaluatedWorldLighting(
+            WorldLightingSample sample,
+            bool isDynamic)
+        {
+            var lighting = new WorldLightingSettings(
+                sample.LightParamId,
+                sample.Time,
+                sample.LightDirection,
+                sample.AmbientColor,
+                sample.DirectColor,
+                sample.OceanCloseColor,
+                sample.OceanFarColor,
+                sample.RiverCloseColor,
+                sample.RiverFarColor,
+                sample.WaterShallowAlpha,
+                sample.WaterDeepAlpha,
+                sample.OceanShallowAlpha,
+                sample.OceanDeepAlpha,
+                sample.HasLiquidColorData,
+                sample.HasLiquidAlphaData,
+                isDynamic);
+            Settings.AmbientColor = lighting.AmbientColor;
+            Settings.DiffuseColor = lighting.DiffuseColor;
+            sceneManager.ApplyWorldSky(sample.Sky);
+            sceneManager.ApplyWorldLighting(lighting, sample.ActiveLightContributions);
+        }
+
+        /// <summary>
+        /// Light.GameCoords and ZoneLightPoint.Pos use the same center-origin
+        /// world space as terrain and the active camera. They are not the
+        /// top-left-origin coordinates shown by some editor UI projections.
+        /// </summary>
+        internal static Vector3 RendererToWorldLightingPosition(Vector3 position) => position;
 
         private void OnTerrainTileHeightAvailable(MapTile tile, float highestHeight)
         {

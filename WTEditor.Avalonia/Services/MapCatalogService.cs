@@ -1,5 +1,6 @@
 using DBCD;
 using DBCD.Providers;
+using System.Globalization;
 using System.Diagnostics;
 using WoWRenderLib.Providers;
 using WoWRenderLib.Services;
@@ -86,13 +87,14 @@ public sealed class MapCatalogService : IMapCatalogService
                         exception);
                 }
 
+                var availableColumns = mapDatabase.AvailableColumns;
                 var columns = new HashSet<string>(
-                    mapDatabase.AvailableColumns,
+                    availableColumns,
                     StringComparer.OrdinalIgnoreCase);
                 ValidateMapSchema(buildName, columns);
 
                 var records = mapDatabase.Values
-                    .Select(row => ToRecord(row, columns))
+                    .Select(row => ToRecord(row, availableColumns))
                     .OrderBy(map => map.Id)
                     .ToArray();
                 ValidateMapRecords(
@@ -136,25 +138,78 @@ public sealed class MapCatalogService : IMapCatalogService
         }
     }
 
-    private static WorldMapRecord ToRecord(DBCDRow row, ISet<string> columns)
+    private static WorldMapRecord ToRecord(DBCDRow row, IReadOnlyList<string> columns)
     {
-        var id = ReadInt(row, columns, "ID", row.ID);
-        var name = ReadString(row, columns, "MapName_lang");
+        var columnSet = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
+        var id = ReadInt(row, columnSet, "ID", row.ID);
+        var name = ReadString(row, columnSet, "MapName_lang");
         if (string.IsNullOrWhiteSpace(name))
-            name = ReadString(row, columns, "Directory");
+            name = ReadString(row, columnSet, "Directory");
         if (string.IsNullOrWhiteSpace(name))
             name = $"Unnamed map {id}";
 
-        var directory = ReadString(row, columns, "Directory");
+        var directory = ReadString(row, columnSet, "Directory");
 
         return new WorldMapRecord(
             id,
             name,
             directory,
             Convert.ToUInt32(row[WdtFileDataIdColumn]),
-            ReadInt(row, columns, "ExpansionID"),
-            ReadInt(row, columns, "InstanceType", ReadInt(row, columns, "MapType")));
+            ReadInt(row, columnSet, "ExpansionID"),
+            ReadInt(row, columnSet, "InstanceType", ReadInt(row, columnSet, "MapType")))
+        {
+            Settings = columns
+                .Select(column => ReadSetting(row, column))
+                .ToArray()
+        };
     }
+
+    private static WorldMapDbSetting ReadSetting(DBCDRow row, string column)
+    {
+        try
+        {
+            var value = row[column];
+            return new WorldMapDbSetting(column, FormatSettingValue(value), GetTypeName(value));
+        }
+        catch (Exception exception)
+        {
+            // A build-specific field should not prevent the rest of the map
+            // catalogue from loading if its generated accessor is unavailable.
+            return new WorldMapDbSetting(
+                column,
+                $"Unavailable ({exception.GetType().Name})",
+                "Unavailable");
+        }
+    }
+
+    internal static string FormatSettingValue(object? value)
+    {
+        if (value == null)
+            return "—";
+
+        if (value is string text)
+            return string.IsNullOrEmpty(text) ? "—" : text;
+
+        if (value is Array array)
+        {
+            if (array.Length == 0)
+                return "[]";
+
+            return $"[{string.Join(", ", array.Cast<object?>().Select(FormatSettingValue))}]";
+        }
+
+        if (value is IFormattable formattable)
+            return formattable.ToString(null, CultureInfo.InvariantCulture) ?? "—";
+
+        return value.ToString() ?? "—";
+    }
+
+    private static string GetTypeName(object? value) => value switch
+    {
+        null => "null",
+        Array array => $"{array.GetType().GetElementType()?.Name ?? "Array"}[]",
+        _ => value.GetType().Name
+    };
 
     internal static void ValidateMapSchema(string buildName, ISet<string> columns)
     {

@@ -50,6 +50,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
     private readonly Editor3DViewModel _viewport;
     private readonly Dictionary<int, WorldMapCatalogEntry> _mapEntries = [];
     public MinimapViewModel Minimap { get; }
+    public MapSettingsViewModel MapSettings { get; }
     private readonly List<WorldMapListItem> _allMaps = [];
     private CancellationTokenSource? _loadCancellation;
     private bool _isActive;
@@ -77,6 +78,9 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
     private WorldMapListItem? _selectedMap;
 
     [ObservableProperty]
+    private WorldMapCatalogEntry? _selectedMapEntry;
+
+    [ObservableProperty]
     private string _searchText = string.Empty;
 
     [ObservableProperty]
@@ -98,6 +102,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         IMinimapService? minimapService = null)
     {
         Minimap = new MinimapViewModel(minimapService ?? new MinimapService(), NavigateFromMinimap);
+        MapSettings = new MapSettingsViewModel();
         _mapCatalogService = mapCatalogService;
         _viewport = viewport;
         _isContentReady = viewport.RendererState == RendererLifecycleState.Ready;
@@ -167,8 +172,10 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         _allMaps.Clear();
         _mapEntries.Clear();
         Minimap.SelectMap(null);
+        MapSettings.SetMap(null);
         FilteredMaps.Clear();
         SelectedMap = null;
+        SelectedMapEntry = null;
         ExpansionFilters = [new(null, "All expansions")];
         MapTypeFilters = [new(null, "All map types")];
         SelectedExpansion = ExpansionFilters[0];
@@ -253,8 +260,13 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     partial void OnSelectedMapChanged(WorldMapListItem? value)
     {
+        var entry = value != null && _mapEntries.TryGetValue(value.Id, out var selectedEntry)
+            ? selectedEntry
+            : null;
+        SelectedMapEntry = entry;
+        MapSettings.SetMap(entry);
         Minimap.ActivePosition = null;
-        Minimap.SelectMap(value != null && _mapEntries.TryGetValue(value.Id, out var map) ? map : null);
+        Minimap.SelectMap(entry);
         UpdateActivePosition();
     }
 
@@ -264,6 +276,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
             return;
 
         _viewport.RequestWorldNavigation(new WorldNavigationRequest(
+            map.Map.Id,
             map.Wdt.FileDataId,
             position,
             !map.HasTerrain));

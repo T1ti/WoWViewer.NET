@@ -78,11 +78,21 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void LightingWindow_IsResizable()
+    {
+        var window = new LightingWindow();
+
+        Assert.IsTrue(window.CanResize);
+        Assert.AreEqual(640d, window.MinWidth);
+        Assert.AreEqual(420d, window.MinHeight);
+    }
+
+    [TestMethod]
     public void LightingViewModel_SynchronizesRendererStateWithoutEchoingAndPublishesEdits()
     {
         var expected = new LightingSettingsSnapshot(
             12,
-            1440,
+            1537,
             Vector3.Normalize(new Vector3(-0.5f, -0.5f, 1f)),
             new Vector3(0.1f, 0.2f, 0.3f),
             new Vector3(0.8f, 0.7f, 0.6f),
@@ -94,6 +104,7 @@ public sealed class EditorSettingsSmokeTests
             0.9f,
             0.75f,
             1f,
+            true,
             true,
             true);
         var viewModel = new LightingViewModel();
@@ -108,8 +119,35 @@ public sealed class EditorSettingsSmokeTests
         viewModel.Update(expected);
 
         Assert.IsNull(published);
-        Assert.AreEqual("LightData parameter 12, time 1440", viewModel.ProfileDescription);
+        Assert.AreEqual("Dynamic LightData parameter 12, time 1537", viewModel.ProfileDescription);
         Assert.AreEqual(expected.OceanCloseColor.Z, viewModel.OceanCloseB);
+
+        // The disabled slider may write its nearest tick back after the
+        // renderer update. This must remain a display echo, not a request to
+        // switch the engine to manual/static lighting.
+        viewModel.Time = 1560;
+        Assert.IsNull(published);
+        Assert.IsTrue(viewModel.IsDynamic);
+
+        // A bound ColorPicker writes its 8-bit display color back even though
+        // the renderer snapshot retains greater float precision. That UI
+        // round-trip must not be mistaken for a manual override.
+        viewModel.AmbientColor = viewModel.AmbientColor;
+        Assert.IsNull(published);
+        Assert.IsTrue(viewModel.IsDynamic);
+
+        // All renderer-owned fields must reject delayed control writes while
+        // live lighting is active, not only the time slider and ColorPickers.
+        viewModel.DirectionX = -0.25f;
+        Assert.IsNull(published);
+        Assert.IsTrue(viewModel.IsDynamic);
+
+        // Manual overrides become available only through the explicit live
+        // lighting toggle, so a delayed field echo cannot make this transition.
+        viewModel.IsDynamic = false;
+        Assert.IsNotNull(published);
+        Assert.IsFalse(published.IsDynamic);
+        published = null;
 
         viewModel.OceanCloseColor = Color.FromRgb(26, 128, 204);
 
@@ -118,6 +156,7 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(128f / 255f, published.OceanCloseColor.Y, 0.0001f);
         Assert.AreEqual(204f / 255f, published.OceanCloseColor.Z, 0.0001f);
         Assert.AreEqual(0.75f, published.OceanShallowAlpha);
+        Assert.IsFalse(published.IsDynamic);
     }
 
     [TestMethod]
@@ -140,11 +179,14 @@ public sealed class EditorSettingsSmokeTests
             0.75f,
             1f,
             true,
-            true);
+            true,
+            false);
         viewModel.UpdateActiveLighting(expected);
         var panel = new LightingPanel { DataContext = viewModel };
         LightingSettingsSnapshot? published = null;
         viewModel.LightingSettingsChanged += (_, lighting) => published = lighting;
+
+        Assert.IsTrue(panel.FindControl<Slider>("LightingTimeSlider")!.IsSnapToTickEnabled);
 
         Assert.AreEqual(0.5d, panel.FindControl<CompactNumberBox>(
             "WaterShallowAlphaBox")!.Value, 0.0001d);
@@ -179,6 +221,7 @@ public sealed class EditorSettingsSmokeTests
             0.8f,
             0.75f,
             1f,
+            true,
             true,
             true);
 

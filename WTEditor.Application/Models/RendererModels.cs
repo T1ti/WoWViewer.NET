@@ -21,6 +21,72 @@ public sealed record RendererStatus(
     public bool HasError => State == RendererLifecycleState.Failed;
 }
 
+public enum ActiveLightingSourceKind
+{
+    Global,
+    Zone,
+    Local
+}
+
+/// <summary>UI-safe description of one source in the final lighting blend.</summary>
+public sealed record ActiveLightingSnapshot(
+    int LightId,
+    long LightParamId,
+    ActiveLightingSourceKind SourceKind,
+    float Weight,
+    int ZoneLightId = 0,
+    string? ZoneName = null);
+
+public sealed record LightingSkyboxSnapshot(
+    uint FileDataId,
+    int Flags,
+    float Opacity);
+
+/// <summary>Final, spatially and temporally blended sky/atmosphere values.</summary>
+public sealed record LightingRuntimeSnapshot(
+    Vector3 SkyTopColor,
+    Vector3 SkyMiddleColor,
+    Vector3 SkyBand1Color,
+    Vector3 SkyBand2Color,
+    Vector3 SkySmogColor,
+    Vector3 SkyFogColor,
+    Vector3 SunColor,
+    Vector3 CloudSunColor,
+    Vector3 CloudEmissiveColor,
+    Vector3 CloudLayer1AmbientColor,
+    Vector3 CloudLayer2AmbientColor,
+    bool HasSkyColorData,
+    bool HasSunCloudData,
+    float ShadowOpacity,
+    float FogEnd,
+    float FogScaler,
+    float CloudDensity,
+    float FogDensity,
+    float FogHeight,
+    float FogHeightScaler,
+    float FogHeightDensity,
+    float FogZScalar,
+    float MainFogStartDistance,
+    float MainFogEndDistance,
+    float SunFogAngle,
+    Vector3 EndFogColor,
+    float EndFogColorDistance,
+    float FogStartOffset,
+    Vector3 SunFogColor,
+    float SunFogStrength,
+    Vector3 FogHeightColor,
+    Vector3 EndFogHeightColor,
+    Vector3 GroundAmbientColor,
+    Vector3 HorizonAmbientColor,
+    Vector4 FogHeightCoefficients,
+    Vector4 MainFogCoefficients,
+    Vector4 HeightDensityFogCoefficients,
+    long ColorGradingFileDataId,
+    long DarkerColorGradingFileDataId,
+    bool HasFogData,
+    bool HighlightSky,
+    IReadOnlyList<LightingSkyboxSnapshot> Skyboxes);
+
 public sealed record ViewportTelemetry(
     double FramesPerSecond,
     double FrameTimeMilliseconds,
@@ -47,4 +113,7 @@ public sealed record LightingSettingsSnapshot(
     float OceanShallowAlpha,
     float OceanDeepAlpha,
     bool HasLiquidColorData,
-    bool HasLiquidAlphaData);
+    bool HasLiquidAlphaData,
+    bool IsDynamic,
+    IReadOnlyList<ActiveLightingSnapshot>? ActiveLights = null,
+    LightingRuntimeSnapshot? Runtime = null);

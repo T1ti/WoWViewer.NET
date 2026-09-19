@@ -14,7 +14,7 @@ cbuffer PerObject : register(b0)
     float blendMode;
     float3 _pad;
     float3 ambientColor;
-    float _pad1;
+    float globalOpacity;
     float3 diffuseColor;
     float _pad2;
 };
@@ -524,5 +524,5 @@ float4 PS_Main(VSOutput input) : SV_TARGET
     float3 lit_color = mat_diffuse * input.LitColor;
     // lit_color += specular; // uncomment when ready
 
-    return float4(lit_color, final_opacity);
+    return float4(lit_color, final_opacity * globalOpacity);
 }

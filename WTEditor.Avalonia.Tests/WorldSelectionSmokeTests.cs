@@ -12,10 +12,81 @@ namespace WTEditor.Avalonia.Tests;
 public sealed class WorldSelectionSmokeTests
 {
     [TestMethod]
+    public void FirstWorldNavigationIsRetainedWithoutAnAttachedRendererSubscriber()
+    {
+        var session = new EditorSession(new MemorySettingsStore());
+        using var viewport = new Editor3DViewModel(session);
+        var expected = new WorldNavigationRequest(
+            42,
+            123456,
+            new WTEditor.Application.Geometry.TilePoint(12.5, 34.25),
+            false);
+
+        // This is the startup ordering that previously lost the first map:
+        // selection publishes before Dx11View has an engine to receive it.
+        viewport.RequestWorldNavigation(expected);
+
+        Assert.AreSame(expected, viewport.CurrentWorldNavigation);
+
+        WorldNavigationRequest? published = null;
+        viewport.WorldNavigationRequested += (_, navigation) => published = navigation;
+        viewport.RequestWorldNavigation(expected);
+        Assert.AreSame(expected, published);
+
+        session.Reload(session.Current);
+        Assert.IsNull(viewport.CurrentWorldNavigation);
+    }
+
+    [TestMethod]
     public void WdtGlobalWmoFlag_IndicatesMapWithoutTerrain()
     {
         Assert.IsTrue(new WorldMapWdtMetadata(1, 0).HasTerrain);
         Assert.IsFalse(new WorldMapWdtMetadata(1, 0x1).HasTerrain);
+    }
+
+    [TestMethod]
+    public void MapSettings_ProjectsMapDbFieldsAndWdtTileFiles()
+    {
+        var map = new WorldMapRecord(42, "Test map", "TestMap", 123, 4, 1)
+        {
+            Settings =
+            [
+                new WorldMapDbSetting("ID", "42", "Int32"),
+                new WorldMapDbSetting("MapName_lang", "Test map", "String"),
+                new WorldMapDbSetting("Flags", "[1, 2]", "UInt32[]")
+            ]
+        };
+        var tile = new WorldMapWdtTileData(new WorldMapTile(3, 7), 1)
+        {
+            RootAdtFileDataId = 456,
+            MinimapTextureFileDataId = 789
+        };
+        var entry = new WorldMapCatalogEntry(
+            map,
+            new WorldMapWdtMetadata(123, 0)
+            {
+                Version = 18,
+                Settings = [new WorldMapWdtSetting("MVER.Version", "18")],
+                Tiles = [tile],
+                ActiveTiles = [tile.Position]
+            });
+
+        var viewModel = new MapSettingsViewModel();
+        viewModel.SetMap(entry);
+
+        Assert.IsTrue(viewModel.HasSelectedMap);
+        CollectionAssert.AreEqual(
+            new[] { "ID", "MapName_lang", "Flags" },
+            viewModel.MapDbSettings.Select(setting => setting.Label).ToArray());
+        Assert.AreEqual("MVER.Version", viewModel.WdtSettings[0].Label);
+        Assert.AreEqual("(3, 7)", viewModel.WdtTiles[0].Position);
+        StringAssert.Contains(viewModel.WdtTiles[0].FileDataIds, "Root=456");
+        StringAssert.Contains(viewModel.WdtTiles[0].FileDataIds, "Minimap=789");
+
+        viewModel.SetMap(null);
+        Assert.IsTrue(viewModel.HasNoSelectedMap);
+        Assert.AreEqual(0, viewModel.MapDbSettings.Count);
+        Assert.AreEqual(0, viewModel.WdtTiles.Count);
     }
 
     [TestMethod]

@@ -128,6 +128,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.TerrainChunkTexturesRequested += OnTerrainChunkTexturesRequested;
                 _vm.DominantTerrainTextureRequested += OnDominantTerrainTextureRequested;
                 _vm.CurrentTerrainTileTexturesRequested += OnCurrentTerrainTileTexturesRequested;
+                ReplayCurrentWorldNavigation();
                 if (_benchmarkOptions.Enabled)
                 {
                     _vm.IsDetailedGpuProfilingEnabled = true;
@@ -341,6 +342,7 @@ namespace WTEditor.Avalonia.Controls
                 new Vector2D<int>(width, height),
                 _vm?.HasInitialCameraPosition == true ? _vm.InitialCameraPosition : null,
                 _vm?.HasInitialCameraDirection == true ? _vm.InitialCameraDirection : null);
+            ReplayCurrentWorldNavigation();
         }
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -742,7 +744,10 @@ namespace WTEditor.Avalonia.Controls
                         delta * 1_000d,
                         engine.CurrentWdtFileDataId));
                     _vm.UpdateActiveLighting(
-                        LightingSettingsProjection.ToDisplay(engine.ActiveWorldLighting));
+                        LightingSettingsProjection.ToDisplay(
+                            engine.ActiveWorldLighting,
+                            engine.ActiveWorldSky,
+                            engine.ActiveWorldLightingContributions));
                 }
 
                 var profileSnapshot = FrameProfileSnapshotFactory.Create(
@@ -817,12 +822,30 @@ namespace WTEditor.Avalonia.Controls
                 transform.Scale.X);
         }
 
-        private void OnWorldNavigationRequested(object? sender, ViewModels.WorldNavigationRequest request) =>
+        private void OnWorldNavigationRequested(object? sender, ViewModels.WorldNavigationRequest request)
+        {
+            ApplyWorldNavigation(request);
+        }
+
+        private void ReplayCurrentWorldNavigation()
+        {
+            if (_vm?.CurrentWorldNavigation is { } navigation)
+                ApplyWorldNavigation(navigation);
+        }
+
+        private void ApplyWorldNavigation(ViewModels.WorldNavigationRequest request)
+        {
             _rendererSession.Engine?.NavigateTo(
+                request.MapId,
                 request.WdtFileDataId,
                 request.Position.X,
                 request.Position.Y,
                 request.IsGlobalWmo);
+            // Navigation is retained until client initialization is complete,
+            // but an already-ready renderer should consume it immediately even
+            // when the viewport was otherwise idle.
+            RequestRenderFrame();
+        }
 
         private void OnTerrainChunkTexturesRequested(object? sender, Vector2 mousePosition)
         {

@@ -896,8 +896,8 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                 new Vector4(0.03f, 0.14f, 0.02f, 0.94f),
                 0.9f),
             WorldLiquidMaterialFamily.Water => (
-                new Vector4(0.16f, 0.48f, 0.82f, 0.58f),
-                new Vector4(0.015f, 0.09f, 0.32f, 0.92f),
+                new Vector4(WorldLiquidColorDefaults.OceanClose, 0.58f),
+                new Vector4(WorldLiquidColorDefaults.OceanFar, 0.92f),
                 1f),
             _ => (
                 new Vector4(0.3f, 0.42f, 0.55f, 0.55f),

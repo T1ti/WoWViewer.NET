@@ -20,6 +20,7 @@ public partial class Editor3DView : UserControl
 
     private Editor3DViewModel? _subscribedViewModel;
     private MetricsWindow? _metricsWindow;
+    private LightingWindow? _lightingWindow;
     // private bool _leftMouseDown = false;
     // private bool _rightMouseDown = false;
     // private Point _lastMousePos;
@@ -89,6 +90,7 @@ public partial class Editor3DView : UserControl
             viewModel.PropertyChanged += OnViewModelPropertyChanged;
             ApplyKeyboardLayout(viewModel.KeyboardLayout);
             UpdateMetricsWindow();
+            UpdateLightingWindow();
         }
         else
         {
@@ -102,6 +104,8 @@ public partial class Editor3DView : UserControl
     {
         if (e.PropertyName == nameof(Editor3DViewModel.IsMetricsPanelVisible))
             UpdateMetricsWindow();
+        else if (e.PropertyName == nameof(Editor3DViewModel.IsLightingPanelVisible))
+            UpdateLightingWindow();
     }
 
     private void UpdateMetricsWindow()
@@ -138,6 +142,40 @@ public partial class Editor3DView : UserControl
             ViewModel.IsMetricsPanelVisible = false;
     }
 
+    private void UpdateLightingWindow()
+    {
+        var viewModel = ViewModel;
+        if (viewModel?.IsLightingPanelVisible == true && VisualRoot != null)
+        {
+            if (_lightingWindow != null)
+                return;
+
+            _lightingWindow = new LightingWindow { DataContext = viewModel };
+            _lightingWindow.Closed += OnLightingWindowClosed;
+            if (TopLevel.GetTopLevel(this) is Window owner)
+                _lightingWindow.Show(owner);
+            else
+                _lightingWindow.Show();
+        }
+        else if (_lightingWindow != null)
+        {
+            var window = _lightingWindow;
+            _lightingWindow = null;
+            window.Closed -= OnLightingWindowClosed;
+            window.Close();
+        }
+    }
+
+    private void OnLightingWindowClosed(object? sender, EventArgs e)
+    {
+        if (_lightingWindow != sender)
+            return;
+
+        _lightingWindow = null;
+        if (ViewModel != null)
+            ViewModel.IsLightingPanelVisible = false;
+    }
+
     private void ApplyKeyboardLayout(KeyboardLayoutMode layout)
     {
         SetKeyboardMode(layout == KeyboardLayoutMode.Azerty ||
@@ -150,6 +188,7 @@ public partial class Editor3DView : UserControl
         // Focusable = true;
         Focus();
         UpdateMetricsWindow();
+        UpdateLightingWindow();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -160,6 +199,14 @@ public partial class Editor3DView : UserControl
         {
             window.Closed -= OnMetricsWindowClosed;
             window.Close();
+        }
+
+        var lightingWindow = _lightingWindow;
+        _lightingWindow = null;
+        if (lightingWindow != null)
+        {
+            lightingWindow.Closed -= OnLightingWindowClosed;
+            lightingWindow.Close();
         }
 
         base.OnDetachedFromVisualTree(e);
