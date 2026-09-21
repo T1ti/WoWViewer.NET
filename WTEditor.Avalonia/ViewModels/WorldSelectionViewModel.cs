@@ -56,6 +56,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
     private bool _isActive;
     private bool _isContentReady;
     private bool _isMapsLoaded;
+    private bool _isDisposed;
     private int _catalogGeneration;
 
     public ObservableCollection<WorldMapListItem> FilteredMaps { get; } = [];
@@ -114,6 +115,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     public Task ActivateAsync()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         _isActive = true;
         _isContentReady |= _viewport.RendererState == RendererLifecycleState.Ready;
 
@@ -186,13 +188,13 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     private async Task LoadMapCatalogIfReadyAsync()
     {
-        if (!_isActive || !_isContentReady || _isMapsLoaded || IsLoading)
+        if (_isDisposed || !_isActive || !_isContentReady || _isMapsLoaded || IsLoading)
             return;
 
         var generation = _catalogGeneration;
         _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
-        _loadCancellation = new CancellationTokenSource();
+        var cancellation = new CancellationTokenSource();
+        _loadCancellation = cancellation;
 
         IsLoading = true;
         StatusMessage = "Reading Map DB2...";
@@ -200,8 +202,8 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var maps = await _mapCatalogService.LoadAsync(_loadCancellation.Token);
-            if (generation != _catalogGeneration)
+            var maps = await _mapCatalogService.LoadAsync(cancellation.Token);
+            if (_isDisposed || cancellation.IsCancellationRequested || generation != _catalogGeneration)
                 return;
 
             _allMaps.Clear();
@@ -215,21 +217,28 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
             SynchronizeActiveWorldSelection();
             StatusMessage = $"{_allMaps.Count:N0} maps and WDT headers loaded.";
         }
-        catch (OperationCanceledException) when (generation != _catalogGeneration)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            // A client change superseded this request.
+            // A client change or disposal superseded this request.
         }
         catch (Exception exception)
         {
-            if (generation == _catalogGeneration)
+            if (!_isDisposed && generation == _catalogGeneration)
                 StatusMessage = $"Unable to read Map DB2: {exception.Message}";
         }
         finally
         {
-            IsLoading = false;
-            NotifyMapListChanged();
+            if (ReferenceEquals(_loadCancellation, cancellation))
+            {
+                _loadCancellation = null;
+                IsLoading = false;
+                if (!_isDisposed)
+                    NotifyMapListChanged();
+            }
 
-            if (generation != _catalogGeneration)
+            cancellation.Dispose();
+
+            if (!_isDisposed && generation != _catalogGeneration)
                 _ = LoadMapCatalogIfReadyAsync();
         }
     }
@@ -412,9 +421,18 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _isActive = false;
+        _catalogGeneration++;
         _viewport.PropertyChanged -= OnViewportPropertyChanged;
         _viewport.ClientConfigurationChanged -= OnClientConfigurationChanged;
-        _loadCancellation?.Cancel();
+        var cancellation = _loadCancellation;
+        _loadCancellation = null;
+        cancellation?.Cancel();
         Minimap.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

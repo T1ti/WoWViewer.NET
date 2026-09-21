@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WTEditor.Avalonia.Services;
@@ -44,6 +45,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _thumbnailCancellation;
     private bool _isActivated;
     private bool _isRebuildingFolders;
+    private bool _isDisposed;
     private IReadOnlyList<ClientFileCatalogEntry>? _activeCatalog;
 
     public TextureBrowserViewModel(
@@ -143,7 +145,11 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
         _replaceFavorites(folder.Textures.Select(CreateTextureItem).ToArray());
     }
 
-    public void Activate() => _ = ActivateAsync();
+    public void Activate()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        _ = ActivateAsync();
+    }
 
     internal static bool IsBrowsableTerrainTexture(string path, bool includeSpecular = false)
     {
@@ -170,17 +176,19 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             clientPaths.Contains(basePath + "_h.blp"));
     }
 
-    private async Task ActivateAsync()
+    internal async Task ActivateAsync()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         CancelCatalogLoad();
         CancelThumbnailLoad();
-        _catalogCancellation = new CancellationTokenSource();
-        var token = _catalogCancellation.Token;
+        var cancellation = new CancellationTokenSource();
+        _catalogCancellation = cancellation;
+        var token = cancellation.Token;
         IsLoading = true;
         try
         {
             var catalog = await _fileCatalog.GetFilesAsync(token);
-            if (token.IsCancellationRequested)
+            if (_isDisposed || token.IsCancellationRequested)
                 return;
             if (_isActivated && ReferenceEquals(catalog, _activeCatalog))
                 return;
@@ -207,34 +215,42 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             RebuildFolderTree();
             RefreshResults();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (InvalidOperationException)
+        catch (Exception exception)
         {
-            _textures = [];
-            Results.Clear();
-            RootFolders.Clear();
-            CurrentFolders.Clear();
-            FolderResults.Clear();
-            CurrentEntries.Clear();
+            if (!_isDisposed)
+            {
+                Trace.TraceError($"Unable to load the terrain texture catalog: {exception}");
+                _textures = [];
+                Results.Clear();
+                RootFolders.Clear();
+                CurrentFolders.Clear();
+                FolderResults.Clear();
+                CurrentEntries.Clear();
+            }
         }
         finally
         {
-            if (!token.IsCancellationRequested)
-                IsLoading = false;
+            if (ReferenceEquals(_catalogCancellation, cancellation))
+            {
+                _catalogCancellation = null;
+                if (!_isDisposed)
+                    IsLoading = false;
+            }
+
+            cancellation.Dispose();
         }
     }
 
     private void RefreshResults()
     {
         CancelThumbnailLoad();
-        _thumbnailCancellation = new CancellationTokenSource();
-        var token = _thumbnailCancellation.Token;
 
         if (IsExplorerMode)
         {
-            RefreshExplorerResults(token);
+            RefreshExplorerResults();
             return;
         }
 
@@ -248,7 +264,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             Results.Add(CreateTextureItem(texture));
         }
 
-        _ = LoadThumbnailsAsync(Results.ToArray(), token);
+        StartThumbnailLoad(Results.ToArray());
     }
 
     private void RebuildFolderTree()
@@ -323,7 +339,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
         return null;
     }
 
-    private void RefreshExplorerResults(CancellationToken token)
+    private void RefreshExplorerResults()
     {
         CurrentFolders.Clear();
         FolderResults.Clear();
@@ -342,7 +358,7 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
             FolderResults.Add(item);
             CurrentEntries.Add(item);
         }
-        _ = LoadThumbnailsAsync(FolderResults.ToArray(), token);
+        StartThumbnailLoad(FolderResults.ToArray());
     }
 
     private TexturePaletteItemViewModel CreateTextureItem(TextureBrowserCatalogEntry texture)
@@ -358,40 +374,72 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
         return item;
     }
 
+    private void StartThumbnailLoad(IReadOnlyList<TexturePaletteItemViewModel> textures)
+    {
+        if (_isDisposed || textures.Count == 0)
+            return;
+
+        var cancellation = new CancellationTokenSource();
+        _thumbnailCancellation = cancellation;
+        _ = LoadThumbnailsAsync(textures, cancellation);
+    }
+
     private async Task LoadThumbnailsAsync(
         IReadOnlyList<TexturePaletteItemViewModel> textures,
-        CancellationToken cancellationToken)
+        CancellationTokenSource cancellation)
     {
+        var cancellationToken = cancellation.Token;
         try
         {
             foreach (var texture in textures)
             {
                 if (texture.FileDataId is { } id)
-                    texture.Thumbnail = await _thumbnailService.LoadAsync(id, cancellationToken);
+                {
+                    var thumbnail = await _thumbnailService.LoadAsync(id, cancellationToken);
+                    if (_isDisposed || cancellationToken.IsCancellationRequested)
+                        return;
+                    texture.Thumbnail = thumbnail;
+                }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (Exception exception)
+        {
+            if (!_isDisposed)
+                Trace.TraceError($"Unable to load a terrain texture thumbnail: {exception}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_thumbnailCancellation, cancellation))
+                _thumbnailCancellation = null;
+            cancellation.Dispose();
         }
     }
 
     private void CancelCatalogLoad()
     {
-        _catalogCancellation?.Cancel();
-        _catalogCancellation?.Dispose();
+        var cancellation = _catalogCancellation;
         _catalogCancellation = null;
+        cancellation?.Cancel();
     }
 
     private void CancelThumbnailLoad()
     {
-        _thumbnailCancellation?.Cancel();
-        _thumbnailCancellation?.Dispose();
+        var cancellation = _thumbnailCancellation;
         _thumbnailCancellation = null;
+        cancellation?.Cancel();
     }
 
     public void Dispose()
     {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
         CancelCatalogLoad();
         CancelThumbnailLoad();
+        GC.SuppressFinalize(this);
     }
 }

@@ -186,15 +186,10 @@ namespace WoWRenderLib.DX11
         private bool _dynamicWorldLightingEnabled;
         private int _contentInitializationComplete;
 
-        private Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
+        private readonly Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
 
         private string[] _products = Array.Empty<string>(); // simple string list for IMGUI
         private int _currentProduct = -1; // list index for IMGUI
-
-        // if both are true, it will autoload first product. just temporary convenience
-        // hardcoded for now, will be depprecated when saving current product config
-        private bool _SetDefaultProduct = true; // whether to auto set a default product (first one from build info list) or not, if none is set in config
-        private bool _AutoLoadProduct = true; // whether to auto load the product or not. 
 
         public RendererStats Stats { get; } = new();
         public RendererSettings Settings { get; private set; } = new();
@@ -223,14 +218,13 @@ namespace WoWRenderLib.DX11
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;
         private (uint Wdt, byte X, byte Y, Vector2 Position)? _pendingTerrainNavigation;
 
-        private bool disposed = false;
+        private bool _disposed;
 
         private IImGuiBackend? imgui;
         private readonly bool renderImGUI;
 
         private ComPtr<ID3D11Device> device = default;
         private ComPtr<ID3D11DeviceContext> deviceContext = default;
-        private ComPtr<IDXGIFactory2> factory = default;
 
         private ComPtr<ID3D11Texture2D> sharedTexture = default;
         private ComPtr<ID3D11RenderTargetView> _sharedRTV = default;
@@ -272,13 +266,10 @@ namespace WoWRenderLib.DX11
 
         private bool shadersReady = false;
 
-        private string WDTFDIDInput = "";
-
         private bool gizmoWasUsing = false;
         private bool gizmoWasOver = false;
         //  private ImGuizmoOperation currentGizmoOperation = ImGuizmoOperation.Translate;
         private bool wasSpacePressed = false;
-        private bool showMapSelection = false;
 
         private ShaderManager shaderManager = null!;
         private SceneManager sceneManager = null!;
@@ -350,15 +341,12 @@ namespace WoWRenderLib.DX11
             sceneManager?.UpdateSelectedWmoPlacement(doodadSet, nameSet);
         // private ImGuiController imGuiController = null;
 
-        private uint frameDelta = 0;
-
         // calcualte average fps
         private readonly Stopwatch _fpsWatch = Stopwatch.StartNew();
         private double _lastFpsTime;
         private uint _frameCount;
         private uint _maxDeltaMS = 500; // update fps every x ms
 
-        private string[] wowProductList = [];
         private IntPtr _cachedSharedHandle = IntPtr.Zero;
         public WowViewerEngine(WowClientConfig wowConfig, IImGuiBackend? imguiBackend, bool renderImGUI)
         {
@@ -396,67 +384,65 @@ namespace WoWRenderLib.DX11
         // Load
         public void Initialize(DXGI dxgi, ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> deviceContext, Vector2D<int> frameBufferSize)
         {
-            Console.WriteLine("Initializing WowViewerEngine..."); ;
-            if (IsInitializing) return;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameBufferSize.X, nameof(frameBufferSize));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameBufferSize.Y, nameof(frameBufferSize));
+            if (IsInitialized || IsInitializing)
+                return;
+
+            Console.WriteLine("Initializing WowViewerEngine...");
 
             IsInitializing = true;
             SetStatus(WowViewerEngineState.Initializing, "Initializing Direct3D renderer...");
 
             try
             {
+                this.device = device;
+                this.deviceContext = deviceContext;
+                _gpuFrameTimer = new GpuFrameTimer(device, deviceContext);
 
-            this.device = device;
-            this.deviceContext = deviceContext;
-            _gpuFrameTimer = new GpuFrameTimer(device, deviceContext);
+                // TODO verify if this should be this project or UI app after split
+                shaderManager = new ShaderManager(
+                    device,
+                    Path.Combine(AppContext.BaseDirectory, "Shaders"));
+                sceneManager = new SceneManager(device, deviceContext, shaderManager);
 
-            // TODO verify if this should be this project or UI app after split
-            var exeLocation = Path.GetDirectoryName(AppContext.BaseDirectory);
-            if (exeLocation == null)
-            {
-                Console.WriteLine("Could not determine executable location for shader loading");
-                return;
-            }
+                // imgui?.Initialize();
 
-            shaderManager = new ShaderManager(device, Path.Combine(exeLocation, "Shaders"));
-            sceneManager = new SceneManager(device, deviceContext, shaderManager);
+                adtShaderProgram = shaderManager.GetOrCompileShader("adt");
+                wmoShaderProgram = shaderManager.GetOrCompileShader("wmo");
+                m2ShaderProgram = shaderManager.GetOrCompileShader("m2");
+                bboxShaderProgram = shaderManager.GetOrCompileShader("boundingbox");
 
-            // imgui?.Initialize();
+                sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, bboxShaderProgram);
+                sceneManager.TerrainTileHeightAvailable += OnTerrainTileHeightAvailable;
 
-            adtShaderProgram = shaderManager.GetOrCompileShader("adt");
-            wmoShaderProgram = shaderManager.GetOrCompileShader("wmo");
-            m2ShaderProgram = shaderManager.GetOrCompileShader("m2");
-            bboxShaderProgram = shaderManager.GetOrCompileShader("boundingbox");
+                shadersReady = true;
 
-            sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, bboxShaderProgram);
-            sceneManager.TerrainTileHeightAvailable += OnTerrainTileHeightAvailable;
+                var startPos = InitialCameraPosition ?? new Vector3(3875f, -2050f, 616f); // quel'thalas, retail.
+                if (!InitialCameraPosition.HasValue && _wowConfig.wowProduct == "wow_classic_era")
+                {
+                    startPos = new Vector3(0, 0, 200); // alterac, wow classic.
+                }
 
-            shadersReady = true;
+                // Init camera
+                activeCamera = new Camera(
+                    startPos,
+                    yaw: 168f, pitch: 13f,
+                    aspectRatio: (float)frameBufferSize.X / frameBufferSize.Y
+                );
+                if (InitialCameraDirection.HasValue)
+                    activeCamera.SetDirection(InitialCameraDirection.Value);
+                activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
+                activeCamera.ModifyDirection(0, 0);
 
-            WDTFDIDInput = sceneManager.CurrentWDTFileDataID.ToString();
-            var startPos = InitialCameraPosition ?? new Vector3(3875f, -2050f, 616f); // quel'thalas, retail.
-            if (!InitialCameraPosition.HasValue && _wowConfig.wowProduct == "wow_classic_era")
-            {
-                startPos = new Vector3(0, 0, 200); // alterac, wow classic.
-            }
+                ApplySettings(Settings);
 
-            // Init camera
-            activeCamera = new Camera(
-                startPos,
-                yaw: 168f, pitch: 13f,
-                aspectRatio: frameBufferSize.X / frameBufferSize.Y
-            );
-            if (InitialCameraDirection.HasValue)
-                activeCamera.SetDirection(InitialCameraDirection.Value);
-            activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
-            activeCamera.ModifyDirection(0, 0);
+                Resize((uint)frameBufferSize.X, (uint)frameBufferSize.Y);
 
-            ApplySettings(Settings);
-
-            Resize((uint)frameBufferSize.X, (uint)frameBufferSize.Y);
-
-            LoadCurrentProduct();
-            IsInitialized = true;
-            IsInitializing = false;
+                LoadCurrentProduct();
+                IsInitialized = true;
+                IsInitializing = false;
             }
             catch (Exception exception)
             {
@@ -651,8 +637,6 @@ namespace WoWRenderLib.DX11
         {
             if (!IsInitialized) return;
             var renderStarted = Stopwatch.GetTimestamp();
-            frameDelta = (uint)(deltaTime * 1000);
-
             var mutexAcquired = false;
             var mutexStarted = Stopwatch.GetTimestamp();
             if (useSharedMutex && UseKeyedMutex && _keyedMutex.Handle != null)
@@ -792,10 +776,10 @@ namespace WoWRenderLib.DX11
 
         public async ValueTask DisposeAsync()
         {
-            if (disposed)
+            if (_disposed)
                 return;
 
-            disposed = true;
+            _disposed = true;
             IsInitialized = false;
             _lifetimeCancellation.Cancel();
 
@@ -829,8 +813,6 @@ namespace WoWRenderLib.DX11
         {
             var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
 
-            var productList = new Dictionary<string, (string buildConfig, string cdnConfig)>();
-
             if (!Directory.Exists(wowDirInput) || !File.Exists(buildInfoPath))
             {
                 Console.WriteLine("Invalid WoW directory or .build.info not found at " + buildInfoPath);
@@ -860,9 +842,9 @@ namespace WoWRenderLib.DX11
             // _wowConfig.wowProduct = "wow";
             // optional, set first product as current if none is current yet
             // only if there's exactly one product for now to avoid not being able to switch
-            if (_SetDefaultProduct && string.IsNullOrEmpty(_wowConfig.wowProduct) && _products.Length > 0)
+            if (string.IsNullOrEmpty(_wowConfig.wowProduct) && _products.Length > 0)
             {
-                _wowConfig.wowProduct = _products.First();
+                _wowConfig.wowProduct = _products[0];
             }
 
             _currentProduct = Array.IndexOf(_products, _wowConfig.wowProduct);

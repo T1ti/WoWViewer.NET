@@ -47,12 +47,16 @@ public sealed class UndoService
     public void RecordExecuted(IEditorCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
-        _redo.Clear();
 
         if (_transaction != null)
+        {
             _transaction.Commands.Add(command);
+        }
         else
+        {
+            _redo.Clear();
             _undo.Push(command);
+        }
 
         HistoryChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -63,7 +67,16 @@ public sealed class UndoService
         if (!_undo.TryPop(out var command))
             return;
 
-        command.Undo();
+        try
+        {
+            command.Undo();
+        }
+        catch
+        {
+            _undo.Push(command);
+            throw;
+        }
+
         _redo.Push(command);
         HistoryChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -74,7 +87,16 @@ public sealed class UndoService
         if (!_redo.TryPop(out var command))
             return;
 
-        command.Execute();
+        try
+        {
+            command.Execute();
+        }
+        catch
+        {
+            _redo.Push(command);
+            throw;
+        }
+
         _undo.Push(command);
         HistoryChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -126,7 +148,10 @@ public sealed class UndoService
             if (_committed)
             {
                 if (Commands.Count > 0)
+                {
+                    owner._redo.Clear();
                     owner._undo.Push(new CompositeCommand(description, Commands.ToArray()));
+                }
             }
             else
             {

@@ -10,8 +10,6 @@ namespace WoWRenderLib.DX11.Loaders
 {
     class M2Loader
     {
-        private static uint DEFAULT_TEXTURE_ID = 186184; // dungeons/textures/testing/color_01.blp
-
         public static unsafe ParsedDoodadBatch LoadM2(ComPtr<ID3D11Device> device, ParsedM2 parsedM2)
         {
             var doodadBatch = new ParsedDoodadBatch()

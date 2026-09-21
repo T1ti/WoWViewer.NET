@@ -548,6 +548,56 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void Camera_SetDirectionRejectsNonFiniteVectors()
+    {
+        var camera = new Camera(Vector3.Zero, 45f, 10f, 1f);
+        var expected = camera.Front;
+
+        camera.SetDirection(new Vector3(float.NaN, 0f, 1f));
+
+        Assert.AreEqual(expected, camera.Front);
+    }
+
+    [TestMethod]
+    public void Camera_ConstructorAppliesOrientationAndAspectRatio()
+    {
+        var camera = new Camera(Vector3.Zero, yaw: 90f, pitch: 30f, aspectRatio: 16f / 9f);
+
+        Assert.AreEqual(90f, camera.Yaw);
+        Assert.AreEqual(30f, camera.Pitch);
+        Assert.AreEqual(16f / 9f, camera.AspectRatio, 1e-5f);
+        Assert.AreEqual(0f, camera.Front.X, 1e-5f);
+        Assert.AreEqual(MathF.Cos(Camera.DegreesToRadians(30f)), camera.Front.Y, 1e-5f);
+        Assert.AreEqual(0.5f, camera.Front.Z, 1e-5f);
+    }
+
+    [TestMethod]
+    public void RenderingConfiguration_NormalizeReplacesNonFiniteValuesWithDefaults()
+    {
+        var defaults = new RenderingConfiguration();
+        var normalized = new RenderingConfiguration
+        {
+            AmbientColor = new Vector3(float.NaN, float.PositiveInfinity, float.NegativeInfinity),
+            DiffuseColor = new Vector3(float.NaN, float.PositiveInfinity, float.NegativeInfinity),
+            TerrainRenderDistance = float.NaN,
+            ModelRenderDistance = float.PositiveInfinity,
+            MinimumModelScreenSizePixels = float.NegativeInfinity,
+            TerrainLodTransitionPixels = float.NaN,
+            MovementSpeed = float.PositiveInfinity,
+            MouseSensitivity = float.NaN
+        }.Normalize();
+
+        Assert.AreEqual(defaults.AmbientColor, normalized.AmbientColor);
+        Assert.AreEqual(defaults.DiffuseColor, normalized.DiffuseColor);
+        Assert.AreEqual(defaults.TerrainRenderDistance, normalized.TerrainRenderDistance);
+        Assert.AreEqual(defaults.ModelRenderDistance, normalized.ModelRenderDistance);
+        Assert.AreEqual(defaults.MinimumModelScreenSizePixels, normalized.MinimumModelScreenSizePixels);
+        Assert.AreEqual(defaults.TerrainLodTransitionPixels, normalized.TerrainLodTransitionPixels);
+        Assert.AreEqual(defaults.MovementSpeed, normalized.MovementSpeed);
+        Assert.AreEqual(defaults.MouseSensitivity, normalized.MouseSensitivity);
+    }
+
+    [TestMethod]
     public void ScreenSpaceCulling_UsesProjectedSphereDiameter()
     {
         var projection = Matrix4x4.CreatePerspectiveFieldOfViewLeftHanded(
@@ -757,6 +807,28 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void UndoTransaction_RollbackPreservesExistingRedoHistory()
+    {
+        var value = 1;
+        var history = new UndoService();
+        history.RecordExecuted(new DelegateCommand("Initial edit", () => value = 1, () => value = 0));
+        history.Undo();
+
+        using (history.BeginTransaction("Cancelled edit"))
+        {
+            history.Execute(new DelegateCommand("Temporary edit", () => value = 10, () => value = 0));
+        }
+
+        Assert.AreEqual(0, value);
+        Assert.IsFalse(history.CanUndo);
+        Assert.IsTrue(history.CanRedo);
+        Assert.AreEqual("Initial edit", history.RedoDescription);
+
+        history.Redo();
+        Assert.AreEqual(1, value);
+    }
+
+    [TestMethod]
     public void UndoService_RecordExecutedDoesNotApplyLiveActionTwice()
     {
         var value = 1;
@@ -774,6 +846,39 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void UndoService_FailedUndoPreservesHistoryEntry()
+    {
+        var history = new UndoService();
+        history.RecordExecuted(new DelegateCommand(
+            "Failing undo",
+            () => { },
+            () => throw new InvalidOperationException("Undo failed.")));
+
+        Assert.ThrowsException<InvalidOperationException>(history.Undo);
+
+        Assert.IsTrue(history.CanUndo);
+        Assert.IsFalse(history.CanRedo);
+        Assert.AreEqual("Failing undo", history.UndoDescription);
+    }
+
+    [TestMethod]
+    public void UndoService_FailedRedoPreservesHistoryEntry()
+    {
+        var history = new UndoService();
+        history.RecordExecuted(new DelegateCommand(
+            "Failing redo",
+            () => throw new InvalidOperationException("Redo failed."),
+            () => { }));
+        history.Undo();
+
+        Assert.ThrowsException<InvalidOperationException>(history.Redo);
+
+        Assert.IsFalse(history.CanUndo);
+        Assert.IsTrue(history.CanRedo);
+        Assert.AreEqual("Failing redo", history.RedoDescription);
+    }
+
+    [TestMethod]
     public void SelectionService_DeduplicatesAndTracksPrimaryObject()
     {
         var first = EditorObjectId.New();
@@ -787,6 +892,26 @@ public sealed class EditorSettingsSmokeTests
         selection.Clear();
         Assert.AreEqual(0, selection.Current.ObjectIds.Count);
         Assert.IsNull(selection.Current.Primary);
+    }
+
+    [TestMethod]
+    public void ToolManager_FailedActivationRestoresPreviousTool()
+    {
+        var manager = new ToolManager();
+        var previous = new RecordingTool("previous");
+        var failing = new RecordingTool("failing", failOnActivation: true);
+        manager.Register(previous);
+        manager.Register(failing);
+        manager.Activate(previous.Id);
+        var changes = 0;
+        manager.ActiveToolChanged += (_, _) => changes++;
+
+        Assert.ThrowsException<InvalidOperationException>(() => manager.Activate(failing.Id));
+
+        Assert.AreSame(previous, manager.ActiveTool);
+        Assert.AreEqual(2, previous.ActivationCount);
+        Assert.AreEqual(1, previous.DeactivationCount);
+        Assert.AreEqual(0, changes);
     }
 
     [TestMethod]
@@ -1760,6 +1885,26 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public async Task TextureBrowser_DisposalCancelsCatalogAndDiscardsLateResult()
+    {
+        var catalog = new DeferredClientFileCatalogService();
+        var browser = new TextureBrowserViewModel(new NullTextureThumbnailService(), catalog);
+        var activation = browser.ActivateAsync();
+
+        browser.Dispose();
+
+        Assert.IsTrue(catalog.Token.IsCancellationRequested);
+        catalog.Completion.SetResult(
+        [
+            new ClientFileCatalogEntry("tileset/elwynn/grass.blp", 42)
+        ]);
+        await activation.ConfigureAwait(false);
+
+        Assert.AreEqual(0, browser.Results.Count);
+        Assert.ThrowsException<ObjectDisposedException>(browser.Activate);
+    }
+
+    [TestMethod]
     public void TexturePreviewChannelModes_PreserveColorOrExposeAlphaAtFullOpacity()
     {
         byte[] colorPixels = [10, 20, 30, 40, 50, 60, 70, 80];
@@ -2268,6 +2413,19 @@ public sealed class EditorSettingsSmokeTests
             CancellationToken cancellationToken = default) => Task.FromResult<global::Avalonia.Media.IImage?>(null);
     }
 
+    private sealed class DeferredClientFileCatalogService : IClientFileCatalogService
+    {
+        public TaskCompletionSource<IReadOnlyList<ClientFileCatalogEntry>> Completion { get; } = new();
+        public CancellationToken Token { get; private set; }
+
+        public Task<IReadOnlyList<ClientFileCatalogEntry>> GetFilesAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Token = cancellationToken;
+            return Completion.Task;
+        }
+    }
+
     private sealed class TestBoundsContainer(BoundingBox? bounds) : Container3D(default, 1, 1)
     {
         private BoundingBox? _bounds = bounds;
@@ -2289,6 +2447,23 @@ public sealed class EditorSettingsSmokeTests
         public string Description => description;
         public void Execute() => execute();
         public void Undo() => undo();
+    }
+
+    private sealed class RecordingTool(string id, bool failOnActivation = false) : IEditorTool
+    {
+        public string Id { get; } = id;
+        public string DisplayName => Id;
+        public int ActivationCount { get; private set; }
+        public int DeactivationCount { get; private set; }
+
+        public void Activate()
+        {
+            if (failOnActivation)
+                throw new InvalidOperationException("Activation failed.");
+            ActivationCount++;
+        }
+
+        public void Deactivate() => DeactivationCount++;
     }
 
     private sealed class MemorySettingsStore(EditorSettingsSnapshot initial) : IEditorSettingsStore

@@ -31,9 +31,33 @@ public sealed class ToolManager
         if (ReferenceEquals(ActiveTool, next))
             return;
 
-        ActiveTool?.Deactivate();
+        var previous = ActiveTool;
+        previous?.Deactivate();
+        try
+        {
+            next.Activate();
+        }
+        catch (Exception activationException)
+        {
+            if (previous != null)
+            {
+                try
+                {
+                    previous.Activate();
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new AggregateException(
+                        $"Tool '{next.Id}' failed to activate and the previous tool could not be restored.",
+                        activationException,
+                        rollbackException);
+                }
+            }
+
+            throw;
+        }
+
         ActiveTool = next;
-        ActiveTool.Activate();
-        ActiveToolChanged?.Invoke(this, ActiveTool);
+        ActiveToolChanged?.Invoke(this, next);
     }
 }

@@ -60,7 +60,7 @@ public sealed class MapCatalogService : IMapCatalogService
             }
         }
 
-        return await loadTask.WaitAsync(cancellationToken);
+        return await loadTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<WorldMapCatalogEntry>> LoadCoreAsync(string buildName)
@@ -103,9 +103,11 @@ public sealed class MapCatalogService : IMapCatalogService
                     columns,
                     CASC.FileExists);
                 return (IReadOnlyList<WorldMapRecord>)records;
-            });
+            }).ConfigureAwait(false);
 
-            var wdtMetadata = await _terrainMetadataCacheService.CacheAllAsync(buildName, maps);
+            var wdtMetadata = await _terrainMetadataCacheService
+                .CacheAllAsync(buildName, maps)
+                .ConfigureAwait(false);
             var catalog = maps
                 .Select(map => new WorldMapCatalogEntry(
                     map,

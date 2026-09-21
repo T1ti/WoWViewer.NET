@@ -26,26 +26,50 @@ public interface IMapTerrainMetadataCacheService
 public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheService
 {
     private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly Func<uint, WorldMapWdtMetadata> _metadataReader;
     private string? _cachedBuildName;
+    private MapIdentity[] _cachedMaps = [];
     private IReadOnlyDictionary<int, WorldMapWdtMetadata> _cachedMetadata =
         new Dictionary<int, WorldMapWdtMetadata>();
+
+    public MapTerrainMetadataCacheService() : this(ReadWdtMetadata)
+    {
+    }
+
+    internal MapTerrainMetadataCacheService(Func<uint, WorldMapWdtMetadata> metadataReader)
+    {
+        ArgumentNullException.ThrowIfNull(metadataReader);
+        _metadataReader = metadataReader;
+    }
 
     public async Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheAllAsync(
         string buildName,
         IReadOnlyList<WorldMapRecord> maps,
         CancellationToken cancellationToken = default)
     {
-        await _loadGate.WaitAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(buildName);
+        ArgumentNullException.ThrowIfNull(maps);
+        var mapSnapshot = maps.ToArray();
+        var requestedMaps = mapSnapshot
+            .Select(static map => new MapIdentity(map.Id, map.WdtFileDataId))
+            .OrderBy(static map => map.Id)
+            .ThenBy(static map => map.WdtFileDataId)
+            .ToArray();
+
+        await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (string.Equals(_cachedBuildName, buildName, StringComparison.Ordinal)
-                && _cachedMetadata.Count == maps.Count)
+                && _cachedMaps.AsSpan().SequenceEqual(requestedMaps))
             {
                 return _cachedMetadata;
             }
 
-            var metadata = await Task.Run(() => ReadAllMaps(maps, cancellationToken), cancellationToken);
+            var metadata = await Task.Run(
+                () => ReadAllMaps(mapSnapshot, _metadataReader, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             _cachedBuildName = buildName;
+            _cachedMaps = requestedMaps;
             _cachedMetadata = metadata;
             return _cachedMetadata;
         }
@@ -57,13 +81,14 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
 
     private static IReadOnlyDictionary<int, WorldMapWdtMetadata> ReadAllMaps(
         IReadOnlyList<WorldMapRecord> maps,
+        Func<uint, WorldMapWdtMetadata> metadataReader,
         CancellationToken cancellationToken)
     {
         var metadata = new Dictionary<int, WorldMapWdtMetadata>(maps.Count);
         foreach (var map in maps)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            metadata[map.Id] = ReadWdtMetadata(map.WdtFileDataId);
+            metadata[map.Id] = metadataReader(map.WdtFileDataId);
         }
 
         return metadata;
@@ -405,4 +430,6 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
 
         return result;
     }
+
+    private readonly record struct MapIdentity(int Id, uint WdtFileDataId);
 }

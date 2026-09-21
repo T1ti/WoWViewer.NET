@@ -14,6 +14,7 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
 
     private CancellationTokenSource? _cancellation;
     private IReadOnlyList<WorldMapTile> _activeTiles = [];
+    private bool _isDisposed;
     [ObservableProperty] private MinimapDocument? _document;
     [ObservableProperty] private string _status = "Select a map to view its minimap.";
     [ObservableProperty] private double _zoom = MinimumZoom;
@@ -23,10 +24,15 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
     [ObservableProperty] private TilePoint? _activePosition;
     [ObservableProperty] private TilePoint? _activeDirection;
 
-    public void SelectMap(WorldMapCatalogEntry? map) => _ = LoadAsync(map);
+    public void SelectMap(WorldMapCatalogEntry? map)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        _ = LoadAsync(map);
+    }
 
     internal async Task LoadAsync(WorldMapCatalogEntry? map)
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         _cancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
         _cancellation = cancellation;
@@ -46,7 +52,7 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
                 return;
             }
             var document = await service.LoadAsync(map, cancellation.Token);
-            if (cancellation.IsCancellationRequested)
+            if (_isDisposed || cancellation.IsCancellationRequested)
             {
                 document.Dispose();
                 return;
@@ -59,7 +65,7 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
-            if (!cancellation.IsCancellationRequested)
+            if (!_isDisposed && !cancellation.IsCancellationRequested)
                 Status = $"Unable to load minimap: {exception.Message}";
         }
         finally
@@ -128,9 +134,16 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
 
     public void Dispose()
     {
-        _cancellation?.Cancel();
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        var cancellation = _cancellation;
+        _cancellation = null;
+        cancellation?.Cancel();
         var document = Document;
         Document = null;
         document?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

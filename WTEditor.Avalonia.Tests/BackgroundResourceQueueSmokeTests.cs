@@ -135,6 +135,66 @@ public sealed class BackgroundResourceQueueSmokeTests
         }
     }
 
+    [TestMethod]
+    public void QueueReturnsStalenessPredicateExceptionsToTheConsumer()
+    {
+        var queue = new BackgroundResourceQueue<int, int>(
+            value => value,
+            shouldProcess: _ => throw new InvalidOperationException("residency check failed"));
+
+        try
+        {
+            queue.Enqueue(42);
+            var result = WaitForResult(queue);
+
+            Assert.AreEqual(42, result.Request);
+            Assert.IsInstanceOfType<InvalidOperationException>(result.Error);
+            Assert.AreEqual("residency check failed", result.Error.Message);
+            Assert.AreEqual(1, queue.Metrics.Failed);
+        }
+        finally
+        {
+            queue.StopAsync().GetAwaiter().GetResult();
+        }
+    }
+
+    [TestMethod]
+    public void QueueRejectsNewWorkUntilAnInProgressStopCompletes()
+    {
+        using var started = new ManualResetEventSlim();
+        using var continueProcessing = new ManualResetEventSlim();
+        var queue = new BackgroundResourceQueue<int, int>(value =>
+        {
+            started.Set();
+            continueProcessing.Wait();
+            return value;
+        });
+
+        try
+        {
+            queue.Enqueue(1);
+            Assert.IsTrue(started.Wait(TimeSpan.FromSeconds(2)));
+
+            var firstStop = queue.StopAsync();
+            var secondStop = queue.StopAsync();
+
+            Assert.AreSame(firstStop, secondStop);
+            Assert.ThrowsException<InvalidOperationException>(() => queue.Enqueue(2));
+
+            continueProcessing.Set();
+            firstStop.GetAwaiter().GetResult();
+
+            queue.Enqueue(3);
+            var result = WaitForResult(queue);
+            Assert.AreEqual(3, result.Value);
+        }
+        finally
+        {
+            continueProcessing.Set();
+            queue.StopAsync().GetAwaiter().GetResult();
+        }
+    }
+
 
     private static BackgroundResourceResult<int, int> WaitForResult(
         BackgroundResourceQueue<int, int> queue)

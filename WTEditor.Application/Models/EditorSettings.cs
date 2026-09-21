@@ -49,24 +49,36 @@ public sealed record RenderingConfiguration
     public bool ShowTerrainGrid { get; init; }
     public bool ShowTerrainWireframe { get; init; }
 
-    public RenderingConfiguration Normalize() => this with
+    public RenderingConfiguration Normalize()
     {
-        ViewportFrameRateLimit = Math.Clamp(ViewportFrameRateLimit, 30, 360),
-        AmbientColor = ClampColor(AmbientColor),
-        DiffuseColor = ClampColor(DiffuseColor),
-        TerrainRenderDistance = Math.Clamp(TerrainRenderDistance, 100f, 1_000_000f),
-        ModelRenderDistance = Math.Clamp(ModelRenderDistance, 100f, 1_000_000f),
-        MinimumModelScreenSizePixels = Math.Clamp(MinimumModelScreenSizePixels, 0f, 16f),
-        TerrainLodTransitionPixels = Math.Clamp(TerrainLodTransitionPixels, 0f, 256f),
-        TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
-        MovementSpeed = Math.Clamp(MovementSpeed, 1f, 10_000f),
-        MouseSensitivity = Math.Clamp(MouseSensitivity, 0.001f, 2f)
-    };
+        var defaults = new RenderingConfiguration();
+        return this with
+        {
+            ViewportFrameRateLimit = Math.Clamp(ViewportFrameRateLimit, 30, 360),
+            AmbientColor = ClampColor(AmbientColor, defaults.AmbientColor),
+            DiffuseColor = ClampColor(DiffuseColor, defaults.DiffuseColor),
+            TerrainRenderDistance = ClampFinite(
+                TerrainRenderDistance, 100f, 1_000_000f, defaults.TerrainRenderDistance),
+            ModelRenderDistance = ClampFinite(
+                ModelRenderDistance, 100f, 1_000_000f, defaults.ModelRenderDistance),
+            MinimumModelScreenSizePixels = ClampFinite(
+                MinimumModelScreenSizePixels, 0f, 16f, defaults.MinimumModelScreenSizePixels),
+            TerrainLodTransitionPixels = ClampFinite(
+                TerrainLodTransitionPixels, 0f, 256f, defaults.TerrainLodTransitionPixels),
+            TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
+            MovementSpeed = ClampFinite(MovementSpeed, 1f, 10_000f, defaults.MovementSpeed),
+            MouseSensitivity = ClampFinite(
+                MouseSensitivity, 0.001f, 2f, defaults.MouseSensitivity)
+        };
+    }
 
-    private static Vector3 ClampColor(Vector3 color) => new(
-        Math.Clamp(color.X, 0f, 4f),
-        Math.Clamp(color.Y, 0f, 4f),
-        Math.Clamp(color.Z, 0f, 4f));
+    private static float ClampFinite(float value, float minimum, float maximum, float fallback) =>
+        float.IsFinite(value) ? Math.Clamp(value, minimum, maximum) : fallback;
+
+    private static Vector3 ClampColor(Vector3 color, Vector3 fallback) => new(
+        ClampFinite(color.X, 0f, 4f, fallback.X),
+        ClampFinite(color.Y, 0f, 4f, fallback.Y),
+        ClampFinite(color.Z, 0f, 4f, fallback.Z));
 }
 
 public sealed record CameraState(Vector3 Position, Vector3 Direction);

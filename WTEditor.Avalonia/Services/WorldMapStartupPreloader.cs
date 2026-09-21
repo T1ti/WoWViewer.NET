@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.ViewModels;
 
@@ -13,6 +14,7 @@ public sealed class WorldMapStartupPreloader : IDisposable
     private readonly IMapCatalogService _mapCatalogService;
     private readonly Editor3DViewModel _viewport;
     private bool _isStarted;
+    private bool _isDisposed;
 
     public WorldMapStartupPreloader(
         IMapCatalogService mapCatalogService,
@@ -25,6 +27,7 @@ public sealed class WorldMapStartupPreloader : IDisposable
 
     public void Start()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         _isStarted = true;
         PreloadIfReady();
     }
@@ -37,9 +40,29 @@ public sealed class WorldMapStartupPreloader : IDisposable
 
     private void PreloadIfReady()
     {
-        if (_isStarted && _viewport.RendererState == RendererLifecycleState.Ready)
-            _ = _mapCatalogService.LoadAsync();
+        if (_isStarted && !_isDisposed && _viewport.RendererState == RendererLifecycleState.Ready)
+            _ = ObservePreloadAsync(_mapCatalogService);
     }
 
-    public void Dispose() => _viewport.PropertyChanged -= OnViewportPropertyChanged;
+    private static async Task ObservePreloadAsync(IMapCatalogService mapCatalogService)
+    {
+        try
+        {
+            await mapCatalogService.LoadAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError($"Unable to preload the world map catalog: {exception}");
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _viewport.PropertyChanged -= OnViewportPropertyChanged;
+        GC.SuppressFinalize(this);
+    }
 }

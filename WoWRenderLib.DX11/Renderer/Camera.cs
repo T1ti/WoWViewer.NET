@@ -23,6 +23,8 @@ public class Camera
     public Camera(Vector3 position, float yaw, float pitch, float aspectRatio)
     {
         Position = position;
+        Yaw = yaw;
+        Pitch = Math.Clamp(pitch, -89.0f, 89.0f);
         AspectRatio = aspectRatio;
         Up = Vector3.UnitY;
         UpdateVectors();
@@ -44,8 +46,13 @@ public class Camera
 
     public void SetDirection(Vector3 direction)
     {
-        if (direction.LengthSquared() < float.Epsilon)
+        if (!float.IsFinite(direction.X) ||
+            !float.IsFinite(direction.Y) ||
+            !float.IsFinite(direction.Z) ||
+            direction.LengthSquared() < float.Epsilon)
+        {
             return;
+        }
 
         var normalizedDirection = Vector3.Normalize(direction);
         Yaw = RadiansToDegrees(MathF.Atan2(normalizedDirection.Y, normalizedDirection.X));

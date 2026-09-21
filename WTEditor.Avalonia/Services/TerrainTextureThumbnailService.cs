@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media;
@@ -18,21 +17,35 @@ public interface ITerrainTextureThumbnailService
 public sealed class TerrainTextureThumbnailService : ITerrainTextureThumbnailService, IDisposable
 {
     private const uint MaximumThumbnailDimension = 128;
-    private readonly ConcurrentDictionary<uint, Lazy<Task<Bitmap?>>> _cache = new();
+    private readonly object _lifecycleLock = new();
+    private readonly Dictionary<uint, Lazy<Task<Bitmap?>>> _cache = [];
+    private bool _disposed;
 
     public async Task<IImage?> LoadAsync(
         uint fileDataId,
         CancellationToken cancellationToken = default)
     {
-        if (fileDataId == 0)
-            return null;
+        Task<Bitmap?> loadTask;
+        lock (_lifecycleLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (fileDataId == 0)
+                return null;
 
-        var load = _cache.GetOrAdd(
-            fileDataId,
-            static id => new Lazy<Task<Bitmap?>>(
-                () => Task.Run(() => Load(id)),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-        return await load.Value.WaitAsync(cancellationToken);
+            if (!_cache.TryGetValue(fileDataId, out var load))
+            {
+                load = new Lazy<Task<Bitmap?>>(
+                    () => Task.Run(() => Load(fileDataId)),
+                    LazyThreadSafetyMode.ExecutionAndPublication);
+                _cache.Add(fileDataId, load);
+            }
+
+            // Start the task while disposal is excluded so Dispose always
+            // observes and owns every bitmap-producing operation.
+            loadTask = load.Value;
+        }
+
+        return await loadTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static Bitmap? Load(uint fileDataId)
@@ -54,12 +67,41 @@ public sealed class TerrainTextureThumbnailService : ITerrainTextureThumbnailSer
 
     public void Dispose()
     {
-        foreach (var load in _cache.Values)
+        Lazy<Task<Bitmap?>>[] loads;
+        lock (_lifecycleLock)
         {
-            if (load.IsValueCreated && load.Value.IsCompletedSuccessfully)
-                load.Value.Result?.Dispose();
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            loads = _cache.Values.ToArray();
+            _cache.Clear();
         }
-        _cache.Clear();
+
+        foreach (var load in loads)
+        {
+            if (!load.IsValueCreated)
+                continue;
+
+            var loadTask = load.Value;
+            if (loadTask.IsCompletedSuccessfully)
+            {
+                loadTask.Result?.Dispose();
+                continue;
+            }
+
+            _ = loadTask.ContinueWith(
+                static completed =>
+                {
+                    if (completed.IsCompletedSuccessfully)
+                        completed.Result?.Dispose();
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        GC.SuppressFinalize(this);
     }
 }
 

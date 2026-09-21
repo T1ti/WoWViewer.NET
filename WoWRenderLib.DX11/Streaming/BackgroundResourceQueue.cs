@@ -57,6 +57,7 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
     private Channel<BackgroundResourceResult<TRequest, TResult>>? _results;
     private CancellationTokenSource? _cancellation;
     private Task? _worker;
+    private TaskCompletionSource? _stopCompletion;
     private int _activeRequestCount;
     private long _completedCount;
     private long _skippedCount;
@@ -88,6 +89,9 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
     {
         lock (_lifecycleLock)
         {
+            if (_stopCompletion != null)
+                throw new InvalidOperationException("The background resource queue is stopping.");
+
             EnsureStarted();
             if (_requests?.Writer.TryWrite(request) != true)
                 throw new InvalidOperationException("The background resource queue is not accepting work.");
@@ -106,40 +110,71 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
         return false;
     }
 
-    public async Task StopAsync()
+    public Task StopAsync()
     {
         CancellationTokenSource? cancellation;
         Task? worker;
         Channel<TRequest>? requests;
+        TaskCompletionSource stopCompletion;
 
         lock (_lifecycleLock)
         {
+            if (_stopCompletion != null)
+                return _stopCompletion.Task;
+
             cancellation = _cancellation;
+            if (cancellation == null)
+                return Task.CompletedTask;
+
             worker = _worker;
             requests = _requests;
+            stopCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _stopCompletion = stopCompletion;
             _cancellation = null;
             _worker = null;
             _requests = null;
             _results = null;
         }
 
-        if (cancellation == null)
-            return;
+        _ = CompleteStopAsync(cancellation, worker, requests, stopCompletion);
+        return stopCompletion.Task;
+    }
 
-        requests?.Writer.TryComplete();
+    private async Task CompleteStopAsync(
+        CancellationTokenSource cancellation,
+        Task? worker,
+        Channel<TRequest>? requests,
+        TaskCompletionSource stopCompletion)
+    {
+        Exception? failure = null;
         try
         {
+            requests?.Writer.TryComplete();
             cancellation.Cancel();
             if (worker != null)
                 await worker.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
         }
         finally
         {
             cancellation.Dispose();
-            ResetMetrics();
+            lock (_lifecycleLock)
+            {
+                ResetMetrics();
+                if (ReferenceEquals(_stopCompletion, stopCompletion))
+                    _stopCompletion = null;
+            }
+
+            if (failure == null)
+                stopCompletion.TrySetResult();
+            else
+                stopCompletion.TrySetException(failure);
         }
     }
 
@@ -230,6 +265,15 @@ internal sealed class BackgroundResourceQueue<TRequest, TResult>(
                             RecordProcessingDuration(Stopwatch.GetTimestamp() - started);
                         }
                     }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    Interlocked.Increment(ref _failedCount);
+                    result = new(request, default!, exception);
                 }
                 finally
                 {

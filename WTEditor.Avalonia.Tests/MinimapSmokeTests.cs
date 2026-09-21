@@ -215,6 +215,23 @@ public sealed class MinimapSmokeTests
     }
 
     [TestMethod]
+    public async Task DisposalCancelsRequestDiscardsLateResultAndRejectsNewLoads()
+    {
+        var service = new DeferredService();
+        var model = new MinimapViewModel(service);
+        var load = model.LoadAsync(Map(1));
+
+        model.Dispose();
+
+        Assert.IsTrue(service.Requests[0].Token.IsCancellationRequested);
+        service.Requests[0].Completion.SetResult(new MinimapDocument([], 1));
+        await load.ConfigureAwait(false);
+        Assert.IsNull(model.Document);
+        await Assert.ThrowsExceptionAsync<ObjectDisposedException>(
+            () => model.LoadAsync(Map(2))).ConfigureAwait(false);
+    }
+
+    [TestMethod]
     public async Task FitMap_UsesFullWdtBoundsEvenWhenImagesAreMissing()
     {
         var service = new DeferredService();
