@@ -22,6 +22,7 @@ using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.Renderer;
+using WoWRenderLib.Diagnostics;
 
 namespace WTEditor.Avalonia.Controls
 {
@@ -202,6 +203,7 @@ namespace WTEditor.Avalonia.Controls
                 }
                 catch (Exception exception)
                 {
+                    LoadDiagnostics.Error("Initializing the DX11 renderer view", exception);
                     _vm?.UpdateRendererStatus(new RendererStatus(
                         RendererLifecycleState.Failed,
                         "Unable to initialize the renderer.",
@@ -281,6 +283,7 @@ namespace WTEditor.Avalonia.Controls
                 }
                 catch (Exception exception)
                 {
+                    LoadDiagnostics.Error("Restarting the DX11 renderer view", exception);
                     _vm?.UpdateRendererStatus(new RendererStatus(
                         RendererLifecycleState.Failed,
                         "Unable to restart the renderer.",
@@ -422,6 +425,7 @@ namespace WTEditor.Avalonia.Controls
             }
             catch (Exception exception)
             {
+                LoadDiagnostics.Error("Resizing the DX11 renderer view", exception);
                 _vm?.UpdateRendererStatus(new RendererStatus(
                     RendererLifecycleState.Failed,
                     "Unable to resize the renderer.",
@@ -598,6 +602,7 @@ namespace WTEditor.Avalonia.Controls
             }
             catch (Exception exception)
             {
+                LoadDiagnostics.Error("Rendering a DX11 viewport frame", exception);
                 _initialized = false;
                 _vm?.UpdateRendererStatus(new RendererStatus(
                     RendererLifecycleState.Failed,

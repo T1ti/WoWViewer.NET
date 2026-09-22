@@ -6,6 +6,7 @@ using WTEditor.Application.Models;
 using WTEditor.Avalonia.Models;
 using WTEditor.Avalonia.Presentation;
 using WTEditor.Avalonia.Services;
+using WoWRenderLib.Diagnostics;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -223,6 +224,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         }
         catch (Exception exception)
         {
+            LoadDiagnostics.Error("Loading the world-selection map catalog", exception);
             if (!_isDisposed && generation == _catalogGeneration)
                 StatusMessage = $"Unable to read Map DB2: {exception.Message}";
         }

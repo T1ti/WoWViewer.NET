@@ -20,6 +20,7 @@ using WoWRenderLib.Persistence;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Diagnostics;
 
 namespace WoWRenderLib.DX11.Managers
 {
@@ -761,7 +762,9 @@ namespace WoWRenderLib.DX11.Managers
                 catch (Exception ex)
                 {
                     tilesInFlight.Remove(mapTile);
-                    Console.WriteLine("Error queuing ADT: " + ex.ToString());
+                    LoadDiagnostics.Error(
+                        $"Queuing ADT {mapTile.tileX}, {mapTile.tileY} for WDT {mapTile.wdtFileDataID}",
+                        ex);
                 }
             }
         }
@@ -954,8 +957,10 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             adtContainer.Unload();
-            Console.WriteLine(
-                $"Failed to load ADT {adtContainer.mapTile.tileX}, {adtContainer.mapTile.tileY}: {exception}");
+            LoadDiagnostics.Error(
+                $"Loading ADT {adtContainer.mapTile.tileX}, {adtContainer.mapTile.tileY} " +
+                $"for WDT {adtContainer.mapTile.wdtFileDataID}",
+                exception);
         }
 
     }

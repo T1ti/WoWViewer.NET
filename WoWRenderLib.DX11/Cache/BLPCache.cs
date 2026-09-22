@@ -8,6 +8,7 @@ using WoWLib;
 using Formats = WoWLib.Formats;
 using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Streaming;
+using WoWRenderLib.Diagnostics;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Services;
 
@@ -167,12 +168,12 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     if (item.Error is FileNotFoundException)
                     {
-                        Console.WriteLine($"Unable to load local BLP {item.Request}: {item.Error.Message}");
+                        LoadDiagnostics.Error($"Loading local BLP {item.Request}", item.Error);
                         inFlight.TryRemove(item.Request, out _);
                         continue;
                     }
 
-                    Console.WriteLine($"Failed to decode BLP {item.Request}: {item.Error.Message}");
+                    LoadDiagnostics.Error($"Decoding BLP {item.Request}", item.Error);
                     if (!failures.TryScheduleRetry(
                             item.Request,
                             Users.ContainsKey(item.Request),
@@ -275,7 +276,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Failed to upload BLP {decoded.FileDataId}: {e.Message}");
+                    LoadDiagnostics.Error($"Uploading BLP {decoded.FileDataId}", e);
                     if (failures.TryScheduleRetry(
                             decoded.FileDataId,
                             Users.ContainsKey(decoded.FileDataId),

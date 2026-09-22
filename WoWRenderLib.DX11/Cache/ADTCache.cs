@@ -6,6 +6,7 @@ using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Diagnostics;
 
 namespace WoWRenderLib.DX11.Cache
 {
@@ -206,7 +207,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Failed to upload ADT {parsedADT.rootADTFileDataID}: {e.Message}");
+                    LoadDiagnostics.Error($"Uploading ADT {parsedADT.rootADTFileDataID}", e);
                     if (failures.TryScheduleRetry(
                             key,
                             Users.ContainsKey(key),

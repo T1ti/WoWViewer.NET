@@ -5,6 +5,7 @@ using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Services;
 using CoreADTLoader = WoWRenderLib.Loaders.ADTLoader;
 
 namespace WTEditor.Avalonia.Tests;
@@ -25,6 +26,20 @@ public sealed class TileStreamingSmokeTests
         Assert.AreEqual("__fdid_maps/775971/38_24.adt", root);
         Assert.AreEqual("__fdid_maps/775971/38_24_tex0.adt", CoreADTLoader.AddAdtSuffix(root, "_tex0"));
         Assert.AreEqual("__fdid_maps/775971/38_24_obj0.adt", CoreADTLoader.AddAdtSuffix(root, "_obj0"));
+    }
+
+    [TestMethod]
+    public void LegacyAdtPath_IsDerivedFromTheResolvedWdtPath()
+    {
+        var wdtPath = MapAssetPathResolver.GetWdtPath("Worlds/Classic/Azeroth");
+        var adtPath = MapAssetPathResolver.GetLegacyAdtPath(wdtPath, 32, 48);
+
+        Assert.AreEqual(
+            "world/maps/Worlds/Classic/Azeroth/Azeroth.wdt",
+            wdtPath);
+        Assert.AreEqual(
+            "world/maps/Worlds/Classic/Azeroth/Azeroth_32_48.adt",
+            adtPath);
     }
 
     [TestMethod]

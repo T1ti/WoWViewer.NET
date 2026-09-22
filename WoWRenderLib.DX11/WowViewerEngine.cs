@@ -15,6 +15,7 @@ using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Services;
+using WoWRenderLib.Diagnostics;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11
@@ -950,7 +951,10 @@ namespace WoWRenderLib.DX11
 
         private void SetStatus(WowViewerEngineState state, string message, Exception? exception = null)
         {
-            Console.WriteLine($"Renderer status: {state} - {message}");
+            if (exception == null)
+                Console.WriteLine($"Renderer status: {state} - {message}");
+            else
+                LoadDiagnostics.Error($"Renderer status {state}: {message}", exception);
             Status = new WowViewerEngineStatus(state, message, exception);
             StatusChanged?.Invoke(this, Status);
         }

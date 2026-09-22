@@ -1,6 +1,7 @@
 using System.Text.Json;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Diagnostics;
 
 namespace WoWRenderLib.Persistence;
 
@@ -74,7 +75,7 @@ public static class MapUniqueIdStore
         }
         catch (Exception exception)
         {
-            Console.WriteLine($"Unable to load map uniqueId cache: {exception.Message}");
+            LoadDiagnostics.Error($"Loading map uniqueId cache '{path}'", exception);
         }
     }
 
@@ -92,7 +93,7 @@ public static class MapUniqueIdStore
         }
         catch (Exception exception)
         {
-            Console.WriteLine($"Unable to save map uniqueId cache: {exception.Message}");
+            LoadDiagnostics.Error($"Saving map uniqueId cache '{path}'", exception);
         }
     }
 }

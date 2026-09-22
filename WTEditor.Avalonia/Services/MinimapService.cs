@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using WoWLib;
 using WoWRenderLib.Services;
+using WoWRenderLib.Diagnostics;
 using WTEditor.Avalonia.Models;
 using WTEditor.Application.Geometry;
 
@@ -89,7 +90,9 @@ public sealed class MinimapService : IMinimapService
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     missing++;
-                    System.Diagnostics.Debug.WriteLine($"Minimap {position}: {exception.Message}");
+                    LoadDiagnostics.Error(
+                        $"Loading minimap tile {position.X}, {position.Y} (FileDataID {minimapFileDataId})",
+                        exception);
                 }
             }
             token.ThrowIfCancellationRequested();

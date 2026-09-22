@@ -6,6 +6,7 @@ using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Diagnostics;
 
 namespace WoWRenderLib.DX11.Cache
 {
@@ -91,7 +92,7 @@ namespace WoWRenderLib.DX11.Cache
                 var originalFileDataId = item.Request;
                 if (item.Error != null)
                 {
-                    Console.WriteLine($"!!! Error parsing WMO {originalFileDataId}: {item.Error.Message}");
+                    LoadDiagnostics.Error($"Parsing WMO {originalFileDataId}", item.Error);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),
@@ -128,7 +129,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"!!! Error uploading WMO {originalFileDataId}: {e.Message}");
+                    LoadDiagnostics.Error($"Uploading WMO {originalFileDataId}", e);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),

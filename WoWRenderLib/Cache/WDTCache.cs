@@ -23,6 +23,7 @@ public static class WDTCache
         var header = root.Header;
         var mapFileDataIds = GetMapFileDataIds(root);
         var hasSplitAdts = mapFileDataIds.Length > 0;
+        MapAssetPathResolver.TryGetPath(fileDataId, out var wdtPath);
         WdtGlobalWmoPlacement? globalWmoPlacement = null;
         if (root.GlobalWmo.Count > 0)
         {
@@ -96,6 +97,7 @@ public static class WDTCache
         }
         else
         {
+            var unresolvedTileCount = 0;
             for (var index = 0; index < root.Tiles.Count; index++)
             {
                 if (root.Tiles[index].Flags == 0)
@@ -104,6 +106,27 @@ public static class WDTCache
                 var x = (byte)(index % TilesPerAxis);
                 var y = (byte)(index / TilesPerAxis);
                 wdt.Tiles.Add(new MapTile { wdtFileDataID = fileDataId, tileX = x, tileY = y });
+
+                // Vanilla through Legion WDTs have MAIN but no MAID. Resolve
+                // the ADT from the stable virtual path instead of treating the
+                // missing modern FileDataID table as a missing tile.
+                var adtPath = MapAssetPathResolver.GetLegacyAdtPath(wdtPath, x, y);
+                if (MapAssetPathResolver.TryResolveFileDataId(adtPath, out var rootAdtFileDataId))
+                {
+                    wdt.TileFiles[(x, y)] = new MapFileDataIds(
+                        rootAdtFileDataId, 0, 0, 0, 0, 0, 0, 0);
+                }
+                else
+                {
+                    unresolvedTileCount++;
+                }
+            }
+
+            if (unresolvedTileCount > 0)
+            {
+                Diagnostics.LoadDiagnostics.Warning(
+                    $"WDT {fileDataId} has {unresolvedTileCount} active legacy tile(s) whose ADT paths " +
+                    $"could not be resolved. WDT path: '{wdtPath}'.");
             }
         }
 

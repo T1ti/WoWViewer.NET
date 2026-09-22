@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using System.Diagnostics;
+using WoWRenderLib.Diagnostics;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.ViewModels;
 
@@ -52,7 +52,7 @@ public sealed class WorldMapStartupPreloader : IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError($"Unable to preload the world map catalog: {exception}");
+            LoadDiagnostics.Error("Preloading the world map catalog", exception);
         }
     }
 

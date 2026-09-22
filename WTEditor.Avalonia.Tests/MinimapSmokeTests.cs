@@ -155,19 +155,51 @@ public sealed class MinimapSmokeTests
     }
 
     [TestMethod]
-    public void MapCatalog_RejectsDefinitionWithoutNamedWdtColumn()
+    public void MapCatalog_AcceptsLegacyDefinitionWithoutNamedWdtColumn()
     {
         var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Directory",
-            "Field_1_60_1_69876_021"
+            "Field_1_15_4_56400_021"
         };
 
-        var exception = Assert.ThrowsException<InvalidDataException>(() =>
-            MapCatalogService.ValidateMapSchema("1.60.1.69876", columns));
+        MapCatalogService.ValidateMapSchema("1.15.4.56400", columns);
+    }
 
-        StringAssert.Contains(exception.Message, "required WdtFileDataID column is missing");
-        StringAssert.Contains(exception.Message, "outdated");
+    [TestMethod]
+    public void MapCatalog_ResolvesLegacyWdtFromDirectoryPath()
+    {
+        string? requestedPath = null;
+
+        var fileDataId = MapCatalogService.ResolveWdtFileDataId(
+            "Azeroth",
+            0,
+            path =>
+            {
+                requestedPath = path;
+                return 775971;
+            });
+
+        Assert.AreEqual(775971u, fileDataId);
+        Assert.AreEqual("world/maps/Azeroth/Azeroth.wdt", requestedPath);
+    }
+
+    [TestMethod]
+    public void MapCatalog_PrefersModernWdtColumnOverPathLookup()
+    {
+        var resolverCalled = false;
+
+        var fileDataId = MapCatalogService.ResolveWdtFileDataId(
+            "Azeroth",
+            775971,
+            _ =>
+            {
+                resolverCalled = true;
+                return 1;
+            });
+
+        Assert.AreEqual(775971u, fileDataId);
+        Assert.IsFalse(resolverCalled);
     }
 
     [TestMethod]
@@ -186,7 +218,7 @@ public sealed class MinimapSmokeTests
                 new HashSet<string>(["Directory", "WdtFileDataID"], StringComparer.OrdinalIgnoreCase),
                 _ => false));
 
-        StringAssert.Contains(exception.Message, "only zero WDT FileDataIDs");
+        StringAssert.Contains(exception.Message, "Directory path resolution");
         StringAssert.Contains(exception.Message, "outdated");
     }
 

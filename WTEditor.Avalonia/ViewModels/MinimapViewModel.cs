@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WTEditor.Avalonia.Models;
 using WTEditor.Avalonia.Services;
+using WoWRenderLib.Diagnostics;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -65,6 +66,7 @@ public partial class MinimapViewModel(IMinimapService service, Action<TilePoint>
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
+            LoadDiagnostics.Error($"Loading minimap for '{map?.Map.Name ?? "unknown map"}'", exception);
             if (!_isDisposed && !cancellation.IsCancellationRequested)
                 Status = $"Unable to load minimap: {exception.Message}";
         }

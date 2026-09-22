@@ -1,5 +1,6 @@
 ﻿using CASCLib;
 using DBCD.Providers;
+using WoWRenderLib.Diagnostics;
 using WoWRenderLib.Services;
 
 namespace WoWRenderLib.Providers
@@ -35,7 +36,12 @@ namespace WoWRenderLib.Providers
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("Unable to extract DB2 from CASC: " + e.Message);
+                    LoadDiagnostics.Error(
+                        $"Extracting {tableName} DB2 (FileDataID {fileDataID}) for build {build}",
+                        e);
+                    throw new IOException(
+                        $"Unable to extract {tableName} DB2 FileDataID {fileDataID} from CASC.",
+                        e);
                 }
             }
 

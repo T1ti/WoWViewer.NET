@@ -3,6 +3,7 @@ using System.Globalization;
 using WoWLib;
 using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
+using WoWRenderLib.Diagnostics;
 using WTEditor.Avalonia.Models;
 using Formats = WoWLib.Formats;
 using WdtHeaderFlags = WoWLib.Formats.WDT.Root.Chunks.MapHeaderFlags;
@@ -150,7 +151,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         catch (Exception exception)
         {
             var error = $"Unable to read WDT {fileDataId}: {exception.Message}";
-            Console.WriteLine(error);
+            LoadDiagnostics.Error($"Reading WDT {fileDataId}", exception);
             return new WorldMapWdtMetadata(fileDataId, 0)
             {
                 Error = error,

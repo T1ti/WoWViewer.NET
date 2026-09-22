@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using WoWRenderLib.Diagnostics;
 
 namespace WoWRenderLib;
 
@@ -37,7 +38,7 @@ public static class Listfile
         catch (Exception exception)
         {
             LastError = exception.Message;
-            Console.WriteLine($"Listfile unavailable: {exception.Message}");
+            LoadDiagnostics.Error("Loading the community listfile", exception);
         }
         finally
         {
