@@ -36,10 +36,24 @@ public static class M2Loader
         var root = model.Root;
         var vertices = ReadVertices(root.Vertices);
         var (renderBoundingBox, renderBoundingRadius) = CalculateRenderBounds(vertices.Select(v => v.Position).ToArray());
+        if (fileSystem.Kind == StorageKind.Mpq && root is Formats.M2.Root.M2RootWotlk)
+        {
+            var authoredMin = ToVector3(root.BoundingBox.Min);
+            var authoredMax = ToVector3(root.BoundingBox.Max);
+            if (IsFinite(authoredMin) && IsFinite(authoredMax) &&
+                authoredMin.X <= authoredMax.X && authoredMin.Y <= authoredMax.Y && authoredMin.Z <= authoredMax.Z)
+            {
+                var min = Vector3.Min(renderBoundingBox.Min, authoredMin);
+                var max = Vector3.Max(renderBoundingBox.Max, authoredMax);
+                renderBoundingBox = new BoundingBox(min, max);
+                renderBoundingRadius = Vector3.Distance(min, max) * 0.5f;
+            }
+        }
         var counts = ReadCounts(root);
 
         var parsed = new ParsedM2
         {
+            usesLegacyDepthFlags = fileSystem.Kind == StorageKind.Mpq,
             boundingBox = renderBoundingBox,
             boundingRadius = renderBoundingRadius,
             fileDataID = fileDataId,
@@ -49,6 +63,8 @@ public static class M2Loader
             boneCount = counts.BoneCount,
             attachmentCount = counts.AttachmentCount
         };
+        if (fileSystem.Kind == StorageKind.Mpq && root is Formats.M2.Root.M2RootWotlk wotlkRoot)
+            parsed.animation = ReadAnimation(wotlkRoot);
 
         // M2Texture and M2Vertex are reference records in wowlib 0.0.9 and
         // therefore do not expose blittable Data mirrors. Keep those vectors
@@ -132,7 +148,10 @@ public static class M2Loader
         ushort TextureCount,
         ushort TextureComboIndex,
         ushort TextureCoordComboIndex,
-        ushort MaterialIndex);
+        ushort MaterialIndex,
+        ushort ColorIndex,
+        ushort TextureWeightComboIndex,
+        ushort TextureTransformComboIndex);
 
     internal readonly record struct M2RenderMaterial(ushort Flags, ushort BlendMode);
 
@@ -192,7 +211,10 @@ public static class M2Loader
         batch.TextureCount,
         batch.TextureComboIndex,
         batch.TextureCoordComboIndex,
-        batch.MaterialIndex);
+        batch.MaterialIndex,
+        batch.ColorIndex,
+        batch.TextureWeightComboIndex,
+        batch.TextureTransformComboIndex);
 
     private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
     {
@@ -208,11 +230,178 @@ public static class M2Loader
                 Position = ToVector3(source.Pos),
                 Normal = ToVector3(source.Normal),
                 TexCoord1 = ToVector2(source.TexCoords[0]),
-                TexCoord2 = ToVector2(source.TexCoords[1])
+                TexCoord2 = ToVector2(source.TexCoords[1]),
+                BoneWeights = PackBytes(source.BoneWeights[0], source.BoneWeights[1],
+                    source.BoneWeights[2], source.BoneWeights[3]),
+                BoneIndices = PackBytes(source.BoneIndices[0], source.BoneIndices[1],
+                    source.BoneIndices[2], source.BoneIndices[3])
             };
         }
         return result;
     }
+
+    private static uint PackBytes(byte x, byte y, byte z, byte w) =>
+        (uint)x | ((uint)y << 8) | ((uint)z << 16) | ((uint)w << 24);
+
+    private static M2Animation ReadAnimation(Formats.M2.Root.M2RootWotlk root)
+    {
+        if (root.Bones.Count > M2Animation.MaxGpuBones)
+            throw new InvalidDataException($"M2 contains {root.Bones.Count} bones, exceeding the renderer's {M2Animation.MaxGpuBones}-bone palette.");
+
+        var sequences = new M2Sequence[root.Sequences.Count];
+        for (var i = 0; i < sequences.Length; i++)
+            sequences[i] = new M2Sequence(root.Sequences[i].Duration,
+                root.Sequences[i].Flags, root.Sequences[i].AliasNext);
+
+        var loops = new uint[root.GlobalLoops.Count];
+        for (var i = 0; i < loops.Length; i++)
+            loops[i] = root.GlobalLoops[i].Timestamp;
+
+        var bones = new M2Bone[root.Bones.Count];
+        for (var i = 0; i < bones.Length; i++)
+        {
+            var bone = root.Bones[i];
+            bones[i] = new M2Bone(
+                bone.ParentBone,
+                bone.Flags,
+                ToVector3(bone.Pivot),
+                ReadVectorTrack(bone.Translation),
+                ReadQuaternionTrack(bone.Rotation),
+                ReadVectorTrack(bone.Scale));
+        }
+        var colors = new M2ColorAnimation[root.Colors.Count];
+        for (var i = 0; i < colors.Length; i++)
+        {
+            var color = root.Colors[i];
+            colors[i] = new M2ColorAnimation(
+                ReadVectorTrack(color.Color), ReadFixedTrack(color.Alpha));
+        }
+
+        var weights = new M2Track<float>[root.TextureWeights.Count];
+        for (var i = 0; i < weights.Length; i++)
+            weights[i] = ReadFixedTrack(root.TextureWeights[i].Weight);
+
+        var transforms = new M2TextureAnimation[root.TextureTransforms.Count];
+        for (var i = 0; i < transforms.Length; i++)
+        {
+            var transform = root.TextureTransforms[i];
+            transforms[i] = new M2TextureAnimation(
+                ReadVectorTrack(transform.Translation),
+                ReadFloatQuaternionTrack(transform.Rotation),
+                ReadVectorTrack(transform.Scaling));
+        }
+        return new M2Animation
+        {
+            Bones = bones,
+            Sequences = sequences,
+            GlobalLoops = loops,
+            HasAnimatedBones = bones.Any(bone => (bone.Flags & 0x280) != 0),
+            Colors = colors,
+            TextureWeights = weights,
+            TextureTransforms = transforms
+        };
+    }
+
+    private static M2Track<Vector3> ReadVectorTrack(Formats.M2.Root.Record.M2TrackC3Vector track)
+    {
+        var timelines = new M2Timeline<Vector3>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Count);
+            var snapshots = new Vector3[count];
+            for (var j = 0; j < count; j++)
+                snapshots[j] = ToVector3(values[j]);
+            timelines[i] = new M2Timeline<Vector3>(times[..count], snapshots);
+        }
+        return new M2Track<Vector3>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static M2Track<Quaternion> ReadQuaternionTrack(Formats.M2.Root.Record.M2TrackCompQuat track)
+    {
+        var timelines = new M2Timeline<Quaternion>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Count);
+            var snapshots = new Quaternion[count];
+            for (var j = 0; j < count; j++)
+            {
+                var value = values[j];
+                var q = new Quaternion(
+                    DecodeCompressedComponent(value.X), DecodeCompressedComponent(value.Y),
+                    DecodeCompressedComponent(value.Z), DecodeCompressedComponent(value.W));
+                snapshots[j] = q.LengthSquared() > 1e-8f ? Quaternion.Normalize(q) : Quaternion.Identity;
+            }
+            timelines[i] = new M2Timeline<Quaternion>(times[..count], snapshots);
+        }
+        return new M2Track<Quaternion>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static M2Track<float> ReadFixedTrack(Formats.M2.Root.Record.M2TrackFixed16 track)
+    {
+        var timelines = new M2Timeline<float>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Count);
+            var snapshots = new float[count];
+            for (var j = 0; j < count; j++)
+                snapshots[j] = values[j].AsFloat;
+            timelines[i] = new M2Timeline<float>(times[..count], snapshots);
+        }
+        return new M2Track<float>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static M2Track<Quaternion> ReadFloatQuaternionTrack(
+        Formats.M2.Root.Record.M2TrackC4Quaternion track)
+    {
+        var timelines = new M2Timeline<Quaternion>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Count);
+            var snapshots = new Quaternion[count];
+            for (var j = 0; j < count; j++)
+            {
+                var value = values[j];
+                var q = new Quaternion(value.X, value.Y, value.Z, value.W);
+                snapshots[j] = q.LengthSquared() > 1e-8f ? Quaternion.Normalize(q) : Quaternion.Identity;
+            }
+            timelines[i] = new M2Timeline<Quaternion>(times[..count], snapshots);
+        }
+        return new M2Track<Quaternion>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static float DecodeCompressedComponent(short value) =>
+        unchecked((ushort)value) * (2f / 65535f) - 1f;
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 
     private static uint[] ResolveTextureFileDataIds(
         Fs.FileSystem fileSystem,
@@ -290,6 +479,8 @@ public static class M2Loader
         bool isMpq)
     {
         var textureLookupTable = root.TextureLookupTable.AsSpan();
+        var weightLookupTable = root.TransparencyLookupTable.AsSpan();
+        var transformLookupTable = root.TextureTransformsLookupTable.AsSpan();
         var result = new List<Submesh>(profile.Batches.Length);
         for (var i = 0; i < profile.Batches.Length; i++)
         {
@@ -332,11 +523,31 @@ public static class M2Loader
                 geosetId = section.Id,
                 index = i,
                 vertexShaderID = (uint)GetVertexShaderID(batch.TextureCount, shaderId),
-                pixelShaderID = (uint)GetPixelShaderID(batch.TextureCount, shaderId)
+                pixelShaderID = (uint)GetPixelShaderID(batch.TextureCount, shaderId),
+                colorIndex = batch.ColorIndex < root.Colors.Count ? batch.ColorIndex : -1,
+                textureWeightIndex = batch.TextureWeightComboIndex < weightLookupTable.Length &&
+                    weightLookupTable[batch.TextureWeightComboIndex] < root.TextureWeights.Count
+                    ? weightLookupTable[batch.TextureWeightComboIndex] : -1,
+                textureTransformIndex1 = GetTextureTransformIndex(
+                    transformLookupTable, batch.TextureTransformComboIndex, 0,
+                    root.TextureTransforms.Count),
+                textureTransformIndex2 = GetTextureTransformIndex(
+                    transformLookupTable, batch.TextureTransformComboIndex, 1,
+                    root.TextureTransforms.Count)
             });
         }
 
         return [.. result];
+    }
+
+    private static int GetTextureTransformIndex(
+        ReadOnlySpan<short> lookup, int comboIndex, int stage, int transformCount)
+    {
+        var index = comboIndex + stage;
+        if ((uint)index >= lookup.Length)
+            return -1;
+        var transform = lookup[index];
+        return (uint)transform < transformCount ? transform : -1;
     }
 
     internal static M2RenderMaterial ResolveRenderMaterial(

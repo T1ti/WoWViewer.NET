@@ -142,6 +142,7 @@ public static class WMOLoader
         return new PreppedWMO
         {
             FileDataID = fileDataId,
+            LegacyLighting = fileSystem.Kind == StorageKind.Mpq,
             AmbientColor = PackColor(rootHeader.AmbientColor),
             Flags = rootHeader.Flags,
             BoundingBox = new BoundingBox(ToVector3(rootBounds.Min), ToVector3(rootBounds.Max)),

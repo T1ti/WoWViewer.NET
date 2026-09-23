@@ -281,6 +281,7 @@ internal sealed class SkyRenderer(
             lightDirection = Vector3.UnitZ,
             ambientColor = Vector3.One,
             diffuseColor = Vector3.Zero,
+            materialColor = Vector4.One,
             globalOpacity = opacity
         };
 

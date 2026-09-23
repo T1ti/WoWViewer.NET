@@ -31,17 +31,17 @@ public static class TerrainAlphaMapSampler
             return [];
 
         var weights = new float[layerCount];
-        var overlaySum = 0f;
+        weights[0] = 1f;
         for (var layerIndex = 1; layerIndex < layerCount; layerIndex++)
         {
             var groupIndex = layerIndex / Channels;
             var channelIndex = layerIndex % Channels;
-            var weight = SampleChannel(alphaMaterials, groupIndex, channelIndex, uv);
-            weights[layerIndex] = weight;
-            overlaySum += weight;
+            var opacity = SampleChannel(alphaMaterials, groupIndex, channelIndex, uv);
+            for (var previousLayer = 0; previousLayer < layerIndex; previousLayer++)
+                weights[previousLayer] *= 1f - opacity;
+            weights[layerIndex] = opacity;
         }
 
-        weights[0] = 1f - Math.Clamp(overlaySum, 0f, 1f);
         return weights;
     }
 
@@ -81,12 +81,10 @@ public static class TerrainAlphaMapSampler
             return 0f;
         }
 
-        // D3D normalized linear sampling addresses texel centers at n + 0.5.
-        // The terrain shader applies frac() before sampling each chunk map.
-        var wrappedU = uv.X - MathF.Floor(uv.X);
-        var wrappedV = uv.Y - MathF.Floor(uv.Y);
-        var x = wrappedU * Size - 0.5f;
-        var y = wrappedV * Size - 0.5f;
+        // MCAL belongs to one chunk and clamps at its outer edge. Match the
+        // shader so a brush sample at UV 1 reads the last texel, not the first.
+        var x = Math.Clamp(uv.X, 0f, 1f) * Size - 0.5f;
+        var y = Math.Clamp(uv.Y, 0f, 1f) * Size - 0.5f;
         var baseX = (int)MathF.Floor(x);
         var baseY = (int)MathF.Floor(y);
         var x0 = Math.Clamp(baseX, 0, Size - 1);

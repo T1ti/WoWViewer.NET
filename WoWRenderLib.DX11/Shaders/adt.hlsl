@@ -278,7 +278,9 @@ uint2 GetAlphaSlices(uint chunkIndex)
 float4 PS_Main(VSOut i) : SV_Target
 {
     float4 in_vertexColor = i.VColor;
-    float2 uvMod = frac(i.TexCoord);
+    // MCAL is one clamped 64x64 map per chunk. frac() wrapped the right and
+    // bottom edge back to the first texel, creating a visible chunk seam.
+    float2 uvMod = saturate(i.TexCoord);
     uint2 alphaSlices = GetAlphaSlices(i.ChunkIndex);
     ChunkLayerData chunkLayers = chunkLayerData[i.ChunkIndex];
 
@@ -309,6 +311,7 @@ float4 PS_Main(VSOut i) : SV_Target
     for (idx = 1; idx < ADT_LAYER_COUNT; idx++)
         alpha_sum += alphas[idx];
 
+#if ADT_USE_HEIGHT_TEXTURES
     float layer_weights[ADT_LAYER_COUNT];
     layer_weights[0] = 1.0f - saturate(alpha_sum);
     [unroll]
@@ -316,7 +319,6 @@ float4 PS_Main(VSOut i) : SV_Target
         layer_weights[idx] = alphas[idx];
 
     float layer_pcts[ADT_LAYER_COUNT];
-#if ADT_USE_HEIGHT_TEXTURES
     [unroll]
     for (idx = 0; idx < ADT_LAYER_COUNT; idx++)
     {
@@ -337,11 +339,6 @@ float4 PS_Main(VSOut i) : SV_Target
     [unroll]
     for (idx = 0; idx < ADT_LAYER_COUNT; idx++)
         layer_pcts[idx] *= 1.0f - saturate(max_pct - layer_pcts[idx]);
-#else
-    [unroll]
-    for (idx = 0; idx < ADT_LAYER_COUNT; idx++)
-        layer_pcts[idx] = layer_weights[idx];
-#endif
 
     float pct_sum = 0.0f;
     [unroll]
@@ -361,6 +358,22 @@ float4 PS_Main(VSOut i) : SV_Target
         float4 layer_sample = diffuseLayers[idx].Sample(linearWrap, tc);
         final_color += layer_sample.rgb * layer_pcts[idx];
     }
+#else
+    // Pre-height-texture terrain composites overlays in MCLY order. Treating
+    // their MCAL values as normalized additive weights changes the color at
+    // transitions and can expose a hard boundary between adjacent chunks.
+    float2 baseTc = i.TexCoord * (8.0f / GetChunk8(
+        chunkLayers.layerScales0, chunkLayers.layerScales1, 0));
+    float3 final_color = diffuseLayers[0].Sample(linearWrap, baseTc).rgb;
+    [unroll]
+    for (idx = 1; idx < ADT_LAYER_COUNT; idx++)
+    {
+        float2 tc = i.TexCoord * (8.0f / GetChunk8(
+            chunkLayers.layerScales0, chunkLayers.layerScales1, idx));
+        float3 layer_color = diffuseLayers[idx].Sample(linearWrap, tc).rgb;
+        final_color = lerp(final_color, layer_color, alphas[idx]);
+    }
+#endif
 
     float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
     float3 lighting = saturate(ambientColor + diffuseColor * diffuse);

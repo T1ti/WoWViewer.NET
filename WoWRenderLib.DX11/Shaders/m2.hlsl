@@ -16,7 +16,13 @@ cbuffer PerObject : register(b0)
     float3 ambientColor;
     float globalOpacity;
     float3 diffuseColor;
-    float _pad2;
+    int hasSkinning;
+    float4 materialColor;
+};
+
+cbuffer M2Bones : register(b1)
+{
+    float4x4 boneMatrices[256];
 };
 
 Texture2D texture1 : register(t0);
@@ -35,6 +41,8 @@ struct VSInput
     float3 normal : NORMAL;
     float2 texCoord1 : TEXCOORD0;
     float2 texCoord2 : TEXCOORD1;
+    float4 boneWeights : BLENDWEIGHT;
+    uint4 boneIndices : BLENDINDICES;
     
     // Buffer 1
     float4 instanceRow0 : TEXCOORD2;
@@ -79,7 +87,33 @@ VSOutput VS_Main(VSInput input)
     
     instanceMatrix = transpose(instanceMatrix);
     
-    float4 worldPos = mul(instanceMatrix, float4(input.position, 1.0));
+    float3 modelPosition = input.position;
+    float3 modelNormal = input.normal;
+    if (hasSkinning != 0)
+    {
+        float4 skinnedPosition = 0.0;
+        float3 skinnedNormal = 0.0;
+        float totalWeight = 0.0;
+        [unroll]
+        for (uint bone = 0; bone < 4; bone++)
+        {
+            float weight = input.boneWeights[bone];
+            if (weight > 0.0 && input.boneIndices[bone] < 256)
+            {
+                float4x4 transform = boneMatrices[input.boneIndices[bone]];
+                skinnedPosition += mul(transform, float4(input.position, 1.0)) * weight;
+                skinnedNormal += mul((float3x3)transform, input.normal) * weight;
+                totalWeight += weight;
+            }
+        }
+        if (totalWeight > 0.0)
+        {
+            modelPosition = skinnedPosition.xyz / totalWeight;
+            modelNormal = normalize(skinnedNormal);
+        }
+    }
+
+    float4 worldPos = mul(instanceMatrix, float4(modelPosition, 1.0));
     output.position = mul(projection_matrix, mul(view_matrix, worldPos));
 
     // M2 instances carry the model transform in the second vertex stream.
@@ -105,7 +139,7 @@ VSOutput VS_Main(VSInput input)
     invMV3 = invMV3 * (1.0f / det);
 
     float3x3 normalMatrix = transpose(invMV3);
-    output.Normal = normalize(mul(normalMatrix, input.normal));
+    output.Normal = normalize(mul(normalMatrix, modelNormal));
 
     // Wisp's Diffuse_* vertex shaders carry a clamped lighting term into the
     // combiner stage. Keep the same neutral ambient/diffuse balance here so
@@ -226,7 +260,7 @@ VSOutput VS_Main(VSInput input)
 
 float4 PS_Main(VSOutput input) : SV_TARGET
 {
-    float4 MeshColor = float4(1.0, 1.0, 1.0, 1.0);
+    float4 MeshColor = materialColor;
     float4 TexSampleAlpha = float4(1.0, 1.0, 1.0, 1.0);
 
     int iBlendMode = (int) blendMode;

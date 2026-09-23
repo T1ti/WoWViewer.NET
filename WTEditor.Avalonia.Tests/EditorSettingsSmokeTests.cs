@@ -1816,10 +1816,24 @@ public sealed class EditorSettingsSmokeTests
             layerCount: 3,
             new Vector2(0.321f, 0.654f));
 
-        Assert.AreEqual(0.2f, weights[0], 0.0001f);
-        Assert.AreEqual(0.4f, weights[1], 0.0001f);
+        Assert.AreEqual(0.36f, weights[0], 0.0001f);
+        Assert.AreEqual(0.24f, weights[1], 0.0001f);
         Assert.AreEqual(0.4f, weights[2], 0.0001f);
         Assert.AreEqual(2, TerrainAlphaMapSampler.FindDominantLayer(weights, [10, 20, 30]));
+    }
+
+    [TestMethod]
+    public void TerrainAlphaSampler_ClampsChunkEdgesInsteadOfWrapping()
+    {
+        var alpha = new byte[TerrainAlphaMapSampler.Size * TerrainAlphaMapSampler.Size * 4];
+        for (var row = 0; row < TerrainAlphaMapSampler.Size; row++)
+            alpha[((row * TerrainAlphaMapSampler.Size + 63) * 4) + 1] = 255;
+
+        var left = TerrainAlphaMapSampler.SampleWeights([alpha], 2, new Vector2(0f, 0.5f));
+        var right = TerrainAlphaMapSampler.SampleWeights([alpha], 2, new Vector2(1f, 0.5f));
+
+        Assert.AreEqual(0f, left[1]);
+        Assert.AreEqual(1f, right[1]);
     }
 
     [TestMethod]
@@ -2143,6 +2157,70 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(2, SceneManager.GetM2SamplerIndex(1));
         Assert.AreEqual(1, SceneManager.GetM2SamplerIndex(2));
         Assert.AreEqual(3, SceneManager.GetM2SamplerIndex(3));
+    }
+
+    [TestMethod]
+    public void M2DepthPolicy_UsesWotlkMaterialDepthFlagsWithoutChangingModernState()
+    {
+        Assert.AreEqual(M2DepthMode.ReadOnly, M2DepthPolicy.ForMaterial(true, 0x14));
+        Assert.AreEqual(M2DepthMode.Disabled, M2DepthPolicy.ForMaterial(true, 0x08));
+        Assert.AreEqual(M2DepthMode.Default, M2DepthPolicy.ForMaterial(true, 0));
+        Assert.AreEqual(M2DepthMode.Default, M2DepthPolicy.ForMaterial(false, 0x14));
+    }
+
+    [TestMethod]
+    public void WmoMaterialPolicy_UsesLegacyCutoutThresholdAndIndependentClampAxes()
+    {
+        Assert.AreEqual(224f / 255f, WmoMaterialPolicy.AlphaReference(1, true));
+        Assert.AreEqual(1f / 255f, WmoMaterialPolicy.AlphaReference(2, true));
+        Assert.AreEqual(1f / 255f, WmoMaterialPolicy.AlphaReference(6, true));
+        Assert.AreEqual(0f, WmoMaterialPolicy.AlphaReference(0, true));
+        Assert.AreEqual(128f / 255f, WmoMaterialPolicy.AlphaReference(1, false));
+        Assert.AreEqual(-1f, WmoMaterialPolicy.AlphaReference(2, false));
+
+        Assert.AreEqual(3, WmoMaterialPolicy.SamplerIndex(0));
+        Assert.AreEqual(1, WmoMaterialPolicy.SamplerIndex(0x40));
+        Assert.AreEqual(2, WmoMaterialPolicy.SamplerIndex(0x80));
+        Assert.AreEqual(0, WmoMaterialPolicy.SamplerIndex(0xC0));
+    }
+
+    [TestMethod]
+    public void M2Animation_LoopsGlobalTrackAndRotatesAroundBonePivot()
+    {
+        var translation = new M2Track<Vector3>
+        {
+            Interpolation = 1,
+            GlobalSequence = 0,
+            Timelines = [new M2Timeline<Vector3>([0, 1000], [Vector3.Zero, new Vector3(4, 0, 0)])]
+        };
+        var rotation = new M2Track<Quaternion>
+        {
+            Interpolation = 0,
+            GlobalSequence = -1,
+            Timelines = [new M2Timeline<Quaternion>([0],
+                [Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)])]
+        };
+        var scale = new M2Track<Vector3>
+        {
+            Interpolation = 0,
+            GlobalSequence = -1,
+            Timelines = []
+        };
+        var animation = new M2Animation
+        {
+            Bones = [new M2Bone(-1, 0x200, new Vector3(1, 0, 0), translation, rotation, scale)],
+            Sequences = [new M2Sequence(500, 0)],
+            GlobalLoops = [1000]
+        };
+
+        Span<Matrix4x4> palette = stackalloc Matrix4x4[1];
+        animation.Evaluate(0, 250, palette);
+        var first = Vector3.Transform(new Vector3(2, 0, 0), palette[0]);
+        animation.Evaluate(0, 1250, palette);
+        var looped = Vector3.Transform(new Vector3(2, 0, 0), palette[0]);
+
+        Assert.IsTrue(Vector3.Distance(first, new Vector3(2, 1, 0)) < 0.0001f);
+        Assert.IsTrue(Vector3.Distance(first, looped) < 0.0001f);
     }
 
     [TestMethod]

@@ -19,6 +19,7 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 groupBatches = new WorldModelGroupBatches[preppedWMO.PreppedWMOGroups.Length],
                 rootWMOFileDataID = preppedWMO.FileDataID,
+                legacyLighting = preppedWMO.LegacyLighting,
                 ambientColor = preppedWMO.AmbientColor,
                 flags = preppedWMO.Flags,
                 boundingBox = preppedWMO.BoundingBox,

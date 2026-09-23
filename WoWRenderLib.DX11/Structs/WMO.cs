@@ -43,6 +43,7 @@ namespace WoWRenderLib.DX11.Structs
     public struct WorldModel
     {
         public uint rootWMOFileDataID;
+        public bool legacyLighting;
         public uint ambientColor;
         public ushort flags;
         public WorldModelGroupBatches[] groupBatches;

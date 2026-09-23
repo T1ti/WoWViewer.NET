@@ -18,7 +18,7 @@ namespace WoWRenderLib.Structs
         public Vector3 ambientColor;
         public float _pad1;
         public Vector3 diffuseColor;
-        public float _pad2;
+        public int useLegacyLighting;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -100,6 +100,7 @@ namespace WoWRenderLib.Structs
     public readonly struct PreppedWMO
     {
         public readonly uint FileDataID { get; init; }
+        public readonly bool LegacyLighting { get; init; }
         public readonly uint AmbientColor { get; init; }
         public readonly ushort Flags { get; init; }
         public readonly BoundingBox BoundingBox { get; init; }

@@ -17,6 +17,7 @@ namespace WoWRenderLib.DX11.Loaders
                 boundingBox = parsedM2.boundingBox,
                 boundingRadius = parsedM2.boundingRadius,
                 fileDataID = parsedM2.fileDataID,
+                usesLegacyDepthFlags = parsedM2.usesLegacyDepthFlags,
                 raycastVertices = ExtractRaycastVertices(parsedM2.vertexBytes),
                 raycastIndices = MemoryMarshal.Cast<byte, ushort>(parsedM2.indiceBytes).ToArray(),
                 mats = parsedM2.mats,
@@ -27,7 +28,8 @@ namespace WoWRenderLib.DX11.Loaders
                 animationCount = parsedM2.animationCount,
                 particleEmitterCount = parsedM2.particleEmitterCount,
                 boneCount = parsedM2.boneCount,
-                attachmentCount = parsedM2.attachmentCount
+                attachmentCount = parsedM2.attachmentCount,
+                animation = parsedM2.animation
             };
 
             foreach (var mat in doodadBatch.mats)

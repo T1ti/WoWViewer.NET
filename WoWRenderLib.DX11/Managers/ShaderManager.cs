@@ -517,6 +517,8 @@ namespace WoWRenderLib.DX11.Managers
                 fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
                 fixed (byte* normalName = SilkMarshal.StringToMemory("NORMAL"))
                 fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
+                fixed (byte* weightName = SilkMarshal.StringToMemory("BLENDWEIGHT"))
+                fixed (byte* boneName = SilkMarshal.StringToMemory("BLENDINDICES"))
                 {
                     var inputElements = new InputElementDesc[]
                     {
@@ -560,6 +562,24 @@ namespace WoWRenderLib.DX11.Managers
                             AlignedByteOffset = uint.MaxValue, // AUTO
                             InputSlotClass = InputClassification.PerVertexData,
                             InstanceDataStepRate = 0
+                        },
+                        new()
+                        {
+                            SemanticName = weightName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR8G8B8A8Unorm,
+                            InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData
+                        },
+                        new()
+                        {
+                            SemanticName = boneName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR8G8B8A8Uint,
+                            InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData
                         },
 
                         // Buffer 1

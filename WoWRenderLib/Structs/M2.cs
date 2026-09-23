@@ -24,12 +24,14 @@ namespace WoWRenderLib.Structs
         public Vector3 ambientColor;
         public float globalOpacity;
         public Vector3 diffuseColor;
-        public float _pad2;
+        public int hasSkinning;
+        public Vector4 materialColor;
     }
 
     public struct ParsedM2
     {
         public uint fileDataID;
+        public bool usesLegacyDepthFlags;
         public byte[] vertexBytes;
         public byte[] indiceBytes;
         public BoundingBox boundingBox;
@@ -43,6 +45,7 @@ namespace WoWRenderLib.Structs
         public int particleEmitterCount;
         public int boneCount;
         public int attachmentCount;
+        public M2Animation? animation;
     }
 
     public struct M2Vertex
@@ -51,6 +54,8 @@ namespace WoWRenderLib.Structs
         public Vector3 Normal;
         public Vector2 TexCoord1;
         public Vector2 TexCoord2;
+        public uint BoneWeights;
+        public uint BoneIndices;
     }
 
     public struct M2Material
@@ -83,6 +88,10 @@ namespace WoWRenderLib.Structs
         public readonly int index { get; init; }
         public readonly uint vertexShaderID { get; init; }
         public readonly uint pixelShaderID { get; init; }
+        public readonly int colorIndex { get; init; }
+        public readonly int textureWeightIndex { get; init; }
+        public readonly int textureTransformIndex1 { get; init; }
+        public readonly int textureTransformIndex2 { get; init; }
     }
 
     public struct DoodadBatch

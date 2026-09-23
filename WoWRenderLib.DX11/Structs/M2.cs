@@ -8,6 +8,7 @@ namespace WoWRenderLib.DX11.Structs
     public struct ParsedDoodadBatch
     {
         public uint fileDataID;
+        public bool usesLegacyDepthFlags;
         public ComPtr<ID3D11Buffer> vertexBuffer;
         public ComPtr<ID3D11Buffer> indiceBuffer;
         public Vector3[] raycastVertices;
@@ -23,5 +24,6 @@ namespace WoWRenderLib.DX11.Structs
         public int particleEmitterCount;
         public int boneCount;
         public int attachmentCount;
+        public M2Animation? animation;
     }
 }
