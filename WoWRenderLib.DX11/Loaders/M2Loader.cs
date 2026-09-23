@@ -32,7 +32,8 @@ namespace WoWRenderLib.DX11.Loaders
 
             foreach (var mat in doodadBatch.mats)
             {
-                BLPCache.GetOrLoad(device, mat.fileDataID, parsedM2.fileDataID);
+                if (mat.fileDataID != 0)
+                    BLPCache.GetOrLoad(device, mat.fileDataID, parsedM2.fileDataID);
             }
 
             ComPtr<ID3D11Buffer> vertexBuffer = default;
@@ -102,7 +103,8 @@ namespace WoWRenderLib.DX11.Loaders
 
             foreach (var material in model.mats)
             {
-                BLPCache.Release(material.fileDataID, model.fileDataID);
+                if (material.fileDataID != 0)
+                    BLPCache.Release(material.fileDataID, model.fileDataID);
             }
         }
     }

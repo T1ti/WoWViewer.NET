@@ -135,6 +135,21 @@ public sealed class WorldLightingSmokeTests
     }
 
     [TestMethod]
+    public void DefaultNavigationDoesNotReplaceAQueuedMapSelection()
+    {
+        var publication = new WorldNavigationPublication();
+        var selected = new WorldNavigationTarget(1, 456, 10, 11, true);
+        var defaultMap = new WorldNavigationTarget(0, 123, 35.5, 24.5, false);
+
+        publication.PublishIfEmpty(defaultMap);
+        Assert.AreSame(defaultMap, publication.ConsumeWhenReady(isReady: true));
+
+        publication.Publish(selected);
+        publication.PublishIfEmpty(defaultMap);
+        Assert.AreSame(selected, publication.ConsumeWhenReady(isReady: true));
+    }
+
+    [TestMethod]
     public void CatalogResolvesAllZeroLiquidColumnsToTheEffectiveMaterialPalette()
     {
         var catalog = CreateCatalog(

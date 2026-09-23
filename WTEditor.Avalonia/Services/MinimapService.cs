@@ -129,7 +129,7 @@ public sealed class MinimapService : IMinimapService
 
     private MinimapDocument LoadWmo(WorldMapCatalogEntry map, CancellationToken token)
     {
-        var data = map.Wdt.FileDataId != 0
+        var data = string.IsNullOrWhiteSpace(map.Wdt.Path)
             ? _wmoLoader.Load(map.Wdt.FileDataId, token)
             : _wmoLoader.Load(map.Wdt.Path, token);
         var images = new List<WmoMinimapImage>();

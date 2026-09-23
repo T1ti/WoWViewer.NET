@@ -22,6 +22,17 @@ public sealed class MapUniqueIdSmokeTests
     }
 
     [TestMethod]
+    public void Scanner_ReadsMpqEraReversedPlacementChunks()
+    {
+        using var stream = BuildAdt(
+            (FourCc("REVM"), 4, [0u]),
+            (FourCc("FDDM"), 36, [12u, 42u]),
+            (FourCc("FDOM"), 64, [77u]));
+
+        Assert.AreEqual(77u, MapUniqueIdScanner.ScanStream(stream));
+    }
+
+    [TestMethod]
     public void Store_ScansNewWdtModelOnceAndPersistsMapIdToMaximum()
     {
         var mapId = 987_654u;
@@ -73,7 +84,9 @@ public sealed class MapUniqueIdSmokeTests
             foreach (var (name, recordSize, uniqueIds) in chunks)
             {
                 writer.Write(name);
-                var isPlacement = name is var value && (value == FourCc("MDDF") || value == FourCc("MODF"));
+                var isPlacement = name is var value &&
+                    (value == FourCc("MDDF") || value == FourCc("MODF") ||
+                     value == FourCc("FDDM") || value == FourCc("FDOM"));
                 writer.Write(isPlacement
                     ? checked((uint)(recordSize * uniqueIds.Length))
                     : checked((uint)recordSize));

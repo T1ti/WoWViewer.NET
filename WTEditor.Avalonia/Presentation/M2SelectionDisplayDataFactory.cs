@@ -16,7 +16,7 @@ internal static class M2SelectionDisplayDataFactory
                 index,
                 new AssetReference(
                     texture.fileDataID,
-                    WoWRenderLib.Listfile.GetDisplayName(texture.fileDataID)),
+                    WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(texture.fileDataID)),
                 (uint)texture.flags)).ToArray();
             var materials = model.submeshes.Select((batch, index) => new ModelMaterialData(
                 index,
@@ -60,11 +60,11 @@ internal static class M2SelectionDisplayDataFactory
                 m2.ParentFileDataId,
                 m2.EnabledGeosets.Length,
                 m2.ParentWMO != null,
-                WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.FileDataId),
                 ModelSelectionDisplayAssets.CreateReferences(
                     () => model.mats.Select(material => material.fileDataID)),
                 m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentFileDataId),
                 new ModelAdvancedData(
                     model.submeshes?.Length ?? 0,
                     model.vertexCount,
@@ -88,10 +88,10 @@ internal static class M2SelectionDisplayDataFactory
                 m2.ParentFileDataId,
                 0,
                 m2.ParentWMO != null,
-                WoWRenderLib.Listfile.GetDisplayName(m2.FileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.FileDataId),
                 [],
                 m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                WoWRenderLib.Listfile.GetDisplayName(m2.ParentFileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentFileDataId),
                 null,
                 m2.ParentWMO == null
                     ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)

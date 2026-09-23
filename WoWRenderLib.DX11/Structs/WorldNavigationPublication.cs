@@ -22,6 +22,12 @@ internal sealed class WorldNavigationPublication
         Interlocked.Exchange(ref _pending, target);
     }
 
+    public void PublishIfEmpty(WorldNavigationTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        Interlocked.CompareExchange(ref _pending, target, null);
+    }
+
     public WorldNavigationTarget? ConsumeWhenReady(bool isReady) =>
         isReady ? Interlocked.Exchange(ref _pending, null) : null;
 }

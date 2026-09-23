@@ -45,6 +45,12 @@ public static class Db2TableLoader
             try
             {
                 requestedKey = new FileKey(path);
+                if (fileSystem.Kind == StorageKind.Mpq)
+                {
+                    var bytes = fileSystem.ReadFile(requestedKey);
+                    diagnostic = $"Read client database table '{tableName}' from '{path}' by path.";
+                    return bytes;
+                }
                 resolvedKey = fileSystem.Resolve(requestedKey);
                 var resolvedFileDataId = resolvedKey.Fdid?.Value;
                 if (resolvedFileDataId is uint id && id != 0)
@@ -120,6 +126,12 @@ public static class Db2TableLoader
                 table = Table.Open(tableName, schemaVersion);
 
                 requestedKey = new FileKey(path);
+                if (fileSystem.Kind == StorageKind.Mpq)
+                {
+                    table.Read(fileSystem, requestedKey);
+                    diagnostic = $"Loaded client database table '{tableName}' from '{path}' by path.";
+                    return table;
+                }
                 resolvedKey = fileSystem.Resolve(requestedKey);
                 var resolvedFileDataId = resolvedKey.Fdid?.Value;
                 if (resolvedFileDataId is uint id && id != 0)

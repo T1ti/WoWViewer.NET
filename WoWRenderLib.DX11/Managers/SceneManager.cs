@@ -51,6 +51,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
         private readonly HashSet<uint> coarseCulledTileRoots = [];
         public event Action<MapTile, float>? TerrainTileHeightAvailable;
+        public event Action<string, Exception>? SceneLoadFailed;
 
         private static ulong GetTileBoundsKey(MapTile tile) =>
             ((ulong)tile.wdtFileDataID << 16) |

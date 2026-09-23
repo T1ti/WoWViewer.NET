@@ -70,7 +70,10 @@ namespace WoWRenderLib.DX11.Cache
         private static DecodedBLP Decode(uint fileDataId)
         {
             using var blp = new Formats.BLP.BLP();
-            blp.Read(CascFileReader.ReadFile(fileDataId));
+            var fileSystem = WowlibFileSystem.Current;
+            blp.Read(fileSystem.Kind == StorageKind.Mpq
+                ? WowlibFileSystem.ReadAsset(fileSystem, fileDataId)
+                : CascFileReader.ReadFile(fileDataId));
 
             if (blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt1 ||
                 blp.PreferredFormat == Formats.BLP.PixelFormat.Dxt3 ||

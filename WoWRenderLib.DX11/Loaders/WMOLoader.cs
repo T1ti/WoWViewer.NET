@@ -308,9 +308,10 @@ namespace WoWRenderLib.DX11.Loaders
 
             try
             {
-                return WowlibFileSystem.Current.Exists(new FileDataId(fileDataId));
+                var fileSystem = WowlibFileSystem.Current;
+                return WowlibFileSystem.AssetExists(fileSystem, fileDataId);
             }
-            catch (InvalidOperationException)
+            catch (Exception exception) when (exception is InvalidOperationException or FileNotFoundException)
             {
                 return false;
             }

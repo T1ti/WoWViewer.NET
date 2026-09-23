@@ -16,6 +16,9 @@ public static class MapUniqueIdScanner
 
     private static readonly uint Mddf = FourCc("MDDF");
     private static readonly uint Modf = FourCc("MODF");
+    // MPQ-era ADTs store FourCC bytes in reverse order (FDDM/FDOM).
+    private static readonly uint LegacyMddf = FourCc("FDDM");
+    private static readonly uint LegacyModf = FourCc("FDOM");
 
     public static uint ScanMap(WdtFile map)
     {
@@ -34,7 +37,7 @@ public static class MapUniqueIdScanner
             if (objectFileDataId == 0 || !scannedFiles.Add(objectFileDataId))
                 continue;
 
-            if (!fileSystem.Exists(new FileKey(new FileDataId(objectFileDataId))))
+            if (!WowlibFileSystem.AssetExists(fileSystem, objectFileDataId))
                 continue;
 
             maximum = Math.Max(maximum, ScanFile(objectFileDataId));
@@ -45,9 +48,9 @@ public static class MapUniqueIdScanner
 
     public static uint ScanFile(uint fileDataId)
     {
+        var fileSystem = WowlibFileSystem.Current;
         using var stream = new MemoryStream(
-            WowlibFileSystem.Current.ReadFile(new FileKey(new FileDataId(fileDataId))),
-            writable: false);
+            WowlibFileSystem.ReadAsset(fileSystem, fileDataId), writable: false);
         return ScanStream(stream);
     }
 
@@ -70,10 +73,10 @@ public static class MapUniqueIdScanner
 
             switch (chunkName)
             {
-                case var value when value == Mddf:
+                case var value when value == Mddf || value == LegacyMddf:
                     maximum = Math.Max(maximum, ScanPlacementChunk(stream, chunkSize, MddfRecordSize, discard));
                     break;
-                case var value when value == Modf:
+                case var value when value == Modf || value == LegacyModf:
                     maximum = Math.Max(maximum, ScanPlacementChunk(stream, chunkSize, ModfRecordSize, discard));
                     break;
                 default:

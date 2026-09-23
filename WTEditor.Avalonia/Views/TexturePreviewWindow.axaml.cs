@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using WoWLib;
+using WoWRenderLib.Services;
 using WTEditor.Avalonia.Services;
 
 namespace WTEditor.Avalonia.Views;
@@ -23,10 +25,13 @@ public partial class TexturePreviewWindow : Window
     {
         DisplayName = displayName;
         var metadata = images.Metadata;
+        var asset = WowlibFileSystem.TryGetCurrent()?.Kind == StorageKind.Mpq
+            ? $"File path: {WowlibFileSystem.GetAssetDisplayName(fileDataId)}"
+            : $"File data ID: {fileDataId}";
         Details = $"{metadata.Width} × {metadata.Height}  •  BLP v{metadata.Version}  •  " +
                   $"{metadata.ColorEncoding} / {metadata.PixelFormat}  •  Alpha {metadata.AlphaDepth}-bit  •  " +
                   $"{metadata.MipCount} mipmap{(metadata.MipCount == 1 ? string.Empty : "s")}  •  " +
-                  $"Mip flags {metadata.MipFlags}  •  File data ID: {fileDataId}";
+                  $"Mip flags {metadata.MipFlags}  •  {asset}";
         _ownedImages = images;
         InitializeWindow();
     }

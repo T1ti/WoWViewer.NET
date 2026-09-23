@@ -1,6 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WTEditor.Avalonia.Models;
+using WoWRenderLib.Services;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -94,7 +95,7 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
             WdtSettings = CreateFallbackWdtSettings(entry.Wdt);
 
         WdtTiles = entry?.Wdt.Tiles
-            .Select(CreateTile)
+            .Select(tile => CreateTile(tile, entry.Wdt.Path))
             .ToArray() ?? [];
         WdtStatus = entry?.Wdt.Error ?? (entry == null
             ? string.Empty
@@ -115,7 +116,9 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
     [
         new("ID", map.Id.ToString(CultureInfo.InvariantCulture), "Int32"),
         new("Directory", map.Directory, "String"),
-        new("WdtFileDataID", map.WdtFileDataId.ToString(CultureInfo.InvariantCulture), "UInt32"),
+        string.IsNullOrWhiteSpace(map.WdtPath)
+            ? new("WdtFileDataID", map.WdtFileDataId.ToString(CultureInfo.InvariantCulture), "UInt32")
+            : new("WDT path", map.WdtPath, "String"),
         new("ExpansionID", map.ExpansionId.ToString(CultureInfo.InvariantCulture), "Int32"),
         new("InstanceType", map.InstanceType.ToString(CultureInfo.InvariantCulture), "Int32")
     ];
@@ -123,15 +126,29 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
     private static IReadOnlyList<MapSettingDisplayViewModel> CreateFallbackWdtSettings(
         WorldMapWdtMetadata wdt) =>
     [
-        new("WDT.FileDataID", wdt.FileDataId.ToString(CultureInfo.InvariantCulture), "UInt32"),
+        string.IsNullOrWhiteSpace(wdt.Path)
+            ? new("WDT.FileDataID", wdt.FileDataId.ToString(CultureInfo.InvariantCulture), "UInt32")
+            : new("WDT.Path", wdt.Path, "String"),
         new("WDT.Version", wdt.Version.ToString(CultureInfo.InvariantCulture), "UInt32"),
         new("MPHD.Flags", $"0x{wdt.Flags:X8}", "UInt32"),
         new("Terrain", wdt.HasTerrain ? "Yes" : "No", "Boolean"),
         new("MAIN.ActiveTerrainTiles", wdt.ActiveTiles.Count.ToString(CultureInfo.InvariantCulture), "Int32")
     ];
 
-    private static WdtTileDisplayViewModel CreateTile(WorldMapWdtTileData tile)
+    private static WdtTileDisplayViewModel CreateTile(WorldMapWdtTileData tile, string wdtPath)
     {
+        if (!string.IsNullOrWhiteSpace(wdtPath))
+        {
+            var adtPath = tile.IsActive
+                ? MapAssetPathResolver.GetLegacyAdtPath(
+                    wdtPath, (byte)tile.Position.X, (byte)tile.Position.Y)
+                : string.Empty;
+            return new WdtTileDisplayViewModel(
+                $"({tile.Position.X}, {tile.Position.Y})",
+                $"0x{tile.Flags:X8}{(tile.IsActive ? " · active" : string.Empty)}",
+                adtPath);
+        }
+
         var fileDataIds = string.Join(
             " · ",
             $"Root={FormatFileDataId(tile.RootAdtFileDataId)}",

@@ -16,11 +16,12 @@ public static class WMOLoader
     {
         var fileSystem = WowlibFileSystem.Current;
         WorldLiquidMaterialCatalog.Shared.Configure(fileSystem);
-        if (!fileSystem.Exists(new FileDataId(fileDataId)))
+        if (!WowlibFileSystem.AssetExists(fileSystem, fileDataId))
             throw new FileNotFoundException($"WMO {fileDataId} does not exist!");
 
         using var wmo = Formats.WMO.WMO.ForVersion(fileSystem.Version);
-        wmo.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+        using var wmoKey = WowlibFileSystem.AssetKey(fileSystem, fileDataId);
+        wmo.Read(fileSystem, wmoKey);
         var root = wmo.Root;
         var rootData = ReadRootData(root);
         var groups = wmo.Groups;
@@ -49,6 +50,8 @@ public static class WMOLoader
             var vertices = new WMOVertex[bodyVertices.Length];
             var textureCoordinates = ReadTextureCoordinates(
                 fileSystem,
+                fileDataId,
+                groupIndex,
                 groupIndex < rootData.GroupFileDataIds.Length ? rootData.GroupFileDataIds[groupIndex] : 0,
                 vertices.Length);
             for (var i = 0; i < vertices.Length; i++)
@@ -276,15 +279,25 @@ public static class WMOLoader
 
     private static Vector2[][] ReadTextureCoordinates(
         Fs.FileSystem fileSystem,
+        uint rootFileDataId,
+        int groupIndex,
         uint groupFileDataId,
         int vertexCount)
     {
+        if (fileSystem.Kind == StorageKind.Mpq &&
+            LegacyAssetIds.TryGetPath(fileSystem, rootFileDataId, out var rootPath) &&
+            rootPath.EndsWith(".wmo", StringComparison.OrdinalIgnoreCase))
+        {
+            var groupPath = $"{rootPath[..^4]}_{groupIndex:000}.wmo";
+            groupFileDataId = WowlibFileSystem.ResolveAssetId(fileSystem, groupPath);
+        }
+
         if (groupFileDataId == 0 || vertexCount == 0)
             return [[], [], [], []];
 
         try
         {
-            var bytes = fileSystem.ReadFile(new FileDataId(groupFileDataId));
+            var bytes = WowlibFileSystem.ReadAsset(fileSystem, groupFileDataId);
             return ReadTextureCoordinateChunks(bytes, vertexCount);
         }
         catch
@@ -363,10 +376,10 @@ public static class WMOLoader
                 TexFileDataID0 = ResolveTexture(fileSystem, root.Textures, material.Texture1),
                 TexFileDataID1 = ResolveTexture(fileSystem, root.Textures, material.Texture2),
                 TexFileDataID2 = ResolveTexture(fileSystem, root.Textures, material.Texture3),
-                TexFileDataID3 = runtime.Count > 0 ? runtime[0] : 0,
-                TexFileDataID4 = runtime.Count > 1 ? runtime[1] : 0,
-                TexFileDataID5 = runtime.Count > 2 ? runtime[2] : 0,
-                TexFileDataID6 = runtime.Count > 3 ? runtime[3] : 0
+                TexFileDataID3 = fileSystem.Kind == StorageKind.Casc && runtime.Count > 0 ? runtime[0] : 0,
+                TexFileDataID4 = fileSystem.Kind == StorageKind.Casc && runtime.Count > 1 ? runtime[1] : 0,
+                TexFileDataID5 = fileSystem.Kind == StorageKind.Casc && runtime.Count > 2 ? runtime[2] : 0,
+                TexFileDataID6 = fileSystem.Kind == StorageKind.Casc && runtime.Count > 3 ? runtime[3] : 0
             };
         }
         return result;
@@ -476,7 +489,7 @@ public static class WMOLoader
 
     private static uint ResolveTexture(Fs.FileSystem fileSystem, Formats.StringBlock? textures, uint value)
     {
-        if (value != 0 && fileSystem.Exists(new FileDataId(value)))
+        if (value != 0 && fileSystem.Kind == StorageKind.Casc && fileSystem.Exists(new FileDataId(value)))
             return value;
         return ResolvePath(fileSystem, GetString(textures, value));
     }
@@ -485,7 +498,7 @@ public static class WMOLoader
     {
         if (string.IsNullOrWhiteSpace(path))
             return 0;
-        try { return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0; }
+        try { return WowlibFileSystem.ResolveAssetId(fileSystem, path); }
         catch { return 0; }
     }
 

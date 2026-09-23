@@ -102,11 +102,11 @@ internal static class WorldModelSelectionDisplayDataFactory
             model.doodadSets?.Length ?? 0,
             activeDoodadCount,
             model.rootWMOFileDataID == fileDataId,
-            WoWRenderLib.Listfile.GetDisplayName(fileDataId),
+            WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(fileDataId),
             ModelSelectionDisplayAssets.CreateReferences(
                 () => preppedMaterials.SelectMany(GetTextureIds)),
             uniqueId,
-            WoWRenderLib.Listfile.GetDisplayName(parentFileDataId),
+            WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(parentFileDataId),
             groups,
             new MapPlacementData(
                 MapPlacementKind.Modf,
@@ -128,10 +128,10 @@ internal static class WorldModelSelectionDisplayDataFactory
         0,
         wmo.ActiveDoodads.Count,
         false,
-        WoWRenderLib.Listfile.GetDisplayName(wmo.FileDataId),
+        WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(wmo.FileDataId),
         [],
         wmo.UniqueID,
-        WoWRenderLib.Listfile.GetDisplayName(wmo.ParentFileDataId),
+        WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(wmo.ParentFileDataId),
         [],
         new MapPlacementData(
             MapPlacementKind.Modf,
@@ -174,7 +174,7 @@ internal static class WorldModelSelectionDisplayDataFactory
                 item.index + 1,
                 new AssetReference(
                     item.fileDataId,
-                    WoWRenderLib.Listfile.GetDisplayName(item.fileDataId))))
+                    WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(item.fileDataId))))
             .ToArray();
     }
 }

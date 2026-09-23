@@ -25,10 +25,54 @@ public static class WowlibFileSystem
 
     public static ClientVersion Version => Current.Version;
 
+    public static string GetAssetDisplayName(uint id)
+    {
+        var fileSystem = TryGetCurrent();
+        if (fileSystem?.Kind == StorageKind.Mpq)
+            return id == 0 ? "No file path"
+                : LegacyAssetIds.TryGetPath(fileSystem, id, out var path) ? path
+                : $"Unknown MPQ asset {id}";
+        return Listfile.GetDisplayName(id);
+    }
+
     public static Fs.FileSystem? TryGetCurrent()
     {
         lock (Sync)
             return current;
+    }
+
+    public static uint ResolveAssetId(Fs.FileSystem fileSystem, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return 0;
+        if (fileSystem.Kind == StorageKind.Mpq)
+            return LegacyAssetIds.Resolve(fileSystem, path);
+        using var key = new FileKey(path);
+        using var resolved = fileSystem.Resolve(key);
+        return resolved.Fdid?.Value ?? 0;
+    }
+
+    public static FileKey AssetKey(Fs.FileSystem fileSystem, uint id)
+    {
+        if (fileSystem.Kind == StorageKind.Mpq)
+        {
+            if (!LegacyAssetIds.TryGetPath(fileSystem, id, out var path))
+                throw new FileNotFoundException($"MPQ asset ID {id} has no registered path.");
+            return new FileKey(path);
+        }
+        return new FileKey(new FileDataId(id));
+    }
+
+    public static bool AssetExists(Fs.FileSystem fileSystem, uint id)
+    {
+        using var key = AssetKey(fileSystem, id);
+        return fileSystem.Exists(key);
+    }
+
+    public static byte[] ReadAsset(Fs.FileSystem fileSystem, uint id)
+    {
+        using var key = AssetKey(fileSystem, id);
+        return fileSystem.ReadFile(key);
     }
 
     public static Fs.FileSystem OpenForClient(string clientPath, string cascProduct)

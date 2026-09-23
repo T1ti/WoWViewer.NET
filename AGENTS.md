@@ -15,6 +15,13 @@ commands in view models, keep views focused on XAML and view-specific wiring,
 and keep application logic in services or other non-view classes. Avoid
 placing business logic in Avalonia code-behind.
 
+## WoW version compatibility
+
+The editor aims to support multiple versions of World of Warcraft. When
+implementing a feature or fix for a specific version, preserve compatibility
+with other supported versions. Keep version-specific behavior scoped to the
+versions that need it, and verify that shared behavior still works elsewhere.
+
 ## Required smoke verification
 
 After every code, project, configuration, or shader change, run the repository smoke-test runner from the repository root:

@@ -408,6 +408,7 @@ namespace WoWRenderLib.DX11
                     device,
                     Path.Combine(AppContext.BaseDirectory, "Shaders"));
                 sceneManager = new SceneManager(device, deviceContext, shaderManager);
+                sceneManager.SceneLoadFailed += OnSceneLoadFailed;
 
                 // imgui?.Initialize();
 
@@ -805,7 +806,11 @@ namespace WoWRenderLib.DX11
             _sharedRTV.Dispose();
             SharedSRV.Dispose();
             sharedTexture.Dispose();
-            sceneManager?.Dispose();
+            if (sceneManager != null)
+            {
+                sceneManager.SceneLoadFailed -= OnSceneLoadFailed;
+                sceneManager.Dispose();
+            }
             shaderManager?.Dispose();
             imgui?.Dispose();
             _lifetimeCancellation.Dispose();
@@ -903,6 +908,21 @@ namespace WoWRenderLib.DX11
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
+                    var defaultWdt = WowlibFileSystem.ResolveAssetId(
+                        fileSystem, "world/maps/Azeroth/Azeroth.wdt");
+                    if (defaultWdt == 0)
+                        throw new FileNotFoundException("The MPQ client has no Azeroth WDT to load as the initial world.");
+                    sceneManager.LoadWDT(defaultWdt);
+                    if (!InitialCameraPosition.HasValue)
+                    {
+                        var tile = SceneManager.GetTileFromPosition(activeCamera.Position);
+                        var wdt = sceneManager.GetCurrentWDT();
+                        if (wdt != null && !wdt.TryGetTile(tile.x, tile.y, out _))
+                            tile = sceneManager.GetFirstMapTile();
+                        _worldNavigation.PublishIfEmpty(new WorldNavigationTarget(
+                            0, defaultWdt, tile.x + 0.5, tile.y + 0.5, false));
+                    }
+                    Volatile.Write(ref _contentInitializationComplete, 1);
                     SetStatus(WowViewerEngineState.Ready, $"{fileSystem.Version} MPQ files ready.");
                 }
                 catch (OperationCanceledException)
@@ -1004,6 +1024,13 @@ namespace WoWRenderLib.DX11
             StatusChanged?.Invoke(this, Status);
         }
 
+        private void OnSceneLoadFailed(string message, Exception exception)
+        {
+            // SceneManager logged the full exception; publish it to the editor too.
+            Status = new WowViewerEngineStatus(WowViewerEngineState.Ready, message, exception);
+            StatusChanged?.Invoke(this, Status);
+        }
+
         public static Vector3 QuaternionToEuler(Quaternion q)
         {
             Vector3 euler;
@@ -1091,7 +1118,15 @@ namespace WoWRenderLib.DX11
             if (navigation == null)
                 return;
 
-            ApplyWorldNavigation(navigation);
+            try
+            {
+                ApplyWorldNavigation(navigation);
+            }
+            catch (Exception exception)
+            {
+                SetStatus(WowViewerEngineState.Ready,
+                    $"Unable to load map {navigation.MapId}.", exception);
+            }
         }
 
         private void ApplyWorldNavigation(WorldNavigationTarget navigation)

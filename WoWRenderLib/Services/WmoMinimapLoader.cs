@@ -56,8 +56,7 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
 
     public WmoMinimapData Load(uint wdtFileDataId, CancellationToken token)
     {
-        using var fileDataId = new FileDataId(wdtFileDataId);
-        using var key = new FileKey(fileDataId);
+        using var key = WowlibFileSystem.AssetKey(WowlibFileSystem.Current, wdtFileDataId);
         return Load(key, token);
     }
 
@@ -87,6 +86,8 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
             root.Read(CascFileReader.ReadFile(placement.NameId));
         else
         {
+            if (fs.Kind == StorageKind.Mpq && string.IsNullOrWhiteSpace(path))
+                throw new FileNotFoundException("The MPQ WDT has no global WMO path in MWMO.");
             using var key = string.IsNullOrWhiteSpace(path)
                 ? new FileKey(new FileDataId(placement.NameId))
                 : new FileKey(path);

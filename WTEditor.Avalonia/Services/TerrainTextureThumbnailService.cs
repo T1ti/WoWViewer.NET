@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using WoWLib;
 using WoWRenderLib.Services;
 
@@ -35,7 +36,7 @@ public sealed class TerrainTextureThumbnailService : ITerrainTextureThumbnailSer
             if (!_cache.TryGetValue(fileDataId, out var load))
             {
                 load = new Lazy<Task<Bitmap?>>(
-                    () => Task.Run(() => Load(fileDataId)),
+                    () => LoadBitmapAsync(fileDataId),
                     LazyThreadSafetyMode.ExecutionAndPublication);
                 _cache.Add(fileDataId, load);
             }
@@ -48,14 +49,16 @@ public sealed class TerrainTextureThumbnailService : ITerrainTextureThumbnailSer
         return await loadTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static Bitmap? Load(uint fileDataId)
+    private static async Task<Bitmap?> LoadBitmapAsync(uint fileDataId)
     {
         try
         {
-            return TerrainTextureImageLoader.Load(
+            var decoded = await Task.Run(() => TerrainTextureImageLoader.Decode(
                 fileDataId,
                 MaximumThumbnailDimension,
-                TexturePreviewChannelMode.Color).Bitmap;
+                TexturePreviewChannelMode.Color)).ConfigureAwait(false);
+            return await Dispatcher.UIThread.InvokeAsync(() => TerrainTextureImageLoader.CreateBitmap(
+                decoded.Pixels, decoded.Width, decoded.Height));
         }
         catch (Exception exception)
         {
@@ -123,6 +126,11 @@ internal readonly record struct TerrainTextureMetadata(
     ulong MipCount);
 
 internal readonly record struct TerrainTextureImage(Bitmap Bitmap, TerrainTextureMetadata Metadata);
+internal readonly record struct DecodedTerrainTextureImage(
+    byte[] Pixels, uint Width, uint Height, TerrainTextureMetadata Metadata);
+internal readonly record struct DecodedTerrainTexturePreview(
+    byte[] Combined, byte[] Color, byte[] Alpha,
+    uint Width, uint Height, TerrainTextureMetadata Metadata);
 
 internal sealed class TerrainTexturePreviewImages : IDisposable
 {
@@ -146,8 +154,21 @@ internal static class TerrainTextureImageLoader
         uint? maximumDimension = null,
         TexturePreviewChannelMode channelMode = TexturePreviewChannelMode.Combined)
     {
+        var decoded = Decode(fileDataId, maximumDimension, channelMode);
+        return new TerrainTextureImage(
+            CreateBitmap(decoded.Pixels, decoded.Width, decoded.Height), decoded.Metadata);
+    }
+
+    internal static DecodedTerrainTextureImage Decode(
+        uint fileDataId,
+        uint? maximumDimension = null,
+        TexturePreviewChannelMode channelMode = TexturePreviewChannelMode.Combined)
+    {
         using var blp = new WoWLib.Formats.BLP.BLP();
-        blp.Read(CascFileReader.ReadFile(fileDataId));
+        var fileSystem = WowlibFileSystem.Current;
+        blp.Read(fileSystem.Kind == StorageKind.Mpq
+            ? WowlibFileSystem.ReadAsset(fileSystem, fileDataId)
+            : CascFileReader.ReadFile(fileDataId));
         uint mip = 0;
         while (maximumDimension is { } maximum &&
                mip + 1 < blp.MipCount &&
@@ -159,15 +180,16 @@ internal static class TerrainTextureImageLoader
         using var image = blp.Decode(mip);
         var pixels = image.Pixels.AsSpan().ToArray();
         ApplyChannelMode(pixels, channelMode);
-        return new TerrainTextureImage(
-            CreateBitmap(pixels, image.Width, image.Height),
-            CreateMetadata(blp));
+        return new DecodedTerrainTextureImage(pixels, image.Width, image.Height, CreateMetadata(blp));
     }
 
-    public static TerrainTexturePreviewImages LoadPreview(uint fileDataId)
+    public static DecodedTerrainTexturePreview DecodePreview(uint fileDataId)
     {
         using var blp = new WoWLib.Formats.BLP.BLP();
-        blp.Read(CascFileReader.ReadFile(fileDataId));
+        var fileSystem = WowlibFileSystem.Current;
+        blp.Read(fileSystem.Kind == StorageKind.Mpq
+            ? WowlibFileSystem.ReadAsset(fileSystem, fileDataId)
+            : CascFileReader.ReadFile(fileDataId));
         using var image = blp.Decode(0);
         var source = image.Pixels.AsSpan().ToArray();
         var color = source.ToArray();
@@ -175,20 +197,26 @@ internal static class TerrainTextureImageLoader
         ApplyChannelMode(color, TexturePreviewChannelMode.Color);
         ApplyChannelMode(alpha, TexturePreviewChannelMode.Alpha);
 
+        return new DecodedTerrainTexturePreview(
+            source, color, alpha, image.Width, image.Height, CreateMetadata(blp));
+    }
+
+    public static TerrainTexturePreviewImages CreatePreviewImages(DecodedTerrainTexturePreview decoded)
+    {
         Bitmap? combinedBitmap = null;
         Bitmap? colorBitmap = null;
         Bitmap? alphaBitmap = null;
         try
         {
-            combinedBitmap = CreateBitmap(source, image.Width, image.Height);
-            colorBitmap = CreateBitmap(color, image.Width, image.Height);
-            alphaBitmap = CreateBitmap(alpha, image.Width, image.Height);
+            combinedBitmap = CreateBitmap(decoded.Combined, decoded.Width, decoded.Height);
+            colorBitmap = CreateBitmap(decoded.Color, decoded.Width, decoded.Height);
+            alphaBitmap = CreateBitmap(decoded.Alpha, decoded.Width, decoded.Height);
             return new TerrainTexturePreviewImages
             {
                 Combined = combinedBitmap,
                 Color = colorBitmap,
                 Alpha = alphaBitmap,
-                Metadata = CreateMetadata(blp)
+                Metadata = decoded.Metadata
             };
         }
         catch
@@ -223,7 +251,7 @@ internal static class TerrainTextureImageLoader
         blp.MipFlags,
         blp.MipCount);
 
-    private static Bitmap CreateBitmap(byte[] pixels, uint width, uint height)
+    internal static Bitmap CreateBitmap(byte[] pixels, uint width, uint height)
     {
         var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
         try

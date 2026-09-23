@@ -47,6 +47,8 @@ public partial class TexturePaletteItemViewModel : ViewModelBase
         get
         {
             var name = string.IsNullOrWhiteSpace(FullPath) ? DisplayName : FullPath;
+            if (WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq)
+                return name;
             return FileDataId is { } id ? $"{name}\nFile data ID: {id}" : name;
         }
     }
@@ -61,7 +63,7 @@ public partial class TexturePaletteItemViewModel : ViewModelBase
 internal static class TexturePaletteNaming
 {
     public static string FromFileDataId(uint fileDataId) =>
-        FromPath(WoWRenderLib.Listfile.GetDisplayName(fileDataId));
+        FromPath(WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(fileDataId));
 
     public static string FromPath(string path)
     {

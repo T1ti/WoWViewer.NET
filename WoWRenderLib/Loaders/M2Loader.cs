@@ -27,11 +27,12 @@ public static class M2Loader
     public static ParsedM2 ParseM2(uint fileDataId)
     {
         var fileSystem = WowlibFileSystem.Current;
-        if (!fileSystem.Exists(new FileDataId(fileDataId)))
+        if (!WowlibFileSystem.AssetExists(fileSystem, fileDataId))
             throw new FileNotFoundException($"Model {fileDataId} does not exist!");
 
         using var model = Formats.M2.M2.ForVersion(fileSystem.Version);
-        model.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+        using var modelKey = WowlibFileSystem.AssetKey(fileSystem, fileDataId);
+        model.Read(fileSystem, modelKey);
         var root = model.Root;
         var vertices = ReadVertices(root.Vertices);
         var (renderBoundingBox, renderBoundingRadius) = CalculateRenderBounds(vertices.Select(v => v.Position).ToArray());
@@ -79,7 +80,8 @@ public static class M2Loader
         parsed.vertexCount = profile.Vertices.Length;
         parsed.indexCount = profile.Indices.Length;
         parsed.geosets = ReadGeosets(profile);
-        parsed.submeshes = ReadSubmeshes(root, profile, parsed.mats, renderMaterials);
+        parsed.submeshes = ReadSubmeshes(
+            root, profile, parsed.mats, renderMaterials, fileSystem.Kind == StorageKind.Mpq);
 
         var renderVertices = new M2Vertex[profile.Vertices.Length];
         for (var i = 0; i < renderVertices.Length; i++)
@@ -129,6 +131,7 @@ public static class M2Loader
         ushort SectionIndex,
         ushort TextureCount,
         ushort TextureComboIndex,
+        ushort TextureCoordComboIndex,
         ushort MaterialIndex);
 
     internal readonly record struct M2RenderMaterial(ushort Flags, ushort BlendMode);
@@ -188,6 +191,7 @@ public static class M2Loader
         batch.SkinSectionIndex,
         batch.TextureCount,
         batch.TextureComboIndex,
+        batch.TextureCoordComboIndex,
         batch.MaterialIndex);
 
     private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
@@ -227,7 +231,13 @@ public static class M2Loader
             var pathId = chunkId == 0 && texture.Type == 0
                 ? ResolvePath(fileSystem, texture.Filename)
                 : 0;
-            result[i] = SelectTextureFileDataId(chunkId, texture.Type, pathId);
+            var selected = SelectTextureFileDataId(chunkId, texture.Type, pathId);
+            // Dynamic MPQ texture slots have no file path and cannot use the
+            // modern client's fallback FileDataID. The renderer uses 0 as its
+            // built-in placeholder texture.
+            result[i] = fileSystem.Kind == StorageKind.Mpq && selected == FallbackTextureFileDataId
+                ? 0
+                : selected;
         }
         return result;
     }
@@ -276,7 +286,8 @@ public static class M2Loader
         Formats.M2.Root.M2Root root,
         ProfileData profile,
         M2Material[] textures,
-        ReadOnlySpan<M2RenderMaterial> materials)
+        ReadOnlySpan<M2RenderMaterial> materials,
+        bool isMpq)
     {
         var textureLookupTable = root.TextureLookupTable.AsSpan();
         var result = new List<Submesh>(profile.Batches.Length);
@@ -299,13 +310,16 @@ public static class M2Loader
                 textureIndices[texture] = textureIndex;
                 materialIds[texture] = textureIndex < textures.Length
                     ? textures[textureIndex].fileDataID
-                    : FallbackTextureFileDataId;
+                    : isMpq ? 0 : FallbackTextureFileDataId;
                 textureFlags[texture] = textureIndex < textures.Length
                     ? textures[textureIndex].flags
                     : 0;
             }
 
             var material = ResolveRenderMaterial(batch.MaterialIndex, materials);
+            var shaderId = isMpq && root is Formats.M2.Root.M2RootWotlk wotlkRoot
+                ? ResolveWotlkShaderId(wotlkRoot, batch, material)
+                : batch.ShaderId;
             result.Add(new Submesh
             {
                 firstFace = section.FirstIndex,
@@ -317,8 +331,8 @@ public static class M2Loader
                 renderFlags = material.Flags,
                 geosetId = section.Id,
                 index = i,
-                vertexShaderID = (uint)GetVertexShaderID(batch.TextureCount, batch.ShaderId),
-                pixelShaderID = (uint)GetPixelShaderID(batch.TextureCount, batch.ShaderId)
+                vertexShaderID = (uint)GetVertexShaderID(batch.TextureCount, shaderId),
+                pixelShaderID = (uint)GetPixelShaderID(batch.TextureCount, shaderId)
             });
         }
 
@@ -329,6 +343,50 @@ public static class M2Loader
         ushort materialIndex,
         ReadOnlySpan<M2RenderMaterial> materials) =>
         materialIndex < materials.Length ? materials[materialIndex] : default;
+
+    private static ushort ResolveWotlkShaderId(
+        Formats.M2.Root.M2RootWotlk root,
+        BatchData batch,
+        M2RenderMaterial material)
+    {
+        if ((batch.ShaderId & ShaderUsesPixelShaderTableBit) != 0 || batch.TextureCount is < 1 or > 2)
+            return batch.ShaderId;
+
+        var coordinates = root.TextureMappingLookupTable.AsSpan();
+        var coordinateIndex = batch.TextureCoordComboIndex;
+        if (coordinateIndex + batch.TextureCount > coordinates.Length)
+            return batch.ShaderId;
+
+        ushort shaderId = 0;
+        if ((root.GlobalFlags & (uint)Formats.M2.Root.GlobalFlags.UseTextureCombinerCombos) == 0)
+        {
+            var operation = material.BlendMode == 0 ? 0 : 1;
+            if (unchecked((ushort)coordinates[coordinateIndex]) > 2)
+                operation |= 8;
+            shaderId = (ushort)(operation << 4);
+            if (coordinates[coordinateIndex] == 1)
+                shaderId |= ShaderUsesEnvironmentBit;
+            return shaderId;
+        }
+
+        var combiners = root.TextureCombinerCombos.AsSpan();
+        if ((int)batch.ShaderId + batch.TextureCount > combiners.Length)
+            return batch.ShaderId;
+
+        for (var stage = 0; stage < batch.TextureCount; stage++)
+        {
+            var operation = stage == 0 && material.BlendMode == 0
+                ? 0
+                : combiners[batch.ShaderId + stage];
+            var coordinate = unchecked((ushort)coordinates[coordinateIndex + stage]);
+            if (coordinate > 2)
+                operation |= 8;
+            if (coordinate == 1 && stage + 1 == batch.TextureCount)
+                shaderId |= ShaderUsesEnvironmentBit;
+            shaderId |= (ushort)(operation << (stage == 0 ? 4 : 0));
+        }
+        return shaderId;
+    }
 
     public static (BoundingBox BoundingBox, float Radius) CalculateRenderBounds(ReadOnlySpan<Vector3> vertices)
     {
@@ -359,7 +417,7 @@ public static class M2Loader
     {
         if (string.IsNullOrWhiteSpace(path))
             return 0;
-        try { return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0; }
+        try { return WowlibFileSystem.ResolveAssetId(fileSystem, path); }
         catch { return 0; }
     }
 

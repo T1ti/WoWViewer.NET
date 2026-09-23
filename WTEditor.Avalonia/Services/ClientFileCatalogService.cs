@@ -58,10 +58,12 @@ public sealed class ClientFileCatalogService : IClientFileCatalogService
             .Select(path =>
             {
                 var normalized = path.Replace('\\', '/');
-                var fileDataId = fileSystem.Resolve(new FileKey(normalized)).Fdid;
+                var fileDataId = fileSystem.Kind == StorageKind.Mpq
+                    ? WowlibFileSystem.ResolveAssetId(fileSystem, normalized)
+                    : fileSystem.Resolve(new FileKey(normalized)).Fdid?.Value ?? 0;
                 return new ClientFileCatalogEntry(
                     normalized,
-                    fileDataId?.Value);
+                    fileDataId == 0 ? null : fileDataId);
             })
             .ToArray();
 }

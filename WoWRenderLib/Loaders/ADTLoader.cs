@@ -52,7 +52,9 @@ public static class ADTLoader
              Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_height_texturing)) != 0
             ? Formats.ADT.AlphaFormat.highres_8bit
             : Formats.ADT.AlphaFormat.lowres_4bit;
-        var rootKey = wdt.HasSplitAdts
+        using var rootKey = fileSystem.Kind == StorageKind.Mpq
+            ? WowlibFileSystem.AssetKey(fileSystem, files.RootAdt)
+            : wdt.HasSplitAdts
             ? RegisterSplitAdtFiles(fileSystem, mapTile, files)
             : ResolveFileKey(fileSystem, files.RootAdt);
         adt.Read(fileSystem, rootKey, alphaFormat);
@@ -67,6 +69,15 @@ public static class ADTLoader
         // through the version-agnostic 0.0.9 base. Texture FileDataID tables
         // are still version-specific because older clients store texture names.
         var textureData = ReadTextureData(adt);
+        // MTEX entries are indexed by ordinal in MCLY. StringBlock.At takes
+        // a byte offset, so At(textureIndex) truncates every name after zero.
+        var textureNames = new List<string>();
+        if (!adt.Textures.Empty)
+        {
+            foreach (var entry in adt.Textures.Entries())
+                textureNames.Add(entry.Value);
+        }
+        var texturePaths = textureNames.ToArray();
         var chunks = adt.Chunks;
         var chunkCount = Math.Min(chunks.Count, MaxChunksPerTile);
         if (chunkCount == 0)
@@ -82,7 +93,7 @@ public static class ADTLoader
             textureData.DiffuseTextureIds,
             textureData.HeightTextureIds,
             textureData.TextureParams,
-            adt.Textures,
+            texturePaths,
             fileIds);
 
         var vertices = new ADTVertex[MaxChunksPerTile * VerticesPerChunk];
@@ -204,7 +215,7 @@ public static class ADTLoader
                 textureData.DiffuseTextureIds,
                 materials,
                 fileIds,
-                adt.Textures);
+                texturePaths);
             chunkBounds[chunkIndex] = new BoundingBox(chunkMin, chunkMax);
         }
 
@@ -273,16 +284,16 @@ public static class ADTLoader
         uint[] textureIds,
         uint[] heightTextureIds,
         WoWLib.Vector<Formats.ADT.Chunks.SMTextureParams>? textureParams,
-        Formats.StringBlock textures,
+        string[] texturePaths,
         HashSet<uint> usedIds)
     {
         var materials = new Dictionary<uint, ADTMaterial>();
-        var stringCount = textures.Empty ? 0 : textures.Entries().Count;
+        var stringCount = texturePaths.Length;
         for (var i = 0; i < textureIds.Length || i < stringCount; i++)
         {
             var diffuse = i < textureIds.Length ? textureIds[i] : 0;
-            if (diffuse == 0)
-                diffuse = ResolvePath(fileSystem, GetString(textures, (uint)i));
+            if (diffuse == 0 && i < texturePaths.Length)
+                diffuse = ResolvePath(fileSystem, texturePaths[i]);
 
             var material = new ADTMaterial
             {
@@ -300,7 +311,8 @@ public static class ADTLoader
                     (parameter.Flags & TextureScaleMask) >> TextureScaleShift);
                 material.heightScale = parameter.HeightScale;
                 material.heightOffset = parameter.HeightOffset;
-                if (i < heightTextureIds.Length && heightTextureIds[i] != 0 &&
+                if (fileSystem.Kind == StorageKind.Casc &&
+                    i < heightTextureIds.Length && heightTextureIds[i] != 0 &&
                     fileSystem.Exists(new FileDataId(heightTextureIds[i])))
                     material.heightTexture = (int)heightTextureIds[i];
                 else
@@ -323,7 +335,7 @@ public static class ADTLoader
         uint[] textureIds,
         Dictionary<uint, ADTMaterial> materials,
         HashSet<uint> usedIds,
-        Formats.StringBlock textures)
+        string[] texturePaths)
     {
         var layers = chunk.Layers.AsDataSpan();
         // AlphaMaps is a vector of byte vectors, not a scalar vector. Keep
@@ -349,7 +361,9 @@ public static class ADTLoader
             var textureIndex = layer.TextureId;
             var diffuse = textureIndex < textureIds.Length
                 ? textureIds[textureIndex]
-                : ResolvePath(fileSystem, GetString(textures, textureIndex));
+                : 0;
+            if (diffuse == 0 && textureIndex < texturePaths.Length)
+                diffuse = ResolvePath(fileSystem, texturePaths[textureIndex]);
             materialIds[layerIndex] = (int)diffuse;
             if (materials.TryGetValue(diffuse, out var material))
             {
@@ -558,7 +572,7 @@ public static class ADTLoader
             return 0;
         try
         {
-            return fileSystem.Resolve(new FileKey(path)).Fdid?.Value ?? 0;
+            return WowlibFileSystem.ResolveAssetId(fileSystem, path);
         }
         catch
         {

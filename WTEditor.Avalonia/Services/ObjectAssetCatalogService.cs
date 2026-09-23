@@ -188,8 +188,8 @@ public sealed class ObjectAssetCatalogService : IObjectAssetCatalogService
                 if (ObjectAssetIndex.GetKind(rawPath) == null)
                     continue;
                 var path = rawPath.Replace('\\', '/');
-                var id = fileSystem.Resolve(new FileKey(path)).Fdid;
-                yield return new ClientFileCatalogEntry(path, id?.Value);
+                var id = WowlibFileSystem.ResolveAssetId(fileSystem, path);
+                yield return new ClientFileCatalogEntry(path, id == 0 ? null : id);
             }
         }
 

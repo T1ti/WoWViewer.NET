@@ -4,6 +4,7 @@ using WoWLib;
 using WoWLib.Database;
 using Fs = WoWLib.Filesystem;
 using WoWRenderLib.Database;
+using WoWRenderLib.Services;
 
 namespace WoWRenderLib.Structs;
 
@@ -74,9 +75,15 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             _modernTextureIds.Clear();
             _modernTextureSlots.Clear();
             _modernWaterTypes.Clear();
+            using var schemaLineage = fileSystem.Version.FormatLineage;
             _liquidTypeTable = TryLoadTable(fileSystem, "LiquidType");
-            _liquidObjectTable = TryLoadTable(fileSystem, "LiquidObject");
-            _liquidTypeXTextureTable = TryLoadTable(fileSystem, "LiquidTypeXTexture");
+            // WoWDBDefs starts LiquidObject at 4.0.0 and
+            // LiquidTypeXTexture at 8.1.0. Earlier LiquidType rows own the
+            // texture filenames directly.
+            _liquidObjectTable = schemaLineage.Major >= 4
+                ? TryLoadTable(fileSystem, "LiquidObject") : null;
+            _liquidTypeXTextureTable = schemaLineage.Major >= 8
+                ? TryLoadTable(fileSystem, "LiquidTypeXTexture") : null;
             _liquidMaterialTable = TryLoadTable(fileSystem, "LiquidMaterial");
             ValidateSchema();
             IndexModernTextures();
@@ -313,14 +320,12 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                 {
                     try
                     {
-                        using var requestedKey = new FileKey(candidatePath);
-                        using var resolvedKey = _fileSystem.Resolve(requestedKey);
-                        if (resolvedKey.Fdid?.Value is uint fileDataId &&
-                            fileDataId != 0)
+                        var assetId = WowlibFileSystem.ResolveAssetId(_fileSystem, candidatePath);
+                        if (assetId != 0)
                         {
-                            slotFrames.Add(fileDataId);
-                            if (!resolved.Contains(fileDataId))
-                                resolved.Add(fileDataId);
+                            slotFrames.Add(assetId);
+                            if (!resolved.Contains(assetId))
+                                resolved.Add(assetId);
                             frameResolved = true;
                             break;
                         }

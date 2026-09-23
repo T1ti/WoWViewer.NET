@@ -17,20 +17,26 @@ public static class WDTCache
 
         var fileSystem = WowlibFileSystem.Current;
         var format = Formats.WDT.WDT.ForVersion(fileSystem.Version);
-        format.Read(fileSystem, new FileKey(new FileDataId(fileDataId)));
+        using (var key = WowlibFileSystem.AssetKey(fileSystem, fileDataId))
+            format.Read(fileSystem, key);
 
         var root = format.Root;
         var header = root.Header;
         var mapFileDataIds = GetMapFileDataIds(root);
         var hasSplitAdts = mapFileDataIds.Length > 0;
-        MapAssetPathResolver.TryGetPath(fileDataId, out var wdtPath);
+        var wdtPath = fileSystem.Kind == StorageKind.Mpq
+            ? LegacyAssetIds.TryGetPath(fileSystem, fileDataId, out var legacyPath) ? legacyPath : string.Empty
+            : MapAssetPathResolver.TryGetPath(fileDataId, out var modernPath) ? modernPath : string.Empty;
         WdtGlobalWmoPlacement? globalWmoPlacement = null;
         if (root.GlobalWmo.Count > 0)
         {
             var placement = root.GlobalWmo[0];
             var path = root.GlobalWmoName.Empty ? string.Empty : root.GlobalWmoName.At(0);
-            var globalWmoFileDataId = placement.NameId;
-            if (!string.IsNullOrWhiteSpace(path) && Listfile.TryGetFileDataID(path, out var resolvedFileDataId))
+            var globalWmoFileDataId = fileSystem.Kind == StorageKind.Mpq
+                ? WowlibFileSystem.ResolveAssetId(fileSystem, path)
+                : placement.NameId;
+            if (fileSystem.Kind == StorageKind.Casc && !string.IsNullOrWhiteSpace(path)
+                && Listfile.TryGetFileDataID(path, out var resolvedFileDataId))
                 globalWmoFileDataId = resolvedFileDataId;
             var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
                 ? placement.Scale / 1024f
@@ -111,7 +117,10 @@ public static class WDTCache
                 // the ADT from the stable virtual path instead of treating the
                 // missing modern FileDataID table as a missing tile.
                 var adtPath = MapAssetPathResolver.GetLegacyAdtPath(wdtPath, x, y);
-                if (MapAssetPathResolver.TryResolveFileDataId(adtPath, out var rootAdtFileDataId))
+                var rootAdtFileDataId = fileSystem.Kind == StorageKind.Mpq
+                    ? WowlibFileSystem.ResolveAssetId(fileSystem, adtPath)
+                    : MapAssetPathResolver.TryResolveFileDataId(adtPath, out var resolvedId) ? resolvedId : 0;
+                if (rootAdtFileDataId != 0)
                 {
                     wdt.TileFiles[(x, y)] = new MapFileDataIds(
                         rootAdtFileDataId, 0, 0, 0, 0, 0, 0, 0);

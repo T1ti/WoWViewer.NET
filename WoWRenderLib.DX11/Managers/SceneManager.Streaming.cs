@@ -21,6 +21,8 @@ using WoWRenderLib.Raycasting;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Structs;
 using WoWRenderLib.Diagnostics;
+using WoWRenderLib.Services;
+using WoWRenderLib.Loaders;
 
 namespace WoWRenderLib.DX11.Managers
 {
@@ -127,7 +129,9 @@ namespace WoWRenderLib.DX11.Managers
         private void UpdateMapHighestUniqueId()
         {
             if (currentWDT != null)
-                CurrentMapHighestUniqueId = MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT);
+                CurrentMapHighestUniqueId = WowlibFileSystem.Current.Kind == WoWLib.StorageKind.Mpq
+                    ? MapUniqueIdScanner.ScanMap(currentWDT)
+                    : MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT);
         }
 
         private void RebuildAvailableTileIndex()
@@ -762,9 +766,9 @@ namespace WoWRenderLib.DX11.Managers
                 catch (Exception ex)
                 {
                     tilesInFlight.Remove(mapTile);
-                    LoadDiagnostics.Error(
-                        $"Queuing ADT {mapTile.tileX}, {mapTile.tileY} for WDT {mapTile.wdtFileDataID}",
-                        ex);
+                    failedDesiredTiles.Add(mapTile);
+                    ReportSceneLoadFailure(
+                        $"Queuing ADT {mapTile.tileX}, {mapTile.tileY} for WDT {mapTile.wdtFileDataID}", ex);
                 }
             }
         }
@@ -957,10 +961,16 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             adtContainer.Unload();
-            LoadDiagnostics.Error(
+            ReportSceneLoadFailure(
                 $"Loading ADT {adtContainer.mapTile.tileX}, {adtContainer.mapTile.tileY} " +
                 $"for WDT {adtContainer.mapTile.wdtFileDataID}",
                 exception);
+        }
+
+        private void ReportSceneLoadFailure(string message, Exception exception)
+        {
+            LoadDiagnostics.Error(message, exception);
+            SceneLoadFailed?.Invoke(message, exception);
         }
 
     }

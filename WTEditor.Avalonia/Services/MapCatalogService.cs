@@ -142,8 +142,9 @@ public sealed class MapCatalogService : IMapCatalogService
                 if (string.IsNullOrWhiteSpace(name))
                     name = string.IsNullOrWhiteSpace(directory) ? $"Unnamed map {row}" : directory;
 
+                var wdtPath = MapAssetPathResolver.GetWdtPath(directory);
                 var wdtFileDataId = fileSystem.Kind == StorageKind.Mpq
-                    ? 0u
+                    ? WowlibFileSystem.ResolveAssetId(fileSystem, wdtPath)
                     : ResolveWdtFileDataId(
                         directory,
                         wdtColumn is ulong wdtIndex ? checked((uint)table.GetInt(row, wdtIndex, 0)) : 0,
@@ -160,7 +161,7 @@ public sealed class MapCatalogService : IMapCatalogService
                     instanceColumn is ulong instanceIndex ? checked((int)table.GetInt(row, instanceIndex, 0)) : 0)
                 {
                     WdtPath = fileSystem.Kind == StorageKind.Mpq
-                        ? MapAssetPathResolver.GetWdtPath(directory)
+                        ? wdtPath
                         : string.Empty,
                     Settings = columns.Select(column => new WorldMapDbSetting(
                         column.Info.Name,

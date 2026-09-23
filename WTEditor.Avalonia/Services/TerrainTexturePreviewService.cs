@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using WoWRenderLib.Services;
 using WTEditor.Avalonia.Views;
 
 namespace WTEditor.Avalonia.Services;
@@ -15,25 +16,26 @@ public sealed class TerrainTexturePreviewService : ITerrainTexturePreviewService
 {
     public async Task ShowAsync(uint fileDataId, string displayName)
     {
-        TerrainTexturePreviewImages images;
+        DecodedTerrainTexturePreview decoded;
         try
         {
-            images = await Task.Run(() => TerrainTextureImageLoader.LoadPreview(fileDataId));
+            decoded = await Task.Run(() => TerrainTextureImageLoader.DecodePreview(fileDataId));
         }
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine(
-                $"Terrain texture preview {fileDataId}: {exception.Message}");
+                $"Terrain texture preview {WowlibFileSystem.GetAssetDisplayName(fileDataId)}: {exception.Message}");
             await Dispatcher.UIThread.InvokeAsync(() =>
                 ShowError(displayName, fileDataId, exception.Message));
             return;
         }
 
-        await Dispatcher.UIThread.InvokeAsync(() => ShowPreview(displayName, fileDataId, images));
+        await Dispatcher.UIThread.InvokeAsync(() => ShowPreview(displayName, fileDataId, decoded));
     }
 
-    private static void ShowPreview(string displayName, uint fileDataId, TerrainTexturePreviewImages images)
+    private static void ShowPreview(string displayName, uint fileDataId, DecodedTerrainTexturePreview decoded)
     {
+        var images = TerrainTextureImageLoader.CreatePreviewImages(decoded);
         try
         {
             var window = new TexturePreviewWindow(displayName, fileDataId, images);
@@ -49,7 +51,7 @@ public sealed class TerrainTexturePreviewService : ITerrainTexturePreviewService
     private static void ShowError(string displayName, uint fileDataId, string error) =>
         ShowOwned(new ErrorMessageWindow(
             "Unable to preview texture",
-            $"{displayName} (File data ID {fileDataId}) could not be decoded.\n\n{error}"));
+            $"{displayName} ({WowlibFileSystem.GetAssetDisplayName(fileDataId)}) could not be decoded.\n\n{error}"));
 
     private static void ShowOwned(Window window)
     {

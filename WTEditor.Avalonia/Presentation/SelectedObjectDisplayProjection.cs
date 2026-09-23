@@ -97,6 +97,7 @@ internal sealed class SelectedObjectDisplayProjection
         {
             M2ObjectData m2 => m2.FileName,
             WorldModelObjectData wmo => wmo.FileName,
+            TerrainObjectData adt => WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(adt.FileDataId),
             _ => string.Empty
         };
         return string.IsNullOrWhiteSpace(fileName) ||

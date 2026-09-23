@@ -14,7 +14,7 @@ internal static class ModelSelectionDisplayAssets
                 .Distinct()
                 .Select(fileDataId => new AssetReference(
                     fileDataId,
-                    WoWRenderLib.Listfile.GetDisplayName(fileDataId)))
+                    WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(fileDataId)))
                 .ToArray();
         }
         catch
