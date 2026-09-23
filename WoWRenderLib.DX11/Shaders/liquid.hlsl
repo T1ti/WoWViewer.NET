@@ -6,14 +6,14 @@ cbuffer PerObject : register(b0)
     float4 shallowColor;
     float4 deepColor;
     float4 flowParameters;   // time, UV scale, direction, speed
-    float4 familyParameters; // water, emissive, real texture loaded, reserved
+    float4 familyParameters; // water, emissive, real texture loaded, WMO liquid
     float4 lightingAmbient;
     float4 lightingDiffuse;
     float4 oceanCloseColor;
     float4 oceanFarColor;
     float4 riverCloseColor;
     float4 riverFarColor;
-    float4 liquidColorParameters; // use LightData colors, river flag, use LightParams alpha, reserved
+    float4 liquidColorParameters; // use LightData colors, river flag, use LightParams alpha, WMO interior
     float4 depthCoefficients;     // LiquidType.Coefficient[0..3]
     float4 lightDirection;        // normalized world-space exterior light
     float4 liquidAlphaParameters; // ocean shallow/deep, river shallow/deep
@@ -58,7 +58,9 @@ VSOut VS_Main(VSIn input)
 
 float4 PS_Main(VSOut input) : SV_Target
 {
-    float4 sampled = liquidTexture.Sample(linearWrap, input.texCoord);
+    float4 sampled = familyParameters.w > 0.5f && familyParameters.z < 0.5f
+        ? float4(1.0f, 1.0f, 1.0f, 1.0f)
+        : liquidTexture.Sample(linearWrap, input.texCoord);
     bool isWater = familyParameters.x > 0.5f;
     // WowLib forwards the MH2O transparency/depth byte unchanged as byte / 255.
     // The reference viewer uses that value from close/shallow to far/deep; it
@@ -108,6 +110,8 @@ float4 PS_Main(VSOut input) : SV_Target
     // tint is modulated by ambient plus the Lambertian direct contribution.
     float directional = max(dot(input.normal, normalizedLight), 0.0f);
     float3 lighting = lightingAmbient.rgb + lightingDiffuse.rgb * directional;
+    if (liquidColorParameters.w > 0.5f)
+        lighting = float3(1.0f, 1.0f, 1.0f);
     litSurface *= lighting;
 
     if (familyParameters.y > 0.5f)

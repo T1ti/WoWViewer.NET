@@ -845,9 +845,9 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
 
     private static WorldLiquidMaterialFamily ClassifyTypeId(ushort typeId) => typeId switch
     {
-        1 or 2 or 8 or 9 => WorldLiquidMaterialFamily.Water,
-        3 or 7 => WorldLiquidMaterialFamily.Swamp,
-        4 or 5 or 6 => WorldLiquidMaterialFamily.Magma,
+        1 or 2 or 8 or 9 or 13 or 14 or 17 => WorldLiquidMaterialFamily.Water,
+        3 or 7 or 20 => WorldLiquidMaterialFamily.Swamp,
+        4 or 5 or 6 or 19 => WorldLiquidMaterialFamily.Magma,
         _ => WorldLiquidMaterialFamily.Unknown
     };
 

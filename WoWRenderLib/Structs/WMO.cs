@@ -144,6 +144,7 @@ namespace WoWRenderLib.Structs
         public readonly ushort portalStart { get; init; }
         public readonly ushort portalCount { get; init; }
         public readonly ushort[] doodadReferences { get; init; }
+        public readonly ParsedWorldLiquid liquid { get; init; }
 
     }
 

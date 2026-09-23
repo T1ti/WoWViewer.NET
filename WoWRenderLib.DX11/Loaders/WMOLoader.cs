@@ -98,7 +98,10 @@ namespace WoWRenderLib.DX11.Loaders
                     flags = preppedGroup.flags,
                     mogiFlags = preppedGroup.mogiFlags,
                     portalLinks = BuildPortalLinks(preppedGroup, preppedWMO.PortalReferences, sourceGroupToRenderGroup),
-                    doodadReferences = preppedGroup.doodadReferences ?? []
+                    doodadReferences = preppedGroup.doodadReferences ?? [],
+                    liquid = WorldLiquidLoader.Upload(device,
+                        preppedGroup.liquid ?? ParsedWorldLiquid.Empty,
+                        preppedWMO.FileDataID)
                 };
             }
 
@@ -290,6 +293,8 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 wmo.groupBatches[g].vertexBuffer.Dispose();
                 wmo.groupBatches[g].indiceBuffer.Dispose();
+                var liquid = wmo.groupBatches[g].liquid;
+                WorldLiquidLoader.Unload(ref liquid, wmo.rootWMOFileDataID);
             }
 
             foreach (var fileDataId in wmo.textureReferences ?? [])

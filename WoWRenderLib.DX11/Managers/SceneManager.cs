@@ -125,6 +125,7 @@ namespace WoWRenderLib.DX11.Managers
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private readonly WorldLiquidRenderer _worldLiquidRenderer;
+        private readonly List<WmoLiquidInstance> _visibleWmoLiquids = [];
         private readonly SkyRenderer _skyRenderer;
         private readonly DebugBoundsRenderer _debugBoundsRenderer;
 
@@ -815,6 +816,7 @@ namespace WoWRenderLib.DX11.Managers
             farLodTerrainChunks = 0;
             candidateLiquidBatches = 0;
             visibleLiquidBatches = 0;
+            _visibleWmoLiquids.Clear();
             candidateTiles = tileSceneBounds.Count;
             coarseCulledTiles = 0;
             portalCulledWmoGroups = 0;
@@ -1016,6 +1018,16 @@ namespace WoWRenderLib.DX11.Managers
                     var visibilityBatch = _wmoVisibilityBatches[visibilityBatchIndex];
                     var visibleInstanceIndices = visibilityBatch.InstanceIndices;
                     var enabledGroups = visibilityBatch.GroupMask;
+                    if (RenderLiquid)
+                    {
+                        for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+                        {
+                            if (!enabledGroups[groupIndex] || !wmo.groupBatches[groupIndex].liquid.HasGeometry)
+                                continue;
+                            foreach (var instanceIndex in visibleInstanceIndices)
+                                _visibleWmoLiquids.Add(new WmoLiquidInstance(instances[instanceIndex], groupIndex));
+                        }
+                    }
                     for (int batchStart = 0; batchStart < visibleInstanceIndices.Count; batchStart += MaxInstancesPerBatch)
                     {
                         int batchSize = Math.Min(MaxInstancesPerBatch, visibleInstanceIndices.Count - batchStart);
@@ -1542,16 +1554,17 @@ namespace WoWRenderLib.DX11.Managers
                 ? Math.Max(0, Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - TerrainCullingTimeMs)
                 : 0;
 
-            // MH2O is a separate translucent pass. It deliberately does not
-            // depend on RenderADT so terrain can be hidden while liquid stays
-            // visible for inspection.
+            // Liquid is a separate pass for ADT MH2O and visible WMO groups.
+            // It remains available when terrain geometry is hidden.
             if (RenderLiquid)
             {
                 var liquidStats = _worldLiquidRenderer.Render(
                     camera,
                     adtContainers,
+                    _visibleWmoLiquids,
                     coarseCulledTileRoots,
                     TerrainRenderDistance,
+                    ModelRenderDistance,
                     (float)(Environment.TickCount64 * 0.001),
                     LightDirection,
                     AmbientColor,

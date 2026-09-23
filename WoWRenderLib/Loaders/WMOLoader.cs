@@ -26,6 +26,8 @@ public static class WMOLoader
         var groupInfos = root.GroupInfos.AsDataSpan();
         var groupNames = root.GroupNames;
         var preppedGroups = new List<PreppedWMOGroup>();
+        var materials = ReadMaterials(fileSystem, rootData);
+        var rootFlags = root.Header.Flags;
 
         for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
@@ -82,6 +84,33 @@ public static class WMOLoader
 
             var bounds = header.BoundingBox;
             var doodadRefs = body.DoodadRefs.AsSpan().ToArray();
+            var liquidClips = new List<WmoLiquidClip>();
+            for (var referenceIndex = (int)header.PortalStart;
+                 referenceIndex < (int)header.PortalStart + header.PortalCount &&
+                 referenceIndex < root.PortalRefs.Count;
+                 referenceIndex++)
+            {
+                var reference = root.PortalRefs[referenceIndex];
+                if (reference.Side == 0 || reference.GroupIndex == groupIndex ||
+                    reference.GroupIndex >= groups.Count || reference.PortalIndex >= root.Portals.Count)
+                    continue;
+                var neighborLiquid = groups[reference.GroupIndex].Body.Liquid;
+                if (neighborLiquid.Empty)
+                    continue;
+                var origin = ToVector3(neighborLiquid.BaseCoords);
+                var size = neighborLiquid.TilesDim;
+                var portal = root.Portals[reference.PortalIndex];
+                liquidClips.Add(new WmoLiquidClip(
+                    new Vector2(origin.X, origin.Y),
+                    new Vector2(
+                        origin.X + size.X * WmoLiquidMeshBuilder.GridStep,
+                        origin.Y + size.Y * WmoLiquidMeshBuilder.GridStep),
+                    ToVector3(portal.Plane.Normal),
+                    portal.Plane.Distance,
+                    reference.Side));
+            }
+            var liquid = ReadLiquid(body.Liquid, header.GroupLiquid, header.Flags,
+                groupInfo.Flags, rootFlags, materials, [.. liquidClips]);
             preppedGroups.Add(new PreppedWMOGroup
             {
                 sourceGroupIndex = groupIndex,
@@ -93,6 +122,7 @@ public static class WMOLoader
                 portalStart = header.PortalStart,
                 portalCount = header.PortalCount,
                 doodadReferences = doodadRefs,
+                liquid = liquid,
                 boundingBox = new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
                 vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(),
                 indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray(),
@@ -100,7 +130,6 @@ public static class WMOLoader
             });
         }
 
-        var materials = ReadMaterials(fileSystem, rootData);
         var doodadSets = ReadDoodadSets(root);
         var doodads = ReadDoodads(fileSystem, rootData, doodadSets);
         var rootHeader = root.Header;
@@ -122,6 +151,68 @@ public static class WMOLoader
             SourceGroupCount = groups.Count
         };
     }
+
+    private static ParsedWorldLiquid ReadLiquid(
+        Formats.WMO.Group.Chunks.MliqData source,
+        uint groupLiquid,
+        uint groupFlags,
+        uint mogiFlags,
+        ushort rootFlags,
+        PreppedWMOMaterial[] materials,
+        WmoLiquidClip[] sharedClips)
+    {
+        if (source.Empty)
+            return ParsedWorldLiquid.Empty;
+
+        var dimensions = source.VertsDim;
+        var tileDimensions = source.TilesDim;
+        var sourceVertices = source.Vertices.AsDataSpan();
+        var sourceTiles = source.Tiles.AsDataSpan();
+        var heights = new float[sourceVertices.Length];
+        var depths = new byte[sourceVertices.Length];
+        var uvs = new Vector2[sourceVertices.Length];
+        for (var index = 0; index < sourceVertices.Length; index++)
+        {
+            var vertex = sourceVertices[index];
+            heights[index] = vertex.Height;
+            depths[index] = vertex.Flow1;
+            var s = unchecked((short)(vertex.Flow1 | vertex.Flow2 << 8));
+            var t = unchecked((short)(vertex.Flow1Pct | vertex.Filler << 8));
+            uvs[index] = new Vector2(s, t);
+        }
+        var tiles = new byte[sourceTiles.Length];
+        for (var index = 0; index < tiles.Length; index++)
+            tiles[index] = sourceTiles[index].Flags;
+
+        var materialId = source.MaterialId;
+        var interiorColor = materialId < materials.Length
+            ? UnpackColor(materials[materialId].Color3)
+            : Vector4.One;
+        return WmoLiquidMeshBuilder.Build(new WmoLiquidInput
+        {
+            XVertices = dimensions.X,
+            YVertices = dimensions.Y,
+            XTiles = tileDimensions.X,
+            YTiles = tileDimensions.Y,
+            Origin = ToVector3(source.BaseCoords),
+            GroupLiquid = groupLiquid,
+            GroupFlags = groupFlags,
+            MogiFlags = mogiFlags,
+            RootFlags = rootFlags,
+            InteriorColor = interiorColor,
+            Heights = heights,
+            Depths = depths,
+            AuthoredUvs = uvs,
+            Tiles = tiles,
+            SharedClips = sharedClips
+        }, WorldLiquidMaterialCatalog.Shared);
+    }
+
+    private static Vector4 UnpackColor(uint color) => new(
+        ((color >> 16) & 0xff) / 255f,
+        ((color >> 8) & 0xff) / 255f,
+        (color & 0xff) / 255f,
+        ((color >> 24) & 0xff) / 255f);
 
     private sealed record RootData(
         Formats.StringBlock? Textures,

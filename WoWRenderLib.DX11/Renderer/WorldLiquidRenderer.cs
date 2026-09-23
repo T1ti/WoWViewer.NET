@@ -24,6 +24,8 @@ internal readonly record struct WorldLiquidRenderStats(
     double CullingMilliseconds,
     double SubmissionMilliseconds);
 
+internal readonly record struct WmoLiquidInstance(WMOContainer Instance, int GroupIndex);
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct WorldLiquidPerObjectCB
 {
@@ -48,7 +50,7 @@ internal struct WorldLiquidPerObjectCB
 
 /// <summary>
 /// Owns liquid-specific DX11 state and submission. SceneManager remains responsible
-/// for pass ordering and supplies the current ADT set and coarse-culling result.
+/// for pass ordering and supplies visible ADT and WMO liquid sources.
 /// </summary>
 internal sealed class WorldLiquidRenderer(
     ComPtr<ID3D11Device> device,
@@ -69,7 +71,9 @@ internal sealed class WorldLiquidRenderer(
     private bool _initialized;
 
     private readonly record struct VisibleBatch(
-        ADTContainer Container,
+        object Owner,
+        WorldLiquidResources Liquid,
+        Matrix4x4 Model,
         int BatchIndex,
         float ViewDepth,
         int TileOrder,
@@ -182,15 +186,17 @@ internal sealed class WorldLiquidRenderer(
     public WorldLiquidRenderStats Render(
         Camera camera,
         IReadOnlyList<ADTContainer> adtContainers,
+        IReadOnlyList<WmoLiquidInstance> wmoLiquids,
         IReadOnlySet<uint> coarseCulledTileRoots,
         float renderDistance,
+        float wmoRenderDistance,
         float timeSeconds,
         Vector3 lightDirection,
         Vector3 ambientColor,
         Vector3 diffuseColor,
         WorldLightingSettings clientLighting)
     {
-        if (!_initialized || adtContainers.Count == 0)
+        if (!_initialized || (adtContainers.Count == 0 && wmoLiquids.Count == 0))
             return default;
 
         var cullingStarted = Stopwatch.GetTimestamp();
@@ -231,11 +237,40 @@ internal sealed class WorldLiquidRenderer(
                 var viewCenter = Vector3.Transform(bounds.Center, view).Z;
                 _visibleBatches.Add(new VisibleBatch(
                     container,
+                    liquid,
+                    container.GetModelMatrix(),
                     batchIndex,
                     viewCenter,
                     tileOrder,
                     batch.ChunkIndex,
                     batch.LayerIndex));
+            }
+        }
+
+        foreach (var wmoLiquid in wmoLiquids)
+        {
+            var model = wmoLiquid.Instance.GetWMO();
+            if ((uint)wmoLiquid.GroupIndex >= (uint)model.groupBatches.Length)
+                continue;
+            var liquid = model.groupBatches[wmoLiquid.GroupIndex].liquid;
+            if (!liquid.HasGeometry)
+                continue;
+            var matrix = wmoLiquid.Instance.GetModelMatrix();
+            tileOrder++;
+            for (var batchIndex = 0; batchIndex < liquid.batches.Length; batchIndex++)
+            {
+                var batch = liquid.batches[batchIndex];
+                candidateCount++;
+                var bounds = BoundingBox.Transform(batch.Bounds, matrix);
+                if (frustum.ClassifyBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
+                    continue;
+                var radius = Vector3.Distance(bounds.Center, bounds.Max);
+                if (!IsWithinRenderDistance(camera.Position, bounds.Center, radius, wmoRenderDistance))
+                    continue;
+                _visibleBatches.Add(new VisibleBatch(
+                    liquid.batches, liquid, matrix, batchIndex,
+                    Vector3.Transform(bounds.Center, view).Z,
+                    tileOrder, wmoLiquid.GroupIndex, 0));
             }
         }
 
@@ -300,7 +335,7 @@ internal sealed class WorldLiquidRenderer(
         var riverDeepAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.WaterDeepAlpha
             : 1f;
-        ADTContainer? boundContainer = null;
+        object? boundOwner = null;
         var vertexStride = (uint)Marshal.SizeOf<WorldLiquidVertex>();
         var vertexOffset = 0U;
         var blendFactor = 1f;
@@ -308,10 +343,9 @@ internal sealed class WorldLiquidRenderer(
 
         foreach (var visible in _visibleBatches)
         {
-            var terrain = visible.Container.Terrain;
-            var liquid = terrain.worldLiquid;
+            var liquid = visible.Liquid;
             var batch = liquid.batches[visible.BatchIndex];
-            if (!ReferenceEquals(boundContainer, visible.Container))
+            if (!ReferenceEquals(boundOwner, visible.Owner))
             {
                 var vertexBuffer = liquid.vertexBuffer;
                 _deviceContext.IASetVertexBuffers(
@@ -324,7 +358,7 @@ internal sealed class WorldLiquidRenderer(
                     liquid.indexBuffer,
                     Format.FormatR32Uint,
                     0);
-                boundContainer = visible.Container;
+                boundOwner = visible.Owner;
             }
 
             var material = liquid.materials is { Length: > 0 } &&
@@ -363,7 +397,7 @@ internal sealed class WorldLiquidRenderer(
 
             var cb = new WorldLiquidPerObjectCB
             {
-                Model = visible.Container.GetModelMatrix(),
+                Model = visible.Model,
                 View = view,
                 Projection = projection,
                 ShallowColor = material.ShallowColor,
@@ -377,7 +411,7 @@ internal sealed class WorldLiquidRenderer(
                     isWater ? 1f : 0f,
                     material.Family == WorldLiquidMaterialFamily.Magma ? 1f : 0f,
                     hasLoadedTexture ? 1f : 0f,
-                    0f),
+                    batch.IsWmo ? 1f : 0f),
                 LightingAmbient = new Vector4(ClampColor(ambientColor), 0f),
                 LightingDiffuse = new Vector4(ClampColor(diffuseColor), 0f),
                 // Keep RGB and alpha as separate inputs. The simple pass uses
@@ -388,10 +422,10 @@ internal sealed class WorldLiquidRenderer(
                 RiverCloseColor = new Vector4(ClampColor(riverCloseColor), 1f),
                 RiverFarColor = new Vector4(ClampColor(riverFarColor), 1f),
                 LiquidColorParameters = new Vector4(
-                    useClientLiquidColors && isWater ? 1f : 0f,
+                    useClientLiquidColors && isWater && !batch.IsWmoInterior ? 1f : 0f,
                     UsesRiverLightingPalette(material.WaterType) ? 1f : 0f,
                     clientLighting.HasLiquidAlphaData && isWater ? 1f : 0f,
-                    0f),
+                    batch.IsWmoInterior ? 1f : 0f),
                 DepthCoefficients = material.DepthCoefficients,
                 LightDirection = new Vector4(NormalizeLightDirection(lightDirection), 0f),
                 LiquidAlphaParameters = new Vector4(

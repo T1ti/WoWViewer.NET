@@ -120,6 +120,8 @@ public readonly record struct ParsedWorldLiquidBatch(
     public ushort LiquidTypeId { get; init; }
     public ushort LiquidObjectOrLvf { get; init; }
     public WorldLiquidMaterialFamily Family { get; init; }
+    public bool IsWmoInterior { get; init; }
+    public bool IsWmo { get; init; }
 }
 
 /// <summary>

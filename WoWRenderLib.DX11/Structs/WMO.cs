@@ -22,6 +22,7 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint mogiFlags { get; init; }
         public readonly WmoPortalLink[] portalLinks { get; init; }
         public readonly ushort[] doodadReferences { get; init; }
+        public readonly WorldLiquidResources liquid { get; init; }
     }
 
     public readonly struct WmoPortal
