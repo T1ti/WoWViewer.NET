@@ -7,7 +7,7 @@
         CanResize="False" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="24" Spacing="14">
     <TextBlock Text="Add project" FontSize="21" FontWeight="SemiBold" />
-    <TextBlock Text="Choose a project folder and a WoW client folder. The client must contain .build.info. Project settings are stored in project.json."
+    <TextBlock Text="Choose a project folder and a WoW client folder. CASC clients need .build.info; older MPQ clients need WoW.exe and Data/*.MPQ. Project settings are stored in project.json."
                TextWrapping="Wrap" Opacity="0.75" />
     <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
       <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Name" />
@@ -19,7 +19,8 @@
       <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientFolder}" PlaceholderText="C:\World of Warcraft" />
       <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Click="BrowseClientFolder_OnClick" />
       <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Product type" />
-      <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ProductType}" PlaceholderText="wow_classic_era" />
+      <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding AvailableProducts}"
+                SelectedItem="{Binding ProductType}" IsEnabled="{Binding IsProductSelectionEnabled}" />
     </Grid>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
       <Button Content="Cancel" MinWidth="90" Click="Cancel_OnClick" />

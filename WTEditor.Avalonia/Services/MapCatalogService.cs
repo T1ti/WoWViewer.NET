@@ -1,10 +1,12 @@
-using DBCD;
-using DBCD.Providers;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using WoWLib;
+using WoWLib.Database;
+using WoWRenderLib.Database;
 using WoWRenderLib.Diagnostics;
-using WoWRenderLib.Providers;
 using WoWRenderLib.Services;
 using WTEditor.Avalonia.Models;
+using Fs = WoWLib.Filesystem;
 
 namespace WTEditor.Avalonia.Services;
 
@@ -14,7 +16,7 @@ public interface IMapCatalogService
 }
 
 /// <summary>
-/// Reads the map catalogue from the Map DB2 of the currently active WoW client.
+/// Reads the map catalogue from the active client's Map.db2 or Map.dbc.
 /// </summary>
 public sealed class MapCatalogService : IMapCatalogService
 {
@@ -36,13 +38,17 @@ public sealed class MapCatalogService : IMapCatalogService
     public async Task<IReadOnlyList<WorldMapCatalogEntry>> LoadAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!CASC.IsInitialized || string.IsNullOrWhiteSpace(CASC.BuildName))
+        var fileSystem = WowlibFileSystem.TryGetCurrent();
+        if (fileSystem == null || (fileSystem.Kind == StorageKind.Casc
+            && (!CASC.IsInitialized || string.IsNullOrWhiteSpace(CASC.BuildName))))
         {
             throw new InvalidOperationException(
                 "WoW content must finish loading before the map catalogue can be read.");
         }
 
-        var buildName = CASC.BuildName;
+        var buildName = fileSystem.Kind == StorageKind.Mpq
+            ? $"mpq:{fileSystem.Version}:{RuntimeHelpers.GetHashCode(fileSystem)}"
+            : CASC.BuildName;
         Task<IReadOnlyList<WorldMapCatalogEntry>> loadTask;
         lock (_cacheLock)
         {
@@ -56,7 +62,7 @@ public sealed class MapCatalogService : IMapCatalogService
             else
             {
                 _loadingBuildName = buildName;
-                _loadingTask = LoadCoreAsync(buildName);
+                _loadingTask = LoadCoreAsync(buildName, fileSystem);
                 loadTask = _loadingTask;
             }
         }
@@ -64,51 +70,17 @@ public sealed class MapCatalogService : IMapCatalogService
         return await loadTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<WorldMapCatalogEntry>> LoadCoreAsync(string buildName)
+    private async Task<IReadOnlyList<WorldMapCatalogEntry>> LoadCoreAsync(
+        string buildName,
+        Fs.FileSystem fileSystem)
     {
         try
         {
-            var maps = await Task.Run(() =>
-            {
-                var dbcProvider = new DBCProvider();
-                IDBCDStorage mapDatabase;
-                try
-                {
-                    // The binary release can lag behind WoWDBDefs master. Map is
-                    // small and loaded once, so use the current textual definition
-                    // and let DBCD reject builds it does not describe.
-                    var dbcd = new DBCD.DBCD(dbcProvider, new GithubDBDProvider(useCache: false));
-                    mapDatabase = dbcd.Load("Map", buildName);
-                }
-                catch (Exception exception)
-                {
-                    throw new InvalidDataException(
-                        $"The current WoWDBDefs Map definition does not support active build {buildName}, " +
-                        "or could not be downloaded. Update WoWDBDefs before loading this client build.",
-                        exception);
-                }
+            var maps = await Task.Run(() => LoadMaps(fileSystem, buildName)).ConfigureAwait(false);
 
-                var availableColumns = mapDatabase.AvailableColumns;
-                var columns = new HashSet<string>(
-                    availableColumns,
-                    StringComparer.OrdinalIgnoreCase);
-                ValidateMapSchema(buildName, columns);
-
-                var records = mapDatabase.Values
-                    .Select(row => ToRecord(row, availableColumns, buildName))
-                    .OrderBy(map => map.Id)
-                    .ToArray();
-                ValidateMapRecords(
-                    buildName,
-                    records,
-                    columns,
-                    CASC.FileExists);
-                return (IReadOnlyList<WorldMapRecord>)records;
-            }).ConfigureAwait(false);
-
-            var wdtMetadata = await _terrainMetadataCacheService
-                .CacheAllAsync(buildName, maps)
-                .ConfigureAwait(false);
+            var wdtMetadata = fileSystem.Kind == StorageKind.Mpq
+                ? await _terrainMetadataCacheService.CacheMpqAsync(buildName, maps, fileSystem).ConfigureAwait(false)
+                : await _terrainMetadataCacheService.CacheAllAsync(buildName, maps).ConfigureAwait(false);
             var catalog = maps
                 .Select(map => new WorldMapCatalogEntry(
                     map,
@@ -119,7 +91,7 @@ public sealed class MapCatalogService : IMapCatalogService
 
             lock (_cacheLock)
             {
-                if (string.Equals(CASC.BuildName, buildName, StringComparison.Ordinal))
+                if (ReferenceEquals(WowlibFileSystem.TryGetCurrent(), fileSystem))
                 {
                     _cachedBuildName = buildName;
                     _cachedMaps = catalog;
@@ -130,7 +102,7 @@ public sealed class MapCatalogService : IMapCatalogService
         }
         catch (Exception exception)
         {
-            LoadDiagnostics.Error($"Loading Map DB2 catalog for build {buildName}", exception);
+            LoadDiagnostics.Error($"Loading Map catalog for build {buildName}", exception);
             throw;
         }
         finally
@@ -146,97 +118,100 @@ public sealed class MapCatalogService : IMapCatalogService
         }
     }
 
-    private WorldMapRecord ToRecord(
-        DBCDRow row,
-        IReadOnlyList<string> columns,
-        string buildName)
+    private IReadOnlyList<WorldMapRecord> LoadMaps(Fs.FileSystem fileSystem, string buildName)
     {
-        var columnSet = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
-        var id = ReadInt(row, columnSet, "ID", row.ID);
-        var name = ReadString(row, columnSet, "MapName_lang");
-        if (string.IsNullOrWhiteSpace(name))
-            name = ReadString(row, columnSet, "Directory");
-        if (string.IsNullOrWhiteSpace(name))
-            name = $"Unnamed map {id}";
-
-        var directory = ReadString(row, columnSet, "Directory");
-        var wdtFileDataId = ResolveWdtFileDataId(
-            directory,
-            ReadUInt(row, columnSet, WdtFileDataIdColumn),
-            path => MapAssetPathResolver.TryResolveFileDataId(path, out var resolved)
-                ? resolved
-                : 0);
-
-        return new WorldMapRecord(
-            id,
-            name,
-            directory,
-            wdtFileDataId,
-            ReadInt(row, columnSet, "ExpansionID"),
-            ReadInt(row, columnSet, "InstanceType", ReadInt(row, columnSet, "MapType")))
+        var table = Db2TableLoader.TryLoad(fileSystem, "Map", out var diagnostic)
+            ?? throw new FileNotFoundException(diagnostic);
+        using (table)
         {
-            Settings = columns
-                .Select(column => ReadSetting(row, column, buildName))
-                .ToArray()
-        };
+            var columns = Enumerable.Range(0, checked((int)table.ColumnCount))
+                .Select(index => (Index: (ulong)index, Info: table.ColumnInfo((ulong)index)))
+                .ToArray();
+            var idColumn = table.ColumnIndex("id");
+            var directoryColumn = table.ColumnIndex("directory");
+            var nameColumn = table.ColumnIndex("map_name");
+            var optionalColumns = columns.ToDictionary(column => column.Info.Name, column => column.Index);
+            var expansionColumn = optionalColumns.TryGetValue("expansion_id", out var expansion) ? (ulong?)expansion : null;
+            var instanceColumn = optionalColumns.TryGetValue("instance_type", out var instance) ? (ulong?)instance : null;
+            var wdtColumn = optionalColumns.TryGetValue("wdt_file_data_id", out var wdt) ? (ulong?)wdt : null;
+            var records = new List<WorldMapRecord>(checked((int)table.RowCount));
+            for (ulong row = 0; row < table.RowCount; row++)
+            {
+                var directory = table.GetString(row, directoryColumn, 0);
+                var name = table.GetString(row, nameColumn, 0);
+                if (string.IsNullOrWhiteSpace(name))
+                    name = string.IsNullOrWhiteSpace(directory) ? $"Unnamed map {row}" : directory;
+
+                var wdtFileDataId = fileSystem.Kind == StorageKind.Mpq
+                    ? 0u
+                    : ResolveWdtFileDataId(
+                        directory,
+                        wdtColumn is ulong wdtIndex ? checked((uint)table.GetInt(row, wdtIndex, 0)) : 0,
+                        path => MapAssetPathResolver.TryResolveFileDataId(path, out var resolved)
+                            ? resolved
+                            : 0);
+
+                records.Add(new WorldMapRecord(
+                    checked((int)table.GetInt(row, idColumn, 0)),
+                    name,
+                    directory,
+                    wdtFileDataId,
+                    expansionColumn is ulong expansionIndex ? checked((int)table.GetInt(row, expansionIndex, 0)) : 0,
+                    instanceColumn is ulong instanceIndex ? checked((int)table.GetInt(row, instanceIndex, 0)) : 0)
+                {
+                    WdtPath = fileSystem.Kind == StorageKind.Mpq
+                        ? MapAssetPathResolver.GetWdtPath(directory)
+                        : string.Empty,
+                    Settings = columns.Select(column => new WorldMapDbSetting(
+                        column.Info.Name,
+                        ReadWowlibSetting(table, row, column.Index, column.Info, buildName),
+                        column.Info.Type.ToString())).ToArray()
+                });
+            }
+
+            if (records.Count == 0)
+                throw new InvalidDataException("Map database contains no records.");
+            if (fileSystem.Kind == StorageKind.Casc)
+            {
+                var availableColumns = new HashSet<string>(
+                    columns.Select(column => column.Info.Name), StringComparer.OrdinalIgnoreCase);
+                ValidateMapRecords(buildName, records, availableColumns, CASC.FileExists);
+            }
+            return records.OrderBy(map => map.Id).ToArray();
+        }
     }
 
-    private WorldMapDbSetting ReadSetting(DBCDRow row, string column, string buildName)
+    private string ReadWowlibSetting(Table table, ulong row, ulong index, Column column, string buildName)
     {
         try
         {
-            var value = row[column];
-            return new WorldMapDbSetting(column, FormatSettingValue(value), GetTypeName(value));
+            return FormatWowlibSetting(table, row, index, column);
         }
         catch (Exception exception)
         {
-            // A build-specific field should not prevent the rest of the map
-            // catalogue from loading if its generated accessor is unavailable.
-            var failureKey = $"{buildName}\0{column}\0{exception.GetType().FullName}\0{exception.Message}";
+            var failureKey = $"{buildName}\0{column.Name}\0{exception.GetType().FullName}\0{exception.Message}";
             lock (_cacheLock)
             {
                 if (_reportedSettingFailures.Add(failureKey))
-                {
-                    LoadDiagnostics.Error(
-                        $"Reading Map DB2 column '{column}' for build {buildName}",
-                        exception);
-                }
+                    LoadDiagnostics.Error($"Reading Map column '{column.Name}' for build {buildName}", exception);
             }
-            return new WorldMapDbSetting(
-                column,
-                $"Unavailable ({exception.GetType().Name})",
-                "Unavailable");
+            return $"Unavailable ({exception.GetType().Name})";
         }
     }
 
-    internal static string FormatSettingValue(object? value)
+    private static string FormatWowlibSetting(Table table, ulong row, ulong index, Column column)
     {
-        if (value == null)
-            return "—";
-
-        if (value is string text)
-            return string.IsNullOrEmpty(text) ? "—" : text;
-
-        if (value is Array array)
+        var length = column.Type == ColumnType.LocString
+            ? 1
+            : Math.Max(1, (int)column.ArrayLen);
+        var values = Enumerable.Range(0, length).Select(element => column.Type switch
         {
-            if (array.Length == 0)
-                return "[]";
-
-            return $"[{string.Join(", ", array.Cast<object?>().Select(FormatSettingValue))}]";
-        }
-
-        if (value is IFormattable formattable)
-            return formattable.ToString(null, CultureInfo.InvariantCulture) ?? "—";
-
-        return value.ToString() ?? "—";
+            ColumnType.Int => table.GetInt(row, index, (ulong)element).ToString(CultureInfo.InvariantCulture),
+            ColumnType.Float => table.GetFloat(row, index, (ulong)element).ToString(CultureInfo.InvariantCulture),
+            _ => table.GetString(row, index, (ulong)element)
+        }).ToArray();
+        return values.Length == 1 ? values[0] : $"[{string.Join(", ", values)}]";
     }
-
-    private static string GetTypeName(object? value) => value switch
-    {
-        null => "null",
-        Array array => $"{array.GetType().GetElementType()?.Name ?? "Array"}[]",
-        _ => value.GetType().Name
-    };
 
     internal static void ValidateMapSchema(string buildName, ISet<string> columns)
     {
@@ -291,24 +266,16 @@ public sealed class MapCatalogService : IMapCatalogService
     {
         var relevantColumns = columns
             .Where(column => column.Contains("FileDataID", StringComparison.OrdinalIgnoreCase)
+                          || column.Contains("file_data_id", StringComparison.OrdinalIgnoreCase)
                           || column.StartsWith("Field_", StringComparison.OrdinalIgnoreCase))
             .OrderBy(column => column)
             .Take(20);
         return new InvalidDataException(
             $"Map DB2 definition mismatch for build {buildName}: {problem}. " +
             $"Relevant loaded columns: {string.Join(", ", relevantColumns)}. " +
-            "The loaded textual WoWDBDefs definition may be outdated, or the managed listfile " +
+            "The WowLib WoWDBDefs schema may be outdated, or the managed listfile " +
             "does not contain the legacy map paths for this build.");
     }
-
-    private static int ReadInt(DBCDRow row, ISet<string> columns, string column, int fallback = 0) =>
-        columns.Contains(column) ? Convert.ToInt32(row[column]) : fallback;
-
-    private static uint ReadUInt(DBCDRow row, ISet<string> columns, string column, uint fallback = 0) =>
-        columns.Contains(column) ? Convert.ToUInt32(row[column]) : fallback;
-
-    private static string ReadString(DBCDRow row, ISet<string> columns, string column) =>
-        columns.Contains(column) ? Convert.ToString(row[column]) ?? string.Empty : string.Empty;
 
     internal static uint ResolveWdtFileDataId(
         string directory,

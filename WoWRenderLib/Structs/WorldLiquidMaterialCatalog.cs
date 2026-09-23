@@ -8,9 +8,9 @@ using WoWRenderLib.Database;
 namespace WoWRenderLib.Structs;
 
 /// <summary>
-/// Session-scoped MH2O material resolver. It reads the generic WowLib DB
+/// Session-scoped ADT and WMO liquid material resolver. It reads the generic WowLib DB
 /// tables once when a client file system is configured and keeps only managed
-/// values in the descriptors used by the ADT loader. Missing tables/rows are
+/// values in descriptors used by both loaders. Missing tables/rows are
 /// intentionally non-fatal: the deterministic family/color fallback keeps
 /// geometry renderable even for partial or private client data.
 /// </summary>
@@ -30,10 +30,21 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
     private ulong _liquidTypeTextureColumn;
     private ulong _liquidTypeFrameCountColumn;
     private ulong _liquidTypeCoefficientColumn;
+    private ulong _liquidTypeFlagsColumn;
+    private ulong _liquidTypeBasicClassColumn;
+    private ulong _liquidTypeFloatColumn;
+    private ulong _liquidTypeIntColumn;
+    private ulong _liquidMaterialLvfColumn;
+    private ulong _liquidMaterialFlagsColumn;
     private bool _hasLiquidTypeMaterialColumn;
     private bool _hasLiquidTypeTextureColumn;
     private bool _hasLiquidTypeFrameCountColumn;
     private bool _hasLiquidTypeCoefficientColumn;
+    private bool _hasLiquidTypeFlagsColumn;
+    private bool _hasLiquidTypeBasicClassColumn;
+    private bool _hasLiquidTypeFloatColumn;
+    private bool _hasLiquidTypeIntColumn;
+    private bool _hasLiquidMaterialColumns;
     private ulong _liquidObjectTypeColumn;
     private ulong _liquidObjectFlowDirectionColumn;
     private ulong _liquidObjectFlowSpeedColumn;
@@ -86,6 +97,13 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         }
     }
 
+    public bool HasLiquidType(ushort liquidTypeId)
+    {
+        lock (_lock)
+            return _liquidTypeTable != null &&
+                TryFindRow(_liquidTypeTable, liquidTypeId, out _);
+    }
+
     private WorldLiquidMaterialDescriptor CreateDescriptor(WorldLiquidMaterialKey requestedKey)
     {
         var effectiveTypeId = requestedKey.LiquidTypeId;
@@ -127,6 +145,51 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         var (textureIds, textureSlots) = ResolveTextures(effectiveTypeId);
         var waterType = ResolveWaterType(effectiveTypeId, family);
         var depthCoefficients = ReadDepthCoefficients(effectiveTypeId);
+        var wmoTypeFlags = 0u;
+        var wmoBasicClass = family is WorldLiquidMaterialFamily.Water ? 0 : 2;
+        var wmoVertexFormat = 0;
+        var wmoMaterialFlags = 0u;
+        var wmoDepthDivisor = 42;
+        var wmoAnimationPeriod = 1000u;
+        var wmoTextureRotation = 0f;
+        if (_liquidTypeTable != null &&
+            TryFindRow(_liquidTypeTable, effectiveTypeId, out var typeRow))
+        {
+            if (_hasLiquidTypeFlagsColumn &&
+                TryGetInt(_liquidTypeTable, typeRow, _liquidTypeFlagsColumn, out var flags))
+                wmoTypeFlags = unchecked((uint)flags);
+            if (_hasLiquidTypeBasicClassColumn &&
+                TryGetInt(_liquidTypeTable, typeRow, _liquidTypeBasicClassColumn, out var basicClass))
+                wmoBasicClass = (int)basicClass;
+            if (_hasLiquidTypeIntColumn)
+            {
+                if (TryGetInt(_liquidTypeTable, typeRow, _liquidTypeIntColumn, 0, out var depthMode) &&
+                    depthMode == 1)
+                    wmoDepthDivisor = 255;
+                if (TryGetInt(_liquidTypeTable, typeRow, _liquidTypeIntColumn, 1, out var period) &&
+                    period > 0 && period <= uint.MaxValue)
+                    wmoAnimationPeriod = (uint)period;
+            }
+            if (_hasLiquidTypeFloatColumn)
+            {
+                if (TryGetFloat(_liquidTypeTable, typeRow, _liquidTypeFloatColumn, 0, out var textureScale) &&
+                    float.IsFinite(textureScale) && textureScale != 0f)
+                    scale = textureScale;
+                if (TryGetFloat(_liquidTypeTable, typeRow, _liquidTypeFloatColumn, 1, out var rotation) &&
+                    float.IsFinite(rotation))
+                    wmoTextureRotation = rotation;
+            }
+            if (_hasLiquidTypeMaterialColumn && _hasLiquidMaterialColumns &&
+                _liquidMaterialTable != null &&
+                TryGetInt(_liquidTypeTable, typeRow, _liquidTypeMaterialColumn, out var materialId) &&
+                materialId >= 0 && TryFindRow(_liquidMaterialTable, (ulong)materialId, out var materialRow))
+            {
+                if (TryGetInt(_liquidMaterialTable, materialRow, _liquidMaterialLvfColumn, out var lvf))
+                    wmoVertexFormat = (int)lvf;
+                if (TryGetInt(_liquidMaterialTable, materialRow, _liquidMaterialFlagsColumn, out var materialFlags))
+                    wmoMaterialFlags = unchecked((uint)materialFlags);
+            }
+        }
         return new WorldLiquidMaterialDescriptor(
             new WorldLiquidMaterialKey(effectiveTypeId, requestedKey.LiquidObjectOrLvf),
             family,
@@ -139,7 +202,14 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         {
             WaterType = waterType,
             TextureSlots = textureSlots,
-            DepthCoefficients = depthCoefficients
+            DepthCoefficients = depthCoefficients,
+            WmoTypeFlags = wmoTypeFlags,
+            WmoBasicClass = wmoBasicClass,
+            WmoVertexFormat = wmoVertexFormat,
+            WmoMaterialFlags = wmoMaterialFlags,
+            WmoDepthDivisor = wmoDepthDivisor,
+            WmoAnimationPeriodMilliseconds = wmoAnimationPeriod,
+            WmoTextureRotation = wmoTextureRotation
         };
     }
 
@@ -219,7 +289,8 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                 continue;
             }
 
-            var frameCount = 1;
+            var hasFrameTemplate = TryFindFramePlaceholder(path, out _, out _, out _);
+            var frameCount = hasFrameTemplate && !_hasLiquidTypeFrameCountColumn ? 32 : 1;
             if (element < (ulong)frameCountElementCount &&
                 TryGetInt(
                     _liquidTypeTable,
@@ -237,6 +308,7 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             var slotFrames = new List<uint>(frameCount);
             foreach (var expandedPath in ExpandTexturePaths(path, frameCount))
             {
+                var frameResolved = false;
                 foreach (var candidatePath in GetTexturePathCandidates(expandedPath))
                 {
                     try
@@ -249,6 +321,7 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                             slotFrames.Add(fileDataId);
                             if (!resolved.Contains(fileDataId))
                                 resolved.Add(fileDataId);
+                            frameResolved = true;
                             break;
                         }
                     }
@@ -259,6 +332,8 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                         // missing asset.
                     }
                 }
+                if (hasFrameTemplate && !frameResolved)
+                    break;
             }
 
             // Preserve the slot even when every frame failed to resolve. The
@@ -339,6 +414,14 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
     {
         if (_liquidTypeTable != null)
         {
+            _hasLiquidTypeFlagsColumn = Db2Schema.TryColumn(
+                _liquidTypeTable, "flags", out _liquidTypeFlagsColumn);
+            _hasLiquidTypeBasicClassColumn = Db2Schema.TryColumn(
+                _liquidTypeTable, "sound_bank", out _liquidTypeBasicClassColumn);
+            _hasLiquidTypeFloatColumn = Db2Schema.TryColumn(
+                _liquidTypeTable, "float", out _liquidTypeFloatColumn);
+            _hasLiquidTypeIntColumn = Db2Schema.TryColumn(
+                _liquidTypeTable, "int", out _liquidTypeIntColumn);
             // Vanilla/TBC LiquidType contains only id/name/flags/spell_id;
             // material_id and texture[] were introduced with the Wrath
             // schema.  Classic products report a legacy-looking major
@@ -366,6 +449,15 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                 _hasLiquidTypeMaterialColumn = true;
                 _hasLiquidTypeTextureColumn = true;
             }
+        }
+
+        if (_liquidMaterialTable != null)
+        {
+            var hasLvf = Db2Schema.TryColumn(
+                _liquidMaterialTable, "lvf", out _liquidMaterialLvfColumn);
+            var hasFlags = Db2Schema.TryColumn(
+                _liquidMaterialTable, "flags", out _liquidMaterialFlagsColumn);
+            _hasLiquidMaterialColumns = hasLvf && hasFlags;
         }
 
         if (_liquidObjectTable != null)
@@ -446,10 +538,21 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         _liquidTypeTextureColumn = 0;
         _liquidTypeFrameCountColumn = 0;
         _liquidTypeCoefficientColumn = 0;
+        _liquidTypeFlagsColumn = 0;
+        _liquidTypeBasicClassColumn = 0;
+        _liquidTypeFloatColumn = 0;
+        _liquidTypeIntColumn = 0;
+        _liquidMaterialLvfColumn = 0;
+        _liquidMaterialFlagsColumn = 0;
         _hasLiquidTypeMaterialColumn = false;
         _hasLiquidTypeTextureColumn = false;
         _hasLiquidTypeFrameCountColumn = false;
         _hasLiquidTypeCoefficientColumn = false;
+        _hasLiquidTypeFlagsColumn = false;
+        _hasLiquidTypeBasicClassColumn = false;
+        _hasLiquidTypeFloatColumn = false;
+        _hasLiquidTypeIntColumn = false;
+        _hasLiquidMaterialColumns = false;
         _liquidObjectTypeColumn = 0;
         _liquidObjectFlowDirectionColumn = 0;
         _liquidObjectFlowSpeedColumn = 0;

@@ -48,7 +48,11 @@ public sealed class MinimapService : IMinimapService
 
     private MinimapDocument Load(WorldMapCatalogEntry map, CancellationToken token)
     {
-        if (!map.HasTerrain) return LoadWmo(map.Wdt.FileDataId, token);
+        if (!map.HasTerrain) return LoadWmo(map, token);
+        var fileSystem = WowlibFileSystem.Current;
+        var legacyTiles = fileSystem.Kind == StorageKind.Mpq
+            ? LegacyMinimapCatalog.For(fileSystem).TilesFor(map.Map.Directory)
+            : null;
         var tiles = new List<MinimapTile>();
         var missing = 0;
         const int overviewSize = 64 * MinimapDocument.OverviewTileSize;
@@ -58,18 +62,25 @@ public sealed class MinimapService : IMinimapService
             foreach (var position in map.Wdt.ActiveTiles)
             {
                 token.ThrowIfCancellationRequested();
-                if (!map.Wdt.MinimapTextureFileDataIds.TryGetValue(position, out var minimapFileDataId)
-                    || minimapFileDataId == 0)
+                var minimapFileDataId = 0u;
+                string? minimapPath = null;
+                if (legacyTiles != null)
+                    legacyTiles.TryGetValue(position, out minimapPath);
+                else
+                    map.Wdt.MinimapTextureFileDataIds.TryGetValue(position, out minimapFileDataId);
+                if (minimapPath == null && minimapFileDataId == 0)
                 {
                     missing++;
-                    System.Diagnostics.Debug.WriteLine($"Minimap {position}: WDT MAID has no minimap texture FileDataID.");
+                    System.Diagnostics.Debug.WriteLine($"Minimap {position}: no texture in the active client's tile catalog.");
                     continue;
                 }
 
                 try
                 {
                     using var blp = new WoWLib.Formats.BLP.BLP();
-                    blp.Read(CascFileReader.ReadFile(minimapFileDataId));
+                    blp.Read(minimapPath == null
+                        ? CascFileReader.ReadFile(minimapFileDataId)
+                        : fileSystem.ReadFile(minimapPath));
                     // Bound memory for large continents, retaining a useful detail level when zoomed.
                     uint mip = 0;
                     while (mip + 1 < blp.MipCount && blp.MipWidth(mip) > 128)
@@ -91,7 +102,7 @@ public sealed class MinimapService : IMinimapService
                 {
                     missing++;
                     LoadDiagnostics.Error(
-                        $"Loading minimap tile {position.X}, {position.Y} (FileDataID {minimapFileDataId})",
+                        $"Loading minimap tile {position.X}, {position.Y} ({minimapPath ?? $"FileDataID {minimapFileDataId}"})",
                         exception);
                 }
             }
@@ -116,9 +127,11 @@ public sealed class MinimapService : IMinimapService
         }
     }
 
-    private MinimapDocument LoadWmo(uint wdtFileDataId, CancellationToken token)
+    private MinimapDocument LoadWmo(WorldMapCatalogEntry map, CancellationToken token)
     {
-        var data = _wmoLoader.Load(wdtFileDataId, token);
+        var data = map.Wdt.FileDataId != 0
+            ? _wmoLoader.Load(map.Wdt.FileDataId, token)
+            : _wmoLoader.Load(map.Wdt.Path, token);
         var images = new List<WmoMinimapImage>();
         try
         {

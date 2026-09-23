@@ -46,6 +46,8 @@ internal struct WorldLiquidPerObjectCB
     public Vector4 DepthCoefficients;
     public Vector4 LightDirection;
     public Vector4 LiquidAlphaParameters;
+    public Vector4 WmoWaterColor;
+    public Vector4 WmoParameters;
 }
 
 /// <summary>
@@ -190,7 +192,7 @@ internal sealed class WorldLiquidRenderer(
         IReadOnlySet<uint> coarseCulledTileRoots,
         float renderDistance,
         float wmoRenderDistance,
-        float timeSeconds,
+        long timeMilliseconds,
         Vector3 lightDirection,
         Vector3 ambientColor,
         Vector3 diffuseColor,
@@ -311,6 +313,7 @@ internal sealed class WorldLiquidRenderer(
         var drawCalls = 0U;
         ulong submittedIndices = 0;
         var useClientLiquidColors = clientLighting.HasLiquidColorData;
+        var timeSeconds = (float)(timeMilliseconds * 0.001);
         var oceanCloseColor = useClientLiquidColors
             ? clientLighting.OceanCloseColor
             : Vector3.Zero;
@@ -372,7 +375,7 @@ internal sealed class WorldLiquidRenderer(
             // reference high-detail water material, so water retains the
             // known-working alpha-blended pass instead of pretending to be
             // that material with only its normal/foam textures.
-            var isOpaque = UsesOpaqueComposition(material.Family);
+            var isOpaque = !batch.IsWmo && UsesOpaqueComposition(material.Family);
             var blendState = isOpaque ? _opaqueBlendState : _alphaBlendState;
             var depthState = isOpaque ? _opaqueDepthStencilState : _depthStencilState;
             var blendKey = isOpaque ? 1 : 2;
@@ -383,12 +386,20 @@ internal sealed class WorldLiquidRenderer(
                 currentBlend = blendKey;
             }
 
-            // The first LiquidType texture is animated wave data, not water
-            // albedo. Tell the shader whether it is real data so the magenta
-            // diagnostic remains visible while an asset is absent/loading.
-            var textureId = material.TextureFileDataIds is { Length: > 0 }
-                ? material.TextureFileDataIds[0]
-                : 0u;
+            // WMO surfaces animate slot zero. ADT water uses its first texture
+            // as wave data, not albedo. The shader needs the load state to
+            // choose the surface fallback while an asset is absent/loading.
+            var wmoFrames = material.TextureSlots is { Length: > 0 }
+                ? material.TextureSlots[0].Frames
+                : [];
+            var textureId = batch.IsWmo
+                ? wmoFrames.Length > 0
+                    ? wmoFrames[SelectWmoFrame(timeMilliseconds,
+                        material.WmoAnimationPeriodMilliseconds, wmoFrames.Length)]
+                    : 0u
+                : material.TextureFileDataIds is { Length: > 0 }
+                    ? material.TextureFileDataIds[0]
+                    : 0u;
             ComPtr<ID3D11ShaderResourceView> texture = default;
             var hasLoadedTexture = textureId != 0 &&
                 BLPCache.TryGetLoaded(textureId, out texture);
@@ -431,6 +442,18 @@ internal sealed class WorldLiquidRenderer(
                 LiquidAlphaParameters = new Vector4(
                     oceanShallowAlpha,
                     oceanDeepAlpha,
+                    riverShallowAlpha,
+                    riverDeepAlpha),
+                WmoWaterColor = new Vector4(
+                    batch.IsWmoInterior
+                        ? Vector3.One
+                        : useClientLiquidColors
+                            ? ClampColor(riverCloseColor)
+                            : WorldLiquidColorDefaults.RiverClose,
+                    0f),
+                WmoParameters = new Vector4(
+                    material.WmoBasicClass,
+                    material.WmoTextureRotation,
                     riverShallowAlpha,
                     riverDeepAlpha)
             };
@@ -523,6 +546,15 @@ internal sealed class WorldLiquidRenderer(
     // River, WMO, and unclassified non-ocean water use the river palette.
     internal static bool UsesRiverLightingPalette(WorldLiquidWaterType waterType) =>
         waterType != WorldLiquidWaterType.Ocean;
+
+    internal static int SelectWmoFrame(long timeMilliseconds, uint periodMilliseconds, int frameCount)
+    {
+        if (frameCount <= 1 || periodMilliseconds == 0)
+            return 0;
+        var period = (long)periodMilliseconds;
+        var phase = ((timeMilliseconds % period) + period) % period;
+        return (int)(phase * frameCount / period);
+    }
 
     private static Vector3 ClampColor(Vector3 color) => new(
         float.IsFinite(color.X) ? Math.Clamp(color.X, 0f, 4f) : 0f,

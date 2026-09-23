@@ -15,6 +15,7 @@ public sealed record WmoMinimapData(Vector3 Position, Vector3 Rotation, float Sc
 public interface IWmoMinimapLoader
 {
     WmoMinimapData Load(uint wdtFileDataId, CancellationToken token);
+    WmoMinimapData Load(string wdtPath, CancellationToken token);
 }
 
 /// <summary>CPU-only wowlib adapter. No renderer initialization or UI objects are needed.</summary>
@@ -55,9 +56,23 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
 
     public WmoMinimapData Load(uint wdtFileDataId, CancellationToken token)
     {
+        using var fileDataId = new FileDataId(wdtFileDataId);
+        using var key = new FileKey(fileDataId);
+        return Load(key, token);
+    }
+
+    public WmoMinimapData Load(string wdtPath, CancellationToken token)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wdtPath);
+        using var key = new FileKey(wdtPath);
+        return Load(key, token);
+    }
+
+    private static WmoMinimapData Load(FileKey wdtKey, CancellationToken token)
+    {
         var fs = WowlibFileSystem.Current;
         using var wdt = Formats.WDT.WDT.ForVersion(fs.Version);
-        wdt.Read(fs, new FileKey(new FileDataId(wdtFileDataId)));
+        wdt.Read(fs, wdtKey);
         if ((Convert.ToUInt32(wdt.Root.Header.Flags) & 1) == 0 || wdt.Root.GlobalWmo.Count == 0)
             throw new InvalidDataException("The WDT has no global WMO placement.");
         var placement = wdt.Root.GlobalWmo[0];
@@ -67,11 +82,12 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
         token.ThrowIfCancellationRequested();
         // MOGI contains each source group's local bounds. Avoid loading meshes/materials.
         using var root = Formats.WMO.Root.WMORoot.ForVersion(fs.Version);
-        if (UsesModernTextureTable(CASC.BuildName))
+        var useModernTextures = fs.Kind == StorageKind.Casc && UsesModernTextureTable(CASC.BuildName);
+        if (useModernTextures)
             root.Read(CascFileReader.ReadFile(placement.NameId));
         else
         {
-            var key = string.IsNullOrWhiteSpace(path)
+            using var key = string.IsNullOrWhiteSpace(path)
                 ? new FileKey(new FileDataId(placement.NameId))
                 : new FileKey(path);
             if (string.IsNullOrWhiteSpace(path))
@@ -81,12 +97,13 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
             root.Read(fs.ReadFile(key));
         }
 
-        if (UsesModernTextureTable(CASC.BuildName))
+        if (useModernTextures)
             return LoadModern(root, placement, token);
 
         var groups = new List<WmoMinimapGroup>();
         var missing = 0;
         Dictionary<string, string>? translations = null;
+        var textureDirectory = fs.Kind == StorageKind.Mpq ? "textures/Minimap" : "world/minimaps";
         for (var index = 0; index < root.GroupInfos.Count; index++)
         {
             token.ThrowIfCancellationRequested();
@@ -101,7 +118,7 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
                     var logicalCandidates = GetTextureCandidates(path, index, offsetX, offsetY);
                     foreach (var logical in logicalCandidates)
                     {
-                        foreach (var candidate in new[] { $"world/minimaps/{logical}", logical })
+                        foreach (var candidate in new[] { $"{textureDirectory}/{logical}", logical })
                             if (fs.Exists(new FileKey(candidate))) { texturePath = candidate; break; }
                         if (texturePath != null) break;
                     }
@@ -110,14 +127,16 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
                         if (translations == null)
                         {
                             translations = new(StringComparer.OrdinalIgnoreCase);
-                            var translationKey = new FileKey("world/minimaps/md5translate.trs");
+                            using var translationKey = new FileKey($"{textureDirectory}/md5translate.trs");
                             if (fs.Exists(translationKey))
                                 translations = ParseTranslations(Encoding.UTF8.GetString(fs.ReadFile(translationKey)));
                         }
                         foreach (var logical in logicalCandidates)
                             if (translations.TryGetValue(logical, out var hashedPath))
                             {
-                                texturePath = hashedPath.Contains('/') ? hashedPath : $"world/minimaps/{hashedPath}";
+                                texturePath = fs.Kind == StorageKind.Mpq
+                                    ? $"{textureDirectory}/{hashedPath}"
+                                    : hashedPath.Contains('/') ? hashedPath : $"{textureDirectory}/{hashedPath}";
                                 break;
                             }
                     }

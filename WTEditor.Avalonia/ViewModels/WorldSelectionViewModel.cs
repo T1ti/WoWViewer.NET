@@ -122,6 +122,8 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
         if (_viewport.RendererState == RendererLifecycleState.Failed)
             StatusMessage = "Map data is unavailable because the WoW client could not be loaded.";
+        else if (_viewport.RendererState == RendererLifecycleState.AwaitingContent)
+            StatusMessage = "Map data is unavailable until this WoW client's content is loaded.";
 
         return LoadMapCatalogIfReadyAsync();
     }
@@ -157,6 +159,11 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
                 break;
             case RendererLifecycleState.Failed when !_isMapsLoaded:
                 StatusMessage = "Map data is unavailable because the WoW client could not be loaded.";
+                break;
+            case RendererLifecycleState.AwaitingContent:
+                _isContentReady = false;
+                if (!_isMapsLoaded)
+                    StatusMessage = "Map data is unavailable until this WoW client's content is loaded.";
                 break;
             case RendererLifecycleState.Initializing:
             case RendererLifecycleState.LoadingContent:
@@ -198,7 +205,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         _loadCancellation = cancellation;
 
         IsLoading = true;
-        StatusMessage = "Reading Map DB2...";
+        StatusMessage = "Reading map database...";
         NotifyMapListChanged();
 
         try
@@ -226,7 +233,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
         {
             LoadDiagnostics.Error("Loading the world-selection map catalog", exception);
             if (!_isDisposed && generation == _catalogGeneration)
-                StatusMessage = $"Unable to read Map DB2: {exception.Message}";
+                StatusMessage = $"Unable to read map database: {exception.Message}";
         }
         finally
         {

@@ -13,6 +13,8 @@ public sealed record WorldMapRecord(
     int ExpansionId,
     int InstanceType)
 {
+    public string WdtPath { get; init; } = string.Empty;
+
     /// <summary>
     /// Every column exposed by the active Map DB2 definition for this row.
     /// Keeping this collection dynamic lets the inspector follow build-specific
@@ -88,6 +90,7 @@ public sealed record WorldMapWdtGlobalWmoData
 /// </summary>
 public sealed record WorldMapWdtMetadata(uint FileDataId, uint Flags)
 {
+    public string Path { get; init; } = string.Empty;
     public uint Version { get; init; }
     public uint LegacyHeaderValue { get; init; }
     public IReadOnlyList<uint> LegacyHeaderUnusedValues { get; init; } = [];
@@ -101,7 +104,7 @@ public sealed record WorldMapWdtMetadata(uint FileDataId, uint Flags)
     public TileBounds? GlobalWmoBounds { get; init; }
     public string? Error { get; init; }
 
-    public bool IsAvailable => FileDataId != 0 && string.IsNullOrWhiteSpace(Error);
+    public bool IsAvailable => (FileDataId != 0 || Path.Length != 0) && string.IsNullOrWhiteSpace(Error);
 
     // A WDT with the global-WMO flag set does not contain terrain tiles.
     public bool HasTerrain => (Flags & 0x1) == 0;

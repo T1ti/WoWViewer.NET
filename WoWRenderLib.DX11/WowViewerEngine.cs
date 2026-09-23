@@ -161,6 +161,7 @@ namespace WoWRenderLib.DX11
         Created,
         Initializing,
         LoadingContent,
+        AwaitingContent,
         Ready,
         Failed,
         Disposed
@@ -796,6 +797,7 @@ namespace WoWRenderLib.DX11
             }
 
             await Dx11CacheLifecycle.ResetAsync();
+            WowlibFileSystem.Close();
 
             _keyedMutex.Dispose();
             _gpuFrameTimer?.Dispose();
@@ -814,11 +816,13 @@ namespace WoWRenderLib.DX11
         {
             var buildInfoPath = Path.Combine(wowDirInput, ".build.info");
 
-            if (!Directory.Exists(wowDirInput) || !File.Exists(buildInfoPath))
+            if (!Directory.Exists(wowDirInput))
             {
-                Console.WriteLine("Invalid WoW directory or .build.info not found at " + buildInfoPath);
+                Console.WriteLine("Invalid WoW directory: " + wowDirInput);
                 return;
             }
+            if (!File.Exists(buildInfoPath))
+                return;
 
             var buildInfo = File.ReadAllLines(buildInfoPath);
 
@@ -871,8 +875,49 @@ namespace WoWRenderLib.DX11
 
             if (!string.IsNullOrWhiteSpace(_wowConfig.wowProduct))
                 StartCASCInitialization();
+            else if (Directory.Exists(_wowConfig.wowDir))
+                StartMpqInitialization();
             else
-                SetStatus(WowViewerEngineState.Ready, "Renderer ready; select a WoW client to load content.");
+                SetStatus(WowViewerEngineState.AwaitingContent, "Renderer ready; WoW client content has not been loaded.");
+        }
+
+        private void StartMpqInitialization()
+        {
+            Volatile.Write(ref _contentInitializationComplete, 0);
+            SetStatus(WowViewerEngineState.LoadingContent, "Opening MPQ client files...");
+            _contentInitializationTask = Task.Run(async () =>
+            {
+                var cancellationToken = _lifetimeCancellation.Token;
+                var gateEntered = false;
+                try
+                {
+                    await ContentInitializationGate.WaitAsync(cancellationToken);
+                    gateEntered = true;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_generation != Volatile.Read(ref _activeGeneration))
+                        return;
+
+                    Services.CASC.Deactivate();
+                    var fileSystem = WowlibFileSystem.OpenForClient(_wowConfig.wowDir, "");
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_generation != Volatile.Read(ref _activeGeneration))
+                        return;
+
+                    SetStatus(WowViewerEngineState.Ready, $"{fileSystem.Version} MPQ files ready.");
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    SetStatus(WowViewerEngineState.Failed, "MPQ client initialization failed.", exception);
+                }
+                finally
+                {
+                    if (gateEntered)
+                        ContentInitializationGate.Release();
+                }
+            });
         }
 
         private unsafe void RenderGizmo()

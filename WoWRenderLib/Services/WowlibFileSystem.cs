@@ -1,4 +1,5 @@
 using WoWLib;
+using System.Diagnostics;
 using Fs = WoWLib.Filesystem;
 
 namespace WoWRenderLib.Services;
@@ -24,8 +25,17 @@ public static class WowlibFileSystem
 
     public static ClientVersion Version => Current.Version;
 
+    public static Fs.FileSystem? TryGetCurrent()
+    {
+        lock (Sync)
+            return current;
+    }
+
     public static Fs.FileSystem OpenForClient(string clientPath, string cascProduct)
     {
+        if (string.IsNullOrWhiteSpace(cascProduct) && !File.Exists(Path.Combine(clientPath, ".build.info")))
+            return OpenMpqClient(clientPath);
+
         var installPath = ResolveInstallPath(clientPath, cascProduct);
         // CASC roots frequently omit name hashes.  The database and asset
         // loaders therefore need the community listfile available before the
@@ -41,6 +51,56 @@ public static class WowlibFileSystem
             new FileDataId());
         var next = Fs.FileSystem.Open(settings);
 
+        lock (Sync)
+        {
+            current?.Dispose();
+            current = next;
+            return current;
+        }
+    }
+
+    private static Fs.FileSystem OpenMpqClient(string clientPath)
+    {
+        if (string.IsNullOrWhiteSpace(clientPath) || !Directory.Exists(clientPath))
+            throw new DirectoryNotFoundException($"The MPQ client folder '{clientPath}' does not exist.");
+
+        var executable = Directory.EnumerateFiles(clientPath).FirstOrDefault(path =>
+            string.Equals(Path.GetFileName(path), "Wow.exe", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Path.GetFileName(path), "Wow-64.exe", StringComparison.OrdinalIgnoreCase));
+        if (executable == null)
+            throw new FileNotFoundException("An MPQ client needs a WoW executable with version metadata.", clientPath);
+
+        var fileVersion = FileVersionInfo.GetVersionInfo(executable);
+        if (fileVersion.FileMajorPart < 1 || fileVersion.FileMajorPart >= 6
+            || fileVersion.FileMinorPart < 0 || fileVersion.FileBuildPart < 0
+            || fileVersion.FilePrivatePart <= 0)
+        {
+            throw new InvalidDataException($"The WoW executable '{executable}' has no supported MPQ-era version metadata.");
+        }
+
+        var locale = Directory.EnumerateDirectories(Path.Combine(clientPath, "Data"))
+            .Select(Path.GetFileName)
+            .Select(name => Enum.TryParse<Locale>(name, ignoreCase: true, out var parsed)
+                ? parsed
+                : (Locale?)null)
+            .OfType<Locale>()
+            .FirstOrDefault();
+
+        using var version = new ClientVersion(
+            checked((ushort)fileVersion.FileMajorPart),
+            checked((ushort)fileVersion.FileMinorPart),
+            checked((ushort)fileVersion.FileBuildPart),
+            checked((uint)fileVersion.FilePrivatePart),
+            ClientFlavor.Retail);
+        using var settings = new Fs.FileSystemSettings(
+            clientPath,
+            version,
+            locale,
+            GetProjectDirectory($"mpq-{version.Build}"),
+            null!,
+            new FileDataId(),
+            null!);
+        var next = Fs.FileSystem.Open(settings);
         lock (Sync)
         {
             current?.Dispose();

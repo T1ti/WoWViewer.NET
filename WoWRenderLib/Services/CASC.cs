@@ -136,6 +136,19 @@ namespace WoWRenderLib.Services
             IsInitialized = true;
         }
 
+        public static void Deactivate()
+        {
+            IsInitialized = false;
+            BuildName = "";
+            lock (LocalStorageLock)
+            {
+                localStorage?.Clear();
+                localStorage = null;
+                localStoragePath = "";
+                localStorageProduct = "";
+            }
+        }
+
         public static bool FileExists(uint fileDataID)
         {
             return buildInstance!.Root!.FileExists(fileDataID);

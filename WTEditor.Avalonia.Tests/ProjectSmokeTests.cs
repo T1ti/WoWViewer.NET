@@ -3,6 +3,8 @@ using WTEditor.Application.Models;
 using WTEditor.Application.Services;
 using WTEditor.Application;
 using WTEditor.Avalonia.Services;
+using WTEditor.Avalonia.ViewModels;
+using System.Text;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -10,6 +12,77 @@ namespace WTEditor.Avalonia.Tests;
 [DoNotParallelize]
 public sealed class ProjectSmokeTests
 {
+    [TestMethod]
+    public void NewProject_OnlyOffersProductsFromSelectedModernClient()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "WTEditor.Tests", Guid.NewGuid().ToString("N"));
+        var modernClient = Path.Combine(root, "modern");
+        var legacyClient = Path.Combine(root, "legacy");
+        try
+        {
+            Directory.CreateDirectory(modernClient);
+            Directory.CreateDirectory(legacyClient);
+            File.WriteAllText(Path.Combine(modernClient, ".build.info"), "Product|Version\nwow|1\n");
+            Directory.CreateDirectory(Path.Combine(legacyClient, "Data"));
+            File.WriteAllBytes(Path.Combine(legacyClient, "WoW.exe"), []);
+            File.WriteAllBytes(Path.Combine(legacyClient, "Data", "base.MPQ"), []);
+            File.WriteAllBytes(Path.Combine(modernClient, ".product.db"),
+                Message(1, Message(1, Encoding.UTF8.GetBytes("wow"))
+                    .Concat(Message(2, Encoding.UTF8.GetBytes("wow"))).ToArray())
+                .Concat(Message(1, Message(2, Encoding.UTF8.GetBytes("wow_classic_era")))).ToArray());
+
+            var viewModel = new NewProjectViewModel("project", Path.Combine(root, "project"), "", "wow_classic_era");
+            Assert.IsFalse(viewModel.IsProductSelectionEnabled);
+            Assert.AreEqual("", viewModel.ProductType);
+
+            viewModel.ClientFolder = modernClient;
+            Assert.IsTrue(viewModel.IsProductSelectionEnabled);
+            CollectionAssert.AreEquivalent(new[] { "wow", "wow_classic_era" }, viewModel.AvailableProducts.ToArray());
+            Assert.AreEqual("wow_classic_era", viewModel.ProductType);
+
+            viewModel.ClientFolder = legacyClient;
+            Assert.IsFalse(viewModel.IsProductSelectionEnabled);
+            Assert.AreEqual("", viewModel.ProductType);
+
+            var service = new ProjectService(new MemoryProjectStore());
+            Assert.IsNull(service.ValidateProject("project", Path.Combine(root, "project"), legacyClient, ""));
+            Assert.IsNotNull(service.ValidateProject("project", Path.Combine(root, "project"), Path.Combine(root, "missing"), ""));
+
+            var incompleteCascClient = Path.Combine(root, "incomplete-casc");
+            Directory.CreateDirectory(Path.Combine(incompleteCascClient, "Data", "data"));
+            File.WriteAllBytes(Path.Combine(incompleteCascClient, "Wow.exe"), []);
+            File.WriteAllBytes(Path.Combine(incompleteCascClient, "Data", "patch.MPQ"), []);
+            Assert.IsFalse(ProjectService.IsValidClientFolder(incompleteCascClient));
+
+            var project = service.AddProject("project", Path.Combine(root, "project"), legacyClient, "");
+            Assert.AreEqual("", service.LoadSettings(project).Client.WowProduct);
+
+            File.WriteAllBytes(Path.Combine(modernClient, ".product.db"),
+                Message(1, Encoding.UTF8.GetBytes("wow"))
+                    .Concat(Message(2, Encoding.UTF8.GetBytes("wow_classic_era"))).ToArray());
+            CollectionAssert.AreEqual(new[] { "wow_classic_era" }, ClientProductCatalog.GetProducts(modernClient).ToArray());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static byte[] Message(byte field, byte[] value)
+    {
+        var bytes = new List<byte> { (byte)((field << 3) | 2) };
+        var length = (uint)value.Length;
+        while (length >= 0x80)
+        {
+            bytes.Add((byte)(length | 0x80));
+            length >>= 7;
+        }
+        bytes.Add((byte)length);
+        bytes.AddRange(value);
+        return bytes.ToArray();
+    }
+
     [TestMethod]
     public void ProjectService_StoresSettingsAndFilesUnderSelectedProject()
     {

@@ -111,9 +111,31 @@ public sealed class WmoMinimapSmokeTests
         Assert.AreEqual(image.TopLeft, nextY.BottomLeft);
     }
 
+    [TestMethod]
+    public async Task WmoService_UsesWdtPathForMpqMaps()
+    {
+        var loader = new TestLoader();
+        var service = new MinimapService(loader);
+        using var document = await service.LoadAsync(new WorldMapCatalogEntry(
+            new WorldMapRecord(90, "Gnomeregan", "GnomeragonInstance", 0, 0, 1),
+            new WorldMapWdtMetadata(0, 1) { Path = "world/maps/GnomeragonInstance/GnomeragonInstance.wdt" }),
+            CancellationToken.None).ConfigureAwait(false);
+
+        Assert.AreEqual("world/maps/GnomeragonInstance/GnomeragonInstance.wdt", loader.WdtPath);
+        Assert.AreEqual(4, document.WmoImages.Count);
+    }
+
     private sealed class TestLoader : IWmoMinimapLoader
     {
         public uint WdtId { get; private set; }
+        public string? WdtPath { get; private set; }
+
+        public WmoMinimapData Load(string wdtPath, CancellationToken token)
+        {
+            WdtPath = wdtPath;
+            return Load(0, token);
+        }
+
         public WmoMinimapData Load(uint wdtFileDataId, CancellationToken token)
         {
             WdtId = wdtFileDataId;

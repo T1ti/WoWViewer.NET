@@ -13,7 +13,7 @@ namespace WoWRenderLib.Database;
 /// then read by FileDataID. MPQ-era files have no FileDataID and continue to
 /// use the resolved path key.
 /// </summary>
-internal static class Db2TableLoader
+public static class Db2TableLoader
 {
     private static readonly string[] Extensions = [".db2", ".dbc"];
 

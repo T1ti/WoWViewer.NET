@@ -136,6 +136,23 @@ public sealed class MinimapSmokeTests
     }
 
     [TestMethod]
+    public void LegacyMinimapCatalog_ResolvesMapTilesFromMd5Translations()
+    {
+        var catalog = LegacyMinimapCatalog.Parse(
+            "dir: Azeroth\n" +
+            "Azeroth\\map24_53.blp\t67ba43d493e62a8fad5de319e6d4cb05.blp\n" +
+            "Azeroth\\map65_53.blp\tinvalid.blp\n" +
+            "dir: Kalimdor\n" +
+            "Kalimdor\\map00_01.blp\te3b9a673a3cab38354a5e900e848fb67.blp\n");
+
+        Assert.AreEqual("textures/Minimap/67ba43d493e62a8fad5de319e6d4cb05.blp",
+            catalog.TilesFor("azeroth")[new WorldMapTile(24, 53)]);
+        Assert.AreEqual(1, catalog.TilesFor("Azeroth").Count);
+        Assert.AreEqual("textures/Minimap/e3b9a673a3cab38354a5e900e848fb67.blp",
+            catalog.TilesFor("Kalimdor")[new WorldMapTile(0, 1)]);
+    }
+
+    [TestMethod]
     public void WdtMetadata_MapsMaidMinimapFileDataIdsByTileCoordinates()
     {
         using var root = new WoWLib.Formats.WDT.Root.WDTRootBfa();

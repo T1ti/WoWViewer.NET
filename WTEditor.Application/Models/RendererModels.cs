@@ -7,6 +7,7 @@ public enum RendererLifecycleState
     Detached,
     Initializing,
     LoadingContent,
+    AwaitingContent,
     Ready,
     Failed,
     Disposed

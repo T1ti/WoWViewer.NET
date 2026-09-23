@@ -17,6 +17,8 @@ cbuffer PerObject : register(b0)
     float4 depthCoefficients;     // LiquidType.Coefficient[0..3]
     float4 lightDirection;        // normalized world-space exterior light
     float4 liquidAlphaParameters; // ocean shallow/deep, river shallow/deep
+    float4 wmoWaterColor; // exterior environment tint, or white indoors
+    float4 wmoParameters; // basic class, texture rotation, shallow/deep alpha
 };
 
 Texture2D liquidTexture : register(t0);
@@ -48,10 +50,26 @@ VSOut VS_Main(VSIn input)
     output.depth = saturate(input.depth);
     output.cellCoord = input.cellCoord;
 
-    float angle = flowParameters.z;
-    float2 flow = float2(cos(angle), sin(angle)) *
-        ((flowParameters.w + 0.015f) * flowParameters.x);
-    output.texCoord = input.texCoord * max(flowParameters.y, 0.001f) + flow;
+    if (familyParameters.w > 0.5f)
+    {
+        if (wmoParameters.x >= 2.0f)
+            output.texCoord = input.texCoord;
+        else
+        {
+            float2 p = input.texCoord * flowParameters.y;
+            float cs = cos(wmoParameters.y);
+            float sn = sin(wmoParameters.y);
+            output.texCoord = float2(p.x * cs - p.y * sn,
+                p.x * sn + p.y * cs);
+        }
+    }
+    else
+    {
+        float angle = flowParameters.z;
+        float2 flow = float2(cos(angle), sin(angle)) *
+            ((flowParameters.w + 0.015f) * flowParameters.x);
+        output.texCoord = input.texCoord * max(flowParameters.y, 0.001f) + flow;
+    }
     output.normal = normalize(mul((float3x3)model_matrix, float3(0.0f, 0.0f, 1.0f)));
     return output;
 }
@@ -61,6 +79,15 @@ float4 PS_Main(VSOut input) : SV_Target
     float4 sampled = familyParameters.w > 0.5f && familyParameters.z < 0.5f
         ? float4(1.0f, 1.0f, 1.0f, 1.0f)
         : liquidTexture.Sample(linearWrap, input.texCoord);
+    if (familyParameters.w > 0.5f)
+    {
+        if (familyParameters.z < 0.5f)
+            return float4(shallowColor.rgb, 1.0f);
+        if (wmoParameters.x >= 2.0f)
+            return float4(shallowColor.rgb * sampled.rgb, 1.0f);
+        return float4(sampled.rgb + shallowColor.rgb * wmoWaterColor.rgb,
+            lerp(wmoParameters.z, wmoParameters.w, saturate(input.depth)));
+    }
     bool isWater = familyParameters.x > 0.5f;
     // WowLib forwards the MH2O transparency/depth byte unchanged as byte / 255.
     // The reference viewer uses that value from close/shallow to far/deep; it

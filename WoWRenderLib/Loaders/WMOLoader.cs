@@ -15,6 +15,7 @@ public static class WMOLoader
     public static PreppedWMO ParseWMO(uint fileDataId, string fileName = "")
     {
         var fileSystem = WowlibFileSystem.Current;
+        WorldLiquidMaterialCatalog.Shared.Configure(fileSystem);
         if (!fileSystem.Exists(new FileDataId(fileDataId)))
             throw new FileNotFoundException($"WMO {fileDataId} does not exist!");
 
@@ -185,7 +186,7 @@ public static class WMOLoader
             tiles[index] = sourceTiles[index].Flags;
 
         var materialId = source.MaterialId;
-        var interiorColor = materialId < materials.Length
+        var interiorColor = (rootFlags & 0x4) == 0 && materialId < materials.Length
             ? UnpackColor(materials[materialId].Color3)
             : Vector4.One;
         return WmoLiquidMeshBuilder.Build(new WmoLiquidInput
@@ -199,6 +200,8 @@ public static class WMOLoader
             GroupFlags = groupFlags,
             MogiFlags = mogiFlags,
             RootFlags = rootFlags,
+            MaterialId = materialId,
+            MaterialCount = materials.Length,
             InteriorColor = interiorColor,
             Heights = heights,
             Depths = depths,

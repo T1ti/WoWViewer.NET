@@ -103,9 +103,6 @@ public sealed class ProjectService : IProjectService
             return "A project folder is required.";
         if (string.IsNullOrWhiteSpace(clientFolderPath))
             return "A WoW client folder is required.";
-        if (string.IsNullOrWhiteSpace(productType))
-            return "A WoW product type is required.";
-
         if (_projects.Any(existing => string.Equals(existing.Name.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)))
             return $"A project named '{name.Trim()}' already exists.";
 
@@ -123,15 +120,42 @@ public sealed class ProjectService : IProjectService
             return "A project already uses this folder.";
 
         if (!IsValidClientFolder(clientFolderPath))
-            return "The WoW client folder is invalid. Select a folder containing .build.info.";
+            return "The WoW client folder is invalid. Select a CASC client with .build.info or an older client with WoW.exe and Data/*.MPQ.";
 
         return null;
     }
 
-    public static bool IsValidClientFolder(string clientFolderPath) =>
-        !string.IsNullOrWhiteSpace(clientFolderPath)
-        && Directory.Exists(clientFolderPath.Trim())
-        && File.Exists(Path.Combine(clientFolderPath.Trim(), ".build.info"));
+    public static bool IsValidClientFolder(string clientFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(clientFolderPath) || !Directory.Exists(clientFolderPath.Trim()))
+            return false;
+
+        var root = clientFolderPath.Trim();
+        if (File.Exists(Path.Combine(root, ".build.info")))
+            return true;
+
+        var data = Path.Combine(root, "Data");
+        // A CASC installation without its build metadata must not be mistaken for an MPQ client.
+        if (File.Exists(Path.Combine(root, ".build.db"))
+            || File.Exists(Path.Combine(root, ".product.db"))
+            || Directory.Exists(Path.Combine(data, "data"))
+            || Directory.Exists(Path.Combine(data, "config")))
+            return false;
+
+        try
+        {
+            return Directory.EnumerateFiles(root).Any(path =>
+                    string.Equals(Path.GetFileName(path), "Wow.exe", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(Path.GetFileName(path), "Wow-64.exe", StringComparison.OrdinalIgnoreCase))
+                && Directory.Exists(data)
+                && Directory.EnumerateFiles(data).Any(path =>
+                    string.Equals(Path.GetExtension(path), ".mpq", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private ProjectDefinition AddProjectCore(
         string name,

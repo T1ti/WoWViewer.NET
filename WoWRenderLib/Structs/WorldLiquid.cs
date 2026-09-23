@@ -88,6 +88,15 @@ public sealed record WorldLiquidMaterialDescriptor(
     /// against the normalized MH2O depth byte.
     /// </summary>
     public Vector4 DepthCoefficients { get; init; } = new(0f, 1f, 0f, 0f);
+
+    /// <summary>LiquidType and LiquidMaterial fields used by WMO MLIQ surfaces.</summary>
+    public uint WmoTypeFlags { get; init; }
+    public int WmoBasicClass { get; init; }
+    public int WmoVertexFormat { get; init; }
+    public uint WmoMaterialFlags { get; init; }
+    public int WmoDepthDivisor { get; init; } = 42;
+    public uint WmoAnimationPeriodMilliseconds { get; init; } = 1000;
+    public float WmoTextureRotation { get; init; }
 }
 
 public interface IWorldLiquidMaterialCatalog
@@ -96,7 +105,7 @@ public interface IWorldLiquidMaterialCatalog
 }
 
 /// <summary>
-/// Compact CPU/GPU transfer vertex for one decoded MH2O surface.
+/// Compact CPU/GPU transfer vertex for a decoded ADT or WMO liquid surface.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct WorldLiquidVertex
@@ -164,7 +173,7 @@ public sealed record WorldLiquidLayerInput
 }
 
 /// <summary>
-/// Fully managed MH2O payload copied before the native-backed WowLib ADT is disposed.
+/// Fully managed liquid payload copied before the native-backed WowLib file is disposed.
 /// </summary>
 public sealed class ParsedWorldLiquid
 {

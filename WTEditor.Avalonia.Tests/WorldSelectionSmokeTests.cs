@@ -12,6 +12,26 @@ namespace WTEditor.Avalonia.Tests;
 public sealed class WorldSelectionSmokeTests
 {
     [TestMethod]
+    public async Task RendererWithoutLoadedContentDoesNotStartMapCatalog()
+    {
+        var session = new EditorSession(new MemorySettingsStore());
+        using var viewport = new Editor3DViewModel(session);
+        viewport.UpdateRendererStatus(new RendererStatus(
+            RendererLifecycleState.AwaitingContent, "Renderer ready; content not loaded."));
+        var catalog = new TestMapCatalogService([]);
+        using var preloader = new WorldMapStartupPreloader(catalog, viewport);
+        using var worldSelection = new WorldSelectionViewModel(catalog, viewport);
+
+        preloader.Start();
+        await worldSelection.ActivateAsync();
+        Assert.AreEqual(0, catalog.LoadCount);
+        StringAssert.Contains(worldSelection.StatusMessage, "unavailable");
+
+        viewport.UpdateRendererStatus(new RendererStatus(RendererLifecycleState.Ready, "Content ready."));
+        Assert.IsTrue(catalog.LoadCount > 0);
+    }
+
+    [TestMethod]
     public void FirstWorldNavigationIsRetainedWithoutAnAttachedRendererSubscriber()
     {
         var session = new EditorSession(new MemorySettingsStore());
@@ -188,8 +208,11 @@ public sealed class WorldSelectionSmokeTests
 
     private sealed class TestMapCatalogService(IReadOnlyList<WorldMapCatalogEntry> maps) : IMapCatalogService
     {
+        public int LoadCount { get; private set; }
+
         public Task<IReadOnlyList<WorldMapCatalogEntry>> LoadAsync(CancellationToken cancellationToken = default)
         {
+            LoadCount++;
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(maps);
         }

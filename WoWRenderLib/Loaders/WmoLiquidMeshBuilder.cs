@@ -23,6 +23,8 @@ public sealed record WmoLiquidInput
     public uint GroupFlags { get; init; }
     public uint MogiFlags { get; init; }
     public ushort RootFlags { get; init; }
+    public uint MaterialId { get; init; }
+    public int MaterialCount { get; init; } = int.MaxValue;
     public Vector4 InteriorColor { get; init; } = Vector4.One;
     public float[] Heights { get; init; } = [];
     public byte[] Depths { get; init; } = [];
@@ -44,8 +46,7 @@ public static class WmoLiquidMeshBuilder
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(catalog);
         if (input.XTiles <= 0 || input.YTiles <= 0 ||
-            input.XVertices != input.XTiles + 1 || input.YVertices != input.YTiles + 1 ||
-            input.XVertices > 256 || input.YVertices > 256 ||
+            input.XTiles >= input.XVertices || input.YTiles >= input.YVertices ||
             (long)input.XVertices * input.YVertices > 65535 ||
             input.Heights.Length != input.XVertices * input.YVertices ||
             input.Tiles.Length != input.XTiles * input.YTiles ||
@@ -55,18 +56,34 @@ public static class WmoLiquidMeshBuilder
 
         var typeId = ResolveLiquidType(input);
         var material = catalog.Resolve(typeId, 0);
-        var isInterior = (input.GroupFlags & 0x48) == 0 || (input.MogiFlags & 0x48) == 0;
-        if (isInterior)
+        if (catalog is WorldLiquidMaterialCatalog databaseCatalog &&
+            databaseCatalog.HasLiquidType(1) && !databaseCatalog.HasLiquidType(typeId))
         {
-            material = material with
-            {
-                ShallowColor = Multiply(material.ShallowColor, input.InteriorColor),
-                DeepColor = Multiply(material.DeepColor, input.InteriorColor)
-            };
+            typeId = 1;
+            material = catalog.Resolve(typeId, 0);
         }
+        var isInterior = !(((input.GroupFlags & 0x48) != 0 &&
+            (input.MogiFlags & 0x48) != 0) || (material.WmoTypeFlags & 0x200) != 0);
+        if (isInterior && (input.RootFlags & 0x4) == 0 &&
+            input.MaterialId >= input.MaterialCount)
+            return ParsedWorldLiquid.Empty;
+        if (isInterior && typeId < 21 && typeId > 0 && ((typeId - 1) & 3) == 0 &&
+            catalog is WorldLiquidMaterialCatalog databaseCatalogForInterior &&
+            databaseCatalogForInterior.HasLiquidType(17))
+        {
+            typeId = 17;
+            material = catalog.Resolve(typeId, 0);
+        }
+        var color = isInterior ? input.InteriorColor : Vector4.One;
+        color.W = 1f;
+        material = material with { ShallowColor = color, DeepColor = color };
 
         var vertices = new List<WorldLiquidVertex>(input.Heights.Length);
-        var authoredUvs = typeId is 19 or 20 && input.AuthoredUvs.Length == input.Heights.Length;
+        var authoredUvs = material.WmoVertexFormat == 1 &&
+            input.AuthoredUvs.Length == input.Heights.Length;
+        var modernMagmaUvs = (input.RootFlags & 0x4) != 0 && typeId == 19 &&
+            input.AuthoredUvs.Length == input.Heights.Length;
+        var modernPlanarUvs = (input.RootFlags & 0x4) != 0 && !modernMagmaUvs;
         for (var row = 0; row < input.YVertices; row++)
         for (var column = 0; column < input.XVertices; column++)
         {
@@ -80,12 +97,17 @@ public static class WmoLiquidMeshBuilder
             vertices.Add(new WorldLiquidVertex
             {
                 Position = position,
-                Depth = input.Depths.Length == input.Heights.Length
-                    ? Math.Clamp(input.Depths[index] / 42f, 0f, 1f)
+                Depth = material.WmoVertexFormat != 1 &&
+                    input.Depths.Length == input.Heights.Length
+                    ? Math.Clamp(input.Depths[index] / (float)material.WmoDepthDivisor, 0f, 1f)
                     : 0f,
-                TexCoord = authoredUvs
+                TexCoord = modernMagmaUvs
                     ? input.AuthoredUvs[index] * (3f / 256f)
-                    : new Vector2(column, row),
+                    : authoredUvs
+                        ? input.AuthoredUvs[index] / 256f
+                        : modernPlanarUvs
+                            ? new Vector2(position.X, position.Y) / (1600f / 3f / 16f)
+                            : new Vector2(column * GridStep, row * GridStep) * 0.24000001f,
                 CellCoord = new Vector2(
                     column / (float)input.XTiles,
                     row / (float)input.YTiles)
@@ -224,7 +246,4 @@ public static class WmoLiquidMeshBuilder
         2 => 19,
         _ => 20
     };
-
-    private static Vector4 Multiply(Vector4 left, Vector4 right) => new(
-        left.X * right.X, left.Y * right.Y, left.Z * right.Z, left.W * right.W);
 }

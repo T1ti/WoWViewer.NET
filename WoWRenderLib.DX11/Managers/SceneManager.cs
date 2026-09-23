@@ -1565,7 +1565,7 @@ namespace WoWRenderLib.DX11.Managers
                     coarseCulledTileRoots,
                     TerrainRenderDistance,
                     ModelRenderDistance,
-                    (float)(Environment.TickCount64 * 0.001),
+                    Environment.TickCount64,
                     LightDirection,
                     AmbientColor,
                     DiffuseColor,

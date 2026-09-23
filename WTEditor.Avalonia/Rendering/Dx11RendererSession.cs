@@ -81,6 +81,7 @@ public sealed class Dx11RendererSession : IAsyncDisposable
             WowViewerEngineState.Created => RendererLifecycleState.Detached,
             WowViewerEngineState.Initializing => RendererLifecycleState.Initializing,
             WowViewerEngineState.LoadingContent => RendererLifecycleState.LoadingContent,
+            WowViewerEngineState.AwaitingContent => RendererLifecycleState.AwaitingContent,
             WowViewerEngineState.Ready => RendererLifecycleState.Ready,
             WowViewerEngineState.Failed => RendererLifecycleState.Failed,
             WowViewerEngineState.Disposed => RendererLifecycleState.Disposed,

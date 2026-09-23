@@ -5,6 +5,7 @@ using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 using WoWRenderLib.Diagnostics;
 using WTEditor.Avalonia.Models;
+using Fs = WoWLib.Filesystem;
 using Formats = WoWLib.Formats;
 using WdtHeaderFlags = WoWLib.Formats.WDT.Root.Chunks.MapHeaderFlags;
 using WmoPlacementFlags = WoWLib.Formats.Common.MapObjDefFlags;
@@ -16,6 +17,12 @@ public interface IMapTerrainMetadataCacheService
     Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheAllAsync(
         string buildName,
         IReadOnlyList<WorldMapRecord> maps,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheMpqAsync(
+        string buildName,
+        IReadOnlyList<WorldMapRecord> maps,
+        Fs.FileSystem fileSystem,
         CancellationToken cancellationToken = default);
 }
 
@@ -43,16 +50,33 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         _metadataReader = metadataReader;
     }
 
-    public async Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheAllAsync(
+    public Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheAllAsync(
         string buildName,
         IReadOnlyList<WorldMapRecord> maps,
+        CancellationToken cancellationToken = default) =>
+        CacheCoreAsync(buildName, maps, map => _metadataReader(map.WdtFileDataId), cancellationToken);
+
+    public Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheMpqAsync(
+        string buildName,
+        IReadOnlyList<WorldMapRecord> maps,
+        Fs.FileSystem fileSystem,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        return CacheCoreAsync(buildName, maps, map => ReadMpqWdtMetadata(fileSystem, map), cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<int, WorldMapWdtMetadata>> CacheCoreAsync(
+        string buildName,
+        IReadOnlyList<WorldMapRecord> maps,
+        Func<WorldMapRecord, WorldMapWdtMetadata> reader,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(buildName);
         ArgumentNullException.ThrowIfNull(maps);
         var mapSnapshot = maps.ToArray();
         var requestedMaps = mapSnapshot
-            .Select(static map => new MapIdentity(map.Id, map.WdtFileDataId))
+            .Select(static map => new MapIdentity(map.Id, map.WdtFileDataId, map.WdtPath))
             .OrderBy(static map => map.Id)
             .ThenBy(static map => map.WdtFileDataId)
             .ToArray();
@@ -67,7 +91,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
             }
 
             var metadata = await Task.Run(
-                () => ReadAllMaps(mapSnapshot, _metadataReader, cancellationToken),
+                () => ReadAllMaps(mapSnapshot, reader, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             _cachedBuildName = buildName;
             _cachedMaps = requestedMaps;
@@ -82,14 +106,14 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
 
     private static IReadOnlyDictionary<int, WorldMapWdtMetadata> ReadAllMaps(
         IReadOnlyList<WorldMapRecord> maps,
-        Func<uint, WorldMapWdtMetadata> metadataReader,
+        Func<WorldMapRecord, WorldMapWdtMetadata> metadataReader,
         CancellationToken cancellationToken)
     {
         var metadata = new Dictionary<int, WorldMapWdtMetadata>(maps.Count);
         foreach (var map in maps)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            metadata[map.Id] = metadataReader(map.WdtFileDataId);
+            metadata[map.Id] = metadataReader(map);
         }
 
         return metadata;
@@ -110,7 +134,49 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         {
             var fileSystem = WowlibFileSystem.Current;
             var bytes = CascFileReader.ReadFile(fileDataId);
-            WdtChunkDiagnostics.WarnAboutUnhandledChunks(fileDataId, bytes);
+            return ParseWdtMetadata(fileSystem, fileDataId, string.Empty, bytes);
+        }
+        catch (Exception exception)
+        {
+            var error = $"Unable to read WDT {fileDataId}: {exception.Message}";
+            LoadDiagnostics.Error($"Reading WDT {fileDataId}", exception);
+            return new WorldMapWdtMetadata(fileDataId, 0)
+            {
+                Error = error,
+                Settings = [new WorldMapWdtSetting("Error", error)]
+            };
+        }
+    }
+
+    private static WorldMapWdtMetadata ReadMpqWdtMetadata(Fs.FileSystem fileSystem, WorldMapRecord map)
+    {
+        if (string.IsNullOrWhiteSpace(map.WdtPath))
+            return new WorldMapWdtMetadata(0, 0) { Error = "This map has no WDT path." };
+
+        try
+        {
+            return ParseWdtMetadata(fileSystem, 0, map.WdtPath, fileSystem.ReadFile(map.WdtPath));
+        }
+        catch (Exception exception)
+        {
+            var error = $"Unable to read {map.WdtPath}: {exception.Message}";
+            return new WorldMapWdtMetadata(0, 0)
+            {
+                Path = map.WdtPath,
+                Error = error,
+                Settings = [new WorldMapWdtSetting("Error", error)]
+            };
+        }
+    }
+
+    private static WorldMapWdtMetadata ParseWdtMetadata(
+        Fs.FileSystem fileSystem,
+        uint fileDataId,
+        string path,
+        byte[] bytes)
+    {
+            if (fileDataId != 0)
+                WdtChunkDiagnostics.WarnAboutUnhandledChunks(fileDataId, bytes);
             using var root = Formats.WDT.Root.WDTRoot.ForVersion(fileSystem.Version);
             root.Read(bytes);
             var tiles = ReadTileData(root);
@@ -125,6 +191,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
                 fileDataId,
                 Convert.ToUInt32(root.Header.Flags))
             {
+                Path = path,
                 Version = root.Mver,
                 Settings = CreateWdtSettings(
                     fileDataId,
@@ -147,17 +214,6 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
                     ? legacyHeader.Unused.ToArray()
                     : []
             };
-        }
-        catch (Exception exception)
-        {
-            var error = $"Unable to read WDT {fileDataId}: {exception.Message}";
-            LoadDiagnostics.Error($"Reading WDT {fileDataId}", exception);
-            return new WorldMapWdtMetadata(fileDataId, 0)
-            {
-                Error = error,
-                Settings = [new WorldMapWdtSetting("Error", error)]
-            };
-        }
     }
 
     private static IReadOnlyList<WorldMapWdtTileData> ReadTileData(
@@ -432,5 +488,5 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         return result;
     }
 
-    private readonly record struct MapIdentity(int Id, uint WdtFileDataId);
+    private readonly record struct MapIdentity(int Id, uint WdtFileDataId, string WdtPath);
 }
