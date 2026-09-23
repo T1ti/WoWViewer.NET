@@ -12,7 +12,8 @@ public enum EditorModeCapabilities
     None = 0,
     Selection = 1,
     TerrainEditing = 2,
-    TextureEditing = 4
+    TextureEditing = 4,
+    ObjectEditing = 8
 }
 
 /// <summary>
@@ -33,6 +34,7 @@ public static class EditorModeDefinitions
     public const string SelectionId = "selection";
     public const string TerrainId = "terrain";
     public const string TextureId = "texture";
+    public const string ObjectId = "object";
 
     public static EditorModeDefinition Selection { get; } = new(
         SelectionId,
@@ -60,6 +62,15 @@ public static class EditorModeDefinitions
         EditorIcons.Texture,
         EditorModeCapabilities.TextureEditing,
         EditorModeId.Texture);
+
+    public static EditorModeDefinition Object { get; } = new(
+        ObjectId,
+        "Object",
+        "Browse WMO and M2 objects and transform the selection",
+        "4",
+        EditorIcons.Doodad,
+        EditorModeCapabilities.ObjectEditing,
+        EditorModeId.Selection);
 }
 
 /// <summary>

@@ -58,6 +58,7 @@
                   <TextBlock Text="1  Select mode" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="2  Terrain mode" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="3  Texture mode" Foreground="#DCE7ED" FontSize="11"/>
+                  <TextBlock Text="4  Object mode" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="RMB + drag  Orbit camera" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="WASD / QE  Move camera" Foreground="#DCE7ED" FontSize="11"/>
                   <TextBlock Text="Shift  Move faster / positive tool action" Foreground="#DCE7ED" FontSize="11"/>
@@ -91,16 +92,21 @@
             Content="Texture tools" Command="{Binding TextureEditor.TogglePanelCommand}"
             IsVisible="{Binding IsTextureModeActive}"/>
 
+    <Button x:Name="ObjectToolsToggleButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,100,0"
+            Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
+            BorderBrush="#526170" BorderThickness="1" ZIndex="45"
+            Content="Object tools" Command="{Binding ObjectEditor.TogglePanelCommand}"
+            IsVisible="{Binding IsObjectModeActive}"/>
+
     <Button x:Name="TextureBrowserShowButton" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="56,10,0,0"
             Padding="9,5" Background="#E61A2027" Foreground="#D7E2EC"
             BorderBrush="#526170" BorderThickness="1" ZIndex="45"
             Content="Texture browser" Command="{Binding TextureEditor.ShowTextureBrowserCommand}"
             IsVisible="{Binding IsTextureBrowserPanelHidden}"/>
 
-    <!-- The active mode owns the visible panel. Both panels share the same
-         drag/resize behavior and remain independent of document state. -->
+    <!-- Panels float over the workspace or dock beside the viewport. -->
     <Canvas x:Name="PanelCanvas" ZIndex="50">
-      <Border x:Name="TextureBrowserDockPreview" IsVisible="False" IsHitTestVisible="False"
+      <Border x:Name="WorkspaceDockPreview" IsVisible="False" IsHitTestVisible="False"
               Background="#443A8FC2" BorderBrush="#B885CBEF"
               BorderThickness="2" CornerRadius="4"/>
       <Border x:Name="InspectorPanel" Width="330" Height="620"
@@ -114,18 +120,21 @@
                   PointerMoved="PanelDragHandle_OnPointerMoved"
                   PointerReleased="PanelDragHandle_OnPointerReleased"/>
           <Thumb x:Name="InspectorLeftResizeHandle" Width="7" HorizontalAlignment="Left"
+                 IsHitTestVisible="False"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="InspectorRightResizeHandle" Width="7" HorizontalAlignment="Right"
+                 IsHitTestVisible="False"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="InspectorBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
+                 IsHitTestVisible="False"
                  VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
         </Grid>
       </Border>
 
-      <Border x:Name="ToolsPanel" Width="292" MinHeight="260"
+      <Border x:Name="ToolsPanel" Width="292" Height="500" MinHeight="260"
               IsVisible="{Binding IsEditingToolsPanelVisible}">
         <Grid>
           <Grid IsVisible="{Binding IsTerrainModeActive}">
@@ -141,14 +150,30 @@
                   PointerMoved="PanelDragHandle_OnPointerMoved"
                   PointerReleased="PanelDragHandle_OnPointerReleased"/>
           <Thumb x:Name="ToolsLeftResizeHandle" Width="7" HorizontalAlignment="Left"
+                 IsHitTestVisible="False"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="ToolsRightResizeHandle" Width="7" HorizontalAlignment="Right"
+                 IsHitTestVisible="False"
                  Background="#35526170" Cursor="SizeWestEast"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="ToolsBottomResizeHandle" Height="7" HorizontalAlignment="Stretch"
+                 IsHitTestVisible="False"
                  VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
+        </Grid>
+      </Border>
+
+      <Border x:Name="ObjectToolsDockPanel" Width="850" Height="560" MinHeight="310"
+              IsVisible="{Binding IsObjectToolsDockPanelVisible}">
+        <Grid>
+          <local:ObjectEditingPanel/>
+          <Border x:Name="ObjectToolsDragHandle" Height="42" Margin="0,0,175,0"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                  Background="#01000000" Cursor="SizeAll"
+                  PointerPressed="PanelDragHandle_OnPointerPressed"
+                  PointerMoved="PanelDragHandle_OnPointerMoved"
+                  PointerReleased="PanelDragHandle_OnPointerReleased"/>
         </Grid>
       </Border>
 
@@ -185,26 +210,22 @@
         </Grid>
       </Border>
 
-      <!-- Kept outside the browser content so texture lists and scroll viewers can
-           never intercept the resize hit targets. -->
+      <!-- Resize handles sit above panel content so scrolling cannot intercept them. -->
       <Grid x:Name="TextureBrowserResizeLayer"
             IsVisible="{Binding IsTextureBrowserPanelVisible}">
           <Thumb x:Name="TextureBrowserLeftResizeHandle" Width="12" ZIndex="90"
                  HorizontalAlignment="Left" Background="#35526170" Cursor="SizeWestEast"
-                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="TextureBrowserRightResizeHandle" Width="12" ZIndex="90"
                  HorizontalAlignment="Right" Background="#35526170" Cursor="SizeWestEast"
-                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelHorizontalResize_OnDragDelta"/>
           <Thumb x:Name="TextureBrowserBottomResizeHandle" Height="12" ZIndex="90"
                  HorizontalAlignment="Stretch" VerticalAlignment="Bottom"
                  Background="#35526170" Cursor="SizeNorthSouth"
-                 IsVisible="{Binding TextureEditor.IsBrowserExpanded}"
                  DragDelta="PanelBottomResize_OnDragDelta"/>
           <Thumb x:Name="TextureBrowserTopResizeHandle" Height="12" ZIndex="90"
                  HorizontalAlignment="Stretch" VerticalAlignment="Top"
-                 Background="#35526170" Cursor="SizeNorthSouth" IsVisible="False"
+                 Background="#35526170" Cursor="SizeNorthSouth"
                  DragDelta="PanelTopResize_OnDragDelta"/>
           <Thumb x:Name="TextureBrowserBottomLeftResizeHandle"
                  Width="16" Height="16" ZIndex="100"
@@ -226,6 +247,68 @@
                  HorizontalAlignment="Right" VerticalAlignment="Top"
                  Background="#55526170" Cursor="TopRightCorner"
                  DragDelta="PanelCornerResize_OnDragDelta"/>
+      </Grid>
+
+      <Grid x:Name="InspectorResizeLayer" IsVisible="{Binding IsSelectionPanelVisible}">
+        <Thumb x:Name="InspectorOuterLeftResizeHandle" Width="12" ZIndex="90"
+               HorizontalAlignment="Left" Background="#35526170" Cursor="SizeWestEast"
+               DragDelta="PanelHorizontalResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorOuterRightResizeHandle" Width="12" ZIndex="90"
+               HorizontalAlignment="Right" Background="#35526170" Cursor="SizeWestEast"
+               DragDelta="PanelHorizontalResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorTopResizeHandle" Height="12" ZIndex="90"
+               VerticalAlignment="Top" Background="#35526170" Cursor="SizeNorthSouth"
+               DragDelta="PanelTopResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorOuterBottomResizeHandle" Height="12" ZIndex="90"
+               VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
+               DragDelta="PanelBottomResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorTopLeftResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Left" VerticalAlignment="Top"
+               Background="#55526170" Cursor="TopLeftCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorTopRightResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Right" VerticalAlignment="Top"
+               Background="#55526170" Cursor="TopRightCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorBottomLeftResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Left" VerticalAlignment="Bottom"
+               Background="#55526170" Cursor="BottomLeftCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="InspectorBottomRightResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Right" VerticalAlignment="Bottom"
+               Background="#55526170" Cursor="BottomRightCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+      </Grid>
+
+      <Grid x:Name="ToolsResizeLayer" IsVisible="{Binding IsToolsResizeLayerVisible}">
+        <Thumb x:Name="ToolsOuterLeftResizeHandle" Width="12" ZIndex="90"
+               HorizontalAlignment="Left" Background="#35526170" Cursor="SizeWestEast"
+               DragDelta="PanelHorizontalResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsOuterRightResizeHandle" Width="12" ZIndex="90"
+               HorizontalAlignment="Right" Background="#35526170" Cursor="SizeWestEast"
+               DragDelta="PanelHorizontalResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsTopResizeHandle" Height="12" ZIndex="90"
+               VerticalAlignment="Top" Background="#35526170" Cursor="SizeNorthSouth"
+               DragDelta="PanelTopResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsOuterBottomResizeHandle" Height="12" ZIndex="90"
+               VerticalAlignment="Bottom" Background="#35526170" Cursor="SizeNorthSouth"
+               DragDelta="PanelBottomResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsTopLeftResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Left" VerticalAlignment="Top"
+               Background="#55526170" Cursor="TopLeftCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsTopRightResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Right" VerticalAlignment="Top"
+               Background="#55526170" Cursor="TopRightCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsBottomLeftResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Left" VerticalAlignment="Bottom"
+               Background="#55526170" Cursor="BottomLeftCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
+        <Thumb x:Name="ToolsBottomRightResizeHandle" Width="16" Height="16" ZIndex="100"
+               HorizontalAlignment="Right" VerticalAlignment="Bottom"
+               Background="#55526170" Cursor="BottomRightCorner"
+               DragDelta="PanelCornerResize_OnDragDelta"/>
       </Grid>
     </Canvas>
 

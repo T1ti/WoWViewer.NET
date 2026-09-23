@@ -1,0 +1,249 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WTEditor.Avalonia.ViewModels"
+             xmlns:controls="using:WTEditor.Avalonia.Controls"
+             xmlns:icons="using:WTEditor.Avalonia.Presentation"
+             x:Class="WTEditor.Avalonia.Views.ObjectEditingPanel"
+             x:Name="Root"
+             x:DataType="vm:MainViewModel">
+  <UserControl.Styles>
+    <Style Selector="TabItem.object-tab">
+      <Setter Property="Height" Value="27"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Margin" Value="0,2,2,0"/>
+      <Setter Property="Padding" Value="9,3"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="#B9C7D3"/>
+      <Setter Property="Background" Value="#202A34"/>
+      <Setter Property="BorderBrush" Value="#43515E"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="4,4,0,0" Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Header}"
+                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              VerticalContentAlignment="Center"/>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="TabItem.object-tab:pointerover">
+      <Setter Property="Foreground" Value="#E8F1F7"/>
+      <Setter Property="Background" Value="#2A3642"/>
+    </Style>
+    <Style Selector="TabItem.object-tab:selected">
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="Background" Value="#11171C"/>
+      <Setter Property="BorderBrush" Value="#667B8D"/>
+      <Setter Property="BorderThickness" Value="1,1,1,0"/>
+      <Setter Property="Margin" Value="0,0,2,-1"/>
+      <Setter Property="ZIndex" Value="1"/>
+    </Style>
+    <Style Selector="ListBox.favorite-list">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.favorite-list ListBoxItem">
+      <Setter Property="Margin" Value="0,0,0,5"/>
+      <Setter Property="Padding" Value="6"/>
+      <Setter Property="Background" Value="#11171C"/>
+      <Setter Property="BorderBrush" Value="#394854"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+  </UserControl.Styles>
+  <UserControl.Resources>
+    <DataTemplate x:Key="AllObjectCard" x:DataType="vm:ObjectBrowserItemViewModel">
+      <Border Width="108" Height="108" Margin="0,0,6,6" Padding="7"
+              Background="#11171C" BorderBrush="#394854"
+              BorderThickness="1" CornerRadius="4" ToolTip.Tip="{Binding Path}">
+        <Grid RowDefinitions="*,Auto">
+          <Button Background="Transparent" BorderThickness="0" Padding="0"
+                  HorizontalContentAlignment="Stretch"
+                  Command="{Binding DataContext.ObjectEditor.ChooseObjectCommand, ElementName=Root}"
+                  CommandParameter="{Binding}">
+            <TextBlock Text="{Binding Filename}" Foreground="#EDF4F8" FontSize="11"
+                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
+          </Button>
+          <Button Grid.Row="1" Content="☆ Add to favorites" Padding="2,0"
+                  HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"
+                  Foreground="#E4B85C" FontSize="10" IsEnabled="{Binding !IsFavorite}"
+                  Command="{Binding DataContext.ObjectEditor.AddFavoriteCommand, ElementName=Root}"
+                  CommandParameter="{Binding}"/>
+        </Grid>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="FavoriteObjectCard" x:DataType="vm:ObjectBrowserItemViewModel">
+      <Grid ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Path}">
+        <Button Background="Transparent" BorderThickness="0" Padding="0"
+                HorizontalContentAlignment="Left"
+                Command="{Binding DataContext.ObjectEditor.ChooseObjectCommand, ElementName=Root}"
+                CommandParameter="{Binding}">
+          <TextBlock Text="{Binding Filename}" Foreground="#EDF4F8" FontSize="11"
+                     TextTrimming="CharacterEllipsis"/>
+        </Button>
+        <Button Grid.Column="1" Content="×" Padding="5,0" Background="Transparent"
+                BorderThickness="0" Foreground="#BFD0DC" ToolTip.Tip="Remove from favorites"
+                Command="{Binding DataContext.ObjectEditor.RemoveFavoriteCommand, ElementName=Root}"
+                CommandParameter="{Binding}"/>
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Border Background="#F51C232B" BorderBrush="#526170" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Grid Margin="12,7" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="7">
+        <TextBlock Text="Object tools" Foreground="#F3F7FA" FontSize="15" FontWeight="SemiBold"
+                   VerticalAlignment="Center"/>
+        <ToggleButton Grid.Column="1" Content="Show browser"
+                      IsChecked="{Binding ObjectEditor.IsBrowserVisible}" Padding="8,4"/>
+        <Button Grid.Column="2" Content="×" Width="26" Height="26" Padding="0"
+                Background="Transparent" Foreground="#BFD0DC" BorderThickness="0"
+                Command="{Binding ObjectEditor.TogglePanelCommand}" ToolTip.Tip="Hide object tools"/>
+      </Grid>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="300"/>
+          <ColumnDefinition Width="{Binding ObjectEditor.BrowserSplitterWidth}"/>
+          <ColumnDefinition Width="{Binding ObjectEditor.BrowserPanelWidth}"/>
+        </Grid.ColumnDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="11,4">
+          <StackPanel Spacing="8">
+            <Expander Header="Transform" IsExpanded="True" Background="#222C34"
+                      Foreground="#DCE7ED">
+              <StackPanel Margin="9" Spacing="8">
+                <TextBlock Text="{Binding Inspector.SelectionName}" Foreground="#FFFFFF"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="Select an object in the viewport to edit its transform."
+                           Foreground="#91A5B5" FontSize="11" TextWrapping="Wrap"
+                           IsVisible="{Binding !Inspector.HasSelection}"/>
+                <controls:TransformEditor IsVisible="{Binding Inspector.HasSelection}"
+                    PositionX="{Binding Inspector.PositionX}" PositionY="{Binding Inspector.PositionY}"
+                    PositionZ="{Binding Inspector.PositionZ}" RotationX="{Binding Inspector.RotationX}"
+                    RotationY="{Binding Inspector.RotationY}" RotationZ="{Binding Inspector.RotationZ}"
+                    UniformScale="{Binding Inspector.UniformScale}"
+                    IsScaleEnabled="{Binding Inspector.IsScaleEditable}"
+                    ScaleHelpText="{Binding Inspector.ScaleHelpText}"/>
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+        <GridSplitter Grid.Column="1" Background="#526170"
+                      IsVisible="{Binding ObjectEditor.IsBrowserVisible}" ResizeDirection="Columns"/>
+        <Grid Grid.Column="2" IsVisible="{Binding ObjectEditor.IsBrowserVisible}"
+              Margin="10,4,10,10" RowDefinitions="Auto,*" RowSpacing="7">
+          <TextBox Text="{Binding ObjectEditor.SearchText, Mode=TwoWay}"
+                   PlaceholderText="Search object filenames and paths…"/>
+          <TabControl Grid.Row="1" SelectedIndex="{Binding ObjectEditor.SelectedBrowserTabIndex, Mode=TwoWay}"
+                      FontSize="11" Background="Transparent" BorderThickness="0">
+            <TabItem Classes="object-tab" Header="All">
+              <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
+                <WrapPanel>
+                  <CheckBox Content="WMO" IsChecked="{Binding ObjectEditor.ShowWmo}"
+                            Foreground="#DCE7ED" VerticalAlignment="Center"/>
+                  <CheckBox Content="M2" IsChecked="{Binding ObjectEditor.ShowM2}"
+                            Margin="9,0,0,0" Foreground="#DCE7ED" VerticalAlignment="Center"/>
+                </WrapPanel>
+                <Grid Grid.Row="1" ColumnDefinitions="145,5,*">
+                  <TreeView ItemsSource="{Binding ObjectEditor.RootFolders}"
+                            SelectedItem="{Binding ObjectEditor.SelectedFolder, Mode=TwoWay}"
+                            Background="#11171C" BorderThickness="0">
+                    <TreeView.DataTemplates>
+                      <TreeDataTemplate DataType="vm:ObjectBrowserFolderViewModel" ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                          <PathIcon Data="{x:Static icons:EditorIcons.Folder}" Foreground="#E4B85C"
+                                    Width="14" Height="14"/>
+                          <TextBlock Text="{Binding Name}" Foreground="#DCE7ED" FontSize="10"/>
+                        </StackPanel>
+                      </TreeDataTemplate>
+                    </TreeView.DataTemplates>
+                  </TreeView>
+                  <GridSplitter Grid.Column="1" Background="#526170" ResizeDirection="Columns"/>
+                  <Grid Grid.Column="2" Margin="7,0,0,0" RowDefinitions="Auto,*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="↑" Width="27" Height="27" Padding="0"
+                              Command="{Binding ObjectEditor.NavigateToParentCommand}"/>
+                      <TextBlock Text="{Binding ObjectEditor.CurrentFolderPath}" Foreground="#BFD0DC"
+                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <ScrollViewer x:Name="FolderEntriesScroller" Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl Width="{Binding #FolderEntriesScroller.Bounds.Width}"
+                                  ItemsSource="{Binding ObjectEditor.FolderEntries}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemWidth="114" ItemHeight="114"/></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.DataTemplates>
+                        <DataTemplate DataType="vm:ObjectBrowserFolderViewModel">
+                          <Button Command="{Binding DataContext.ObjectEditor.NavigateFolderCommand, ElementName=Root}"
+                                  CommandParameter="{Binding}" Width="108" Height="108"
+                                  Margin="0,0,6,6" Background="#182028" Padding="7"
+                                  ToolTip.Tip="{Binding Path}">
+                            <StackPanel Spacing="6" VerticalAlignment="Center">
+                              <PathIcon Data="{x:Static icons:EditorIcons.Folder}" Foreground="#E4B85C"
+                                        Width="24" Height="24"/>
+                              <TextBlock Text="{Binding Name}" Foreground="#EDF4F8" FontSize="11"
+                                         TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                         TextAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                        </DataTemplate>
+                        <DataTemplate DataType="vm:ObjectBrowserItemViewModel">
+                          <ContentControl Content="{Binding}" ContentTemplate="{StaticResource AllObjectCard}"/>
+                        </DataTemplate>
+                      </ItemsControl.DataTemplates>
+                    </ItemsControl>
+                    </ScrollViewer>
+                    <Button Grid.Row="2" Content="Load more" HorizontalAlignment="Center"
+                            IsVisible="{Binding ObjectEditor.HasMoreEntries}"
+                            Command="{Binding ObjectEditor.LoadMoreEntriesCommand}"/>
+                  </Grid>
+                </Grid>
+                <StackPanel Grid.Row="2" Spacing="2">
+                  <TextBlock Text="Reading object files available in this client…"
+                             Foreground="#91A5B5" IsVisible="{Binding ObjectEditor.IsLoading}"/>
+                  <TextBlock Text="Filtering folders…" Foreground="#91A5B5"
+                             IsVisible="{Binding ObjectEditor.IsFiltering}"/>
+                </StackPanel>
+              </Grid>
+            </TabItem>
+            <TabItem Classes="object-tab" Header="{Binding ObjectEditor.FavoritesTabLabel}">
+              <Grid RowDefinitions="Auto,*" RowSpacing="7">
+                <TextBlock Text="Add objects from All with the star button."
+                           Foreground="#91A5B5" FontSize="11"/>
+                <ListBox Grid.Row="1" Classes="favorite-list"
+                         ItemsSource="{Binding ObjectEditor.FavoriteResults}"
+                         SelectedItem="{Binding ObjectEditor.SelectedFavorite}"
+                         ItemTemplate="{StaticResource FavoriteObjectCard}"/>
+              </Grid>
+            </TabItem>
+          </TabControl>
+        </Grid>
+      </Grid>
+      <Border Grid.Row="2" BorderBrush="#3E4B57" BorderThickness="0,1,0,0"
+              Background="#19232B" Padding="10,8">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="5">
+          <TextBlock Text="Clipboard" Foreground="#91A5B5" FontSize="11" Width="115"/>
+          <Border Grid.Column="1" Background="#11171C" BorderBrush="#394854"
+                  BorderThickness="1" CornerRadius="3" Padding="6,3">
+            <TextBlock Text="{Binding ObjectEditor.ClipboardLabel}" Foreground="#EDF4F8"
+                       FontSize="11" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding ObjectEditor.ClipboardLabel}"/>
+          </Border>
+          <TextBlock Grid.Row="1" Text="Selected Object(s)" Foreground="#91A5B5"
+                     FontSize="11" Width="115"/>
+          <Border Grid.Row="1" Grid.Column="1" Background="#11171C" BorderBrush="#394854"
+                  BorderThickness="1" CornerRadius="3" Padding="6,3">
+            <TextBlock Text="{Binding ObjectEditor.SelectedWorldObjectsLabel}"
+                       Foreground="#EDF4F8" FontSize="11" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding ObjectEditor.SelectedWorldObjectsLabel}"/>
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</UserControl>

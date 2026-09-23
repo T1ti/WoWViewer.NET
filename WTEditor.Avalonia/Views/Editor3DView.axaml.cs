@@ -340,6 +340,13 @@ public partial class Editor3DView : UserControl
         var vm = ViewModel;
         if (vm == null) return;
 
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && e.Key == Key.C)
+        {
+            vm.RequestCopySelection();
+            e.Handled = true;
+            return;
+        }
+
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && (e.Key == Key.Z || e.Key == Key.Y))
         {
             vm.Forward = false;

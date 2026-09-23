@@ -42,6 +42,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public event EventHandler<string>? AutomatedPerformanceCaptureSaved;
     public event EventHandler<string>? AutomatedPerformanceCaptureFailed;
     public event EventHandler<ObjectTransform>? SelectedObjectTransformRequested;
+    public event EventHandler? CopySelectionRequested;
     public event EventHandler<WmoPlacementSelection>? SelectedWmoPlacementRequested;
     public event EventHandler<WorldNavigationRequest>? WorldNavigationRequested;
     public event EventHandler<Vector2>? TerrainChunkTexturesRequested;
@@ -219,6 +220,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public void RequestTerrainChunkTextures(Vector2 mousePosition) =>
         TerrainChunkTexturesRequested?.Invoke(this, mousePosition);
+
+    public void RequestCopySelection() => CopySelectionRequested?.Invoke(this, EventArgs.Empty);
 
     public void PublishTerrainChunkTextures(IReadOnlyList<TerrainChunkTextureLayer> layers) =>
         TerrainChunkTexturesPicked?.Invoke(this, layers);

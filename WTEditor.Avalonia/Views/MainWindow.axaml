@@ -22,7 +22,7 @@
             <MenuItem Header="{Binding UndoLabel}" Command="{Binding UndoCommand}"/>
             <MenuItem Header="{Binding RedoLabel}" Command="{Binding RedoCommand}"/>
             <Separator/>
-            <MenuItem Header="Copy"/>
+            <MenuItem Header="Copy" Command="{Binding MainView.CopyWorldSelectionCommand}"/>
             <MenuItem Header="Paste"/>
           </MenuItem>
           <MenuItem Header="_Project">

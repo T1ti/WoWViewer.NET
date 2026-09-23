@@ -14,16 +14,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public SelectionInspectorViewModel Inspector { get; }
     public TerrainEditingViewModel TerrainEditor { get; }
     public TextureEditingViewModel TextureEditor { get; }
+    public ObjectEditingViewModel ObjectEditor { get; }
     public IReadOnlyList<EditorModeViewModel> Modes { get; }
     public UndoService UndoService { get; }
 
     public bool IsTerrainModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.TerrainEditing);
     public bool IsTextureModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.TextureEditing);
     public bool IsSelectionModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.Selection);
+    public bool IsObjectModeActive => ActiveMode.Capabilities.HasFlag(EditorModeCapabilities.ObjectEditing);
+    public bool IsObjectBrowserVisible => IsObjectModeActive && ObjectEditor.IsBrowserVisible;
     public bool IsSelectionPanelVisible => IsSelectionModeActive && Inspector.IsPanelVisible;
     public bool IsTerrainToolsPanelVisible => IsTerrainModeActive && TerrainEditor.IsPanelVisible;
     public bool IsTextureToolsPanelVisible => IsTextureModeActive && TextureEditor.IsPanelVisible;
+    public bool IsObjectToolsPanelVisible => IsObjectModeActive && ObjectEditor.IsPanelVisible;
+    public bool IsObjectToolsDockPanelVisible => IsObjectToolsPanelVisible && IsObjectToolsDocked;
     public bool IsEditingToolsPanelVisible => IsTerrainToolsPanelVisible || IsTextureToolsPanelVisible;
+    public bool IsToolsResizeLayerVisible => IsEditingToolsPanelVisible || IsObjectToolsDockPanelVisible;
     public bool IsTextureBrowserPanelVisible => IsTextureModeActive && TextureEditor.IsBrowserVisible;
     public bool IsTextureBrowserPanelHidden => IsTextureModeActive && !TextureEditor.IsBrowserVisible;
 
@@ -31,6 +37,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private EditorModeViewModel _activeMode;
     [ObservableProperty]
     private bool _isEditorTabVisible = true;
+    [ObservableProperty]
+    private bool _isObjectToolsDocked;
     [ObservableProperty]
     private ViewportRenderActivity _viewportRenderActivity = ViewportRenderActivity.Foreground;
     private ObjectTransform? _lastInspectorTransform;
@@ -40,18 +48,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         SelectionInspectorViewModel inspector,
         TerrainEditingViewModel terrainEditor,
         TextureEditingViewModel textureEditor,
+        ObjectEditingViewModel objectEditor,
         UndoService undoService)
     {
         ViewportVM = viewportViewModel;
         Inspector = inspector;
         TerrainEditor = terrainEditor;
         TextureEditor = textureEditor;
+        ObjectEditor = objectEditor;
         UndoService = undoService;
         Modes =
         [
             new EditorModeViewModel(EditorModeDefinitions.Selection),
             new EditorModeViewModel(EditorModeDefinitions.Terrain),
-            new EditorModeViewModel(EditorModeDefinitions.Texture)
+            new EditorModeViewModel(EditorModeDefinitions.Texture),
+            new EditorModeViewModel(EditorModeDefinitions.Object)
         ];
         _activeMode = Modes[0];
         _activeMode.IsActive = true;
@@ -60,17 +71,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ViewportVM.TerrainChunkTexturesPicked += OnTerrainChunkTexturesPicked;
         ViewportVM.DominantTerrainTexturePicked += OnDominantTerrainTexturePicked;
         ViewportVM.CurrentTerrainTileTexturesPicked += OnCurrentTerrainTileTexturesPicked;
+        ViewportVM.CopySelectionRequested += OnCopySelectionRequested;
         Inspector.TransformChanged += OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged += OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged += OnTerrainEditorPropertyChanged;
         TerrainEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
         TextureEditor.PropertyChanged += OnTextureEditorPropertyChanged;
+        ObjectEditor.PropertyChanged += OnObjectEditorPropertyChanged;
         TextureEditor.Brush.PropertyChanged += OnBrushSettingsPropertyChanged;
         TextureEditor.CurrentTerrainTileTexturesRequested += OnCurrentTerrainTileTexturesRequested;
         SyncToolSettings();
         ViewportVM.EditorMode = EditorModeId.Selection;
         Inspector.SetBuildProfile(ClientBuildProfile.From(ViewportVM.ClientConfiguration));
         Inspector.Inspect(ViewportVM.SelectedObject);
+        PublishWorldSelection(ViewportVM.SelectedObject);
         _lastInspectorTransform = ViewportVM.SelectedObject?.Transform;
     }
 
@@ -91,18 +105,44 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             mode.IsActive = ReferenceEquals(mode, value);
 
         ViewportVM.EditorMode = value.Definition.RendererMode;
+        if (IsObjectModeActive)
+            ObjectEditor.Activate();
         if (!value.Definition.Capabilities.HasFlag(EditorModeCapabilities.TextureEditing))
             TextureEditor.IsPickerModeActive = false;
         SyncActiveBrushSettings();
         OnPropertyChanged(nameof(IsTerrainModeActive));
         OnPropertyChanged(nameof(IsTextureModeActive));
         OnPropertyChanged(nameof(IsSelectionModeActive));
+        OnPropertyChanged(nameof(IsObjectModeActive));
+        OnPropertyChanged(nameof(IsObjectBrowserVisible));
         OnPropertyChanged(nameof(IsSelectionPanelVisible));
         OnPropertyChanged(nameof(IsTerrainToolsPanelVisible));
         OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
+        OnPropertyChanged(nameof(IsObjectToolsPanelVisible));
+        OnPropertyChanged(nameof(IsObjectToolsDockPanelVisible));
         OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+        OnPropertyChanged(nameof(IsToolsResizeLayerVisible));
         OnPropertyChanged(nameof(IsTextureBrowserPanelVisible));
         OnPropertyChanged(nameof(IsTextureBrowserPanelHidden));
+    }
+
+    partial void OnIsObjectToolsDockedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsObjectToolsDockPanelVisible));
+        OnPropertyChanged(nameof(IsToolsResizeLayerVisible));
+    }
+
+    private void OnObjectEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ObjectEditingViewModel.IsPanelVisible))
+        {
+            OnPropertyChanged(nameof(IsObjectToolsPanelVisible));
+            OnPropertyChanged(nameof(IsObjectToolsDockPanelVisible));
+            OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+            OnPropertyChanged(nameof(IsToolsResizeLayerVisible));
+        }
+        if (e.PropertyName == nameof(ObjectEditingViewModel.IsBrowserVisible))
+            OnPropertyChanged(nameof(IsObjectBrowserVisible));
     }
 
     private void OnTerrainEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -113,6 +153,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             OnPropertyChanged(nameof(IsTerrainToolsPanelVisible));
             OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+            OnPropertyChanged(nameof(IsToolsResizeLayerVisible));
         }
     }
 
@@ -124,6 +165,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             OnPropertyChanged(nameof(IsTextureToolsPanelVisible));
             OnPropertyChanged(nameof(IsEditingToolsPanelVisible));
+            OnPropertyChanged(nameof(IsToolsResizeLayerVisible));
         }
 
         if (e.PropertyName == nameof(TextureEditingViewModel.IsBrowserVisible))
@@ -175,8 +217,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (e.PropertyName == nameof(Editor3DViewModel.SelectedObject))
         {
             Inspector.Inspect(ViewportVM.SelectedObject);
+            PublishWorldSelection(ViewportVM.SelectedObject);
             _lastInspectorTransform = ViewportVM.SelectedObject?.Transform;
         }
+    }
+
+    private void PublishWorldSelection(EditorObjectSnapshot? selection)
+    {
+        ObjectEditor.SetWorldSelection(selection is null ? [] : [selection]);
+        CopyWorldSelectionCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanCopyWorldSelection() => ObjectEditor.HasWorldSelection;
+
+    [RelayCommand(CanExecute = nameof(CanCopyWorldSelection))]
+    private void CopyWorldSelection() => ObjectEditor.CopyWorldSelection();
+
+    private void OnCopySelectionRequested(object? sender, EventArgs e)
+    {
+        if (CanCopyWorldSelection())
+            CopyWorldSelection();
     }
 
     private void OnClientConfigurationChanged(object? sender, ClientConfiguration configuration) =>
@@ -235,11 +295,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ViewportVM.TerrainChunkTexturesPicked -= OnTerrainChunkTexturesPicked;
         ViewportVM.DominantTerrainTexturePicked -= OnDominantTerrainTexturePicked;
         ViewportVM.CurrentTerrainTileTexturesPicked -= OnCurrentTerrainTileTexturesPicked;
+        ViewportVM.CopySelectionRequested -= OnCopySelectionRequested;
         Inspector.TransformChanged -= OnInspectorTransformChanged;
         Inspector.WmoPlacementChanged -= OnInspectorWmoPlacementChanged;
         TerrainEditor.PropertyChanged -= OnTerrainEditorPropertyChanged;
         TerrainEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
         TextureEditor.PropertyChanged -= OnTextureEditorPropertyChanged;
+        ObjectEditor.PropertyChanged -= OnObjectEditorPropertyChanged;
         TextureEditor.Brush.PropertyChanged -= OnBrushSettingsPropertyChanged;
         TextureEditor.CurrentTerrainTileTexturesRequested -= OnCurrentTerrainTileTexturesRequested;
     }

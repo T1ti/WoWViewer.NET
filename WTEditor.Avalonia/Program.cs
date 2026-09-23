@@ -37,6 +37,8 @@ internal static class Program
         services.AddSingleton<ITerrainTextureThumbnailService, TerrainTextureThumbnailService>();
         services.AddSingleton<ITerrainTexturePreviewService, TerrainTexturePreviewService>();
         services.AddSingleton<IClientFileCatalogService, ClientFileCatalogService>();
+        services.AddSingleton<IObjectAssetCatalogService, ObjectAssetCatalogService>();
+        services.AddSingleton<ObjectClipboardService>();
         services.AddSingleton<IMapCatalogService, MapCatalogService>();
         services.AddSingleton<IMapTerrainMetadataCacheService, MapTerrainMetadataCacheService>();
         services.AddSingleton<WorldMapStartupPreloader>();
@@ -44,6 +46,7 @@ internal static class Program
         services.AddSingleton<SelectionInspectorViewModel>();
         services.AddSingleton<TerrainEditingViewModel>();
         services.AddSingleton<TextureEditingViewModel>();
+        services.AddSingleton<ObjectEditingViewModel>();
 
         services.AddSingleton<Editor3DViewModel>();
         services.AddSingleton<MainViewModel>();
