@@ -18,6 +18,7 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     private readonly List<M2AnimationDrawGroup> _drawGroups = [];
     private readonly Stack<M2AnimationDrawGroup> _availableGroups = [];
     private readonly M2AnimationDrawGroup[] _staticDrawGroups = [new()];
+    private readonly List<int> _retainedVisibleIndices = [];
 
     public M2AnimationPoseCache AnimationCache { get; } = new();
 
@@ -26,6 +27,15 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     {
         _staticDrawGroups[0].UseVisibleIndices(visibleIndices);
         return _staticDrawGroups;
+    }
+
+    /// <summary>Keep the culling result alive through both scene draw phases.</summary>
+    public IReadOnlyList<M2AnimationDrawGroup> RetainStaticDrawGroups(IReadOnlyList<int> visibleIndices)
+    {
+        _retainedVisibleIndices.Clear();
+        foreach (var index in visibleIndices)
+            _retainedVisibleIndices.Add(index);
+        return GetStaticDrawGroups(_retainedVisibleIndices);
     }
 
     public IReadOnlyList<M2AnimationDrawGroup> BuildAnimationGroups(

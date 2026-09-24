@@ -40,6 +40,9 @@
     <None Update="Shaders\m2_effect.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Shaders\glow.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Shaders\sky.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

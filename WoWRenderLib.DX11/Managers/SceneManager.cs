@@ -78,6 +78,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+        public bool EnableClientGlow { get; set; }
 
         private static uint NextSceneOwnerId() =>
             unchecked(Interlocked.Increment(ref nextSceneOwnerId));
@@ -155,11 +156,19 @@ namespace WoWRenderLib.DX11.Managers
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private readonly WorldLiquidRenderer _worldLiquidRenderer;
+        private readonly SceneGlowRenderer _glowRenderer;
         private readonly List<WmoLiquidInstance> _visibleWmoLiquids = [];
         private readonly SkyRenderer _skyRenderer;
         private readonly DebugBoundsRenderer _debugBoundsRenderer;
         private readonly M2DepthStateController _m2DepthStates;
         private readonly M2EffectRenderer _effectRenderer;
+
+        private readonly record struct M2MeshSubmission(
+            M2InstancePacket Packet,
+            ParsedDoodadBatch Model,
+            IReadOnlyList<M2AnimationDrawGroup> Groups,
+            bool HasOpaque,
+            bool HasTranslucent);
 
         private readonly record struct M2RibbonSubmission(
             M2Container Instance,
@@ -183,6 +192,7 @@ namespace WoWRenderLib.DX11.Managers
 
         private readonly List<M2RibbonSubmission> _ribbonSubmissions = [];
         private readonly List<M2ParticleSubmission> _particleSubmissions = [];
+        private readonly List<M2MeshSubmission> _m2MeshSubmissions = [];
 
         public SceneManager(
             ComPtr<ID3D11Device> device,
@@ -193,6 +203,7 @@ namespace WoWRenderLib.DX11.Managers
             _deviceContext = deviceContext;
             _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
             _worldLiquidRenderer = new WorldLiquidRenderer(device, deviceContext);
+            _glowRenderer = new SceneGlowRenderer(device, deviceContext);
             _skyRenderer = new SkyRenderer(device, deviceContext);
             _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
             _m2DepthStates = new M2DepthStateController(device, deviceContext);
@@ -561,6 +572,7 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             _worldLiquidRenderer.Initialize(shaderManager);
+            _glowRenderer.Initialize(shaderManager);
             _skyRenderer.Initialize(shaderManager, m2Shader);
             _effectRenderer.Initialize(shaderManager);
             _debugBoundsRenderer.Initialize(bboxShader);
@@ -796,6 +808,7 @@ namespace WoWRenderLib.DX11.Managers
 
             _deviceContext.OMSetRenderTargets(0, (ID3D11RenderTargetView**)null, (ID3D11DepthStencilView*)null);
             _deviceContext.ClearState();
+            _glowRenderer.ReleaseTargets();
 
             renderTargetView = default; // don't dispose, we dont own it!
             if (depthStencilView.Handle != null) { depthStencilView.Dispose(); depthStencilView = default; }
@@ -875,6 +888,7 @@ namespace WoWRenderLib.DX11.Managers
                 wmoShaderProgram = _shaderManager.GetOrCompileShader("wmo");
                 m2ShaderProgram = _shaderManager.GetOrCompileShader("m2");
                 _worldLiquidRenderer.RefreshShader();
+                _glowRenderer.RefreshShader();
                 _skyRenderer.RefreshShaders();
             }
 #endif
@@ -915,8 +929,12 @@ namespace WoWRenderLib.DX11.Managers
             ComPtr<ID3D11ShaderResourceView> nullSRV = default;
             _deviceContext.PSSetShaderResources(0, 1, ref nullSRV);
 
-            _deviceContext.ClearRenderTargetView(renderTargetView, ref backgroundColour[0]);
-            _deviceContext.OMSetRenderTargets(1, ref renderTargetView, depthStencilView);
+            var applyClientGlow = EnableClientGlow && _renderWidth > 0 && _renderHeight > 0;
+            var sceneTarget = applyClientGlow
+                ? _glowRenderer.GetSceneTarget(_renderWidth, _renderHeight)
+                : renderTargetView;
+            _deviceContext.ClearRenderTargetView(sceneTarget, ref backgroundColour[0]);
+            _deviceContext.OMSetRenderTargets(1, ref sceneTarget, depthStencilView);
             _deviceContext.ClearDepthStencilView(depthStencilView, (uint)ClearFlag.Depth, 1.0f, 0);
 
             _deviceContext.PSSetSamplers(0, 1, ref textureSampler);
@@ -1541,8 +1559,10 @@ namespace WoWRenderLib.DX11.Managers
             bool? lastM2TwoSided = null;
             var ribbonSubmissions = _ribbonSubmissions;
             var particleSubmissions = _particleSubmissions;
+            var m2MeshSubmissions = _m2MeshSubmissions;
             ribbonSubmissions.Clear();
             particleSubmissions.Clear();
+            m2MeshSubmissions.Clear();
 
             // Sample a shared animation frame only when a visible animated model needs it.
 
@@ -1631,7 +1651,7 @@ namespace WoWRenderLib.DX11.Managers
                 }
                 else
                 {
-                    animationGroups = packet.GetStaticDrawGroups(_visibleIndices);
+                    animationGroups = packet.RetainStaticDrawGroups(_visibleIndices);
                 }
 
                 if (AnimateModels && m2.animation is { } effectAnimation &&
@@ -1662,140 +1682,227 @@ namespace WoWRenderLib.DX11.Managers
                     }
                 }
 
-                var vertexBuffer = m2.vertexBuffer;
-                var indiceBuffer = m2.indiceBuffer;
-
-                _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
-                _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
-                VertexBufferBindings++;
-                IndexBufferBindings++;
-
-                foreach (var animationGroup in animationGroups)
+                var hasOpaque = false;
+                var hasTranslucent = false;
+                foreach (var batch in m2.submeshes)
                 {
-                    var pose = animationGroup.Pose;
-                    m2ConstantBuffer.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
-                    if (pose?.BonePalette is { } palette &&
-                        (!ReferenceEquals(_uploadedM2Pose, pose) ||
-                         _uploadedM2PoseVersion != pose.Version))
-                    {
-                        _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
-                            ref Unsafe.NullRef<Box>(), ref palette[0], 0, 0);
-                        ConstantBufferUpdates++;
-                        _uploadedM2Pose = pose;
-                        _uploadedM2PoseVersion = pose.Version;
-                    }
+                    if ((int)batch.blendType > 1 ||
+                        M2DepthPolicy.ForMaterial(
+                            m2.usesLegacyDepthFlags, batch.renderFlags) != M2DepthMode.Default)
+                        hasTranslucent = true;
+                    else
+                        hasOpaque = true;
+                }
+                m2MeshSubmissions.Add(new M2MeshSubmission(
+                    packet, m2, animationGroups, hasOpaque, hasTranslucent));
+            }
 
-                    for (int batchStart = 0; batchStart < animationGroup.Indices.Count; batchStart += MaxInstancesPerBatch)
-                    {
-                        int batchCount = Math.Min(MaxInstancesPerBatch, animationGroup.Indices.Count - batchStart);
+            void DrawM2Meshes(bool translucent)
+            {
+                foreach (var submission in m2MeshSubmissions)
+                {
+                    if (translucent ? !submission.HasTranslucent : !submission.HasOpaque)
+                        continue;
+                    var packet = submission.Packet;
+                    var m2 = submission.Model;
+                    var animationGroups = submission.Groups;
+                    var vertexBuffer = m2.vertexBuffer;
+                    var indiceBuffer = m2.indiceBuffer;
 
-                        unsafe
+                    _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
+                    _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
+                    VertexBufferBindings++;
+                    IndexBufferBindings++;
+
+                    foreach (var animationGroup in animationGroups)
+                    {
+                        var pose = animationGroup.Pose;
+                        m2ConstantBuffer.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
+                        if (pose?.BonePalette is { } palette &&
+                            (!ReferenceEquals(_uploadedM2Pose, pose) ||
+                             _uploadedM2PoseVersion != pose.Version))
                         {
-                            MappedSubresource mapped = default;
-                            SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-
-                            var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
-                            for (int i = 0; i < batchCount; i++)
-                                dest[i] = packet.WorldMatrices[animationGroup.Indices[batchStart + i]];
-
-                            _deviceContext.Unmap(instanceMatrixBuffer, 0);
-                            InstanceBufferMapCalls++;
+                            _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
+                                ref Unsafe.NullRef<Box>(), ref palette[0], 0, 0);
+                            ConstantBufferUpdates++;
+                            _uploadedM2Pose = pose;
+                            _uploadedM2PoseVersion = pose.Version;
                         }
 
-                        _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
-                        VertexBufferBindings++;
-
-                        for (int j = 0; j < m2.submeshes.Length; j++)
+                        for (int batchStart = 0; batchStart < animationGroup.Indices.Count; batchStart += MaxInstancesPerBatch)
                         {
-                            var batch = m2.submeshes[j];
-                            _m2DepthStates.Apply(m2.usesLegacyDepthFlags, batch.renderFlags);
+                            int batchCount = Math.Min(MaxInstancesPerBatch, animationGroup.Indices.Count - batchStart);
 
-                            var isTwoSided = IsM2TwoSided(batch.renderFlags);
-                            if (lastM2TwoSided != isTwoSided)
+                            unsafe
                             {
-                                _deviceContext.RSSetState(
-                                    isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
-                                lastM2TwoSided = isTwoSided;
+                                MappedSubresource mapped = default;
+                                SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+
+                                var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
+                                for (int i = 0; i < batchCount; i++)
+                                    dest[i] = packet.WorldMatrices[animationGroup.Indices[batchStart + i]];
+
+                                _deviceContext.Unmap(instanceMatrixBuffer, 0);
+                                InstanceBufferMapCalls++;
                             }
 
-                            m2ConstantBuffer.blendMode = batch.blendType;
-                            m2ConstantBuffer.alphaRef = ApplyBlendMode(
-                                GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
-                            m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
-                            m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
-                            if (pose is not null)
-                            {
-                                var material = pose.Materials[j];
-                                m2ConstantBuffer.materialColor = material.Color;
-                                m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
-                                m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
-                                m2ConstantBuffer.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
-                                m2ConstantBuffer.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
-                            }
-                            else
-                            {
-                                m2ConstantBuffer.materialColor = Vector4.One;
-                                m2ConstantBuffer.texMatrix1 = Matrix4x4.Identity;
-                                m2ConstantBuffer.texMatrix2 = Matrix4x4.Identity;
-                                m2ConstantBuffer.hasTexMatrix1 = 0;
-                                m2ConstantBuffer.hasTexMatrix2 = 0;
-                            }
+                            _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                            VertexBufferBindings++;
 
-                            if (m2ConstantBuffer.blendMode != lastM2BlendMode ||
-                                m2ConstantBuffer.vertexShader != lastM2VertexShader ||
-                                m2ConstantBuffer.pixelShader != lastM2PixelShader ||
-                                m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
-                                m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
-                                lastM2HasAnimation != (pose is not null) ||
-                                m2ConstantBuffer.materialColor != lastM2MaterialColor ||
-                                !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
-                                !m2ConstantBuffer.texMatrix2.Equals(lastM2TexMatrix2) ||
-                                m2ConstantBuffer.hasTexMatrix1 != lastM2HasTexMatrix1 ||
-                                m2ConstantBuffer.hasTexMatrix2 != lastM2HasTexMatrix2)
+                            for (int j = 0; j < m2.submeshes.Length; j++)
                             {
-                                _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
-                                ConstantBufferUpdates++;
-                                lastM2BlendMode = m2ConstantBuffer.blendMode;
-                                lastM2VertexShader = m2ConstantBuffer.vertexShader;
-                                lastM2PixelShader = m2ConstantBuffer.pixelShader;
-                                lastM2AlphaRef = m2ConstantBuffer.alphaRef;
-                                lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
-                                lastM2HasAnimation = pose is not null;
-                                lastM2MaterialColor = m2ConstantBuffer.materialColor;
-                                lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;
-                                lastM2TexMatrix2 = m2ConstantBuffer.texMatrix2;
-                                lastM2HasTexMatrix1 = m2ConstantBuffer.hasTexMatrix1;
-                                lastM2HasTexMatrix2 = m2ConstantBuffer.hasTexMatrix2;
-                            }
+                                var batch = m2.submeshes[j];
+                                var isTransparent = (int)batch.blendType > 1 ||
+                                    M2DepthPolicy.ForMaterial(
+                                        m2.usesLegacyDepthFlags, batch.renderFlags) != M2DepthMode.Default;
+                                if (isTransparent != translucent)
+                                    continue;
 
-                            for (int s = 0; s < batch.material.Length; s++)
-                                _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
-                            if (batch.material.Length > 0)
-                            {
-                                _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
-                                var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
-                                for (var s = 0; s < samplerCount; s++)
+                                _m2DepthStates.Apply(m2.usesLegacyDepthFlags, batch.renderFlags);
+
+                                var isTwoSided = IsM2TwoSided(batch.renderFlags);
+                                if (lastM2TwoSided != isTwoSided)
                                 {
-                                    var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
-                                        ? textureFlags[s]
-                                        : 0;
-                                    _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
+                                    _deviceContext.RSSetState(
+                                        isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
+                                    lastM2TwoSided = isTwoSided;
                                 }
-                                _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
-                                TextureBindingCalls++;
-                            }
 
-                            _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
-                            drawCalls++;
-                            M2DrawCalls++;
-                            M2SubmittedInstances += (uint)batchCount;
-                            var submittedIndices = (ulong)batch.numFaces * (uint)batchCount;
-                            submittedIndexCount += submittedIndices;
-                            M2SubmittedIndices += submittedIndices;
+                                m2ConstantBuffer.blendMode = batch.blendType;
+                                m2ConstantBuffer.alphaRef = ApplyBlendMode(
+                                    GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
+                                m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
+                                m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
+                                if (pose is not null)
+                                {
+                                    var material = pose.Materials[j];
+                                    m2ConstantBuffer.materialColor = material.Color;
+                                    m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
+                                    m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
+                                    m2ConstantBuffer.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
+                                    m2ConstantBuffer.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
+                                }
+                                else
+                                {
+                                    m2ConstantBuffer.materialColor = Vector4.One;
+                                    m2ConstantBuffer.texMatrix1 = Matrix4x4.Identity;
+                                    m2ConstantBuffer.texMatrix2 = Matrix4x4.Identity;
+                                    m2ConstantBuffer.hasTexMatrix1 = 0;
+                                    m2ConstantBuffer.hasTexMatrix2 = 0;
+                                }
+
+                                if (m2ConstantBuffer.blendMode != lastM2BlendMode ||
+                                    m2ConstantBuffer.vertexShader != lastM2VertexShader ||
+                                    m2ConstantBuffer.pixelShader != lastM2PixelShader ||
+                                    m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
+                                    m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
+                                    lastM2HasAnimation != (pose is not null) ||
+                                    m2ConstantBuffer.materialColor != lastM2MaterialColor ||
+                                    !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
+                                    !m2ConstantBuffer.texMatrix2.Equals(lastM2TexMatrix2) ||
+                                    m2ConstantBuffer.hasTexMatrix1 != lastM2HasTexMatrix1 ||
+                                    m2ConstantBuffer.hasTexMatrix2 != lastM2HasTexMatrix2)
+                                {
+                                    _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
+                                    ConstantBufferUpdates++;
+                                    lastM2BlendMode = m2ConstantBuffer.blendMode;
+                                    lastM2VertexShader = m2ConstantBuffer.vertexShader;
+                                    lastM2PixelShader = m2ConstantBuffer.pixelShader;
+                                    lastM2AlphaRef = m2ConstantBuffer.alphaRef;
+                                    lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
+                                    lastM2HasAnimation = pose is not null;
+                                    lastM2MaterialColor = m2ConstantBuffer.materialColor;
+                                    lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;
+                                    lastM2TexMatrix2 = m2ConstantBuffer.texMatrix2;
+                                    lastM2HasTexMatrix1 = m2ConstantBuffer.hasTexMatrix1;
+                                    lastM2HasTexMatrix2 = m2ConstantBuffer.hasTexMatrix2;
+                                }
+
+                                for (int s = 0; s < batch.material.Length; s++)
+                                    _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
+                                if (batch.material.Length > 0)
+                                {
+                                    _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
+                                    var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
+                                    for (var s = 0; s < samplerCount; s++)
+                                    {
+                                        var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
+                                            ? textureFlags[s]
+                                            : 0;
+                                        _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
+                                    }
+                                    _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
+                                    TextureBindingCalls++;
+                                }
+
+                                _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
+                                drawCalls++;
+                                M2DrawCalls++;
+                                M2SubmittedInstances += (uint)batchCount;
+                                var submittedIndices = (ulong)batch.numFaces * (uint)batchCount;
+                                submittedIndexCount += submittedIndices;
+                                M2SubmittedIndices += submittedIndices;
+                            }
                         }
                     }
                 }
             }
+
+            // Opaque M2 geometry writes depth before translucent water. Draw
+            // read-only/blended M2 materials after water so a nearer beam or
+            // particle is not tinted by water farther from the camera.
+            var m2AnimationBeforeSubmission = M2AnimationTimeMs;
+            var opaqueM2Started = Stopwatch.GetTimestamp();
+            DrawM2Meshes(false);
+            var opaqueM2SubmissionTimeMs = Stopwatch.GetElapsedTime(opaqueM2Started).TotalMilliseconds;
+            _m2DepthStates.EndPass();
+            ApplyBlendMode(0, ref currentBlendType);
+
+            gpuTimer?.BeginLiquids();
+            if (RenderLiquid)
+            {
+                var liquidStats = _worldLiquidRenderer.Render(
+                    camera,
+                    adtContainers,
+                    _visibleWmoLiquids,
+                    coarseCulledTileIndices,
+                    TerrainRenderDistance,
+                    ModelRenderDistance,
+                    Environment.TickCount64,
+                    LightDirection,
+                    AmbientColor,
+                    DiffuseColor,
+                    ActiveWorldLighting);
+                candidateLiquidBatches = liquidStats.CandidateBatches;
+                visibleLiquidBatches = liquidStats.VisibleBatches;
+                LiquidDrawCalls = liquidStats.DrawCalls;
+                LiquidSubmittedIndices = liquidStats.SubmittedIndices;
+                LiquidCullingTimeMs = liquidStats.CullingMilliseconds;
+                LiquidSubmissionTimeMs = liquidStats.SubmissionMilliseconds;
+                drawCalls += liquidStats.DrawCalls;
+                submittedIndexCount += liquidStats.SubmittedIndices;
+                CullingTimeMs += liquidStats.CullingMilliseconds;
+
+                _deviceContext.RSSetState(rasterizerState);
+                ComPtr<ID3D11DepthStencilState> nullLiquidDepthState = default;
+                _deviceContext.OMSetDepthStencilState(nullLiquidDepthState, 0);
+                currentBlendType = -1;
+            }
+            gpuTimer?.EndLiquids();
+
+            _m2DepthStates.BeginPass();
+            _deviceContext.RSSetState(wmoRasterizerState);
+            _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+            _deviceContext.IASetInputLayout(m2ShaderProgram.InputLayout);
+            _deviceContext.VSSetShader(m2ShaderProgram.VertexShader, ref nullClassInstance, 0);
+            _deviceContext.PSSetShader(m2ShaderProgram.PixelShader, ref nullClassInstance, 0);
+            _deviceContext.VSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
+            _deviceContext.PSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
+            _deviceContext.VSSetConstantBuffers(1, 1, ref m2BonePaletteConstantBuffer);
+            lastM2TwoSided = null;
+            var translucentM2Started = Stopwatch.GetTimestamp();
+            DrawM2Meshes(true);
+
             ribbonSubmissions.Sort(static (a, b) =>
                 b.DistanceSquared.CompareTo(a.DistanceSquared));
             if (ribbonSubmissions.Count > 0)
@@ -1861,48 +1968,14 @@ namespace WoWRenderLib.DX11.Managers
             }
             gpuTimer?.EndDoodads();
             _m2DepthStates.EndPass();
+            var translucentM2SubmissionTimeMs =
+                Stopwatch.GetElapsedTime(translucentM2Started).TotalMilliseconds;
             M2SubmissionTimeMs = Math.Max(
                 0,
-                Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - M2CullingTimeMs - M2AnimationTimeMs);
+                opaqueM2SubmissionTimeMs + translucentM2SubmissionTimeMs -
+                (M2AnimationTimeMs - m2AnimationBeforeSubmission));
 
             ApplyBlendMode(0, ref currentBlendType);
-
-            // Liquid is a separate pass for ADT MH2O and visible WMO groups.
-            // It remains available when terrain geometry is hidden.
-            gpuTimer?.BeginLiquids();
-            if (RenderLiquid)
-            {
-                var liquidStats = _worldLiquidRenderer.Render(
-                    camera,
-                    adtContainers,
-                    _visibleWmoLiquids,
-                    coarseCulledTileIndices,
-                    TerrainRenderDistance,
-                    ModelRenderDistance,
-                    Environment.TickCount64,
-                    LightDirection,
-                    AmbientColor,
-                    DiffuseColor,
-                    ActiveWorldLighting);
-                candidateLiquidBatches = liquidStats.CandidateBatches;
-                visibleLiquidBatches = liquidStats.VisibleBatches;
-                LiquidDrawCalls = liquidStats.DrawCalls;
-                LiquidSubmittedIndices = liquidStats.SubmittedIndices;
-                LiquidCullingTimeMs = liquidStats.CullingMilliseconds;
-                LiquidSubmissionTimeMs = liquidStats.SubmissionMilliseconds;
-                drawCalls += liquidStats.DrawCalls;
-                submittedIndexCount += liquidStats.SubmittedIndices;
-                CullingTimeMs += liquidStats.CullingMilliseconds;
-
-                // The liquid renderer owns transient state while submitting
-                // MH2O. Restore the scene's opaque raster/depth defaults even
-                // when the debug pass is disabled so later passes and callers
-                // observe the same state contract as before liquid support.
-                _deviceContext.RSSetState(rasterizerState);
-                ComPtr<ID3D11DepthStencilState> nullLiquidDepthState = default;
-                _deviceContext.OMSetDepthStencilState(nullLiquidDepthState, 0);
-            }
-            gpuTimer?.EndLiquids();
 
             // Debug bounds rendering
             passStarted = Stopwatch.GetTimestamp();
@@ -1925,6 +1998,12 @@ namespace WoWRenderLib.DX11.Managers
             }
             gpuTimer?.EndDebug();
             DebugSubmissionTimeMs = Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds;
+
+            if (applyClientGlow)
+            {
+                _glowRenderer.Composite(renderTargetView);
+                drawCalls += 4;
+            }
 
             //swapchain.Present(1, 0);
 
@@ -1975,6 +2054,7 @@ namespace WoWRenderLib.DX11.Managers
                 _effectRenderer.Dispose();
                 _skyRenderer.Dispose();
                 _worldLiquidRenderer.Dispose();
+                _glowRenderer.Dispose();
                 foreach (var bounds in tileSceneBounds.Values)
                     bounds.Dispose();
                 tileSceneBounds.Clear();

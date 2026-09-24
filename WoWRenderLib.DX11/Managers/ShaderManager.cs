@@ -140,6 +140,8 @@ namespace WoWRenderLib.DX11.Managers
                         GetOrCompileShader("sky", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("liquid"))
                         GetOrCompileShader("liquid", true);
+                    else if (Path.GetFileNameWithoutExtension(file).StartsWith("glow"))
+                        GetOrCompileShader("glow", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
                         GetOrCompileShader("debug", true);
 
@@ -760,9 +762,9 @@ namespace WoWRenderLib.DX11.Managers
                     );
                 }
             }
-            else if (type == "sky")
+            else if (type is "sky" or "glow")
             {
-                // The fullscreen sky triangle is generated from SV_VertexID,
+                // Fullscreen triangles are generated from SV_VertexID,
                 // so Direct3D must receive a null input layout for this shader.
             }
             else

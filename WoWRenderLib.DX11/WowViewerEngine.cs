@@ -916,6 +916,11 @@ namespace WoWRenderLib.DX11
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
+                    sceneManager.EnableClientGlow =
+                        fileSystem.Version.Major == 3 &&
+                        fileSystem.Version.Minor == 3 &&
+                        fileSystem.Version.Patch == 5;
+
                     try
                     {
                         var catalog = WorldLightingCatalogLoader.Load(
@@ -998,6 +1003,8 @@ namespace WoWRenderLib.DX11
                     cancellationToken.ThrowIfCancellationRequested();
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
+
+                    sceneManager.EnableClientGlow = false;
 
                     try
                     {

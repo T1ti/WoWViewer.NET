@@ -309,6 +309,12 @@ internal sealed class GpuFrameTimer : IDisposable
                     LatestDoodadMilliseconds = ElapsedMilliseconds(doodadStart, doodadEnd, disjoint.Frequency);
                     LatestTerrainMilliseconds = ElapsedMilliseconds(terrainStart, terrainEnd, disjoint.Frequency);
                     LatestLiquidMilliseconds = ElapsedMilliseconds(liquidStart, liquidEnd, disjoint.Frequency);
+                    // The liquid pass sits between opaque and translucent M2
+                    // submissions. Exclude its nested interval from M2 time.
+                    if (LatestDoodadMilliseconds is { } doodadMilliseconds &&
+                        LatestLiquidMilliseconds is { } liquidMilliseconds &&
+                        doodadStart <= liquidStart && liquidEnd <= doodadEnd)
+                        LatestDoodadMilliseconds = Math.Max(0, doodadMilliseconds - liquidMilliseconds);
                     LatestDebugMilliseconds = ElapsedMilliseconds(debugStart, debugEnd, disjoint.Frequency);
                 }
             }
