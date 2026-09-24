@@ -4,6 +4,7 @@ using DBCD;
 using DBCD.Providers;
 using Fs = WoWLib.Filesystem;
 using WoWRenderLib.Providers;
+using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Loaders;
@@ -26,30 +27,78 @@ public static class WorldLightingCatalogLoader
             new WowlibDBCProvider(fileSystem),
             new GithubDBDProvider(useCache: true));
 
-        var lights = ReadLights(database.Load("Light", buildName));
-        var timedData = ReadLightData(database.Load("LightData", buildName));
+        var legacyBands = LegacyLightBandLoader.UsesLegacyBands(buildName);
+        var lights = ReadLights(database.Load("Light", buildName), legacyBands);
+        var timedData = legacyBands
+            ? LegacyLightBandLoader.Load(
+                database.Load("LightIntBand", buildName),
+                database.Load("LightFloatBand", buildName),
+                lights.SelectMany(static light => light.LightParamIds))
+            : ReadLightData(database.Load("LightData", buildName));
         var parameters = ReadLightParams(database.Load("LightParams", buildName));
-        var skyboxes = ReadLightSkyboxes(database, buildName);
+        var skyboxes = ReadLightSkyboxes(database, fileSystem, buildName);
         var zones = ReadZoneLights(database, buildName);
 
-        var catalog = new WorldLightingCatalog(lights, zones, timedData, parameters, skyboxes);
+        foreach (var paramId in lights.SelectMany(static light => light.LightParamIds)
+                     .Where(static id => id > 0).Distinct())
+        {
+            if (!parameters.ContainsKey(paramId))
+                Console.Error.WriteLine($"LightParams entry ID={paramId} referenced by Light is missing.");
+        }
+        foreach (var skyboxId in parameters.Values.Select(static value => value.LightSkyboxId)
+                     .Where(static id => id > 0).Distinct())
+        {
+            if (!skyboxes.ContainsKey(skyboxId))
+                Console.Error.WriteLine($"LightSkybox entry ID={skyboxId} referenced by LightParams is missing.");
+            else if (skyboxes[skyboxId].SkyboxFileDataId == 0)
+                Console.Error.WriteLine($"LightSkybox entry ID={skyboxId} has no readable model asset.");
+        }
+        var lightIds = lights.Select(static light => light.Id).ToHashSet();
+        foreach (var zone in zones)
+        {
+            if (!lightIds.Contains(zone.LightId))
+                Console.Error.WriteLine(
+                    $"Light entry ID={zone.LightId} referenced by ZoneLight ID={zone.Id} is missing.");
+            if (zone.Points.Count < 3)
+                Console.Error.WriteLine(
+                    $"ZoneLight ID={zone.Id} has fewer than three ZoneLightPoint entries.");
+        }
+
+        var catalog = new WorldLightingCatalog(
+            lights, zones, timedData, parameters, skyboxes);
         Console.WriteLine(
             $"Loaded dynamic world lighting by column name: {catalog.LightCount} Light rows, " +
-            $"{catalog.ZoneLightCount} ZoneLight volumes, {catalog.TimedDataCount} LightData keys.");
+            $"{catalog.ZoneLightCount} ZoneLight volumes, {catalog.TimedDataCount} " +
+            $"{(legacyBands ? "LightIntBand/LightFloatBand" : "LightData")} keys.");
         return catalog;
     }
 
-    private static IReadOnlyList<WorldLightDefinition> ReadLights(IDBCDStorage storage)
+    private static IReadOnlyList<WorldLightDefinition> ReadLights(IDBCDStorage storage, bool legacyBands)
     {
         var columns = new NamedColumns(storage, "Light");
         columns.Require("ContinentID", "GameCoords", "GameFalloffStart", "GameFalloffEnd", "LightParamsID");
         return storage.Values.Select(row => new WorldLightDefinition(
             columns.ReadId(row),
             columns.ReadInt(row, "ContinentID"),
-            columns.ReadVector3(row, "GameCoords"),
-            columns.ReadFloat(row, "GameFalloffStart"),
-            columns.ReadFloat(row, "GameFalloffEnd"),
+            legacyBands
+                ? LegacyLightPosition(columns.ReadVector3(row, "GameCoords"))
+                : columns.ReadVector3(row, "GameCoords"),
+            columns.ReadFloat(row, "GameFalloffStart") / (legacyBands ? 36f : 1f),
+            columns.ReadFloat(row, "GameFalloffEnd") / (legacyBands ? 36f : 1f),
             columns.ReadIntArray(row, "LightParamsID"))).ToArray();
+    }
+
+    internal static Vector3 LegacyLightPosition(Vector3 dbcPosition)
+    {
+        if (dbcPosition == Vector3.Zero)
+            return Vector3.Zero;
+        // Pre-LightData Light.dbc stores inches from the map's northwest
+        // corner in X/Z/Y order. Terrain and the camera use center-origin XYZ.
+        const float worldOrigin = 17066.666f;
+        return new Vector3(
+            worldOrigin - dbcPosition.Z / 36f,
+            worldOrigin - dbcPosition.X / 36f,
+            dbcPosition.Y / 36f);
     }
 
     private static IReadOnlyList<WorldLightingData> ReadLightData(IDBCDStorage storage)
@@ -152,12 +201,26 @@ public static class WorldLightingCatalogLoader
 
     private static IReadOnlyDictionary<int, WorldSkyboxDefinition> ReadLightSkyboxes(
         DBCD.DBCD database,
+        Fs.FileSystem fileSystem,
         string buildName)
     {
         try
         {
             var storage = database.Load("LightSkybox", buildName);
             var columns = new NamedColumns(storage, "LightSkybox");
+            if (LegacyLightBandLoader.UsesLegacyBands(buildName))
+            {
+                columns.Require("Name");
+                return storage.Values.ToDictionary(
+                    columns.ReadId,
+                    row => new WorldSkyboxDefinition(
+                        columns.ReadId(row),
+                        columns.ReadString(row, "Name"),
+                        columns.TryReadInt(row, "Flags", 0),
+                        ResolveLegacySkybox(fileSystem, columns.ReadString(row, "Name")),
+                        0));
+            }
+
             columns.Require("SkyboxFileDataID");
             return storage.Values.ToDictionary(
                 columns.ReadId,
@@ -174,6 +237,19 @@ public static class WorldLightingCatalogLoader
                 $"LightSkybox model overrides are unavailable for build {buildName}: {exception.Message}");
             return new Dictionary<int, WorldSkyboxDefinition>();
         }
+    }
+
+    private static uint ResolveLegacySkybox(Fs.FileSystem fileSystem, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return 0;
+        var path = name.Trim().Replace('\\', '/');
+        var id = WowlibFileSystem.ResolveAssetId(fileSystem, path);
+        if (id == 0 && path.EndsWith(".mdx", StringComparison.OrdinalIgnoreCase))
+            id = WowlibFileSystem.ResolveAssetId(fileSystem, Path.ChangeExtension(path, ".m2"));
+        if (id == 0)
+            Console.Error.WriteLine($"LightSkybox model '{name}' is missing from the client files.");
+        return id;
     }
 
     private static IReadOnlyList<ZoneLightDefinition> ReadZoneLights(

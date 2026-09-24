@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Numerics;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 
 namespace WTEditor.Avalonia.Tests;
@@ -9,6 +10,62 @@ namespace WTEditor.Avalonia.Tests;
 [TestClass]
 public sealed class WorldLightingSmokeTests
 {
+    [TestMethod]
+    public void LegacyLightBandsUseBuildBoundaryAndIndependentKeyTimes()
+    {
+        Assert.IsTrue(LegacyLightBandLoader.UsesLegacyBands("3.3.5.12340"));
+        Assert.IsTrue(LegacyLightBandLoader.UsesLegacyBands("4.3.4.15595"));
+        Assert.IsFalse(LegacyLightBandLoader.UsesLegacyBands("5.0.1.15596"));
+        Assert.AreEqual(Vector3.Zero, WorldLightingCatalogLoader.LegacyLightPosition(Vector3.Zero));
+        var localPosition = WorldLightingCatalogLoader.LegacyLightPosition(
+            new Vector3(612096, 3600, 998400));
+        Assert.AreEqual(17066.666f - 998400f / 36f, localPosition.X, 0.001f);
+        Assert.AreEqual(17066.666f - 612096f / 36f, localPosition.Y, 0.001f);
+        Assert.AreEqual(100f, localPosition.Z, 0.001f);
+
+        const int paramId = 2;
+        var intRows = Enumerable.Range(19, 18)
+            .Select(id => new LegacyLightBandLoader.BandRow(id, 1, [0], [0x00112233]))
+            .ToArray();
+        intRows[0] = new(19, 2, [0, 1440], [0x00ff0000, 0x000000ff]);
+        intRows[1] = new(20, 2, [720, 2160], [0x0000ff00, 0x000000ff]);
+        intRows[2] = new(21, 1, [0], [unchecked((int)0xff112233)]);
+        intRows[14] = new(33, 1, [0], [0x00123456]);
+        intRows[17] = new(36, 1, [0], [0x00abcdef]);
+
+        var floatRows = Enumerable.Range(7, 6)
+            .Select(id => new LegacyLightBandLoader.BandRow(id, 1, [0], [0.5]))
+            .ToArray();
+        floatRows[0] = new(7, 2, [0, 1440], [100, 300]);
+        floatRows[3] = new(10, 1, [0], [0.75]);
+
+        var data = LegacyLightBandLoader.Build(intRows, floatRows, [paramId]);
+        Assert.AreEqual(4, data.Count);
+        var noon = data.Single(row => row.Time == 1440);
+        var morning = data.Single(row => row.Time == 720);
+        var midnight = data.Single(row => row.Time == 0);
+
+        Assert.AreEqual(paramId, noon.LightParamId);
+        Assert.AreEqual(0x000000ffu, noon.DirectColorPacked);
+        Assert.AreEqual(0x00800080u, morning.DirectColorPacked);
+        Assert.AreEqual(0x00008080u, midnight.AmbientColorPacked);
+        Assert.AreEqual(new Vector3(0x11 / 255f, 0x22 / 255f, 0x33 / 255f), noon.SkyTopColor);
+        Assert.AreEqual(0x00123456u, noon.OceanCloseColorPacked);
+        Assert.AreEqual(0x00abcdefu, noon.RiverFarColorPacked);
+        Assert.AreEqual(200f, morning.FogEnd, 0.001f);
+        Assert.AreEqual(0.75f, noon.CloudDensity, 0.001f);
+        Assert.IsTrue(noon.HasSkyColorData);
+        Assert.IsTrue(noon.HasLiquidColorData);
+    }
+
+    [TestMethod]
+    public void LegacyLightBandRejectsInvalidEntryCount()
+    {
+        var bad = new LegacyLightBandLoader.BandRow(1, 17, new int[16], new double[16]);
+        Assert.ThrowsException<InvalidDataException>(() =>
+            LegacyLightBandLoader.Build([bad], [], [1]));
+    }
+
     [TestMethod]
     public void LightDataSnapshotPreservesValuesAndUnpacksWowColors()
     {
@@ -139,14 +196,18 @@ public sealed class WorldLightingSmokeTests
     {
         var publication = new WorldNavigationPublication();
         var selected = new WorldNavigationTarget(1, 456, 10, 11, true);
-        var defaultMap = new WorldNavigationTarget(0, 123, 35.5, 24.5, false);
+        var defaultMap = new WorldNavigationTarget(
+            0, 123, 35.5, 24.5, false, PreserveCameraPosition: true);
 
         publication.PublishIfEmpty(defaultMap);
         Assert.AreSame(defaultMap, publication.ConsumeWhenReady(isReady: true));
+        Assert.AreEqual(0, defaultMap.MapId);
+        Assert.IsTrue(defaultMap.PreserveCameraPosition);
 
         publication.Publish(selected);
         publication.PublishIfEmpty(defaultMap);
         Assert.AreSame(selected, publication.ConsumeWhenReady(isReady: true));
+        Assert.IsFalse(selected.PreserveCameraPosition);
     }
 
     [TestMethod]
@@ -200,6 +261,26 @@ public sealed class WorldLightingSmokeTests
         Assert.AreEqual(1f, sample.Value.LightDirection.Length(), 0.0001f);
         Assert.IsTrue(sample.Value.LightDirection.Z > 0f);
         Assert.AreEqual(0, sample.Value.Time);
+    }
+
+    [TestMethod]
+    public void NoonSunDirectionPointsTowardLightInRendererAxes()
+    {
+        var noon = WorldLightingCatalog.CalculateLightDirection(1440);
+
+        Assert.AreEqual(0.5613f, noon.X, 0.01f);
+        Assert.AreEqual(0.5613f, noon.Y, 0.01f);
+        Assert.AreEqual(0.6082f, noon.Z, 0.01f);
+        Assert.IsTrue(Vector3.Dot(noon, WorldLightingSettings.Defaults.LightDirection) > 0.99f);
+
+        var catalog = new WorldLightingCatalog(
+            [new WorldLightDefinition(1, 42, Vector3.Zero, 0, 0, [7])],
+            [],
+            [CreateData(1, 7, 1440, Pack(255, 255, 255))],
+            new Dictionary<int, WorldLightParams> { [7] = new(1, 1, 1, 1, true) });
+        var sample = catalog.Evaluate(42, Vector3.Zero, 1440);
+        Assert.IsTrue(sample.HasValue);
+        Assert.AreEqual(noon, sample.Value.LightDirection);
     }
 
     [TestMethod]

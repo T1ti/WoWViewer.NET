@@ -15,7 +15,8 @@ cbuffer PerObject : register(b0)
     uint renderTerrainGrid;
     float4 terrainGridSettings;
     uint renderTerrainWireframe;
-    float3 terrainWireframePadding;
+    uint useLegacyLighting;
+    float2 terrainWireframePadding;
     float3 brushCenter;
     float brushOuterRadius;
     float brushFalloffRadius;
@@ -89,6 +90,7 @@ struct VSOut
     nointerpolation uint ChunkIndex : TEXCOORD1;
     float3 TerrainPosition : TEXCOORD2;
     noperspective float3 Barycentric : TEXCOORD3;
+    float3 LegacyLighting : TEXCOORD4;
 };
 
 float2 TerrainTexCoordFromVertexId(uint vertexId)
@@ -133,6 +135,13 @@ VSOut VS_Main(VSIn input, uint vertexId : SV_VertexID)
     float3x3 normalMatrix = (float3x3) model_matrix;
     o.Normal = normalize(mul(normalMatrix, input.normal));
     o.VColor = input.color;
+    o.LegacyLighting = float3(1.0f, 1.0f, 1.0f);
+    if (useLegacyLighting != 0)
+    {
+        float legacyDiffuse = max(dot(o.Normal, normalize(lightDirection)), 0.0f);
+        o.LegacyLighting = saturate(
+            (ambientColor + diffuseColor * legacyDiffuse) * input.color.rgb * 2.0f);
+    }
     o.ChunkIndex = vertexId / 145;
     o.TerrainPosition = posOffset;
     o.Barycentric = float3(0.0f, 0.0f, 0.0f);
@@ -375,9 +384,19 @@ float4 PS_Main(VSOut i) : SV_Target
     }
 #endif
 
-    float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
-    float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
-    float3 shadedColor = final_color * in_vertexColor.rgb * 2.0f * lighting;
+    float3 shadedColor;
+    if (useLegacyLighting != 0)
+    {
+        // WotLK's terrain program clamps the light * vertex-colour product
+        // at each vertex, then interpolates that term across the triangle.
+        shadedColor = final_color * i.LegacyLighting;
+    }
+    else
+    {
+        float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
+        float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
+        shadedColor = final_color * in_vertexColor.rgb * 2.0f * lighting;
+    }
     float chunkMask = 0.0f;
     float adtMask = 0.0f;
     if (renderTerrainGrid != 0)

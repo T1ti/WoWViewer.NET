@@ -119,8 +119,7 @@ VSOutput VS_Main(VSInput input)
     // M2 instances carry the model transform in the second vertex stream.
     // Use it for normals as well as positions; using model_matrix (identity)
     // here caused lighting to ignore per-instance rotation and scale.
-    float4x4 modelViewMatrix = mul(view_matrix, instanceMatrix);
-    float3x3 mv3 = (float3x3) modelViewMatrix;
+    float3x3 mv3 = (float3x3) instanceMatrix;
 
     float3x3 invMV3;
     invMV3[0][0] = mv3[1][1] * mv3[2][2] - mv3[1][2] * mv3[2][1];
@@ -140,6 +139,7 @@ VSOutput VS_Main(VSInput input)
 
     float3x3 normalMatrix = transpose(invMV3);
     output.Normal = normalize(mul(normalMatrix, modelNormal));
+    float3 viewNormal = normalize(mul((float3x3)view_matrix, output.Normal));
 
     // Wisp's Diffuse_* vertex shaders carry a clamped lighting term into the
     // combiner stage. Keep the same neutral ambient/diffuse balance here so
@@ -150,7 +150,7 @@ VSOutput VS_Main(VSInput input)
     float4x4 textureMatrix1 = hasTexMatrix1 != 0 ? texMatrix1 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
     float4x4 textureMatrix2 = hasTexMatrix2 != 0 ? texMatrix2 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 
-    float2 envCoord = posToTexCoord(mul(view_matrix, worldPos).xyz, output.Normal);
+    float2 envCoord = posToTexCoord(mul(view_matrix, worldPos).xyz, viewNormal);
     output.EdgeFade = 1.0;
 
     output.TexCoord1 = input.texCoord1;

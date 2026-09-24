@@ -105,11 +105,13 @@ namespace WoWRenderLib.DX11
         public double? GpuWorldModelTimeMs { get; internal set; }
         public double? GpuDoodadTimeMs { get; internal set; }
         public double? GpuTerrainTimeMs { get; internal set; }
+        public double? GpuLiquidTimeMs { get; internal set; }
         public double? GpuDebugTimeMs { get; internal set; }
         public double SceneSetupTimeMs { get; internal set; }
         public double WmoCullingTimeMs { get; internal set; }
         public double WmoSubmissionTimeMs { get; internal set; }
         public double M2CullingTimeMs { get; internal set; }
+        public double M2AnimationTimeMs { get; internal set; }
         public double M2SubmissionTimeMs { get; internal set; }
         public double TerrainCullingTimeMs { get; internal set; }
         public double TerrainSubmissionTimeMs { get; internal set; }
@@ -186,6 +188,7 @@ namespace WoWRenderLib.DX11
         private int _lastWorldLightingTime = -1;
         private int _currentMapId = -1;
         private bool _dynamicWorldLightingEnabled;
+        private int _fixedWorldLightingTime = 1440;
         private int _contentInitializationComplete;
 
         private readonly Dictionary<string, (string buildConfig, string cdnConfig)> _productList = new();
@@ -295,6 +298,7 @@ namespace WoWRenderLib.DX11
             }
 
             _dynamicWorldLightingEnabled = false;
+            _fixedWorldLightingTime = checked((int)lighting.Time);
             var catalog = _worldLightingCatalog.Current;
             if (catalog != null &&
                 _currentMapId >= 0 &&
@@ -304,7 +308,7 @@ namespace WoWRenderLib.DX11
                 var evaluated = catalog.Evaluate(
                     _currentMapId,
                     worldPosition,
-                    checked((int)lighting.Time));
+                    _fixedWorldLightingTime);
                 if (evaluated.HasValue)
                 {
                     ApplyEvaluatedWorldLighting(evaluated.Value, isDynamic: false);
@@ -698,6 +702,7 @@ namespace WoWRenderLib.DX11
                     Stats.WmoCullingTimeMs = sceneManager.WmoCullingTimeMs;
                     Stats.WmoSubmissionTimeMs = sceneManager.WmoSubmissionTimeMs;
                     Stats.M2CullingTimeMs = sceneManager.M2CullingTimeMs;
+                    Stats.M2AnimationTimeMs = sceneManager.M2AnimationTimeMs;
                     Stats.M2SubmissionTimeMs = sceneManager.M2SubmissionTimeMs;
                     Stats.TerrainCullingTimeMs = sceneManager.TerrainCullingTimeMs;
                     Stats.TerrainSubmissionTimeMs = sceneManager.TerrainSubmissionTimeMs;
@@ -752,6 +757,7 @@ namespace WoWRenderLib.DX11
             Stats.GpuWorldModelTimeMs = _gpuFrameTimer?.LatestWorldModelMilliseconds;
             Stats.GpuDoodadTimeMs = _gpuFrameTimer?.LatestDoodadMilliseconds;
             Stats.GpuTerrainTimeMs = _gpuFrameTimer?.LatestTerrainMilliseconds;
+            Stats.GpuLiquidTimeMs = _gpuFrameTimer?.LatestLiquidMilliseconds;
             Stats.GpuDebugTimeMs = _gpuFrameTimer?.LatestDebugMilliseconds;
             var accountedTime = Stats.MutexWaitTimeMs + Stats.TileUpdateTimeMs +
                 Stats.AssetUploadTimeMs + Stats.SceneRenderTimeMs;
@@ -908,20 +914,33 @@ namespace WoWRenderLib.DX11
                     if (_generation != Volatile.Read(ref _activeGeneration))
                         return;
 
+                    try
+                    {
+                        var catalog = WorldLightingCatalogLoader.Load(
+                            fileSystem,
+                            $"{fileSystem.Version.Major}.{fileSystem.Version.Minor}." +
+                            $"{fileSystem.Version.Patch}.{fileSystem.Version.Build}");
+                        _worldLightingCatalog.Publish(catalog);
+                    }
+                    catch (Exception lightingException)
+                    {
+                        Console.Error.WriteLine(
+                            $"Dynamic client lighting is unavailable for {fileSystem.Version}; " +
+                            $"renderer defaults remain active. {lightingException}");
+                    }
+
                     var defaultWdt = WowlibFileSystem.ResolveAssetId(
                         fileSystem, "world/maps/Azeroth/Azeroth.wdt");
                     if (defaultWdt == 0)
                         throw new FileNotFoundException("The MPQ client has no Azeroth WDT to load as the initial world.");
                     sceneManager.LoadWDT(defaultWdt);
-                    if (!InitialCameraPosition.HasValue)
-                    {
-                        var tile = SceneManager.GetTileFromPosition(activeCamera.Position);
-                        var wdt = sceneManager.GetCurrentWDT();
-                        if (wdt != null && !wdt.TryGetTile(tile.x, tile.y, out _))
-                            tile = sceneManager.GetFirstMapTile();
-                        _worldNavigation.PublishIfEmpty(new WorldNavigationTarget(
-                            0, defaultWdt, tile.x + 0.5, tile.y + 0.5, false));
-                    }
+                    var tile = SceneManager.GetTileFromPosition(activeCamera.Position);
+                    var wdt = sceneManager.GetCurrentWDT();
+                    if (wdt != null && !wdt.TryGetTile(tile.x, tile.y, out _))
+                        tile = sceneManager.GetFirstMapTile();
+                    _worldNavigation.PublishIfEmpty(new WorldNavigationTarget(
+                        0, defaultWdt, tile.x + 0.5, tile.y + 0.5, false,
+                        PreserveCameraPosition: InitialCameraPosition.HasValue));
                     Volatile.Write(ref _contentInitializationComplete, 1);
                     SetStatus(WowViewerEngineState.Ready, $"{fileSystem.Version} MPQ files ready.");
                 }
@@ -1083,6 +1102,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderLiquid = Settings.RenderLiquid;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;
+                sceneManager.AnimateModels = Settings.AnimateModels;
                 sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;
                 sceneManager.AmbientColor = Settings.AmbientColor;
                 sceneManager.DiffuseColor = Settings.DiffuseColor;
@@ -1135,7 +1155,12 @@ namespace WoWRenderLib.DX11
             sceneManager.PreloadTEX();
             _pendingTerrainNavigation = null;
             _currentMapId = navigation.MapId;
-            _dynamicWorldLightingEnabled = true;
+
+            if (navigation.PreserveCameraPosition)
+            {
+                UpdateDynamicWorldLighting(force: true);
+                return;
+            }
 
             if (navigation.IsGlobalWmo && sceneManager.GetCurrentWDT()?.GlobalWmoExtents is { } extents)
             {
@@ -1189,7 +1214,7 @@ namespace WoWRenderLib.DX11
 
             var time = _dynamicWorldLightingEnabled
                 ? WorldLightingCatalog.FromLocalTime(DateTime.Now.TimeOfDay)
-                : 1440;
+                : _fixedWorldLightingTime;
             var worldPosition = RendererToWorldLightingPosition(activeCamera.Position);
             if (!force &&
                 time == _lastWorldLightingTime &&
@@ -1200,7 +1225,13 @@ namespace WoWRenderLib.DX11
 
             var evaluated = catalog.Evaluate(_currentMapId, worldPosition, time);
             if (!evaluated.HasValue)
+            {
+                if (force)
+                    Console.Error.WriteLine(
+                        $"World lighting has no Light/LightParams timed data for map " +
+                        $"{_currentMapId} at time {time}.");
                 return;
+            }
 
             _lastWorldLightingTime = time;
             _lastWorldLightingPosition = worldPosition;

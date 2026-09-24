@@ -28,6 +28,7 @@ internal static class Dx11ConfigurationMapper
         RenderLiquid = configuration.RenderLiquid,
         RenderWMO = configuration.RenderWMO,
         RenderM2 = configuration.RenderM2,
+        AnimateModels = configuration.AnimateModels,
         EnableWmoPortalCulling = configuration.EnableWmoPortalCulling,
         ShowBoundingBoxes = configuration.ShowBoundingBoxes,
         ShowBoundingSpheres = configuration.ShowBoundingSpheres,

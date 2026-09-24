@@ -119,6 +119,7 @@ namespace WoWRenderLib.DX11.Loaders
             result.renderBatches = renderBatches;
             result.compatibleRenderRunLengths = TerrainBatching.BuildCompatibleRunLengths(renderBatches);
             result.rootADTFileDataID = parsedADT.rootADTFileDataID;
+            result.usesLegacyLighting = parsedADT.usesLegacyLighting;
             result.startPos = parsedADT.startPos;
             result.chunkBounds = parsedADT.chunkBounds;
             result.vertices = cpuVertices;

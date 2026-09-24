@@ -121,7 +121,11 @@ VSOut VS_Main(VSIn input)
         mocv = float3(0.5f, 0.5f, 0.5f);
     float nDotL = max(dot(o.Normal, normalize(lightDirection)), 0.0f);
     float3 lightTerm = saturate(ambientColor + diffuseColor * nDotL);
-    o.LitColor = saturate(mocv * lightTerm * 2.0f);
+    // WotLK clamps the vertex colour before the fragment's 2x modulation.
+    // Keep the established modern combine on its existing path.
+    o.LitColor = useLegacyLighting != 0
+        ? saturate(mocv * lightTerm)
+        : saturate(mocv * lightTerm * 2.0f);
 
     o.vColor1 = input.color1;
     o.vColor2 = input.color2;
@@ -225,7 +229,7 @@ float4 PS_Main(VSOut i) : SV_Target
     {
         // Wisp's wmo_basic.frag is texture * vertex colour * 2x. The old
         // DX11 path ignored MOCV and applied a second fragment normal light.
-        matDiffuse = tex.rgb * i.LitColor;
+        matDiffuse = useLegacyLighting != 0 ? tex.rgb : tex.rgb * i.LitColor;
         finalOpacity = tex.a;
     }
     else if (pixelShader == 1) // MapObjSpecular
@@ -399,8 +403,8 @@ float4 PS_Main(VSOut i) : SV_Target
 
     // The older client modulates every WMO material family by the same
     // vertex lighting term. Keep the existing modern material path intact.
-    if (useLegacyLighting != 0 && pixelShader != 0)
-        lighting = i.LitColor;
+    if (useLegacyLighting != 0)
+        lighting = i.LitColor * 2.0f;
     else if (pixelShader == 0)
         lighting = float3(1.0f, 1.0f, 1.0f);
 
@@ -411,5 +415,8 @@ float4 PS_Main(VSOut i) : SV_Target
     if (alphaRef < 0.0f)
         finalOpacity = 1.0f;
 
-    return float4(matDiffuse * lighting + emissive, finalOpacity);
+    float3 finalRgb = matDiffuse * lighting + emissive;
+    if (useLegacyLighting != 0)
+        finalRgb = saturate(finalRgb);
+    return float4(finalRgb, finalOpacity);
 }

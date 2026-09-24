@@ -62,6 +62,7 @@ public static class ADTLoader
         var parsed = new ParsedADT
         {
             rootADTFileDataID = files.RootAdt,
+            usesLegacyLighting = fileSystem.Kind == StorageKind.Mpq,
             worldLiquid = ParsedWorldLiquid.Empty
         };
 

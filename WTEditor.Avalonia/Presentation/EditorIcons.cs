@@ -19,6 +19,7 @@ public static class EditorIcons
     public static Geometry Colour { get; } = Geometry.Parse("M12,2 C9,7 5,11 5,16 A7,7 0 0 0 19,16 C19,11 15,7 12,2 Z");
     public static Geometry Wmo { get; } = Geometry.Parse("M3,21 L3,9 L6,9 L6,5 L9,5 L9,9 L15,9 L15,5 L18,5 L18,9 L21,9 L21,21 L15,21 L15,15 L9,15 L9,21 Z");
     public static Geometry Doodad { get; } = Geometry.Parse("M12,2 L21,7 L21,17 L12,22 L3,17 L3,7 Z M5,8 L11,11.3 L11,19.5 L5,16 Z M13,11.3 L19,8 L19,16 L13,19.5 Z");
+    public static Geometry Animation { get; } = Geometry.Parse("M5,3 L20,12 L5,21 Z");
     public static Geometry Grid { get; } = Geometry.Parse("M3,3 H8 V8 H3 Z M10,3 H14 V8 H10 Z M16,3 H21 V8 H16 Z M3,10 H8 V14 H3 Z M10,10 H14 V14 H10 Z M16,10 H21 V14 H16 Z M3,16 H8 V21 H3 Z M10,16 H14 V21 H10 Z M16,16 H21 V21 H16 Z");
     public static Geometry Wireframe { get; } = Geometry.Parse("M3,3 H21 V5 H3 Z M3,19 H21 V21 H3 Z M3,5 H5 V19 H3 Z M19,5 H21 V19 H19 Z M4,4 L5.4,3.3 L20.7,19 L19.3,20 Z M19,4 L20.7,5 L12.7,12 L11.3,10.7 Z M4,19 L12,11 L13.4,12.4 L5,20.7 Z");
     public static Geometry Settings { get; } = Geometry.Parse("M10,2 H14 L15,5 L18,3 L21,6 L19,9 L22,10 V14 L19,15 L21,18 L18,21 L15,19 L14,22 H10 L9,19 L6,21 L3,18 L5,15 L2,14 V10 L5,9 L3,6 L6,3 L9,5 Z M12,8 A4,4 0 1 0 12,16 A4,4 0 1 0 12,8 Z");

@@ -226,9 +226,16 @@ public static class WMOLoader
         Formats.StringBlock? DoodadNames,
         uint[] GroupFileDataIds,
         uint[] DoodadFileDataIds,
+        DoodadReferenceKind DoodadReferenceKind,
         WoWLib.Vector<Formats.WMO.Root.Chunks.SmoMaterial> Materials,
         WoWLib.Vector<Formats.WMO.Root.Chunks.SmoDoodadDef> DoodadDefinitions,
         WoWLib.Vector<Formats.WMO.Root.Chunks.SmoDoodadSet> DoodadSets);
+
+    private enum DoodadReferenceKind
+    {
+        ModnNames,
+        ModiFileDataIds
+    }
 
     private static RootData ReadRootData(Formats.WMO.Root.WMORoot root)
     {
@@ -239,6 +246,7 @@ public static class WMOLoader
                 value.DoodadNames,
                 [],
                 [],
+                DoodadReferenceKind.ModnNames,
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
@@ -247,6 +255,7 @@ public static class WMOLoader
                 null,
                 value.GroupFdids.AsSpan().ToArray(),
                 value.DoodadFdids.AsSpan().ToArray(),
+                DoodadReferenceKind.ModiFileDataIds,
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
@@ -255,6 +264,7 @@ public static class WMOLoader
                 value.DoodadNames,
                 value.GroupFdids.AsSpan().ToArray(),
                 [],
+                DoodadReferenceKind.ModnNames,
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
@@ -263,6 +273,7 @@ public static class WMOLoader
                 null,
                 value.GroupFdids.AsSpan().ToArray(),
                 value.DoodadFdids.AsSpan().ToArray(),
+                DoodadReferenceKind.ModiFileDataIds,
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
@@ -271,6 +282,7 @@ public static class WMOLoader
                 null,
                 value.GroupFdids.AsSpan().ToArray(),
                 value.DoodadFdids.AsSpan().ToArray(),
+                DoodadReferenceKind.ModiFileDataIds,
                 value.Materials,
                 value.DoodadDefs,
                 value.DoodadSets),
@@ -408,13 +420,19 @@ public static class WMOLoader
         {
             var doodad = doodadDefinitions[i];
             var nameIndex = doodad.NameIndex;
-            var fileDataId = nameIndex < root.DoodadFileDataIds.Length ? root.DoodadFileDataIds[nameIndex] : 0;
             var filename = string.Empty;
-            if (fileDataId == 0)
+            var fileDataId = root.DoodadReferenceKind switch
             {
-                filename = GetString(root.DoodadNames, nameIndex);
-                fileDataId = ResolvePath(fileSystem, filename);
-            }
+                DoodadReferenceKind.ModnNames => ResolveLegacyDoodadModel(
+                    fileSystem,
+                    root.DoodadNames,
+                    nameIndex,
+                    out filename),
+                DoodadReferenceKind.ModiFileDataIds => nameIndex < root.DoodadFileDataIds.Length
+                    ? root.DoodadFileDataIds[nameIndex]
+                    : 0u,
+                _ => 0u
+            };
 
             var setIndex = 0u;
             for (var set = 0; set < doodadSetRecords.Count; set++)
@@ -502,6 +520,29 @@ public static class WMOLoader
         try { return WowlibFileSystem.ResolveAssetId(fileSystem, path); }
         catch { return 0; }
     }
+
+    private static uint ResolveDoodadModelPath(Fs.FileSystem fileSystem, string path)
+    {
+        var fileDataId = ResolvePath(fileSystem, path);
+        if (fileDataId == 0 && GetLegacyDoodadModelPath(path) is { } fallbackPath)
+            fileDataId = ResolvePath(fileSystem, fallbackPath);
+        return fileDataId;
+    }
+
+    private static uint ResolveLegacyDoodadModel(
+        Fs.FileSystem fileSystem,
+        Formats.StringBlock? names,
+        uint nameOffset,
+        out string filename)
+    {
+        filename = GetString(names, nameOffset);
+        return ResolveDoodadModelPath(fileSystem, filename);
+    }
+
+    internal static string? GetLegacyDoodadModelPath(string path) =>
+        path.EndsWith(".mdx", StringComparison.OrdinalIgnoreCase)
+            ? Path.ChangeExtension(path, ".m2")
+            : null;
 
     private static string GetString(Formats.StringBlock? block, uint offset)
     {

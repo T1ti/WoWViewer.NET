@@ -320,9 +320,8 @@ public sealed class WorldLightingCatalog
 
     /// <summary>
     /// Reproduces the directional-light polar curve used by the reference
-    /// renderer, converts the client axes to this renderer's axes, and flips
-    /// the ray direction because the DX11 shaders expect a vector toward the
-    /// light source.
+    /// renderer. The reference vector follows the light ray; the DX11 shaders
+    /// use a vector toward the light, so all three components are inverted.
     /// </summary>
     public static Vector3 CalculateLightDirection(int time)
     {
@@ -342,8 +341,8 @@ public sealed class WorldLightingCatalog
             sinPhi * MathF.Sin(theta),
             MathF.Cos(phi));
         return Vector3.Normalize(new Vector3(
-            clientDirection.X,
-            clientDirection.Y,
+            -clientDirection.X,
+            -clientDirection.Y,
             -clientDirection.Z));
     }
 

@@ -41,6 +41,7 @@ public sealed class RendererSettings
     public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
+    public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
     public bool ShowBoundingSpheres { get; set; }
@@ -62,6 +63,7 @@ public sealed class RendererSettings
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
+        AnimateModels = AnimateModels,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres,

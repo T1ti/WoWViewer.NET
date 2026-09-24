@@ -5,7 +5,8 @@ internal sealed record WorldNavigationTarget(
     uint WdtFileDataId,
     double TileX,
     double TileY,
-    bool IsGlobalWmo);
+    bool IsGlobalWmo,
+    bool PreserveCameraPosition = false);
 
 /// <summary>
 /// Retains the latest UI navigation request until the render thread can apply

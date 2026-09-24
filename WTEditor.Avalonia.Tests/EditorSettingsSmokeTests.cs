@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Headless;
@@ -644,15 +643,15 @@ public sealed class EditorSettingsSmokeTests
 
         Assert.AreEqual(
             Frustum.BoxIntersection.Inside,
-            frustum.ClassifyBox(new Vector3(-0.5f), new Vector3(0.5f)));
+            frustum.ClassifyAxisAlignedBox(new Vector3(-0.5f), new Vector3(0.5f)));
         Assert.AreEqual(
             Frustum.BoxIntersection.Intersecting,
-            frustum.ClassifyBox(
+            frustum.ClassifyAxisAlignedBox(
                 new Vector3(0.5f, -0.5f, -0.5f),
                 new Vector3(1.5f, 0.5f, 0.5f)));
         Assert.AreEqual(
             Frustum.BoxIntersection.Outside,
-            frustum.ClassifyBox(
+            frustum.ClassifyAxisAlignedBox(
                 new Vector3(2f, -0.5f, -0.5f),
                 new Vector3(3f, 0.5f, 0.5f)));
     }
@@ -1155,15 +1154,11 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
-    public void WmoModnParser_PreservesOffsetsWhenConvertingMdxNames()
+    public void WmoLegacyDoodadNames_UseM2Fallback()
     {
-        var bytes = Encoding.ASCII.GetBytes("world\\a.mdx\0world\\longer.mdx\0");
-        var names = ReadMdxNames(bytes);
-
-        Assert.AreEqual(2, names.Count);
-        Assert.AreEqual("world\\a.m2", names[0].Name);
-        Assert.AreEqual(0u, names[0].Offset);
-        Assert.AreEqual((uint)"world\\a.mdx".Length + 1u, names[1].Offset);
+        Assert.AreEqual("world\\a.m2", WMOLoader.GetLegacyDoodadModelPath("world\\a.mdx"));
+        Assert.AreEqual("world\\longer.m2", WMOLoader.GetLegacyDoodadModelPath("world\\longer.MDX"));
+        Assert.IsNull(WMOLoader.GetLegacyDoodadModelPath("world\\already.m2"));
     }
 
     [TestMethod]
@@ -1343,26 +1338,6 @@ public sealed class EditorSettingsSmokeTests
 
         Assert.AreEqual(projectDirectory, settings.ProjectDirectory);
         Assert.AreEqual(listfilePath, settings.ListfileCsv);
-    }
-
-    private static List<(string Name, uint Offset)> ReadMdxNames(byte[] bytes)
-    {
-        var result = new List<(string Name, uint Offset)>();
-        var offset = 0u;
-        var start = 0;
-        while (start < bytes.Length)
-        {
-            var end = Array.IndexOf(bytes, (byte)0, start);
-            if (end < 0)
-                end = bytes.Length;
-            var name = Encoding.ASCII.GetString(bytes, start, end - start);
-            if (name.EndsWith(".mdx", StringComparison.OrdinalIgnoreCase))
-                name = name[..^4] + ".m2";
-            result.Add((name, offset));
-            start = end + 1;
-            offset = (uint)start;
-        }
-        return result;
     }
 
     [TestMethod]

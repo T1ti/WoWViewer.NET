@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
+using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -62,6 +63,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWorldModels,
         RenderM2 = RenderDoodads,
+        AnimateModels = AnimateModels,
         EnableWmoPortalCulling = WmoPortalCullingEnabled,
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = TerrainLodTransitionPixels,
@@ -83,6 +85,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         Dx11RuntimeOptions.IsDebugBuild || Dx11RuntimeOptions.IsDebugLayerRequested;
     public Vector3 CameraClientPosition => MapCoordinates.TerrainToClient(CameraPosition);
     public Vector3 CameraClientDirection => MapCoordinates.TerrainDirectionToClient(CameraDirection);
+    public string ProfileGpuMillisecondsDisplay => ProfileGpuMilliseconds is { } value
+        ? $"{value:F2} ms"
+        : "—";
+    public ObservableCollection<ProfilerRenderPassViewModel> ProfileRenderPasses { get; } = [];
 
     [ObservableProperty] private double _fps;
     [ObservableProperty] private double _frameTime;
@@ -107,6 +113,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _renderLiquid;
     [ObservableProperty] private bool _renderWorldModels;
     [ObservableProperty] private bool _renderDoodads;
+    [ObservableProperty] private bool _animateModels;
     [ObservableProperty] private bool _wmoPortalCullingEnabled;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
     [ObservableProperty] private float _terrainLodTransitionPixels;
@@ -119,7 +126,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _showTerrainWireframe;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
-    [ObservableProperty] private IReadOnlyList<FrameTimingStep> _currentFrameSteps = Array.Empty<FrameTimingStep>();
+    public ObservableCollection<ProfilerFrameStepViewModel> CurrentFrameSteps { get; } = [];
     [ObservableProperty] private double _profileCpuMilliseconds;
     [ObservableProperty] private double? _profileGpuMilliseconds;
     [ObservableProperty] private double _profileFrameMilliseconds;
@@ -143,6 +150,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private EditorObjectSnapshot? _selectedObject;
     [ObservableProperty] private bool _hasUnsavedTerrainChanges;
     [ObservableProperty] private IReadOnlyList<ModifiedTerrainTile> _modifiedTerrainTiles = [];
+
+    partial void OnProfileGpuMillisecondsChanged(double? value) =>
+        OnPropertyChanged(nameof(ProfileGpuMillisecondsDisplay));
 
     // Viewport input state. This remains view-facing state while editor/session
     // configuration is owned centrally by EditorSession.
@@ -191,6 +201,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _renderLiquid = session.Current.Rendering.RenderLiquid;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
         _renderDoodads = session.Current.Rendering.RenderM2;
+        _animateModels = session.Current.Rendering.AnimateModels;
         _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
         _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
@@ -258,6 +269,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     partial void OnRenderLiquidChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderWorldModelsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnRenderDoodadsChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnAnimateModelsChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnWmoPortalCullingEnabledChanged(bool value) => PublishViewportRenderingConfiguration();
     partial void OnMinimumModelScreenSizePixelsChanged(float value)
     {
@@ -450,9 +462,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         var sampleSeconds = Math.Max(0.001d, _performancePublishTimer.Elapsed.TotalSeconds);
         _performancePublishTimer.Restart();
         PerformanceHistory = _performanceSamples.ToArray();
-        CurrentFrameSteps = snapshot.Steps
-            .Where(step => step.Name != "Resource uploads (GPU timeline)" || step.DurationMilliseconds >= 0.001d)
-            .ToArray();
+        UpdateCurrentFrameSteps(snapshot.Steps);
         ProfileCpuMilliseconds = snapshot.CpuFrameMilliseconds;
         ProfileGpuMilliseconds = snapshot.GpuFrameMilliseconds;
         ProfileFrameMilliseconds = snapshot.EngineFrameMilliseconds;
@@ -462,6 +472,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfileAssetStreaming = snapshot.AssetStreaming;
         ProfileCulling = snapshot.Culling;
         ProfileRenderWorkload = snapshot.RenderWorkload;
+        UpdateRenderPasses(snapshot.RenderWorkload.Passes);
 
         _currentProcess.Refresh();
         var processCpuTime = _currentProcess.TotalProcessorTime;
@@ -492,12 +503,46 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             };
     }
 
+    private void UpdateCurrentFrameSteps(IReadOnlyList<FrameTimingStep> steps)
+    {
+        var visibleSteps = steps
+            .Where(step => step.Name != "Resource uploads (GPU timeline)" || step.DurationMilliseconds >= 0.001d)
+            .OrderBy(step => FrameTimingCategoryCatalog.OrderOf(step.Name))
+            .ThenBy(step => step.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        for (var index = 0; index < visibleSteps.Length; index++)
+        {
+            if (index == CurrentFrameSteps.Count)
+                CurrentFrameSteps.Add(new ProfilerFrameStepViewModel(visibleSteps[index]));
+            else
+                CurrentFrameSteps[index].Update(visibleSteps[index]);
+        }
+
+        while (CurrentFrameSteps.Count > visibleSteps.Length)
+            CurrentFrameSteps.RemoveAt(CurrentFrameSteps.Count - 1);
+    }
+
+    private void UpdateRenderPasses(IReadOnlyList<RenderPassMetrics> passes)
+    {
+        for (var index = 0; index < passes.Count; index++)
+        {
+            if (index == ProfileRenderPasses.Count)
+                ProfileRenderPasses.Add(new ProfilerRenderPassViewModel(passes[index]));
+            else
+                ProfileRenderPasses[index].Update(passes[index]);
+        }
+
+        while (ProfileRenderPasses.Count > passes.Count)
+            ProfileRenderPasses.RemoveAt(ProfileRenderPasses.Count - 1);
+    }
+
     [RelayCommand]
     private void ClearPerformanceHistory()
     {
         _performanceSamples.Clear();
         PerformanceHistory = Array.Empty<FrameProfileSnapshot>();
-        CurrentFrameSteps = Array.Empty<FrameTimingStep>();
+        CurrentFrameSteps.Clear();
         ProfileCpuMilliseconds = 0;
         ProfileGpuMilliseconds = null;
         ProfileFrameMilliseconds = 0;
@@ -507,6 +552,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         ProfileAssetStreaming = AssetStreamingProfile.Empty;
         ProfileCulling = new CullingMetrics(0, 0, 0, 0, 0, 0);
         ProfileRenderWorkload = RenderWorkloadMetrics.Empty;
+        ProfileRenderPasses.Clear();
         ProfileProcessCpuPercent = 0;
         ProfileManagedMemoryMegabytes = 0;
         ProfileWorkingSetMegabytes = 0;
@@ -568,7 +614,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             D3D11DebugLayerEnabled = Dx11RuntimeOptions.IsDebugLayerRequested,
             MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
             TerrainLodTransitionPixels = TerrainLodTransitionPixels,
-            RenderLiquid = RenderLiquid
+            RenderLiquid = RenderLiquid,
+            AnimateModels = AnimateModels
         };
         IsPerformanceCaptureActive = true;
         IsProfilingPaused = false;
@@ -723,6 +770,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ModelRenderDistance = configuration.ModelRenderDistance;
             TileLoadingDistance = configuration.TileLoadingDistance;
             RenderLiquid = configuration.RenderLiquid;
+            AnimateModels = configuration.AnimateModels;
             ShowBoundingBoxes = configuration.ShowBoundingBoxes;
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;

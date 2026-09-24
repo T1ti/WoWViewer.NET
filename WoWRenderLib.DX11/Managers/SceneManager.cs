@@ -50,6 +50,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<ulong, TileSceneBounds> tileSceneBounds = [];
         private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
         private readonly HashSet<uint> coarseCulledTileRoots = [];
+        private readonly Dictionary<uint, Frustum.BoxIntersection> terrainFrustumIntersections = [];
         public event Action<MapTile, float>? TerrainTileHeightAvailable;
         public event Action<string, Exception>? SceneLoadFailed;
 
@@ -72,6 +73,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+        public bool AnimateModels { get; set; } = true;
         public bool EnableWmoPortalCulling { get; set; }
         public int TileLoadingDistance { get; set; } = 4;
         public float TerrainRenderDistance { get; set; } = 20_000f;
@@ -88,9 +90,9 @@ namespace WoWRenderLib.DX11.Managers
         private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
         private float? _flattenStrokeHeight;
 
-        // World-space light from north-west at a 45° elevation. WoW's world
-        // axes map north/west to the negative X/Y directions in this renderer.
-        public Vector3 LightDirection { get; set; } = new(-0.5f, -0.5f, 0.70710678f);
+        // World-space vector toward the light at a 45° elevation.
+        // Keep this fallback aligned with the evaluated noon direction.
+        public Vector3 LightDirection { get; set; } = new(0.5f, 0.5f, 0.70710678f);
         public Vector3 AmbientColor { get; set; } = new(104f / 255f, 130f / 255f, 154f / 255f);
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
         public WorldLightingData? ClientWorldLighting { get; private set; }
@@ -247,6 +249,7 @@ namespace WoWRenderLib.DX11.Managers
         public double WmoCullingTimeMs { get; private set; }
         public double WmoSubmissionTimeMs { get; private set; }
         public double M2CullingTimeMs { get; private set; }
+        public double M2AnimationTimeMs { get; private set; }
         public double M2SubmissionTimeMs { get; private set; }
         public double TerrainCullingTimeMs { get; private set; }
         public double TerrainSubmissionTimeMs { get; private set; }
@@ -761,6 +764,7 @@ namespace WoWRenderLib.DX11.Managers
             WmoCullingTimeMs = 0;
             WmoSubmissionTimeMs = 0;
             M2CullingTimeMs = 0;
+            M2AnimationTimeMs = 0;
             M2SubmissionTimeMs = 0;
             TerrainCullingTimeMs = 0;
             TerrainSubmissionTimeMs = 0;
@@ -874,6 +878,7 @@ namespace WoWRenderLib.DX11.Managers
 
             var tileCullingStarted = Stopwatch.GetTimestamp();
             coarseCulledTileRoots.Clear();
+            terrainFrustumIntersections.Clear();
             foreach (var bounds in tileSceneBounds.Values)
             {
                 bounds.IsCoarseCulledThisFrame = false;
@@ -883,15 +888,25 @@ namespace WoWRenderLib.DX11.Managers
                     continue;
                 }
 
-                if (frustum.ClassifyBox(combinedBounds.Min, combinedBounds.Max) !=
-                    Frustum.BoxIntersection.Outside)
+                var combinedFrustumIntersection = frustum.ClassifyAxisAlignedBox(
+                    combinedBounds.Min,
+                    combinedBounds.Max);
+                if (combinedFrustumIntersection == Frustum.BoxIntersection.Outside)
                 {
+                    bounds.IsCoarseCulledThisFrame = true;
+                    coarseCulledTileRoots.Add(bounds.RootAdtFileDataId);
+                    terrainFrustumIntersections[bounds.RootAdtFileDataId] =
+                        Frustum.BoxIntersection.Outside;
+                    coarseCulledTiles++;
                     continue;
                 }
 
-                bounds.IsCoarseCulledThisFrame = true;
-                coarseCulledTileRoots.Add(bounds.RootAdtFileDataId);
-                coarseCulledTiles++;
+                // If the aggregate bounds are fully inside the frustum, the terrain
+                // bounds are necessarily inside too, so the ADT loop can reuse this
+                // result instead of classifying the terrain bounds again.
+                if (combinedFrustumIntersection == Frustum.BoxIntersection.Inside)
+                    terrainFrustumIntersections[bounds.RootAdtFileDataId] =
+                        Frustum.BoxIntersection.Inside;
             }
             TileHierarchyCullingTimeMs = Stopwatch.GetElapsedTime(tileCullingStarted).TotalMilliseconds;
             CullingTimeMs += TileHierarchyCullingTimeMs;
@@ -962,9 +977,13 @@ namespace WoWRenderLib.DX11.Managers
                     }
 
                     var terrainSphere = adt.Terrain.terrainBoundingSphere;
-                    var terrainFrustumIntersection = frustum.ClassifyBox(
-                        adt.Terrain.terrainBounds.Min,
-                        adt.Terrain.terrainBounds.Max);
+                    var terrainFrustumIntersection = terrainFrustumIntersections.TryGetValue(
+                        adt.Terrain.rootADTFileDataID,
+                        out var cachedTerrainFrustumIntersection)
+                        ? cachedTerrainFrustumIntersection
+                        : frustum.ClassifyAxisAlignedBox(
+                            adt.Terrain.terrainBounds.Min,
+                            adt.Terrain.terrainBounds.Max);
                     if (terrainFrustumIntersection != Frustum.BoxIntersection.Outside &&
                         ScreenSpaceCulling.IntersectsRenderDistance(
                             camera.Position,
@@ -1047,7 +1066,8 @@ namespace WoWRenderLib.DX11.Managers
                             0f,
                             0f),
                         renderTerrainWireframe = ShowTerrainWireframe ? 1u : 0u,
-                        terrainWireframePadding = Vector3.Zero,
+                        useLegacyLighting = adt.Terrain.usesLegacyLighting ? 1u : 0u,
+                        terrainWireframePadding = Vector2.Zero,
                         brushCenter = brushCenter,
                         brushOuterRadius = BrushRadius,
                         brushFalloffRadius = BrushRadius * BrushFalloff,
@@ -1497,12 +1517,16 @@ namespace WoWRenderLib.DX11.Managers
                 if (_visibleIndices.Count == 0)
                     continue;
 
-                var animationTime = Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds;
+                var animationTime = AnimateModels
+                    ? Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
+                    : 0d;
                 m2ConstantBuffer.hasSkinning = m2.animation is { HasAnimatedBones: true } ? 1 : 0;
                 if (m2.animation is { HasAnimatedBones: true } animation)
                 {
+                    var animationStarted = Stopwatch.GetTimestamp();
                     Array.Fill(m2BonePalette, Matrix4x4.Identity);
                     animation.Evaluate(0, animationTime, m2BonePalette);
+                    M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
                     _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
                         ref Unsafe.NullRef<Box>(), ref m2BonePalette[0], 0, 0);
                     ConstantBufferUpdates++;
@@ -1555,7 +1579,9 @@ namespace WoWRenderLib.DX11.Managers
                         m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
                         if (m2.animation is { } materialAnimation)
                         {
+                            var animationStarted = Stopwatch.GetTimestamp();
                             var material = materialAnimation.EvaluateMaterial(batch, 0, animationTime);
+                            M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
                             m2ConstantBuffer.materialColor = material.Color;
                             m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
                             m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
@@ -1629,12 +1655,13 @@ namespace WoWRenderLib.DX11.Managers
             _m2DepthStates.EndPass();
             M2SubmissionTimeMs = Math.Max(
                 0,
-                Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - M2CullingTimeMs);
+                Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - M2CullingTimeMs - M2AnimationTimeMs);
 
             ApplyBlendMode(0, ref currentBlendType);
 
             // Liquid is a separate pass for ADT MH2O and visible WMO groups.
             // It remains available when terrain geometry is hidden.
+            gpuTimer?.BeginLiquids();
             if (RenderLiquid)
             {
                 var liquidStats = _worldLiquidRenderer.Render(
@@ -1667,6 +1694,7 @@ namespace WoWRenderLib.DX11.Managers
                 ComPtr<ID3D11DepthStencilState> nullLiquidDepthState = default;
                 _deviceContext.OMSetDepthStencilState(nullLiquidDepthState, 0);
             }
+            gpuTimer?.EndLiquids();
 
             // Debug bounds rendering
             passStarted = Stopwatch.GetTimestamp();

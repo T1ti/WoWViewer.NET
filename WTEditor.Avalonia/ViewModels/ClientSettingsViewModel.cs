@@ -75,6 +75,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
             RenderLiquid = original.Rendering.RenderLiquid,
             RenderWMO = original.Rendering.RenderWMO,
             RenderM2 = original.Rendering.RenderM2,
+            AnimateModels = original.Rendering.AnimateModels,
             EnableWmoPortalCulling = original.Rendering.EnableWmoPortalCulling,
             ShowBoundingBoxes = ShowBoundingBoxes,
             ShowBoundingSpheres = ShowBoundingSpheres,

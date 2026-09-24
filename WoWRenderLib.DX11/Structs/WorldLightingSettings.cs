@@ -58,7 +58,7 @@ public readonly record struct WorldLightingSettings(
     public static WorldLightingSettings Defaults { get; } = new(
         0,
         1440,
-        new Vector3(-0.5f, -0.5f, 0.70710678f),
+        new Vector3(0.5f, 0.5f, 0.70710678f),
         new Vector3(104f / 255f, 130f / 255f, 154f / 255f),
         new Vector3(1f, 136f / 255f, 0f),
         WorldLiquidColorDefaults.OceanClose,

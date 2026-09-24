@@ -14,7 +14,8 @@ namespace WoWRenderLib.Structs
         public uint renderTerrainGrid;
         public Vector4 terrainGridSettings;
         public uint renderTerrainWireframe;
-        public Vector3 terrainWireframePadding;
+        public uint useLegacyLighting;
+        public Vector2 terrainWireframePadding;
         public Vector3 brushCenter;
         public float brushOuterRadius;
         public float brushFalloffRadius;
@@ -27,6 +28,7 @@ namespace WoWRenderLib.Structs
     public struct ParsedADT
     {
         public uint rootADTFileDataID;
+        public bool usesLegacyLighting;
         public uint vao;
         public byte[] vertexBuffer;
         public byte[] indiceBuffer;

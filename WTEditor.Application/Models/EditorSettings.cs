@@ -43,6 +43,7 @@ public sealed record RenderingConfiguration
     public bool RenderLiquid { get; init; } = true;
     public bool RenderWMO { get; init; } = true;
     public bool RenderM2 { get; init; } = true;
+    public bool AnimateModels { get; init; } = true;
     public bool EnableWmoPortalCulling { get; init; }
     public bool ShowBoundingBoxes { get; init; }
     public bool ShowBoundingSpheres { get; init; }

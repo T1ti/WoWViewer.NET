@@ -96,6 +96,10 @@
                       ToolTip.Tip="Show or hide M2 doodads in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Doodad}"/>
         </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding AnimateModels}"
+                      ToolTip.Tip="Play or freeze M2 model animations">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Animation}"/>
+        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainGrid}"
                       ToolTip.Tip="Show terrain chunk boundaries in white and ADT boundaries in red">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Grid}"/>
