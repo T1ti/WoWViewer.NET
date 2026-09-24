@@ -2,7 +2,8 @@ namespace WoWRenderLib.DX11.Structs;
 
 internal sealed record WorldNavigationTarget(
     int MapId,
-    uint WdtFileDataId,
+    string WdtPath,
+    uint WdtFileDataIdHint,
     double TileX,
     double TileY,
     bool IsGlobalWmo,

@@ -43,24 +43,29 @@ namespace WoWRenderLib.DX11.Managers
         private readonly Dictionary<uint, uint> uuidUsers = [];
         private readonly HashSet<MapTile> loadedTiles = [];
         private readonly List<ADTContainer> adtContainers = [];
-        private readonly HashSet<(byte X, byte Y)> availableWdtTiles = [];
-        // The components of MapTile fit exactly in 48 bits. The packed key
-        // avoids repeatedly hashing/comparing the struct for bounds lookups;
-        // the full MapTile remains stored by TileSceneBounds for diagnostics.
-        private readonly Dictionary<ulong, TileSceneBounds> tileSceneBounds = [];
-        private readonly Dictionary<uint, TileSceneBounds> tileSceneBoundsByRoot = [];
-        private readonly HashSet<uint> coarseCulledTileRoots = [];
-        private readonly Dictionary<uint, Frustum.BoxIntersection> terrainFrustumIntersections = [];
+        private readonly HashSet<int> availableWdtTiles = [];
+        // Bounds are scoped to the current WDT, so the compact WDT position
+        // index is sufficient and avoids making a file identity part of the
+        // scene key.
+        private readonly Dictionary<int, TileSceneBounds> tileSceneBounds = [];
+        private readonly Dictionary<int, TileSceneBounds> tileSceneBoundsByTile = [];
+        private readonly HashSet<int> coarseCulledTileIndices = [];
+        private readonly Dictionary<int, Frustum.BoxIntersection> terrainFrustumIntersections = [];
         public event Action<MapTile, float>? TerrainTileHeightAvailable;
         public event Action<string, Exception>? SceneLoadFailed;
 
-        private static ulong GetTileBoundsKey(MapTile tile) =>
-            ((ulong)tile.wdtFileDataID << 16) |
-            ((ulong)tile.tileX << 8) |
-            tile.tileY;
+        private static int GetTileBoundsKey(MapTile tile) => tile.PositionIndex;
 
         private WdtFile? currentWDT;
-        public uint CurrentWDTFileDataID { get; private set; } = 775971;
+        public int CurrentMapId { get; private set; } = -1;
+        public string CurrentWdtPath { get; private set; } = string.Empty;
+        private uint currentSceneOwnerId;
+        private static uint nextSceneOwnerId = 0x4000_0000;
+        // Optional modern-client hint used only when the WDT has to be opened
+        // through a FileDataID. Tile identity and scene ownership use MapId
+        // plus the compact tile position instead.
+        private uint wdtFileDataIdForRead = 775971;
+        public uint CurrentWdtFileDataId => currentWDT?.FileDataId ?? 0;
         public uint CurrentMapHighestUniqueId { get; private set; }
         public Container3D? SelectedObject { get; set; } = null;
         public bool SelectionVisualsEnabled { get; set; } = true;
@@ -73,6 +78,9 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+
+        private static uint NextSceneOwnerId() =>
+            unchecked(Interlocked.Increment(ref nextSceneOwnerId));
         private bool _animateModels = true;
         private double _animationPausedMilliseconds;
         private double _animationPauseStartedMilliseconds;
@@ -151,6 +159,30 @@ namespace WoWRenderLib.DX11.Managers
         private readonly SkyRenderer _skyRenderer;
         private readonly DebugBoundsRenderer _debugBoundsRenderer;
         private readonly M2DepthStateController _m2DepthStates;
+        private readonly M2EffectRenderer _effectRenderer;
+
+        private readonly record struct M2RibbonSubmission(
+            M2Container Instance,
+            M2Animation Animation,
+            M2RibbonAnimation Ribbon,
+            int RibbonIndex,
+            M2AnimationFrameKey Frame,
+            Matrix4x4 World,
+            bool LegacyDepth,
+            float DistanceSquared);
+
+        private readonly record struct M2ParticleSubmission(
+            M2Container Instance,
+            M2Animation Animation,
+            M2ParticleAnimation Particle,
+            int ParticleIndex,
+            M2AnimationFrameKey Frame,
+            Matrix4x4 World,
+            Matrix4x4 ModelToView,
+            float DistanceSquared);
+
+        private readonly List<M2RibbonSubmission> _ribbonSubmissions = [];
+        private readonly List<M2ParticleSubmission> _particleSubmissions = [];
 
         public SceneManager(
             ComPtr<ID3D11Device> device,
@@ -164,6 +196,7 @@ namespace WoWRenderLib.DX11.Managers
             _skyRenderer = new SkyRenderer(device, deviceContext);
             _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
             _m2DepthStates = new M2DepthStateController(device, deviceContext);
+            _effectRenderer = new M2EffectRenderer(device, deviceContext);
         }
 
         private sealed class PendingAdtPopulation(
@@ -529,6 +562,7 @@ namespace WoWRenderLib.DX11.Managers
 
             _worldLiquidRenderer.Initialize(shaderManager);
             _skyRenderer.Initialize(shaderManager, m2Shader);
+            _effectRenderer.Initialize(shaderManager);
             _debugBoundsRenderer.Initialize(bboxShader);
         }
 
@@ -593,6 +627,21 @@ namespace WoWRenderLib.DX11.Managers
         // 0.904 threshold discarded nearly every texel in foliage textures.
         internal static float GetAlphaReference(int blendType) =>
             blendType == 1 ? 128f / 255f : -1.0f;
+
+        // M2 material and emitter blend IDs are on-disk IDs, not indices into
+        // the renderer's blend-state table. In particular, M2 4 is additive
+        // while renderer state 4 is multiplicative.
+        internal static int GetM2BlendStateIndex(int blendMode) => blendMode switch
+        {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 10,
+            4 => 3,
+            5 => 4,
+            6 => 5,
+            _ => 0
+        };
 
         internal static bool IsM2TwoSided(ushort renderFlags) =>
             (renderFlags & (ushort)M2MaterialFlags.TwoSided) != 0;
@@ -875,7 +924,18 @@ namespace WoWRenderLib.DX11.Managers
 
             _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
 
-            var skyStats = _skyRenderer.Render(camera);
+            var animationTime = _lastRenderedAnimationTimeMilliseconds;
+            var animationTimeCaptured = false;
+            if (AnimateModels && _activeWorldSky.HasSkyboxes)
+            {
+                animationTime = Math.Max(0,
+                    (long)(Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
+                        - _animationPausedMilliseconds));
+                _lastRenderedAnimationTimeMilliseconds = animationTime;
+                animationTimeCaptured = true;
+            }
+            var skyStats = _skyRenderer.Render(
+                camera, AnimateModels, animationTime, _activeWorldLighting.Time);
             SkyDrawCalls = skyStats.DrawCalls;
             SkySubmittedIndices = skyStats.SubmittedIndices;
             SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
@@ -897,16 +957,17 @@ namespace WoWRenderLib.DX11.Managers
             SceneSetupTimeMs = Stopwatch.GetElapsedTime(sceneSetupStarted).TotalMilliseconds;
 
             var tileCullingStarted = Stopwatch.GetTimestamp();
-            coarseCulledTileRoots.Clear();
+            coarseCulledTileIndices.Clear();
             terrainFrustumIntersections.Clear();
             foreach (var bounds in tileSceneBounds.Values)
             {
                 bounds.IsCoarseCulledThisFrame = false;
-                if (bounds.RootAdtFileDataId == 0 ||
-                    !bounds.TryGetCombinedBounds(out var combinedBounds))
+                if (!bounds.TryGetCombinedBounds(out var combinedBounds))
                 {
                     continue;
                 }
+
+                var tileIndex = bounds.Tile.PositionIndex;
 
                 var combinedFrustumIntersection = frustum.ClassifyAxisAlignedBox(
                     combinedBounds.Min,
@@ -914,8 +975,8 @@ namespace WoWRenderLib.DX11.Managers
                 if (combinedFrustumIntersection == Frustum.BoxIntersection.Outside)
                 {
                     bounds.IsCoarseCulledThisFrame = true;
-                    coarseCulledTileRoots.Add(bounds.RootAdtFileDataId);
-                    terrainFrustumIntersections[bounds.RootAdtFileDataId] =
+                    coarseCulledTileIndices.Add(tileIndex);
+                    terrainFrustumIntersections[tileIndex] =
                         Frustum.BoxIntersection.Outside;
                     coarseCulledTiles++;
                     continue;
@@ -925,7 +986,7 @@ namespace WoWRenderLib.DX11.Managers
                 // bounds are necessarily inside too, so the ADT loop can reuse this
                 // result instead of classifying the terrain bounds again.
                 if (combinedFrustumIntersection == Frustum.BoxIntersection.Inside)
-                    terrainFrustumIntersections[bounds.RootAdtFileDataId] =
+                    terrainFrustumIntersections[tileIndex] =
                         Frustum.BoxIntersection.Inside;
             }
             TileHierarchyCullingTimeMs = Stopwatch.GetElapsedTime(tileCullingStarted).TotalMilliseconds;
@@ -988,7 +1049,7 @@ namespace WoWRenderLib.DX11.Managers
                     _visibleIndices.Clear();
                     _visibleTerrainFarLod.Clear();
 
-                    if (coarseCulledTileRoots.Contains(adt.Terrain.rootADTFileDataID))
+                    if (coarseCulledTileIndices.Contains(adt.mapTile.PositionIndex))
                     {
                         var coarseCullingElapsed = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
                         TerrainCullingTimeMs += coarseCullingElapsed;
@@ -998,7 +1059,7 @@ namespace WoWRenderLib.DX11.Managers
 
                     var terrainSphere = adt.Terrain.terrainBoundingSphere;
                     var terrainFrustumIntersection = terrainFrustumIntersections.TryGetValue(
-                        adt.Terrain.rootADTFileDataID,
+                        adt.mapTile.PositionIndex,
                         out var cachedTerrainFrustumIntersection)
                         ? cachedTerrainFrustumIntersection
                         : frustum.ClassifyAxisAlignedBox(
@@ -1478,10 +1539,12 @@ namespace WoWRenderLib.DX11.Managers
             var lastM2HasTexMatrix1 = -1;
             var lastM2HasTexMatrix2 = -1;
             bool? lastM2TwoSided = null;
+            var ribbonSubmissions = _ribbonSubmissions;
+            var particleSubmissions = _particleSubmissions;
+            ribbonSubmissions.Clear();
+            particleSubmissions.Clear();
 
-            // Sample a shared animation frame only when an animated model survives culling.
-            var animationTime = _lastRenderedAnimationTimeMilliseconds;
-            var animationTimeCaptured = false;
+            // Sample a shared animation frame only when a visible animated model needs it.
 
             foreach (var packet in m2InstancePackets.Values)
             {
@@ -1513,6 +1576,7 @@ namespace WoWRenderLib.DX11.Managers
                         portalCulledM2s++;
                         continue;
                     }
+                    packet.RefreshSpatialData(i, m2);
                     var sphere = packet.WorldBounds[i];
                     if (ScreenSpaceCulling.IntersectsRenderDistance(camera.Position, sphere.Center, sphere.Radius, ModelRenderDistance) &&
                         frustum.IsSphereVisible(sphere.Center, sphere.Radius))
@@ -1541,26 +1605,61 @@ namespace WoWRenderLib.DX11.Managers
                 if (_visibleIndices.Count == 0)
                     continue;
 
-                IReadOnlyList<M2AnimationDrawGroup> animationGroups;
-                if (AnimateModels && m2.animation is { } animation)
+                if (AnimateModels && m2.animation is { } activeAnimation &&
+                    (activeAnimation.HasAnimatedBones || activeAnimation.HasMaterialTracks ||
+                     activeAnimation.Ribbons.Length > 0 ||
+                     activeAnimation.RenderableParticleIndices.Length > 0) &&
+                    !animationTimeCaptured)
                 {
-                    if (!animationTimeCaptured)
-                    {
-                        animationTime = Math.Max(0,
-                            (long)(Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
-                                - _animationPausedMilliseconds));
-                        _lastRenderedAnimationTimeMilliseconds = animationTime;
-                        animationTimeCaptured = true;
-                    }
+                    animationTime = Math.Max(0,
+                        (long)(Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
+                            - _animationPausedMilliseconds));
+                    _lastRenderedAnimationTimeMilliseconds = animationTime;
+                    animationTimeCaptured = true;
+                }
 
+                IReadOnlyList<M2AnimationDrawGroup> animationGroups;
+                if (AnimateModels && m2.animation is { } animation &&
+                    (animation.HasAnimatedBones || animation.HasMaterialTracks))
+                {
                     var animationStarted = Stopwatch.GetTimestamp();
+                    var rigidCameraView = cameraMatrix;
+                    rigidCameraView.M41 = rigidCameraView.M42 = rigidCameraView.M43 = 0;
                     animationGroups = packet.BuildAnimationGroups(
-                        animation, m2.submeshes, animationTime, _visibleIndices);
+                        animation, m2.submeshes, animationTime, rigidCameraView, _visibleIndices);
                     M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
                 }
                 else
                 {
                     animationGroups = packet.GetStaticDrawGroups(_visibleIndices);
+                }
+
+                if (AnimateModels && m2.animation is { } effectAnimation &&
+                    (effectAnimation.Ribbons.Length > 0 ||
+                     effectAnimation.RenderableParticleIndices.Length > 0))
+                {
+                    foreach (var index in _visibleIndices)
+                    {
+                        var frame = instances[index].AnimationState.GetFrameKey(
+                            effectAnimation, animationTime);
+                        var world = packet.WorldMatrices[index];
+                        var distanceSquared = Vector3.DistanceSquared(camera.Position,
+                            packet.WorldBounds[index].Center);
+                        for (var ribbonIndex = 0; ribbonIndex < effectAnimation.Ribbons.Length; ribbonIndex++)
+                            ribbonSubmissions.Add(new M2RibbonSubmission(
+                                instances[index], effectAnimation,
+                                effectAnimation.Ribbons[ribbonIndex], ribbonIndex,
+                                frame, world, m2.usesLegacyDepthFlags,
+                                distanceSquared));
+                        if (effectAnimation.RenderableParticleIndices.Length == 0)
+                            continue;
+                        var modelToView = world * cameraMatrix;
+                        foreach (var particleIndex in effectAnimation.RenderableParticleIndices)
+                            particleSubmissions.Add(new M2ParticleSubmission(
+                                instances[index], effectAnimation,
+                                effectAnimation.Particles[particleIndex], particleIndex,
+                                frame, world, modelToView, distanceSquared));
+                    }
                 }
 
                 var vertexBuffer = m2.vertexBuffer;
@@ -1620,7 +1719,8 @@ namespace WoWRenderLib.DX11.Managers
                             }
 
                             m2ConstantBuffer.blendMode = batch.blendType;
-                            m2ConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
+                            m2ConstantBuffer.alphaRef = ApplyBlendMode(
+                                GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
                             m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
                             m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
                             if (pose is not null)
@@ -1696,6 +1796,69 @@ namespace WoWRenderLib.DX11.Managers
                     }
                 }
             }
+            ribbonSubmissions.Sort(static (a, b) =>
+                b.DistanceSquared.CompareTo(a.DistanceSquared));
+            if (ribbonSubmissions.Count > 0)
+                _effectRenderer.Begin();
+            foreach (var submission in ribbonSubmissions)
+            {
+                var animationStarted = Stopwatch.GetTimestamp();
+                var mesh = _effectRenderer.GetRibbonMesh(
+                    submission.Instance, submission.Animation,
+                    submission.RibbonIndex, submission.Frame);
+                M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
+                if (mesh.Indices.Length == 0)
+                    continue;
+
+                var ribbon = submission.Ribbon;
+                _m2DepthStates.Apply(submission.LegacyDepth, ribbon.MaterialFlags);
+                _deviceContext.RSSetState(IsM2TwoSided(ribbon.MaterialFlags)
+                    ? m2TwoSidedRasterizerState : wmoRasterizerState);
+                var alphaReference = ApplyBlendMode(
+                    GetM2BlendStateIndex(ribbon.BlendMode), ref currentBlendType);
+                var texture = ResolveFrameTexture(ribbon.TextureFileDataId);
+                var sampler = m2TextureSamplers[GetM2SamplerIndex(ribbon.TextureFlags)];
+                _effectRenderer.Draw(mesh, submission.World, cameraMatrix,
+                    projectionMatrix, alphaReference, texture, sampler);
+                drawCalls++;
+                M2DrawCalls++;
+                submittedIndexCount += (uint)mesh.Indices.Length;
+                M2SubmittedIndices += (uint)mesh.Indices.Length;
+            }
+            particleSubmissions.Sort(static (a, b) =>
+                b.DistanceSquared.CompareTo(a.DistanceSquared));
+            if (particleSubmissions.Count > 0)
+                _effectRenderer.Begin();
+            foreach (var submission in particleSubmissions)
+            {
+                var animationStarted = Stopwatch.GetTimestamp();
+                var mesh = _effectRenderer.GetParticleMesh(
+                    submission.Instance, submission.Animation,
+                    submission.ParticleIndex, submission.Frame,
+                    submission.ModelToView);
+                M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
+                if (mesh.Indices.Length == 0)
+                    continue;
+
+                var particle = submission.Particle;
+                _m2DepthStates.Apply(true, particle.BlendMode > 1 ? (ushort)0x10 : (ushort)0);
+                _deviceContext.RSSetState(m2TwoSidedRasterizerState);
+                ApplyBlendMode(GetM2BlendStateIndex(particle.BlendMode), ref currentBlendType);
+                var alphaReference = particle.BlendMode switch
+                {
+                    0 => -1f,
+                    1 => 224f / 255f,
+                    _ => 1f / 255f
+                };
+                var texture = ResolveFrameTexture(particle.TextureFileDataId);
+                var sampler = m2TextureSamplers[GetM2SamplerIndex(particle.TextureFlags)];
+                _effectRenderer.Draw(mesh, submission.World, cameraMatrix,
+                    projectionMatrix, alphaReference, texture, sampler);
+                drawCalls++;
+                M2DrawCalls++;
+                submittedIndexCount += (uint)mesh.Indices.Length;
+                M2SubmittedIndices += (uint)mesh.Indices.Length;
+            }
             gpuTimer?.EndDoodads();
             _m2DepthStates.EndPass();
             M2SubmissionTimeMs = Math.Max(
@@ -1713,7 +1876,7 @@ namespace WoWRenderLib.DX11.Managers
                     camera,
                     adtContainers,
                     _visibleWmoLiquids,
-                    coarseCulledTileRoots,
+                    coarseCulledTileIndices,
                     TerrainRenderDistance,
                     ModelRenderDistance,
                     Environment.TickCount64,
@@ -1809,12 +1972,13 @@ namespace WoWRenderLib.DX11.Managers
             {
                 _debugBoundsRenderer.Dispose();
                 _m2DepthStates.Dispose();
+                _effectRenderer.Dispose();
                 _skyRenderer.Dispose();
                 _worldLiquidRenderer.Dispose();
                 foreach (var bounds in tileSceneBounds.Values)
                     bounds.Dispose();
                 tileSceneBounds.Clear();
-                tileSceneBoundsByRoot.Clear();
+                tileSceneBoundsByTile.Clear();
 
                 textureSampler.Dispose();
                 clampSampler.Dispose();

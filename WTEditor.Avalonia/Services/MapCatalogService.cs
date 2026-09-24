@@ -144,7 +144,7 @@ public sealed class MapCatalogService : IMapCatalogService
 
                 var wdtPath = MapAssetPathResolver.GetWdtPath(directory);
                 var wdtFileDataId = fileSystem.Kind == StorageKind.Mpq
-                    ? WowlibFileSystem.ResolveAssetId(fileSystem, wdtPath)
+                    ? 0
                     : ResolveWdtFileDataId(
                         directory,
                         wdtColumn is ulong wdtIndex ? checked((uint)table.GetInt(row, wdtIndex, 0)) : 0,
@@ -162,7 +162,7 @@ public sealed class MapCatalogService : IMapCatalogService
                 {
                     WdtPath = fileSystem.Kind == StorageKind.Mpq
                         ? wdtPath
-                        : string.Empty,
+                        : wdtPath,
                     Settings = columns.Select(column => new WorldMapDbSetting(
                         column.Info.Name,
                         ReadWowlibSetting(table, row, column.Index, column.Info, buildName),
@@ -237,14 +237,15 @@ public sealed class MapCatalogService : IMapCatalogService
             .Where(fileDataId => fileDataId != 0)
             .Distinct()
             .ToArray();
-        if (fileDataIds.Length == 0)
+        if (fileDataIds.Length == 0 && maps.All(map => string.IsNullOrWhiteSpace(map.WdtPath)))
             throw DefinitionError(
                 buildName,
-                $"neither column {WdtFileDataIdColumn} nor Directory path resolution yielded a WDT FileDataID",
+                $"neither column {WdtFileDataIdColumn} nor Directory path resolution produced a canonical WDT path",
                 columns);
 
         var missingFileDataIds = fileDataIds.Where(fileDataId => !fileExists(fileDataId)).ToArray();
-        if (missingFileDataIds.Length == fileDataIds.Length)
+        if (fileDataIds.Length > 0 && missingFileDataIds.Length == fileDataIds.Length &&
+            maps.All(map => string.IsNullOrWhiteSpace(map.WdtPath)))
         {
             throw DefinitionError(buildName,
                 $"none of the {fileDataIds.Length} nonzero WDT FileDataIDs exist in the active CASC build",

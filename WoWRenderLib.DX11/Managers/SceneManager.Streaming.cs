@@ -28,10 +28,28 @@ namespace WoWRenderLib.DX11.Managers
 {
     public partial class SceneManager
     {
-        public void LoadWDT(uint wdtFileDataID)
+        private readonly List<MapTile> desiredTileScratch = new(81);
+        private bool hasCachedDesiredTileWindow;
+        private volatile bool availableTileIndexReady;
+        private byte cachedDesiredTileCenterX;
+        private byte cachedDesiredTileCenterY;
+        private int cachedDesiredTileLoadingDistance;
+        private int cachedDesiredTileMapId;
+
+        public void LoadWDT(int mapId, string? wdtPath, uint wdtFileDataIdHint)
         {
-            if (CurrentWDTFileDataID != wdtFileDataID)
+            var normalizedPath = string.IsNullOrWhiteSpace(wdtPath)
+                ? string.Empty
+                : wdtPath.Trim().Replace('\\', '/');
+            var mapChanged = CurrentMapId != mapId ||
+                (normalizedPath.Length > 0 &&
+                 !string.Equals(CurrentWdtPath, normalizedPath, StringComparison.OrdinalIgnoreCase)) ||
+                wdtFileDataIdForRead != wdtFileDataIdHint;
+
+            if (mapChanged)
             {
+                hasCachedDesiredTileWindow = false;
+                availableTileIndexReady = false;
                 loadedTiles.Clear();
                 tilesToLoad.Clear();
                 tilesQueuedForLoad.Clear();
@@ -43,7 +61,7 @@ namespace WoWRenderLib.DX11.Managers
                 foreach (var bounds in tileSceneBounds.Values)
                     bounds.Dispose();
                 tileSceneBounds.Clear();
-                tileSceneBoundsByRoot.Clear();
+                tileSceneBoundsByTile.Clear();
 
                 CompletePendingTileUnloads();
                 lock (SceneObjectLock)
@@ -55,9 +73,9 @@ namespace WoWRenderLib.DX11.Managers
                         adt.Unload();
                     }
                     foreach (var wmo in SceneObjects.OfType<WMOContainer>())
-                        WMOCache.Release(wmo.FileDataId, wmo.ParentFileDataId);
+                        WMOCache.Release(wmo.FileDataId, wmo.ParentTileIndex);
                     foreach (var m2 in SceneObjects.OfType<M2Container>())
-                        M2Cache.Release(m2.FileDataId, m2.ParentFileDataId);
+                        M2Cache.Release(m2.FileDataId, m2.ParentTileIndex);
                     SceneObjects.Clear();
                     adtContainers.Clear();
                 }
@@ -69,8 +87,12 @@ namespace WoWRenderLib.DX11.Managers
                 m2InstancePackets.Clear();
                 SelectedObject = null;
 
-                CurrentWDTFileDataID = wdtFileDataID;
-                currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
+                CurrentMapId = mapId;
+                CurrentWdtPath = normalizedPath;
+                wdtFileDataIdForRead = wdtFileDataIdHint;
+                currentWDT = WDTCache.GetOrLoad(CurrentWdtPath, wdtFileDataIdForRead);
+                CurrentWdtPath = currentWDT.Path;
+                currentSceneOwnerId = NextSceneOwnerId();
                 UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
                 SpawnGlobalWmo();
@@ -85,7 +107,7 @@ namespace WoWRenderLib.DX11.Managers
             if (currentWDT?.GlobalWmoPlacement is not { FileDataId: not 0 } placement)
                 return;
 
-            var container = new WMOContainer(_device, placement.FileDataId, CurrentWDTFileDataID)
+            var container = new WMOContainer(_device, placement.FileDataId, currentSceneOwnerId)
             {
                 Position = placement.Position,
                 Rotation = placement.Rotation,
@@ -118,7 +140,8 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (currentWDT == null)
             {
-                currentWDT = WDTCache.GetOrLoad(CurrentWDTFileDataID);
+                currentWDT = WDTCache.GetOrLoad(CurrentWdtPath, wdtFileDataIdForRead);
+                CurrentWdtPath = currentWDT.Path;
                 UpdateMapHighestUniqueId();
                 RebuildAvailableTileIndex();
                 SpawnGlobalWmo();
@@ -131,17 +154,27 @@ namespace WoWRenderLib.DX11.Managers
             if (currentWDT != null)
                 CurrentMapHighestUniqueId = WowlibFileSystem.Current.Kind == WoWLib.StorageKind.Mpq
                     ? MapUniqueIdScanner.ScanMap(currentWDT)
-                    : MapUniqueIdStore.GetOrScan(CurrentWDTFileDataID, currentWDT);
+                    : MapUniqueIdStore.GetOrScan(
+                        CurrentMapId >= 0 ? (uint)CurrentMapId : currentSceneOwnerId,
+                        currentWDT);
         }
 
         private void RebuildAvailableTileIndex()
         {
+            // LoadWDT/GetCurrentWDT can publish currentWDT before this index is
+            // populated. Do not let the render thread cache an empty window in
+            // that interval; the previous implementation naturally recovered
+            // on the next frame because it rebuilt the list every time.
+            availableTileIndexReady = false;
+            hasCachedDesiredTileWindow = false;
             availableWdtTiles.Clear();
             if (currentWDT == null)
                 return;
 
             foreach (var tile in currentWDT.Tiles)
-                availableWdtTiles.Add((tile.tileX, tile.tileY));
+                availableWdtTiles.Add(tile.PositionIndex);
+
+            availableTileIndexReady = true;
         }
 
         public (byte x, byte y) GetFirstMapTile()
@@ -150,38 +183,55 @@ namespace WoWRenderLib.DX11.Managers
                 return (0, 0);
 
             var tile = currentWDT.Tiles[0];
-            return (tile.tileX, tile.tileY);
+            return (tile.TileX, tile.TileY);
         }
 
         public void UpdateTilesByCameraPos(Vector3 cameraPosition)
         {
-            if (currentWDT == null)
+            if (currentWDT == null || !availableTileIndexReady)
                 return;
 
             var (x, y) = GetTileFromPosition(cameraPosition);
 
-            var orderedDesiredTiles = TileStreamingPolicy.BuildDesiredTiles(
-                CurrentWDTFileDataID,
-                x,
-                y,
-                TileLoadingDistance,
-                availableWdtTiles);
-            var nextDesiredTiles = orderedDesiredTiles.ToHashSet();
-            var desiredTilesChanged = !desiredTiles.SetEquals(nextDesiredTiles);
-            failedDesiredTiles.RemoveWhere(tile => !nextDesiredTiles.Contains(tile));
-
-            desiredTiles.Clear();
-            desiredTiles.UnionWith(nextDesiredTiles);
-
-            if (desiredTilesChanged)
+            var desiredTileWindowChanged =
+                !hasCachedDesiredTileWindow ||
+                cachedDesiredTileCenterX != x ||
+                cachedDesiredTileCenterY != y ||
+                cachedDesiredTileLoadingDistance != TileLoadingDistance ||
+                cachedDesiredTileMapId != CurrentMapId;
+            if (desiredTileWindowChanged)
             {
-                RebuildPendingLoadQueue(orderedDesiredTiles);
+                TileStreamingPolicy.BuildDesiredTiles(
+                    CurrentMapId,
+                    CurrentWdtPath,
+                    currentWDT?.FileDataId ?? wdtFileDataIdForRead,
+                    x,
+                    y,
+                    TileLoadingDistance,
+                    availableWdtTiles,
+                    desiredTileScratch);
+
+                var desiredTilesChanged = !desiredTiles.SetEquals(desiredTileScratch);
+                if (desiredTilesChanged)
+                {
+                    desiredTiles.Clear();
+                    desiredTiles.UnionWith(desiredTileScratch);
+                    RebuildPendingLoadQueue(desiredTileScratch);
+                }
+
+                failedDesiredTiles.RemoveWhere(tile => !desiredTileScratch.Contains(tile));
+                cachedDesiredTileCenterX = x;
+                cachedDesiredTileCenterY = y;
+                cachedDesiredTileLoadingDistance = TileLoadingDistance;
+                cachedDesiredTileMapId = CurrentMapId;
+                hasCachedDesiredTileWindow = true;
             }
-            else
-            {
-                foreach (var mapTile in orderedDesiredTiles)
-                    QueueTileForLoadIfNeeded(mapTile);
-            }
+
+            // Keep this check on every frame. A worker completion or a failed
+            // request can change a tile's queue state without changing the
+            // camera's desired window.
+            foreach (var mapTile in desiredTileScratch)
+                QueueTileForLoadIfNeeded(mapTile);
 
             foreach (var adt in adtContainers)
             {
@@ -260,9 +310,9 @@ namespace WoWRenderLib.DX11.Managers
                 return;
             }
 
-            var rootId = container.Terrain.rootADTFileDataID;
+            var tileIndex = (uint)container.mapTile.PositionIndex;
             RemovePendingAdtPopulation(tile);
-            RemovePendingWmosForTile(rootId);
+            RemovePendingWmosForTile(tileIndex);
             var worldModels = new List<WMOContainer>();
             var doodads = new List<M2Container>();
             lock (SceneObjectLock)
@@ -271,11 +321,11 @@ namespace WoWRenderLib.DX11.Managers
                 {
                     switch (SceneObjects[index])
                     {
-                        case WMOContainer worldModel when worldModel.ParentFileDataId == rootId:
+                        case WMOContainer worldModel when worldModel.ParentTileIndex == tileIndex:
                             worldModels.Add(worldModel);
                             SceneObjects.RemoveAt(index);
                             break;
-                        case M2Container doodad when doodad.ParentFileDataId == rootId:
+                        case M2Container doodad when doodad.ParentTileIndex == tileIndex:
                             doodads.Add(doodad);
                             SceneObjects.RemoveAt(index);
                             break;
@@ -284,11 +334,11 @@ namespace WoWRenderLib.DX11.Managers
             }
             foreach (var worldModel in worldModels)
                 uuidUsers.Remove(worldModel.UniqueID);
-            HideTileInstances(rootId);
+            HideTileInstances(tileIndex);
 
             if (tileSceneBounds.Remove(GetTileBoundsKey(tile), out var bounds))
             {
-                tileSceneBoundsByRoot.Remove(rootId);
+                tileSceneBoundsByTile.Remove((int)tileIndex);
                 bounds.Dispose();
             }
 
@@ -298,12 +348,12 @@ namespace WoWRenderLib.DX11.Managers
                 doodads));
         }
 
-        private void HideTileInstances(uint rootFileDataId)
+        private void HideTileInstances(uint tileIndex)
         {
             foreach (var key in wmoInstances.Keys.ToArray())
             {
                 var instances = wmoInstances[key];
-                instances.RemoveAll(instance => instance.ParentFileDataId == rootFileDataId);
+                instances.RemoveAll(instance => instance.ParentTileIndex == tileIndex);
                 if (instances.Count == 0)
                     wmoInstances.Remove(key);
             }
@@ -311,7 +361,7 @@ namespace WoWRenderLib.DX11.Managers
             foreach (var fileDataId in m2Instances.Keys.ToArray())
             {
                 var instances = m2Instances[fileDataId];
-                instances.RemoveAll(instance => instance.ParentFileDataId == rootFileDataId);
+                instances.RemoveAll(instance => instance.ParentTileIndex == tileIndex);
                 if (instances.Count == 0)
                 {
                     m2Instances.Remove(fileDataId);
@@ -362,21 +412,21 @@ namespace WoWRenderLib.DX11.Managers
         private void ReleaseWorldModel(WMOContainer container)
         {
             container.ActiveDoodads.Clear();
-            WMOCache.Release(container.FileDataId, container.ParentFileDataId);
+            WMOCache.Release(container.FileDataId, container.ParentTileIndex);
         }
 
         private void ReleaseDoodad(M2Container container)
         {
-            M2Cache.Release(container.FileDataId, container.ParentFileDataId);
+            M2Cache.Release(container.FileDataId, container.ParentTileIndex);
         }
 
-        private void RemovePendingWmosForTile(uint rootAdtFileDataId)
+        private void RemovePendingWmosForTile(uint tileIndex)
         {
             var remaining = pendingWMODoodads.Count;
             for (var index = 0; index < remaining; index++)
             {
                 var pending = pendingWMODoodads.Dequeue();
-                if (pending.Container.ParentFileDataId != rootAdtFileDataId)
+                if (pending.Container.ParentTileIndex != tileIndex)
                     pendingWMODoodads.Enqueue(pending);
             }
         }
@@ -520,7 +570,7 @@ namespace WoWRenderLib.DX11.Managers
         {
             var wmo = wmoContainer.GetWMO();
             var enabledSets = wmoContainer.EnabledDoodadSets;
-            tileSceneBoundsByRoot.TryGetValue(wmoContainer.ParentFileDataId, out var owningTileBounds);
+            tileSceneBoundsByTile.TryGetValue((int)wmoContainer.ParentTileIndex, out var owningTileBounds);
 
             wmoContainer.ActiveDoodads.Clear();
 
@@ -530,7 +580,11 @@ namespace WoWRenderLib.DX11.Managers
                 if (!IsWmoDoodadSpawnable(doodad, enabledSets))
                     continue;
 
-                var m2Container = new M2Container(_device, doodad.filedataid, wmoContainer.ParentFileDataId)
+                var m2Container = new M2Container(
+                    _device,
+                    doodad.filedataid,
+                    wmoContainer.ParentTileIndex,
+                    wmoContainer.ParentAssetFileDataId)
                 {
                     ParentWMO = wmoContainer,
                     LocalPosition = doodad.position,
@@ -559,12 +613,12 @@ namespace WoWRenderLib.DX11.Managers
 
             lock (SceneObjectLock)
             {
-                tileSceneBoundsByRoot.TryGetValue(wmoContainer.ParentFileDataId, out var owningTileBounds);
+                tileSceneBoundsByTile.TryGetValue((int)wmoContainer.ParentTileIndex, out var owningTileBounds);
                 foreach (var doodad in wmoContainer.ActiveDoodads)
                 {
                     owningTileBounds?.RemoveObject(doodad);
                     SceneObjects.Remove(doodad);
-                    M2Cache.Release(doodad.FileDataId, doodad.ParentFileDataId);
+                    M2Cache.Release(doodad.FileDataId, doodad.ParentTileIndex);
                 }
 
                 SpawnWMODoodads(wmoContainer);
@@ -643,6 +697,7 @@ namespace WoWRenderLib.DX11.Managers
                     {
                         AddWorldModelPlacement(
                             terrain.worldModelBatches[pending.NextWorldModel++],
+                            (uint)pending.Container.mapTile.PositionIndex,
                             terrain.rootADTFileDataID,
                             pending.Bounds);
                         continue;
@@ -652,6 +707,7 @@ namespace WoWRenderLib.DX11.Managers
                     {
                         AddDoodadPlacement(
                             terrain.doodads[pending.NextDoodad++],
+                            (uint)pending.Container.mapTile.PositionIndex,
                             terrain.rootADTFileDataID,
                             pending.Bounds);
                         continue;
@@ -694,7 +750,7 @@ namespace WoWRenderLib.DX11.Managers
 
                 var wmo = container.GetWMO();
                 var enabledSets = container.EnabledDoodadSets;
-                tileSceneBoundsByRoot.TryGetValue(container.ParentFileDataId, out var owningTileBounds);
+                tileSceneBoundsByTile.TryGetValue((int)container.ParentTileIndex, out var owningTileBounds);
                 if (!pending.Initialized)
                 {
                     container.ActiveDoodads.Clear();
@@ -712,7 +768,8 @@ namespace WoWRenderLib.DX11.Managers
                     var doodadContainer = new M2Container(
                         _device,
                         doodad.filedataid,
-                        container.ParentFileDataId)
+                        container.ParentTileIndex,
+                        container.ParentAssetFileDataId)
                     {
                         ParentWMO = container,
                         LocalPosition = doodad.position,
@@ -752,7 +809,7 @@ namespace WoWRenderLib.DX11.Managers
 
                     ADTCache.GetOrLoad(
                         mapTile,
-                        mapTile.wdtFileDataID,
+                        (uint)mapTile.PositionIndex,
                         adtContainer.OnLoaded,
                         adtContainer.OnLoadFailed);
                     adtContainer.MarkCacheReferenceHeld();
@@ -768,7 +825,7 @@ namespace WoWRenderLib.DX11.Managers
                     tilesInFlight.Remove(mapTile);
                     failedDesiredTiles.Add(mapTile);
                     ReportSceneLoadFailure(
-                        $"Queuing ADT {mapTile.tileX}, {mapTile.tileY} for WDT {mapTile.wdtFileDataID}", ex);
+                        $"Queuing ADT {mapTile.TileX}, {mapTile.TileY} for WDT '{mapTile.WdtPath}'", ex);
                 }
             }
         }
@@ -853,11 +910,11 @@ namespace WoWRenderLib.DX11.Managers
             M2Cache.GetQueueMetrics(),
             WMOCache.GetQueueMetrics());
 
-        public bool TryGetTerrainTileMaxHeight(uint wdtFileDataId, byte tileX, byte tileY, out float height)
+        public bool TryGetTerrainTileMaxHeight(byte tileX, byte tileY, out float height)
         {
             var container = adtContainers.FirstOrDefault(candidate =>
-                candidate.IsLoaded && candidate.mapTile.wdtFileDataID == wdtFileDataId &&
-                candidate.mapTile.tileX == tileX && candidate.mapTile.tileY == tileY);
+                candidate.IsLoaded &&
+                candidate.mapTile.PositionIndex == MapTile.GetPositionIndex(tileX, tileY));
             if (container == null)
             {
                 height = 0;
@@ -881,10 +938,9 @@ namespace WoWRenderLib.DX11.Managers
                 tileSceneBounds.Add(tileBoundsKey, owningTileBounds);
             }
             owningTileBounds.SetTerrain(
-                terrain.rootADTFileDataID,
                 terrain.terrainBounds,
                 terrain.worldLiquid.hasBounds ? terrain.worldLiquid.bounds : null);
-            tileSceneBoundsByRoot[terrain.rootADTFileDataID] = owningTileBounds;
+            tileSceneBoundsByTile[adtContainer.mapTile.PositionIndex] = owningTileBounds;
             TerrainTileHeightAvailable?.Invoke(adtContainer.mapTile, terrain.terrainBounds.Max.Z);
             pendingAdtPopulations.Enqueue(new PendingAdtPopulation(
                 adtContainer,
@@ -897,13 +953,18 @@ namespace WoWRenderLib.DX11.Managers
 
         private void AddWorldModelPlacement(
             in WorldModelBatch worldModel,
-            uint rootAdtFileDataId,
+            uint tilePositionIndex,
+            uint parentAssetFileDataId,
             TileSceneBounds owningTileBounds)
         {
             if (uuidUsers.ContainsKey(worldModel.uniqueID))
                 return;
 
-            var container = new WMOContainer(_device, worldModel.fileDataID, rootAdtFileDataId)
+            var container = new WMOContainer(
+                _device,
+                worldModel.fileDataID,
+                tilePositionIndex,
+                parentAssetFileDataId)
             {
                 Position = worldModel.position,
                 Rotation = worldModel.rotation,
@@ -927,10 +988,11 @@ namespace WoWRenderLib.DX11.Managers
 
         private void AddDoodadPlacement(
             in Doodad doodad,
-            uint rootAdtFileDataId,
+            uint tilePositionIndex,
+            uint parentAssetFileDataId,
             TileSceneBounds owningTileBounds)
         {
-            var container = new M2Container(_device, doodad.fileDataID, rootAdtFileDataId)
+            var container = new M2Container(_device, doodad.fileDataID, tilePositionIndex, parentAssetFileDataId)
             {
                 Position = doodad.position,
                 Rotation = doodad.rotation,
@@ -962,8 +1024,8 @@ namespace WoWRenderLib.DX11.Managers
 
             adtContainer.Unload();
             ReportSceneLoadFailure(
-                $"Loading ADT {adtContainer.mapTile.tileX}, {adtContainer.mapTile.tileY} " +
-                $"for WDT {adtContainer.mapTile.wdtFileDataID}",
+                $"Loading ADT {adtContainer.mapTile.TileX}, {adtContainer.mapTile.TileY} " +
+                $"for WDT '{adtContainer.mapTile.WdtPath}'",
                 exception);
         }
 

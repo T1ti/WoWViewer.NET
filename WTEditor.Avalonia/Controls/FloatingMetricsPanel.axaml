@@ -126,12 +126,31 @@
 
           <StackPanel Spacing="5">
             <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="CPU work and GPU timeline history" FontWeight="SemiBold"/>
+              <TextBlock Text="CPU work history" FontWeight="SemiBold"/>
               <Button Grid.Column="1" Content="Clear" Padding="8,3"
                       Command="{Binding ClearPerformanceHistoryCommand}"/>
             </Grid>
             <controls:FrameTimelineGraph Height="210" Samples="{Binding PerformanceHistory}"/>
-            <TextBlock Text="Each sample has a stacked CPU bar (left) and GPU command-stream timeline bar (right). The graph scales to recent activity; horizontal lines mark visible frame budgets."
+            <TextBlock Text="Each sample is a stacked CPU work breakdown. The graph scales to recent CPU activity; horizontal lines mark visible frame budgets."
+                       Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <StackPanel Spacing="5">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="CPU / GPU total frame history" FontWeight="SemiBold"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <Border Width="8" Height="8" CornerRadius="2" Background="#6CB6FF" VerticalAlignment="Center"/>
+                  <TextBlock Text="CPU" Foreground="#6CB6FF" FontSize="10"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <Border Width="8" Height="8" CornerRadius="2" Background="#FF5DA2" VerticalAlignment="Center"/>
+                  <TextBlock Text="GPU" Foreground="#FF5DA2" FontSize="10"/>
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+            <controls:FrameDurationGraph Height="130" Samples="{Binding PerformanceHistory}"/>
+            <TextBlock Text="CPU and GPU use the same frame samples and vertical scale, but are shown as separate lines because their work can overlap. GPU measurements arrive several frames late."
                        Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
           </StackPanel>
 

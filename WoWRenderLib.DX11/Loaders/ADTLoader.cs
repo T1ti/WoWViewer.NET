@@ -112,13 +112,14 @@ namespace WoWRenderLib.DX11.Loaders
                 .Distinct()
                 .ToArray();
             foreach (var usedBLP in terrainTextureIds)
-                BLPCache.GetOrLoad(device, usedBLP, parsedADT.rootADTFileDataID);
+                BLPCache.GetOrLoad(device, usedBLP, parsedADT.tilePositionIndex);
 
             result.doodads = parsedADT.doodads;
             result.worldModelBatches = parsedADT.worldModelBatches;
             result.renderBatches = renderBatches;
             result.compatibleRenderRunLengths = TerrainBatching.BuildCompatibleRunLengths(renderBatches);
             result.rootADTFileDataID = parsedADT.rootADTFileDataID;
+            result.tilePositionIndex = parsedADT.tilePositionIndex;
             result.usesLegacyLighting = parsedADT.usesLegacyLighting;
             result.startPos = parsedADT.startPos;
             result.chunkBounds = parsedADT.chunkBounds;
@@ -131,7 +132,7 @@ namespace WoWRenderLib.DX11.Loaders
             result.worldLiquid = WorldLiquidLoader.Upload(
                 device,
                 parsedADT.worldLiquid ?? ParsedWorldLiquid.Empty,
-                result.rootADTFileDataID);
+                result.tilePositionIndex);
             if (result.worldLiquid.hasBounds)
             {
                 result.liquidBounds = result.worldLiquid.bounds;
@@ -187,10 +188,10 @@ namespace WoWRenderLib.DX11.Loaders
             terrain.chunkLayerDataBuffer.Dispose();
             terrain.alphaMaterialArray.Dispose();
 
-            WorldLiquidLoader.Unload(ref terrain.worldLiquid, terrain.rootADTFileDataID);
+            WorldLiquidLoader.Unload(ref terrain.worldLiquid, terrain.tilePositionIndex);
 
             foreach (var usedBLP in terrain.blpFileDataIDs)
-                BLPCache.Release(usedBLP, terrain.rootADTFileDataID);
+                BLPCache.Release(usedBLP, terrain.tilePositionIndex);
 
             // Diffuse and height textures are released through BLPCache above.
         }

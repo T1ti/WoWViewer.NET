@@ -17,6 +17,7 @@ using WoWRenderLib.Loaders;
 using WoWRenderLib.Services;
 using WoWRenderLib.Diagnostics;
 using WoWRenderLib.Structs;
+using WoWLib;
 
 namespace WoWRenderLib.DX11
 {
@@ -210,7 +211,7 @@ namespace WoWRenderLib.DX11
         public Vector3? InitialCameraPosition { get; set; }
         public Vector3? InitialCameraDirection { get; set; }
         public uint CurrentMapHighestUniqueId => sceneManager?.CurrentMapHighestUniqueId ?? 0;
-        public uint CurrentWdtFileDataId => sceneManager?.CurrentWDTFileDataID ?? 0;
+        public int CurrentMapId => sceneManager?.CurrentMapId ?? -1;
         public WorldLightingSettings ActiveWorldLighting =>
             sceneManager?.ActiveWorldLighting ?? WorldLightingSettings.Defaults;
         public IReadOnlyList<WorldLightingContribution> ActiveWorldLightingContributions =>
@@ -221,7 +222,7 @@ namespace WoWRenderLib.DX11
         public WowViewerEngineStatus Status { get; private set; } =
             new(WowViewerEngineState.Created, "Renderer created.");
         public event EventHandler<WowViewerEngineStatus>? StatusChanged;
-        private (uint Wdt, byte X, byte Y, Vector2 Position)? _pendingTerrainNavigation;
+        private (int MapId, int PositionIndex, Vector2 Position)? _pendingTerrainNavigation;
 
         private bool _disposed;
 
@@ -930,17 +931,19 @@ namespace WoWRenderLib.DX11
                             $"renderer defaults remain active. {lightingException}");
                     }
 
-                    var defaultWdt = WowlibFileSystem.ResolveAssetId(
-                        fileSystem, "world/maps/Azeroth/Azeroth.wdt");
-                    if (defaultWdt == 0)
+                    const string defaultWdtPath = "world/maps/Azeroth/Azeroth.wdt";
+                    var defaultWdt = fileSystem.Kind == StorageKind.Casc
+                        ? WowlibFileSystem.ResolveAssetId(fileSystem, defaultWdtPath)
+                        : 0u;
+                    if (defaultWdt == 0 && !fileSystem.Exists(new WoWLib.FileKey(defaultWdtPath)))
                         throw new FileNotFoundException("The MPQ client has no Azeroth WDT to load as the initial world.");
-                    sceneManager.LoadWDT(defaultWdt);
+                    sceneManager.LoadWDT(0, defaultWdtPath, defaultWdt);
                     var tile = SceneManager.GetTileFromPosition(activeCamera.Position);
                     var wdt = sceneManager.GetCurrentWDT();
                     if (wdt != null && !wdt.TryGetTile(tile.x, tile.y, out _))
                         tile = sceneManager.GetFirstMapTile();
                     _worldNavigation.PublishIfEmpty(new WorldNavigationTarget(
-                        0, defaultWdt, tile.x + 0.5, tile.y + 0.5, false,
+                        0, defaultWdtPath, defaultWdt, tile.x + 0.5, tile.y + 0.5, false,
                         PreserveCameraPosition: InitialCameraPosition.HasValue));
                     Volatile.Write(ref _contentInitializationComplete, 1);
                     SetStatus(WowViewerEngineState.Ready, $"{fileSystem.Version} MPQ files ready.");
@@ -1116,14 +1119,16 @@ namespace WoWRenderLib.DX11
 
         public void NavigateTo(
             int mapId,
-            uint wdtFileDataId,
+            string wdtPath,
+            uint wdtFileDataIdHint,
             double tileX,
             double tileY,
             bool isGlobalWmo)
         {
             _worldNavigation.Publish(new WorldNavigationTarget(
                 mapId,
-                wdtFileDataId,
+                wdtPath,
+                wdtFileDataIdHint,
                 tileX,
                 tileY,
                 isGlobalWmo));
@@ -1152,7 +1157,10 @@ namespace WoWRenderLib.DX11
 
         private void ApplyWorldNavigation(WorldNavigationTarget navigation)
         {
-            sceneManager.LoadWDT(navigation.WdtFileDataId);
+            sceneManager.LoadWDT(
+                navigation.MapId,
+                navigation.WdtPath,
+                navigation.WdtFileDataIdHint);
             sceneManager.PreloadTEX();
             _pendingTerrainNavigation = null;
             _currentMapId = navigation.MapId;
@@ -1179,16 +1187,21 @@ namespace WoWRenderLib.DX11
             var worldX = (float)((32d - clampedY) * 533.33333d);
             var worldY = (float)((32d - clampedX) * 533.33333d);
             var tile = ((byte)Math.Floor(clampedX), (byte)Math.Floor(clampedY));
-            _pendingTerrainNavigation = (navigation.WdtFileDataId, tile.Item1, tile.Item2, new Vector2(worldX, worldY));
+            _pendingTerrainNavigation = (
+                sceneManager.CurrentMapId,
+                MapTile.GetPositionIndex(tile.Item1, tile.Item2),
+                new Vector2(worldX, worldY));
             // Move immediately so this exact tile enters the loading queue.
             activeCamera.Position = new Vector3(worldX, worldY, activeCamera.Position.Z);
             UpdateDynamicWorldLighting(force: true);
-            if (sceneManager.TryGetTerrainTileMaxHeight(navigation.WdtFileDataId, tile.Item1, tile.Item2, out var height))
+            if (sceneManager.TryGetTerrainTileMaxHeight(tile.Item1, tile.Item2, out var height))
                 OnTerrainTileHeightAvailable(new MapTile
                 {
-                    wdtFileDataID = navigation.WdtFileDataId,
-                    tileX = tile.Item1,
-                    tileY = tile.Item2
+                    MapId = sceneManager.CurrentMapId,
+                    WdtPath = sceneManager.CurrentWdtPath,
+                    WdtFileDataId = sceneManager.CurrentWdtFileDataId,
+                    TileX = tile.Item1,
+                    TileY = tile.Item2
                 }, height);
         }
 
@@ -1276,10 +1289,11 @@ namespace WoWRenderLib.DX11
         private void OnTerrainTileHeightAvailable(MapTile tile, float highestHeight)
         {
             if (_pendingTerrainNavigation is not { } navigation ||
-                tile.wdtFileDataID != navigation.Wdt || tile.tileX != navigation.X || tile.tileY != navigation.Y)
+                tile.MapId != navigation.MapId ||
+                tile.PositionIndex != navigation.PositionIndex)
                 return;
 
-            var center = SceneManager.GetTileCenterPosition(tile.tileX, tile.tileY);
+            var center = SceneManager.GetTileCenterPosition(tile.TileX, tile.TileY);
             var horizontal = new Vector2(center.X - navigation.Position.X, center.Y - navigation.Position.Y);
             var direction = horizontal.LengthSquared() > float.Epsilon
                 ? Vector3.Normalize(new Vector3(Vector2.Normalize(horizontal), -MathF.Tan(20f * MathF.PI / 180f)))

@@ -18,14 +18,14 @@ public sealed class TileStreamingSmokeTests
     {
         var root = CoreADTLoader.GetSplitAdtRootPath(new MapTile
         {
-            wdtFileDataID = 775971,
-            tileX = 38,
-            tileY = 24
+            WdtPath = "world/maps/Azeroth/Azeroth.wdt",
+            TileX = 38,
+            TileY = 24
         });
 
-        Assert.AreEqual("__fdid_maps/775971/38_24.adt", root);
-        Assert.AreEqual("__fdid_maps/775971/38_24_tex0.adt", CoreADTLoader.AddAdtSuffix(root, "_tex0"));
-        Assert.AreEqual("__fdid_maps/775971/38_24_obj0.adt", CoreADTLoader.AddAdtSuffix(root, "_obj0"));
+        Assert.AreEqual("__split_adts/world/maps/azeroth/azeroth.wdt/38_24.adt", root);
+        Assert.AreEqual("__split_adts/world/maps/azeroth/azeroth.wdt/38_24_tex0.adt", CoreADTLoader.AddAdtSuffix(root, "_tex0"));
+        Assert.AreEqual("__split_adts/world/maps/azeroth/azeroth.wdt/38_24_obj0.adt", CoreADTLoader.AddAdtSuffix(root, "_obj0"));
     }
 
     [TestMethod]
@@ -45,15 +45,20 @@ public sealed class TileStreamingSmokeTests
     [TestMethod]
     public void DesiredTilesAreOrderedFromTheCameraOutward()
     {
-        var available = new HashSet<(byte X, byte Y)>();
+        var available = new HashSet<int>();
         for (byte x = 30; x <= 34; x++)
         for (byte y = 30; y <= 34; y++)
-            available.Add((x, y));
+            available.Add(MapTile.GetPositionIndex(x, y));
 
-        var tiles = TileStreamingPolicy.BuildDesiredTiles(123, 32, 32, 2, available);
+        var tiles = TileStreamingPolicy.BuildDesiredTiles("world/maps/Azeroth/Azeroth.wdt", 32, 32, 2, available);
 
         Assert.AreEqual(25, tiles.Count);
-        Assert.AreEqual(new MapTile { wdtFileDataID = 123, tileX = 32, tileY = 32 }, tiles[0]);
+        Assert.AreEqual(new MapTile
+        {
+            WdtPath = "world/maps/Azeroth/Azeroth.wdt",
+            TileX = 32,
+            TileY = 32
+        }, tiles[0]);
         for (var index = 1; index < tiles.Count; index++)
         {
             Assert.IsTrue(
@@ -124,7 +129,7 @@ public sealed class TileStreamingSmokeTests
     {
         var delay = TimeSpan.FromMilliseconds(750);
         var clock = new ManualTimeProvider();
-        var tile = new MapTile { wdtFileDataID = 123, tileX = 32, tileY = 32 };
+        var tile = new MapTile { WdtPath = "world/maps/Azeroth/Azeroth.wdt", TileX = 32, TileY = 32 };
         var container = new ADTContainer(default, tile);
 
         container.ScheduleUnload(clock);
@@ -140,7 +145,7 @@ public sealed class TileStreamingSmokeTests
     {
         var delay = TimeSpan.FromMilliseconds(750);
         var clock = new ManualTimeProvider();
-        var tile = new MapTile { wdtFileDataID = 123, tileX = 32, tileY = 32 };
+        var tile = new MapTile { WdtPath = "world/maps/Azeroth/Azeroth.wdt", TileX = 32, TileY = 32 };
         var container = new ADTContainer(default, tile);
 
         container.ScheduleUnload(clock);
@@ -156,7 +161,7 @@ public sealed class TileStreamingSmokeTests
     {
         var delay = TimeSpan.FromMilliseconds(750);
         var clock = new ManualTimeProvider();
-        var tile = new MapTile { wdtFileDataID = 123, tileX = 31, tileY = 32 };
+        var tile = new MapTile { WdtPath = "world/maps/Azeroth/Azeroth.wdt", TileX = 31, TileY = 32 };
         var container = new ADTContainer(default, tile);
 
         container.ScheduleUnload(clock);
@@ -170,7 +175,7 @@ public sealed class TileStreamingSmokeTests
     [TestMethod]
     public void TerrainEditBaselineIsCapturedOnlyWhenEditingStarts()
     {
-        var tile = new MapTile { wdtFileDataID = 123, tileX = 32, tileY = 32 };
+        var tile = new MapTile { WdtPath = "world/maps/Azeroth/Azeroth.wdt", TileX = 32, TileY = 32 };
         var container = new ADTContainer(default, tile);
         container.OnLoaded(new Terrain
         {
@@ -193,8 +198,8 @@ public sealed class TileStreamingSmokeTests
 
     private static int DistanceSquared(MapTile tile, int centerX, int centerY)
     {
-        var x = tile.tileX - centerX;
-        var y = tile.tileY - centerY;
+        var x = tile.TileX - centerX;
+        var y = tile.TileY - centerY;
         return x * x + y * y;
     }
 

@@ -31,7 +31,7 @@ namespace WoWRenderLib.DX11.Managers
                 return;
 
             SelectedObject.Position += delta;
-            MarkTileBoundsDirty(SelectedObject.ParentFileDataId);
+            MarkTileBoundsDirty((int)SelectedObject.ParentTileIndex);
 
             if (SelectedObject is M2Container selectedM2)
             {
@@ -60,7 +60,7 @@ namespace WoWRenderLib.DX11.Managers
             SelectedObject.Scale = lockWorldModelScale && SelectedObject is WMOContainer
                 ? 1f
                 : Math.Max(0.001f, scale);
-            MarkTileBoundsDirty(SelectedObject.ParentFileDataId);
+            MarkTileBoundsDirty((int)SelectedObject.ParentTileIndex);
 
             if (SelectedObject is M2Container selectedM2 &&
                 m2InstancePackets.TryGetValue(selectedM2.FileDataId, out var packet))
@@ -86,9 +86,9 @@ namespace WoWRenderLib.DX11.Managers
         /// editing and future terrain/liquid mutation paths must call this
         /// after changing world-space bounds.
         /// </summary>
-        public void MarkTileBoundsDirty(uint rootAdtFileDataId)
+        public void MarkTileBoundsDirty(int tilePositionIndex)
         {
-            if (tileSceneBoundsByRoot.TryGetValue(rootAdtFileDataId, out var bounds))
+            if (tileSceneBoundsByTile.TryGetValue(tilePositionIndex, out var bounds))
                 bounds.MarkDirty();
         }
 
@@ -176,7 +176,7 @@ namespace WoWRenderLib.DX11.Managers
                     UploadTerrainVertices(terrain);
                     adt.UpdateTerrain(terrain);
                     adt.RefreshModifiedState();
-                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
+                    MarkTileBoundsDirty(adt.mapTile.PositionIndex);
                 }
             }
         }
@@ -431,9 +431,7 @@ namespace WoWRenderLib.DX11.Managers
             {
                 var adt = adtContainers.FirstOrDefault(candidate =>
                     candidate.IsLoaded &&
-                    candidate.mapTile.wdtFileDataID == CurrentWDTFileDataID &&
-                    candidate.mapTile.tileX == tileX &&
-                    candidate.mapTile.tileY == tileY);
+                    candidate.mapTile.PositionIndex == MapTile.GetPositionIndex(tileX, tileY));
                 if (adt == null)
                     return Array.Empty<TerrainChunkTextureLayer>();
 
@@ -625,7 +623,7 @@ namespace WoWRenderLib.DX11.Managers
                     UploadTerrainVertices(terrain);
                     tile.UpdateTerrain(terrain);
                     tile.RefreshModifiedState();
-                    MarkTileBoundsDirty(terrain.rootADTFileDataID);
+                    MarkTileBoundsDirty(tile.mapTile.PositionIndex);
                 }
             }
         }

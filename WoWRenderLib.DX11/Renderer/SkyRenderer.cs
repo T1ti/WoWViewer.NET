@@ -44,6 +44,7 @@ internal sealed class SkyRenderer(
     ComPtr<ID3D11DeviceContext> deviceContext) : IDisposable
 {
     private const uint CacheOwnerId = 0xFFFF_FFFEu;
+    private static readonly Matrix4x4 SkyboxTransform = Matrix4x4.CreateRotationZ(MathF.PI);
     private readonly ComPtr<ID3D11Device> _device = device;
     private readonly ComPtr<ID3D11DeviceContext> _deviceContext = deviceContext;
     private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
@@ -52,6 +53,7 @@ internal sealed class SkyRenderer(
     private CompiledShader _m2Shader;
     private ComPtr<ID3D11Buffer> _gradientConstantBuffer;
     private ComPtr<ID3D11Buffer> _m2ConstantBuffer;
+    private ComPtr<ID3D11Buffer> _bonePaletteConstantBuffer;
     private ComPtr<ID3D11Buffer> _instanceBuffer;
     private ComPtr<ID3D11DepthStencilState> _depthDisabledState;
     private ComPtr<ID3D11RasterizerState> _cullState;
@@ -60,6 +62,9 @@ internal sealed class SkyRenderer(
     private ShaderManager? _shaderManager;
     private WorldSkyLighting _lighting = WorldSkyLighting.None;
     private readonly HashSet<uint> _trackedSkyboxFileDataIds = [];
+    private readonly Dictionary<uint, M2AnimationPoseCache> _animationCaches = [];
+    private M2AnimationPose? _uploadedPose;
+    private long _uploadedPoseVersion;
     private bool _initialized;
 
     public void Initialize(ShaderManager shaderManager, CompiledShader m2Shader)
@@ -92,7 +97,13 @@ internal sealed class SkyRenderer(
                 null,
                 ref _m2ConstantBuffer));
 
-            var skyboxTransform = Matrix4x4.CreateRotationZ(MathF.PI);
+            bufferDesc.ByteWidth = (uint)(M2Animation.MaxGpuBones * sizeof(Matrix4x4));
+            SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                in bufferDesc,
+                null,
+                ref _bonePaletteConstantBuffer));
+
+            var skyboxTransform = SkyboxTransform;
             bufferDesc = new BufferDesc
             {
                 ByteWidth = (uint)Marshal.SizeOf<Matrix4x4>(),
@@ -161,6 +172,7 @@ internal sealed class SkyRenderer(
         {
             M2Cache.Release(fileDataId, CacheOwnerId);
             _trackedSkyboxFileDataIds.Remove(fileDataId);
+            _animationCaches.Remove(fileDataId);
         }
 
         foreach (var fileDataId in requestedFileDataIds)
@@ -170,7 +182,8 @@ internal sealed class SkyRenderer(
         }
     }
 
-    public unsafe SkyRenderStats Render(Camera camera)
+    public unsafe SkyRenderStats Render(
+        Camera camera, bool animateModels, long sceneTimeMilliseconds, long lightTime)
     {
         if (!_initialized || (!_lighting.HasColorData && !_lighting.HasSkyboxes))
             return default;
@@ -241,7 +254,11 @@ internal sealed class SkyRenderer(
                 RenderSkyboxModel(
                     camera,
                     model,
+                    skybox.Flags,
                     skybox.Opacity,
+                    animateModels,
+                    sceneTimeMilliseconds,
+                    lightTime,
                     ref drawCalls,
                     ref submittedIndices);
             }
@@ -262,7 +279,11 @@ internal sealed class SkyRenderer(
     private void RenderSkyboxModel(
         Camera camera,
         ParsedDoodadBatch model,
+        int flags,
         float opacity,
+        bool animateModels,
+        long sceneTimeMilliseconds,
+        long lightTime,
         ref uint drawCalls,
         ref ulong submittedIndices)
     {
@@ -285,10 +306,41 @@ internal sealed class SkyRenderer(
             globalOpacity = opacity
         };
 
+        M2AnimationPose? pose = null;
+        if (animateModels && model.animation is { } animation &&
+            (animation.HasAnimatedBones || animation.HasMaterialTracks))
+        {
+            var time = SkyboxAnimationClock.GetTimeMilliseconds(
+                animation, flags, sceneTimeMilliseconds, lightTime);
+            if (!_animationCaches.TryGetValue(model.fileDataID, out var cache))
+            {
+                cache = new M2AnimationPoseCache();
+                _animationCaches.Add(model.fileDataID, cache);
+            }
+            cache.BeginFrame(animation, time, true);
+            var frame = new M2AnimationFrameKey(animation.DefaultSequenceIndex, time);
+            var key = animation.HasBillboardBones
+                ? new M2AnimationPoseKey(frame, 0, SkyboxTransform * view)
+                : M2AnimationPoseKey.Shared(frame);
+            pose = cache.GetPose(animation, key, model.submeshes, true);
+        }
+
+        constants.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
+        if (pose?.BonePalette is { } palette &&
+            (!ReferenceEquals(_uploadedPose, pose) || _uploadedPoseVersion != pose.Version))
+        {
+            _deviceContext.UpdateSubresource(_bonePaletteConstantBuffer, 0,
+                ref Unsafe.NullRef<Box>(), ref palette[0], 0, 0);
+            _uploadedPose = pose;
+            _uploadedPoseVersion = pose.Version;
+        }
+
         _deviceContext.IASetInputLayout(_m2Shader.InputLayout);
         _deviceContext.VSSetShader(_m2Shader.VertexShader, ref nullClassInstance, 0);
         _deviceContext.PSSetShader(_m2Shader.PixelShader, ref nullClassInstance, 0);
         _deviceContext.VSSetConstantBuffers(0, 1, ref _m2ConstantBuffer);
+        if (constants.hasSkinning != 0)
+            _deviceContext.VSSetConstantBuffers(1, 1, ref _bonePaletteConstantBuffer);
         _deviceContext.PSSetConstantBuffers(0, 1, ref _m2ConstantBuffer);
 
         var vertexStride = (uint)Marshal.SizeOf<M2Vertex>();
@@ -301,12 +353,30 @@ internal sealed class SkyRenderer(
         _deviceContext.IASetVertexBuffers(1, 1, ref _instanceBuffer, in instanceStride, in instanceOffset);
         _deviceContext.IASetIndexBuffer(indexBuffer, Format.FormatR16Uint, 0);
 
-        foreach (var batch in model.submeshes)
+        for (var batchIndex = 0; batchIndex < model.submeshes.Length; batchIndex++)
         {
+            var batch = model.submeshes[batchIndex];
             constants.vertexShader = checked((int)batch.vertexShaderID);
             constants.pixelShader = checked((int)batch.pixelShaderID);
             constants.blendMode = batch.blendType;
             constants.alphaRef = batch.blendType == 1 ? 128f / 255f : -1f;
+            if (pose is not null)
+            {
+                var material = pose.Materials[batchIndex];
+                constants.materialColor = material.Color;
+                constants.texMatrix1 = material.TextureMatrix1;
+                constants.texMatrix2 = material.TextureMatrix2;
+                constants.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
+                constants.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
+            }
+            else
+            {
+                constants.materialColor = Vector4.One;
+                constants.texMatrix1 = Matrix4x4.Identity;
+                constants.texMatrix2 = Matrix4x4.Identity;
+                constants.hasTexMatrix1 = 0;
+                constants.hasTexMatrix2 = 0;
+            }
             _deviceContext.UpdateSubresource(
                 _m2ConstantBuffer,
                 0,
@@ -324,10 +394,10 @@ internal sealed class SkyRenderer(
                     ? _missingTexture
                     : BLPCache.GetCurrent(batch.material[index], _missingTexture);
                 _deviceContext.PSSetShaderResources((uint)index, 1, ref texture);
-                var flags = batch.textureFlags is { } textureFlags && index < textureFlags.Length
+                var textureFlagsValue = batch.textureFlags is { } textureFlags && index < textureFlags.Length
                     ? textureFlags[index]
                     : 0;
-                var sampler = _samplers[GetSamplerIndex(flags)];
+                var sampler = _samplers[GetSamplerIndex(textureFlagsValue)];
                 _deviceContext.PSSetSamplers((uint)index, 1, ref sampler);
             }
 
@@ -473,6 +543,7 @@ internal sealed class SkyRenderer(
         foreach (var fileDataId in _trackedSkyboxFileDataIds)
             M2Cache.Release(fileDataId, CacheOwnerId);
         _trackedSkyboxFileDataIds.Clear();
+        _animationCaches.Clear();
         foreach (var blendState in _blendStates)
             blendState.Dispose();
         foreach (var sampler in _samplers)
@@ -482,6 +553,7 @@ internal sealed class SkyRenderer(
         _cullState.Dispose();
         _depthDisabledState.Dispose();
         _instanceBuffer.Dispose();
+        _bonePaletteConstantBuffer.Dispose();
         _m2ConstantBuffer.Dispose();
         _gradientConstantBuffer.Dispose();
     }

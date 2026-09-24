@@ -40,9 +40,16 @@ public static class ADTLoader
 
     public static unsafe ParsedADT ParseADT(MapTile mapTile)
     {
-        var wdt = WDTCache.GetOrLoad(mapTile.wdtFileDataID);
-        if (!wdt.TryGetTile(mapTile.tileX, mapTile.tileY, out var files) || files.RootAdt == 0)
-            throw new FileNotFoundException($"ADT tile {mapTile.tileX}_{mapTile.tileY} is not present in WDT {mapTile.wdtFileDataID}.");
+        var wdt = WDTCache.GetOrLoad(mapTile.WdtPath, mapTile.WdtFileDataId);
+        if (!wdt.TryGetTile(mapTile.TileX, mapTile.TileY, out var files) ||
+            (files.RootAdt == 0 && string.IsNullOrWhiteSpace(files.RootAdtPath)))
+        {
+            var source = WowlibFileSystem.ReadSourceDescription(
+                WowlibFileSystem.Current,
+                mapTile.WdtPath,
+                mapTile.WdtFileDataId);
+            throw new FileNotFoundException($"ADT tile {mapTile.TileX}_{mapTile.TileY} is not present in WDT '{source}'.");
+        }
 
         var fileSystem = WowlibFileSystem.Current;
         using var adt = Formats.ADT.ADT.ForVersion(fileSystem.Version);
@@ -52,16 +59,21 @@ public static class ADTLoader
              Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_height_texturing)) != 0
             ? Formats.ADT.AlphaFormat.highres_8bit
             : Formats.ADT.AlphaFormat.lowres_4bit;
-        using var rootKey = fileSystem.Kind == StorageKind.Mpq
+        using var rootKey = fileSystem.Kind == StorageKind.Mpq && !string.IsNullOrWhiteSpace(files.RootAdtPath)
+            ? new FileKey(files.RootAdtPath)
+            : fileSystem.Kind == StorageKind.Mpq
             ? WowlibFileSystem.AssetKey(fileSystem, files.RootAdt)
             : wdt.HasSplitAdts
             ? RegisterSplitAdtFiles(fileSystem, mapTile, files)
-            : ResolveFileKey(fileSystem, files.RootAdt);
+            : files.RootAdt != 0
+            ? ResolveFileKey(fileSystem, files.RootAdt)
+            : new FileKey(MapAssetPathResolver.GetLegacyAdtPath(wdt.Path, mapTile.TileX, mapTile.TileY));
         adt.Read(fileSystem, rootKey, alphaFormat);
 
         var parsed = new ParsedADT
         {
             rootADTFileDataID = files.RootAdt,
+            tilePositionIndex = (uint)mapTile.PositionIndex,
             usesLegacyLighting = fileSystem.Kind == StorageKind.Mpq,
             worldLiquid = ParsedWorldLiquid.Empty
         };
@@ -614,7 +626,16 @@ public static class ADTLoader
     }
 
     internal static string GetSplitAdtRootPath(MapTile mapTile) =>
-        $"__fdid_maps/{mapTile.wdtFileDataID}/{mapTile.tileX}_{mapTile.tileY}.adt";
+        $"__split_adts/{GetSplitAdtIdentity(mapTile)}/{mapTile.TileX}_{mapTile.TileY}.adt";
+
+    private static string GetSplitAdtIdentity(MapTile mapTile)
+    {
+        if (!string.IsNullOrWhiteSpace(mapTile.WdtPath))
+            return mapTile.WdtPath.Trim('/').ToLowerInvariant();
+        if (mapTile.WdtFileDataId != 0)
+            return $"fdid_{mapTile.WdtFileDataId:x8}";
+        return $"map_{mapTile.MapId}";
+    }
 
     internal static string AddAdtSuffix(string rootPath, string suffix) =>
         rootPath.EndsWith(".adt", StringComparison.OrdinalIgnoreCase)

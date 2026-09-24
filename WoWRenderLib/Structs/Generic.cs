@@ -4,23 +4,30 @@ namespace WoWRenderLib.Structs
 {
     public readonly struct MapTile : IEquatable<MapTile>
     {
-        public readonly uint wdtFileDataID { get; init; }
-        public readonly byte tileX { get; init; }
-        public readonly byte tileY { get; init; }
+        public MapTile() { }
+
+        // MapId and the compact position are the logical tile identity. The
+        // path and FileDataID below are optional file-open hints only; neither
+        // exists consistently across all supported client generations.
+        public int MapId { get; init; } = -1;
+        public string WdtPath { get; init; } = string.Empty;
+        public uint WdtFileDataId { get; init; }
+        public byte TileX { get; init; }
+        public byte TileY { get; init; }
+
+        // WDT stores the 64 rows for each column contiguously: row + column*64.
+        // In the renderer's coordinates TileX is the row and TileY is the column.
+        public int PositionIndex => GetPositionIndex(TileX, TileY);
+
+        public static int GetPositionIndex(byte tileX, byte tileY) => tileX + (tileY * 64);
 
         public bool Equals(MapTile other)
         {
-            return tileX == other.tileX && tileY == other.tileY && wdtFileDataID == other.wdtFileDataID;
+            return MapId == other.MapId && PositionIndex == other.PositionIndex;
         }
 
         public override bool Equals(object? obj) => obj is MapTile other && Equals(other);
-        // MapTile is used as a high-frequency key by the scene tile queues,
-        // sets, and bounds cache. HashCode.Combine is deliberately general
-        // purpose but does considerably more work than this fixed-width key
-        // requires. Keep the WDT id mixed with both coordinates while using
-        // a small, allocation-free hash suitable for these internal keys.
-        public override int GetHashCode() =>
-            unchecked((int)((wdtFileDataID * 397u) ^ ((uint)tileX << 8) ^ tileY));
+        public override int GetHashCode() => HashCode.Combine(MapId, PositionIndex);
 
         public static bool operator ==(MapTile left, MapTile right) => left.Equals(right);
         public static bool operator !=(MapTile left, MapTile right) => !left.Equals(right);

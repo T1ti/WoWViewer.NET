@@ -4,6 +4,7 @@ namespace WTEditor.Avalonia.ViewModels;
 
 public sealed record WorldNavigationRequest(
     int MapId,
-    uint WdtFileDataId,
+    string WdtPath,
+    uint WdtFileDataIdHint,
     TilePoint Position,
     bool IsGlobalWmo);

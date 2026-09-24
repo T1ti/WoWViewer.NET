@@ -28,6 +28,9 @@ namespace WoWRenderLib.Structs
     public struct ParsedADT
     {
         public uint rootADTFileDataID;
+        // Scene/cache ownership is the tile position, not the optional ADT
+        // FileDataID. The latter remains only the source asset identifier.
+        public uint tilePositionIndex;
         public bool usesLegacyLighting;
         public uint vao;
         public byte[] vertexBuffer;

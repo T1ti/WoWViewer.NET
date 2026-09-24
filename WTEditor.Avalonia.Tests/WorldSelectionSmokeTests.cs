@@ -38,6 +38,7 @@ public sealed class WorldSelectionSmokeTests
         using var viewport = new Editor3DViewModel(session);
         var expected = new WorldNavigationRequest(
             42,
+            "world/maps/Test/Test.wdt",
             123456,
             new WTEditor.Application.Geometry.TilePoint(12.5, 34.25),
             false);
@@ -169,7 +170,11 @@ public sealed class WorldSelectionSmokeTests
             original.Reverse().ToArray()).ConfigureAwait(false);
         var changed = await cache.CacheAllAsync(
             "1.2.3.4",
-            [original[0], original[1] with { WdtFileDataId = 303 }]).ConfigureAwait(false);
+            [original[0], original[1] with
+            {
+                WdtPath = "world/maps/Two-v2/Two-v2.wdt",
+                WdtFileDataId = 303
+            }]).ConfigureAwait(false);
 
         Assert.AreSame(first, reordered);
         Assert.AreNotSame(first, changed);

@@ -13,7 +13,12 @@ namespace WoWRenderLib.DX11.Objects
         private float _scale;
         private Matrix4x4? _modelMatrix;
 
-        public uint ParentFileDataId { get; set; }
+        // Scene ownership is logical tile state, not an asset identifier.
+        // Parent tile indices are scoped to the active map scene.
+        public uint ParentTileIndex { get; set; }
+        // Optional source asset metadata for the inspector. This is not used
+        // for scene ownership or cache/index lookup.
+        public uint ParentAssetFileDataId { get; set; }
         public uint FileDataId { get; set; }
         public Vector3 Position
         {
@@ -71,11 +76,16 @@ namespace WoWRenderLib.DX11.Objects
 
         public bool IsSelected { get; set; } = false;
 
-        public Container3D(ComPtr<ID3D11Device> device, uint fileDataId, uint parentFileDataId)
+        public Container3D(
+            ComPtr<ID3D11Device> device,
+            uint fileDataId,
+            uint parentTileIndex,
+            uint parentAssetFileDataId = 0)
         {
             _device = device;
             FileDataId = fileDataId;
-            ParentFileDataId = parentFileDataId;
+            ParentTileIndex = parentTileIndex;
+            ParentAssetFileDataId = parentAssetFileDataId;
         }
 
         public virtual BoundingSphere? GetBoundingSphere()

@@ -207,7 +207,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    LoadDiagnostics.Error($"Uploading ADT {parsedADT.rootADTFileDataID}", e);
+                    LoadDiagnostics.Error($"Uploading ADT tile {parsedADT.tilePositionIndex}", e);
                     if (failures.TryScheduleRetry(
                             key,
                             Users.ContainsKey(key),

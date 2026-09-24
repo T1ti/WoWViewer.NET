@@ -129,9 +129,12 @@ public sealed class MinimapService : IMinimapService
 
     private MinimapDocument LoadWmo(WorldMapCatalogEntry map, CancellationToken token)
     {
-        var data = string.IsNullOrWhiteSpace(map.Wdt.Path)
+        var fileSystem = WowlibFileSystem.TryGetCurrent();
+        var data = fileSystem?.Kind == StorageKind.Casc && map.Wdt.FileDataId != 0
             ? _wmoLoader.Load(map.Wdt.FileDataId, token)
-            : _wmoLoader.Load(map.Wdt.Path, token);
+            : !string.IsNullOrWhiteSpace(map.Wdt.Path)
+                ? _wmoLoader.Load(map.Wdt.Path, token)
+                : _wmoLoader.Load(map.Wdt.FileDataId, token);
         var images = new List<WmoMinimapImage>();
         try
         {

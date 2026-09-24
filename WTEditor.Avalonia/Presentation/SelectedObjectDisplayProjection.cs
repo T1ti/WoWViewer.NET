@@ -84,8 +84,8 @@ internal sealed class SelectedObjectDisplayProjection
             WMOContainer wmo => WorldModelSelectionDisplayDataFactory.Create(wmo),
             ADTContainer adt => new TerrainObjectData(
                 adt.FileDataId,
-                adt.mapTile.tileX,
-                adt.mapTile.tileY,
+                adt.mapTile.TileX,
+                adt.mapTile.TileY,
                 adt.IsLoaded,
                 adt.IsModified),
             _ => null

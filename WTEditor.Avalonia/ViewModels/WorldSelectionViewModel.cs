@@ -142,7 +142,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        if (eventArgs.PropertyName == nameof(Editor3DViewModel.ActiveWdtFileDataId))
+        if (eventArgs.PropertyName == nameof(Editor3DViewModel.ActiveMapId))
         {
             SynchronizeActiveWorldSelection();
             return;
@@ -295,6 +295,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
         _viewport.RequestWorldNavigation(new WorldNavigationRequest(
             map.Map.Id,
+            map.Map.WdtPath,
             map.Wdt.FileDataId,
             position,
             !map.HasTerrain));
@@ -302,12 +303,12 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     private void SynchronizeActiveWorldSelection()
     {
-        if (!_isMapsLoaded || _viewport.ActiveWdtFileDataId == 0)
+        if (!_isMapsLoaded || _viewport.ActiveMapId < 0)
             return;
 
         var active = _allMaps.FirstOrDefault(map =>
             _mapEntries.TryGetValue(map.Id, out var entry) &&
-            entry.Wdt.FileDataId == _viewport.ActiveWdtFileDataId);
+            map.Id == _viewport.ActiveMapId);
         if (active == null)
             return;
 
@@ -331,7 +332,7 @@ public partial class WorldSelectionViewModel : ViewModelBase, IDisposable
 
     private void UpdateActivePosition()
     {
-        if (_viewport.ActiveWdtFileDataId == 0)
+        if (_viewport.ActiveMapId < 0)
         {
             Minimap.ActivePosition = null;
             Minimap.ActiveDirection = null;

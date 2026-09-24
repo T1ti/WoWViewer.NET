@@ -8,36 +8,43 @@ namespace WoWRenderLib.Cache;
 public static class WDTCache
 {
     private const int TilesPerAxis = 64;
-    private static readonly Dictionary<uint, WdtFile> Cache = [];
+    private static readonly Dictionary<string, WdtFile> Cache = new(StringComparer.OrdinalIgnoreCase);
 
-    public static WdtFile GetOrLoad(uint fileDataId)
+    public static WdtFile GetOrLoad(uint fileDataId) => GetOrLoad(string.Empty, fileDataId);
+
+    public static WdtFile GetOrLoad(string? path, uint fileDataId = 0)
     {
-        if (Cache.TryGetValue(fileDataId, out var value))
+        var wdtPath = NormalizePath(path);
+        var fileSystem = WowlibFileSystem.Current;
+        var readsByFileDataId = fileSystem.Kind == StorageKind.Casc && fileDataId != 0;
+        var cacheKey = readsByFileDataId || wdtPath.Length == 0
+            ? $"__fdid_wdt/{fileDataId}"
+            : wdtPath;
+        if (Cache.TryGetValue(cacheKey, out var value))
             return value;
 
-        var fileSystem = WowlibFileSystem.Current;
         var format = Formats.WDT.WDT.ForVersion(fileSystem.Version);
-        using (var key = WowlibFileSystem.AssetKey(fileSystem, fileDataId))
+        using (var key = WowlibFileSystem.CreateReadKey(fileSystem, wdtPath, fileDataId))
             format.Read(fileSystem, key);
 
         var root = format.Root;
         var header = root.Header;
         var mapFileDataIds = GetMapFileDataIds(root);
         var hasSplitAdts = mapFileDataIds.Length > 0;
-        var wdtPath = fileSystem.Kind == StorageKind.Mpq
-            ? LegacyAssetIds.TryGetPath(fileSystem, fileDataId, out var legacyPath) ? legacyPath : string.Empty
-            : MapAssetPathResolver.TryGetPath(fileDataId, out var modernPath) ? modernPath : string.Empty;
+        if (wdtPath.Length == 0)
+        {
+            wdtPath = fileSystem.Kind == StorageKind.Mpq
+                ? LegacyAssetIds.TryGetPath(fileSystem, fileDataId, out var legacyPath) ? legacyPath : string.Empty
+                : MapAssetPathResolver.TryGetPath(fileDataId, out var modernPath) ? modernPath : string.Empty;
+        }
         WdtGlobalWmoPlacement? globalWmoPlacement = null;
         if (root.GlobalWmo.Count > 0)
         {
             var placement = root.GlobalWmo[0];
-            var path = root.GlobalWmoName.Empty ? string.Empty : root.GlobalWmoName.At(0);
+            var globalWmoPath = root.GlobalWmoName.Empty ? string.Empty : root.GlobalWmoName.At(0);
             var globalWmoFileDataId = fileSystem.Kind == StorageKind.Mpq
-                ? WowlibFileSystem.ResolveAssetId(fileSystem, path)
+                ? WowlibFileSystem.ResolveAssetId(fileSystem, globalWmoPath)
                 : placement.NameId;
-            if (fileSystem.Kind == StorageKind.Casc && !string.IsNullOrWhiteSpace(path)
-                && Listfile.TryGetFileDataID(path, out var resolvedFileDataId))
-                globalWmoFileDataId = resolvedFileDataId;
             var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
                 ? placement.Scale / 1024f
                 : 1f;
@@ -54,7 +61,8 @@ public static class WDTCache
 
         var wdt = new WdtFile
         {
-            FileDataId = fileDataId,
+            Path = wdtPath,
+            FileDataId = fileSystem.Kind == StorageKind.Casc ? fileDataId : 0,
             Flags = header.Flags,
             TexFileDataId = GetTextureFileDataId(header),
             HasSplitAdts = hasSplitAdts,
@@ -89,14 +97,15 @@ public static class WDTCache
                     files.MapTextureN,
                     files.MinimapTexture);
 
-                wdt.TileFiles[(x, y)] = ids;
+                wdt.TileFiles[MapTile.GetPositionIndex(x, y)] = ids;
                 if (ids.RootAdt != 0 || ids.Obj0Adt != 0)
                 {
                     wdt.Tiles.Add(new MapTile
                     {
-                        wdtFileDataID = fileDataId,
-                        tileX = x,
-                        tileY = y
+                        WdtPath = wdtPath,
+                        WdtFileDataId = wdt.FileDataId,
+                        TileX = x,
+                        TileY = y
                     });
                 }
             }
@@ -111,19 +120,28 @@ public static class WDTCache
 
                 var x = (byte)(index % TilesPerAxis);
                 var y = (byte)(index / TilesPerAxis);
-                wdt.Tiles.Add(new MapTile { wdtFileDataID = fileDataId, tileX = x, tileY = y });
+                wdt.Tiles.Add(new MapTile
+                {
+                    WdtPath = wdtPath,
+                    WdtFileDataId = wdt.FileDataId,
+                    TileX = x,
+                    TileY = y
+                });
 
                 // Vanilla through Legion WDTs have MAIN but no MAID. Resolve
                 // the ADT from the stable virtual path instead of treating the
                 // missing modern FileDataID table as a missing tile.
                 var adtPath = MapAssetPathResolver.GetLegacyAdtPath(wdtPath, x, y);
                 var rootAdtFileDataId = fileSystem.Kind == StorageKind.Mpq
-                    ? WowlibFileSystem.ResolveAssetId(fileSystem, adtPath)
+                    ? 0u
                     : MapAssetPathResolver.TryResolveFileDataId(adtPath, out var resolvedId) ? resolvedId : 0;
-                if (rootAdtFileDataId != 0)
+                if (rootAdtFileDataId != 0 || fileSystem.Exists(new FileKey(adtPath)))
                 {
-                    wdt.TileFiles[(x, y)] = new MapFileDataIds(
-                        rootAdtFileDataId, 0, 0, 0, 0, 0, 0, 0);
+                    wdt.TileFiles[MapTile.GetPositionIndex(x, y)] = new MapFileDataIds(
+                        rootAdtFileDataId, 0, 0, 0, 0, 0, 0, 0)
+                    {
+                        RootAdtPath = adtPath
+                    };
                 }
                 else
                 {
@@ -139,7 +157,7 @@ public static class WDTCache
             }
         }
 
-        Cache.Add(fileDataId, wdt);
+        Cache.Add(cacheKey, wdt);
         return wdt;
     }
 
@@ -181,7 +199,7 @@ public static class WDTCache
 
     public static void ReleaseWDT(uint fileDataId)
     {
-        if (Cache.Remove(fileDataId, out var wdt))
+        if (Cache.Remove($"__fdid_wdt/{fileDataId}", out var wdt))
             wdt.Dispose();
     }
 
@@ -191,4 +209,7 @@ public static class WDTCache
             wdt.Dispose();
         Cache.Clear();
     }
+
+    private static string NormalizePath(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? string.Empty : path.Trim().Replace('\\', '/');
 }

@@ -96,7 +96,7 @@ public sealed record ViewportTelemetry(
     int DrawCalls,
     long SubmittedTriangleCount,
     double PresentationIntervalMilliseconds = 0,
-    uint ActiveWdtFileDataId = 0);
+    int ActiveMapId = -1);
 
 /// <summary>UI-safe immutable projection of the renderer's active lighting.</summary>
 public sealed record LightingSettingsSnapshot(

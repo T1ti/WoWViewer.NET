@@ -10,6 +10,7 @@ namespace WoWRenderLib.DX11.Structs
     public struct Terrain
     {
         public uint rootADTFileDataID;
+        public uint tilePositionIndex;
         public bool usesLegacyLighting;
         public uint vao;
         public ComPtr<ID3D11Buffer> vertexBuffer;

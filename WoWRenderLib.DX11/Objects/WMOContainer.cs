@@ -114,7 +114,12 @@ namespace WoWRenderLib.DX11.Objects
             OnDoodadSetsChanged?.Invoke(this);
         }
 
-        public WMOContainer(ComPtr<ID3D11Device> device, uint fileDataID, uint parentFileDataId) : base(device, fileDataID, parentFileDataId)
+        public WMOContainer(
+            ComPtr<ID3D11Device> device,
+            uint fileDataID,
+            uint parentTileIndex,
+            uint parentAssetFileDataId = 0)
+            : base(device, fileDataID, parentTileIndex, parentAssetFileDataId)
         {
             GetWMO(true);
             // Trigger initial array creation
@@ -124,7 +129,7 @@ namespace WoWRenderLib.DX11.Objects
 
         public Structs.WorldModel GetWMO(bool keepTrack = false)
         {
-            return WMOCache.GetOrLoad(_device, FileDataId, ParentFileDataId, keepTrack);
+            return WMOCache.GetOrLoad(_device, FileDataId, ParentTileIndex, keepTrack);
         }
 
         public void ToggleGroup(string name)

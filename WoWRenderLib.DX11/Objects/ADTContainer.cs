@@ -20,7 +20,7 @@ namespace WoWRenderLib.DX11.Objects
         private bool _cacheReferenceHeld;
         private long? _unloadRequestedAt;
 
-        public ADTContainer(ComPtr<ID3D11Device> device, MapTile mapTile) : base(device, mapTile.wdtFileDataID, mapTile.wdtFileDataID)
+        public ADTContainer(ComPtr<ID3D11Device> device, MapTile mapTile) : base(device, 0, (uint)mapTile.PositionIndex)
         {
             // TODO: LOD ADTs or premade placeholder Terrain?
             this.mapTile = mapTile;
@@ -65,7 +65,7 @@ namespace WoWRenderLib.DX11.Objects
         {
             if (_cacheReferenceHeld)
             {
-                ADTCache.Release(mapTile, mapTile.wdtFileDataID);
+                ADTCache.Release(mapTile, (uint)mapTile.PositionIndex);
                 _cacheReferenceHeld = false;
             }
 

@@ -13,12 +13,11 @@ public enum TerrainBrushMode
 }
 
 public readonly record struct TerrainTileId(
-    uint WdtFileDataId,
-    byte TileX,
-    byte TileY)
+    int MapId,
+    int PositionIndex)
 {
     public static TerrainTileId From(MapTile tile) =>
-        new(tile.wdtFileDataID, tile.tileX, tile.tileY);
+        new(tile.MapId, tile.PositionIndex);
 }
 
 public sealed record TerrainTileEdit(

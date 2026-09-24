@@ -22,6 +22,9 @@ namespace WoWRenderLib.DX11.Objects
         public uint UniqueID { get; set; }
         public ushort PlacementFlags { get; set; }
         public M2InstanceAnimationState AnimationState { get; } = new();
+        internal ulong TransformRevision { get; private set; }
+
+        protected override void OnTransformInvalidated() => TransformRevision++;
 
         public WMOContainer? ParentWMO
         {
@@ -84,7 +87,12 @@ namespace WoWRenderLib.DX11.Objects
             }
         }
 
-        public M2Container(ComPtr<ID3D11Device> device, uint fileDataID, uint parentFileDataId) : base(device, fileDataID, parentFileDataId)
+        public M2Container(
+            ComPtr<ID3D11Device> device,
+            uint fileDataID,
+            uint parentTileIndex,
+            uint parentAssetFileDataId = 0)
+            : base(device, fileDataID, parentTileIndex, parentAssetFileDataId)
         {
             GetM2(true);
         }
@@ -146,7 +154,7 @@ namespace WoWRenderLib.DX11.Objects
 
         public ParsedDoodadBatch GetM2(bool keepTrack = false)
         {
-            return M2Cache.GetOrLoad(_device, FileDataId, ParentFileDataId, keepTrack);
+            return M2Cache.GetOrLoad(_device, FileDataId, ParentTileIndex, keepTrack);
         }
     }
 }

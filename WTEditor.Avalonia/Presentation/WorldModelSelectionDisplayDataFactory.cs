@@ -18,7 +18,7 @@ internal static class WorldModelSelectionDisplayDataFactory
             return CreateLoaded(
                 wmo.GetWMO(),
                 wmo.FileDataId,
-                wmo.ParentFileDataId,
+                wmo.ParentAssetFileDataId,
                 wmo.UniqueID,
                 wmo.PlacementFlags,
                 wmo.PlacementDoodadSet,
@@ -123,7 +123,7 @@ internal static class WorldModelSelectionDisplayDataFactory
 
     private static WorldModelObjectData CreateUnloaded(WMOContainer wmo) => new(
         wmo.FileDataId,
-        wmo.ParentFileDataId,
+            wmo.ParentAssetFileDataId,
         0,
         0,
         wmo.ActiveDoodads.Count,
@@ -131,7 +131,7 @@ internal static class WorldModelSelectionDisplayDataFactory
         WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(wmo.FileDataId),
         [],
         wmo.UniqueID,
-        WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(wmo.ParentFileDataId),
+        WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(wmo.ParentAssetFileDataId),
         [],
         new MapPlacementData(
             MapPlacementKind.Modf,

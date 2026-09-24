@@ -40,11 +40,10 @@ public sealed class MapUniqueIdSmokeTests
         var cachePath = Path.Combine(root, "map-unique-ids.json");
         var map = new WdtFile
         {
-            FileDataId = 123_456u,
             HasSplitAdts = true
         };
-        map.Tiles.Add(new MapTile { wdtFileDataID = map.FileDataId, tileX = 0, tileY = 0 });
-        map.TileFiles[(0, 0)] = new MapFileDataIds(0, 555u, 0, 0, 0, 0, 0, 0);
+        map.Tiles.Add(new MapTile { WdtPath = "world/maps/Test/Test.wdt", TileX = 0, TileY = 0 });
+        map.TileFiles[MapTile.GetPositionIndex(0, 0)] = new MapFileDataIds(0, 555u, 0, 0, 0, 0, 0, 0);
 
         try
         {

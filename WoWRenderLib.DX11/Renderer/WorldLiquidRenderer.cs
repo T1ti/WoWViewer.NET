@@ -189,7 +189,7 @@ internal sealed class WorldLiquidRenderer(
         Camera camera,
         IReadOnlyList<ADTContainer> adtContainers,
         IReadOnlyList<WmoLiquidInstance> wmoLiquids,
-        IReadOnlySet<uint> coarseCulledTileRoots,
+        IReadOnlySet<int> coarseCulledTileIndices,
         float renderDistance,
         float wmoRenderDistance,
         long timeMilliseconds,
@@ -223,7 +223,7 @@ internal sealed class WorldLiquidRenderer(
             {
                 var batch = liquid.batches[batchIndex];
                 candidateCount++;
-                if (coarseCulledTileRoots.Contains(container.Terrain.rootADTFileDataID))
+                if (coarseCulledTileIndices.Contains(container.mapTile.PositionIndex))
                     continue;
 
                 var bounds = batch.Bounds;

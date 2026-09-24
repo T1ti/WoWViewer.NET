@@ -132,6 +132,8 @@ namespace WoWRenderLib.DX11.Managers
                     }
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
                         GetOrCompileShader("wmo", true);
+                    else if (Path.GetFileNameWithoutExtension(file) == "m2_effect")
+                        GetOrCompileShader("m2_effect", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
                         GetOrCompileShader("m2", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("sky"))
@@ -510,6 +512,33 @@ namespace WoWRenderLib.DX11.Managers
                             ref inputLayout
                         )
                     );
+                }
+            }
+            else if (type == "m2_effect")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
+                fixed (byte* colorName = SilkMarshal.StringToMemory("COLOR"))
+                {
+                    var inputElements = new InputElementDesc[]
+                    {
+                        new() { SemanticName = posName, SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32Float, InputSlot = 0,
+                            AlignedByteOffset = 0,
+                            InputSlotClass = InputClassification.PerVertexData },
+                        new() { SemanticName = texCoordName, SemanticIndex = 0,
+                            Format = Format.FormatR32G32Float, InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData },
+                        new() { SemanticName = colorName, SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32A32Float, InputSlot = 0,
+                            AlignedByteOffset = uint.MaxValue,
+                            InputSlotClass = InputClassification.PerVertexData }
+                    };
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(
+                        in inputElements[0], (uint)inputElements.Length,
+                        vertexCode.GetBufferPointer(), vertexCode.GetBufferSize(),
+                        ref inputLayout));
                 }
             }
             else if (type == "m2")

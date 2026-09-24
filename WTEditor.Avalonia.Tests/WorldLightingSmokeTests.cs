@@ -179,8 +179,8 @@ public sealed class WorldLightingSmokeTests
     public void FirstNavigationIsRetainedUntilContentInitializationCompletes()
     {
         var publication = new WorldNavigationPublication();
-        var first = new WorldNavigationTarget(0, 123, 31.5, 29.25, false);
-        var latest = new WorldNavigationTarget(1, 456, 10, 11, true);
+        var first = new WorldNavigationTarget(0, "world/maps/Test/Test.wdt", 123, 31.5, 29.25, false);
+        var latest = new WorldNavigationTarget(1, "world/maps/Other/Other.wdt", 456, 10, 11, true);
 
         publication.Publish(first);
 
@@ -195,9 +195,9 @@ public sealed class WorldLightingSmokeTests
     public void DefaultNavigationDoesNotReplaceAQueuedMapSelection()
     {
         var publication = new WorldNavigationPublication();
-        var selected = new WorldNavigationTarget(1, 456, 10, 11, true);
+        var selected = new WorldNavigationTarget(1, "world/maps/Other/Other.wdt", 456, 10, 11, true);
         var defaultMap = new WorldNavigationTarget(
-            0, 123, 35.5, 24.5, false, PreserveCameraPosition: true);
+            0, "world/maps/Test/Test.wdt", 123, 35.5, 24.5, false, PreserveCameraPosition: true);
 
         publication.PublishIfEmpty(defaultMap);
         Assert.AreSame(defaultMap, publication.ConsumeWhenReady(isReady: true));

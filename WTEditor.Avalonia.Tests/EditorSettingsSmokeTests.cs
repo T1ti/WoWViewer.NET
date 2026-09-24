@@ -728,9 +728,9 @@ public sealed class EditorSettingsSmokeTests
     {
         var tileBounds = new TileSceneBounds(new MapTile
         {
-            wdtFileDataID = 1,
-            tileX = 2,
-            tileY = 3
+            WdtPath = "world/maps/Test/Test.wdt",
+            TileX = 2,
+            TileY = 3
         });
         var child = new TestBoundsContainer(new BoundingBox(
             new Vector3(2f, -2f, 0.5f),

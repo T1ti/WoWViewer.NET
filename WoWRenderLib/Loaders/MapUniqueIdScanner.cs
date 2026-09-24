@@ -27,17 +27,30 @@ public static class MapUniqueIdScanner
         var maximum = 0u;
         var fileSystem = WowlibFileSystem.Current;
         var scannedFiles = new HashSet<uint>();
+        var scannedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var tile in map.Tiles)
         {
-            if (!map.TryGetTile(tile.tileX, tile.tileY, out var files))
+            if (!map.TryGetTile(tile.TileX, tile.TileY, out var files))
                 continue;
 
             var objectFileDataId = map.HasSplitAdts ? files.Obj0Adt : files.RootAdt;
-            if (objectFileDataId == 0 || !scannedFiles.Add(objectFileDataId))
-                continue;
+            if (fileSystem.Kind == StorageKind.Mpq)
+            {
+                // MPQ clients are path-addressed. LegacyAssetIds is only an
+                // internal path registry, not a FileDataID source.
+                var path = files.RootAdtPath;
+                if (string.IsNullOrWhiteSpace(path) && objectFileDataId != 0)
+                    LegacyAssetIds.TryGetPath(fileSystem, objectFileDataId, out path!);
+                if (string.IsNullOrWhiteSpace(path) || !scannedPaths.Add(path))
+                    continue;
 
-            if (!WowlibFileSystem.AssetExists(fileSystem, objectFileDataId))
+                maximum = Math.Max(maximum, ScanFile(path));
+                continue;
+            }
+
+            if (objectFileDataId == 0 || !scannedFiles.Add(objectFileDataId) ||
+                !WowlibFileSystem.AssetExists(fileSystem, objectFileDataId))
                 continue;
 
             maximum = Math.Max(maximum, ScanFile(objectFileDataId));
@@ -51,6 +64,15 @@ public static class MapUniqueIdScanner
         var fileSystem = WowlibFileSystem.Current;
         using var stream = new MemoryStream(
             WowlibFileSystem.ReadAsset(fileSystem, fileDataId), writable: false);
+        return ScanStream(stream);
+    }
+
+    public static uint ScanFile(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fileSystem = WowlibFileSystem.Current;
+        using var stream = new MemoryStream(
+            WowlibFileSystem.ReadFile(fileSystem, path, 0), writable: false);
         return ScanStream(stream);
     }
 

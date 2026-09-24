@@ -14,7 +14,7 @@ namespace WoWRenderLib.DX11.Renderer;
 internal sealed class M2InstancePacket(List<M2Container> instances)
 {
     private bool _isBuilt;
-    private readonly Dictionary<M2AnimationFrameKey, M2AnimationDrawGroup> _groupsByFrame = [];
+    private readonly Dictionary<M2AnimationPoseKey, M2AnimationDrawGroup> _groupsByFrame = [];
     private readonly List<M2AnimationDrawGroup> _drawGroups = [];
     private readonly Stack<M2AnimationDrawGroup> _availableGroups = [];
     private readonly M2AnimationDrawGroup[] _staticDrawGroups = [new()];
@@ -32,6 +32,7 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
         M2Animation animation,
         Submesh[] submeshes,
         long sceneTimeMilliseconds,
+        Matrix4x4 cameraView,
         IReadOnlyList<int> visibleIndices)
     {
         AnimationCache.BeginFrame(animation, sceneTimeMilliseconds, true);
@@ -45,8 +46,12 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
 
         foreach (var instanceIndex in visibleIndices)
         {
-            var key = Instances[instanceIndex].AnimationState.GetFrameKey(
+            var frame = Instances[instanceIndex].AnimationState.GetFrameKey(
                 animation, sceneTimeMilliseconds);
+            var key = animation.HasBillboardBones
+                ? new M2AnimationPoseKey(frame, instanceIndex,
+                    WorldRigidMatrices[instanceIndex] * cameraView)
+                : M2AnimationPoseKey.Shared(frame);
             if (!_groupsByFrame.TryGetValue(key, out var group))
             {
                 var pose = AnimationCache.GetPose(animation, key, submeshes, true);
@@ -65,6 +70,8 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     public List<M2Container> Instances { get; } = instances;
     public BoundingSphere[] WorldBounds { get; private set; } = [];
     public Matrix4x4[] WorldMatrices { get; private set; } = [];
+    public Matrix4x4[] WorldRigidMatrices { get; private set; } = [];
+    private ulong[] _worldTransformRevisions = [];
 
     public bool EnsureSpatialData(in ParsedDoodadBatch model)
     {
@@ -77,24 +84,50 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
 
         if (_isBuilt &&
             WorldBounds.Length == Instances.Count &&
-            WorldMatrices.Length == Instances.Count)
+            WorldMatrices.Length == Instances.Count &&
+            _worldTransformRevisions.Length == Instances.Count &&
+            (model.animation?.HasBillboardBones != true ||
+             WorldRigidMatrices.Length == Instances.Count))
         {
             return true;
         }
 
         WorldBounds = new BoundingSphere[Instances.Count];
         WorldMatrices = new Matrix4x4[Instances.Count];
+        _worldTransformRevisions = new ulong[Instances.Count];
+        WorldRigidMatrices = model.animation?.HasBillboardBones == true
+            ? new Matrix4x4[Instances.Count]
+            : [];
         var localBounds = new BoundingSphere(model.boundingBox.Center, model.boundingRadius);
         for (var index = 0; index < Instances.Count; index++)
-        {
-            var matrix = Instances[index].GetModelMatrix();
-            WorldMatrices[index] = matrix;
-            WorldBounds[index] = BoundingSphere.Transform(localBounds, matrix);
-            Instances[index].CachedBoundingSphere = WorldBounds[index];
-        }
+            UpdateSpatialData(index, localBounds);
 
         _isBuilt = true;
         return true;
+    }
+
+    public void RefreshSpatialData(int index, in ParsedDoodadBatch model)
+    {
+        if (_worldTransformRevisions[index] == Instances[index].TransformRevision)
+            return;
+        UpdateSpatialData(index, new BoundingSphere(model.boundingBox.Center, model.boundingRadius));
+    }
+
+    private void UpdateSpatialData(int index, BoundingSphere localBounds)
+    {
+        var instance = Instances[index];
+        var matrix = instance.GetModelMatrix();
+        WorldMatrices[index] = matrix;
+        if (WorldRigidMatrices.Length != 0)
+        {
+            WorldRigidMatrices[index] = Matrix4x4.Decompose(
+                matrix, out _, out var rotation, out _)
+                ? Matrix4x4.CreateFromQuaternion(rotation)
+                : Matrix4x4.Identity;
+        }
+        WorldBounds[index] = BoundingSphere.Transform(localBounds, matrix);
+        instance.CachedBoundingSphere = WorldBounds[index];
+        _worldTransformRevisions[index] = instance.TransformRevision;
     }
 
     public void Invalidate() => _isBuilt = false;

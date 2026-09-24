@@ -21,24 +21,30 @@ public sealed class TileSceneBounds : IDisposable
     }
 
     public MapTile Tile { get; }
-    public uint RootAdtFileDataId { get; private set; }
     public bool IsDirty => _dirty;
     public int ObjectCount => _objects.Count;
     public bool IsCoarseCulledThisFrame { get; internal set; }
 
-    public void SetTerrain(uint rootAdtFileDataId, BoundingBox terrainBounds)
-        => SetTerrain(rootAdtFileDataId, terrainBounds, null);
+    public void SetTerrain(BoundingBox terrainBounds)
+        => SetTerrain(terrainBounds, null);
 
     public void SetTerrain(
-        uint rootAdtFileDataId,
         BoundingBox terrainBounds,
         BoundingBox? liquidBounds)
     {
-        RootAdtFileDataId = rootAdtFileDataId;
         _terrainBounds = terrainBounds;
         _liquidBounds = liquidBounds;
         MarkDirty();
     }
+
+    // Compatibility overload for callers that still carry the parsed ADT
+    // asset ID. Bounds are keyed by Tile.PositionIndex; the old value is not
+    // read or stored.
+    public void SetTerrain(int _, BoundingBox terrainBounds) =>
+        SetTerrain(terrainBounds, null);
+
+    public void SetTerrain(int _, BoundingBox terrainBounds, BoundingBox? liquidBounds) =>
+        SetTerrain(terrainBounds, liquidBounds);
 
     public void AddObject(Container3D sceneObject)
     {

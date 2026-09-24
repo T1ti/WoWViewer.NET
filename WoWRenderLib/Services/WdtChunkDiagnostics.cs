@@ -34,7 +34,7 @@ public static class WdtChunkDiagnostics
         return result;
     }
 
-    public static void WarnAboutUnhandledChunks(uint wdtFileDataId, ReadOnlySpan<byte> data)
+    public static void WarnAboutUnhandledChunks(string wdtPath, ReadOnlySpan<byte> data)
     {
         var chunks = FindUnhandledChunks(data);
         if (chunks.Count == 0)
@@ -43,7 +43,8 @@ public static class WdtChunkDiagnostics
         var summary = string.Join(", ", chunks
             .GroupBy(chunk => chunk)
             .Select(group => group.Count() == 1 ? group.Key : $"{group.Key} ({group.Count()} occurrences)"));
-        var message = $"Warning: WDT {wdtFileDataId} contains unhandled chunk(s): {summary}.";
+        var label = string.IsNullOrWhiteSpace(wdtPath) ? "(path unavailable)" : wdtPath;
+        var message = $"Warning: WDT '{label}' contains unhandled chunk(s): {summary}.";
         Console.Error.WriteLine(message);
         Trace.TraceWarning(message);
     }

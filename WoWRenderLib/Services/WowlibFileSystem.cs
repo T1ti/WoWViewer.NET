@@ -63,6 +63,43 @@ public static class WowlibFileSystem
         return new FileKey(new FileDataId(id));
     }
 
+    /// <summary>
+    /// Creates the key for an actual file read. CASC clients normally have no
+    /// usable path without a listfile, so prefer their FileDataID. MPQ
+    /// clients are path-addressed, so prefer the path and only use an ID when
+    /// no path was supplied.
+    /// </summary>
+    public static FileKey CreateReadKey(Fs.FileSystem fileSystem, string? path, uint fileDataId)
+    {
+        var normalizedPath = NormalizePath(path);
+        if (fileSystem.Kind == StorageKind.Casc && fileDataId != 0)
+            return AssetKey(fileSystem, fileDataId);
+        if (normalizedPath.Length > 0)
+            return new FileKey(normalizedPath);
+        if (fileDataId != 0)
+            return AssetKey(fileSystem, fileDataId);
+
+        throw new FileNotFoundException("The asset has neither a readable path nor a FileDataID.");
+    }
+
+    public static byte[] ReadFile(Fs.FileSystem fileSystem, string? path, uint fileDataId)
+    {
+        using var key = CreateReadKey(fileSystem, path, fileDataId);
+        return fileSystem.ReadFile(key);
+    }
+
+    public static string ReadSourceDescription(Fs.FileSystem fileSystem, string? path, uint fileDataId)
+    {
+        if (fileSystem.Kind == StorageKind.Casc && fileDataId != 0)
+            return $"FileDataID {fileDataId}";
+        if (!string.IsNullOrWhiteSpace(path))
+            return path!;
+        return fileDataId == 0 ? "unknown asset" : $"FileDataID {fileDataId}";
+    }
+
+    private static string NormalizePath(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? string.Empty : path.Trim().Replace('\\', '/');
+
     public static bool AssetExists(Fs.FileSystem fileSystem, uint id)
     {
         using var key = AssetKey(fileSystem, id);

@@ -78,7 +78,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _presentationInterval;
     [ObservableProperty] private Vector3 _cameraPosition;
     [ObservableProperty] private Vector3 _cameraDirection;
-    [ObservableProperty] private uint _activeWdtFileDataId;
+    [ObservableProperty] private int _activeMapId = -1;
 
     partial void OnCameraPositionChanged(Vector3 value) => OnPropertyChanged(nameof(CameraClientPosition));
     partial void OnCameraDirectionChanged(Vector3 value) => OnPropertyChanged(nameof(CameraClientDirection));
@@ -313,7 +313,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         PresentationInterval = telemetry.PresentationIntervalMilliseconds;
         CameraPosition = telemetry.CameraPosition;
         CameraDirection = telemetry.CameraDirection;
-        ActiveWdtFileDataId = telemetry.ActiveWdtFileDataId;
+        ActiveMapId = telemetry.ActiveMapId;
         DrawCalls = telemetry.DrawCalls;
         SubmittedTriangleCount = telemetry.SubmittedTriangleCount;
         _session.UpdateCamera(telemetry.CameraPosition, telemetry.CameraDirection);

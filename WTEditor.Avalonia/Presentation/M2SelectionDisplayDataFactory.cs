@@ -57,14 +57,14 @@ internal static class M2SelectionDisplayDataFactory
                 index < enabledGeosets.Length && enabledGeosets[index])).ToArray();
             return new M2ObjectData(
                 m2.FileDataId,
-                m2.ParentFileDataId,
+                m2.ParentAssetFileDataId,
                 m2.EnabledGeosets.Length,
                 m2.ParentWMO != null,
                 WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.FileDataId),
                 ModelSelectionDisplayAssets.CreateReferences(
                     () => model.mats.Select(material => material.fileDataID)),
                 m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentFileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentAssetFileDataId),
                 new ModelAdvancedData(
                     model.submeshes?.Length ?? 0,
                     model.vertexCount,
@@ -85,13 +85,13 @@ internal static class M2SelectionDisplayDataFactory
         {
             return new M2ObjectData(
                 m2.FileDataId,
-                m2.ParentFileDataId,
+                m2.ParentAssetFileDataId,
                 0,
                 m2.ParentWMO != null,
                 WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.FileDataId),
                 [],
                 m2.ParentWMO == null && m2.UniqueID != 0 ? m2.UniqueID : null,
-                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentFileDataId),
+                WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(m2.ParentAssetFileDataId),
                 null,
                 m2.ParentWMO == null
                     ? new MapPlacementData(MapPlacementKind.Mddf, m2.UniqueID, m2.PlacementFlags)

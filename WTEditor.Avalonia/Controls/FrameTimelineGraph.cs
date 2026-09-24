@@ -46,9 +46,8 @@ public sealed class FrameTimelineGraph : Control
         if (samples == null || samples.Count == 0 || bounds.Width < 2 || bounds.Height < 2)
             return;
 
-        var maximumObserved = samples.Max(sample => Math.Max(
-            DomainTotal(sample, FrameTimingDomain.Cpu),
-            DomainTotal(sample, FrameTimingDomain.Gpu)));
+        var maximumObserved = samples.Max(sample =>
+            DomainTotal(sample, FrameTimingDomain.Cpu));
         var scaleMilliseconds = ChooseScale(maximumObserved);
 
         DrawBudgetLine(context, bounds, 8.333d, scaleMilliseconds);
@@ -59,11 +58,9 @@ public sealed class FrameTimelineGraph : Control
         for (var sampleIndex = 0; sampleIndex < samples.Count; sampleIndex++)
         {
             var sample = samples[sampleIndex];
-            var x = sampleIndex * columnWidth;
-            var barWidth = Math.Max(0.75, columnWidth * 0.4);
+            var barWidth = Math.Max(0.75, columnWidth * 0.78);
+            var x = sampleIndex * columnWidth + (columnWidth - barWidth) / 2d;
             DrawStack(context, bounds, sample, FrameTimingDomain.Cpu, x, barWidth, scaleMilliseconds);
-            DrawStack(context, bounds, sample, FrameTimingDomain.Gpu,
-                x + Math.Max(barWidth, columnWidth * 0.5), barWidth, scaleMilliseconds);
         }
     }
 
@@ -103,22 +100,15 @@ public sealed class FrameTimelineGraph : Control
         var sampleIndex = Math.Clamp((int)(point.X / (bounds.Width / samples.Count)), 0, samples.Count - 1);
         var sample = samples[sampleIndex];
         var columnWidth = bounds.Width / samples.Count;
-        var x = sampleIndex * columnWidth;
-        var barWidth = Math.Max(0.75, columnWidth * 0.4);
-        var domain = point.X >= x && point.X <= x + barWidth
-            ? FrameTimingDomain.Cpu
-            : point.X >= x + Math.Max(barWidth, columnWidth * 0.5) &&
-              point.X <= x + Math.Max(barWidth, columnWidth * 0.5) + barWidth
-                ? FrameTimingDomain.Gpu
-                : (FrameTimingDomain?)null;
-        if (domain is null)
+        var barWidth = Math.Max(0.75, columnWidth * 0.78);
+        var x = sampleIndex * columnWidth + (columnWidth - barWidth) / 2d;
+        if (point.X < x || point.X > x + barWidth)
             return null;
 
-        var maximumObserved = samples.Max(currentSample => Math.Max(
-            DomainTotal(currentSample, FrameTimingDomain.Cpu),
-            DomainTotal(currentSample, FrameTimingDomain.Gpu)));
+        var maximumObserved = samples.Max(currentSample =>
+            DomainTotal(currentSample, FrameTimingDomain.Cpu));
         var scaleMilliseconds = ChooseScale(maximumObserved);
-        foreach (var segment in BuildStackSegments(sample, domain.Value, bounds.Height, scaleMilliseconds))
+        foreach (var segment in BuildStackSegments(sample, FrameTimingDomain.Cpu, bounds.Height, scaleMilliseconds))
         {
             if (point.Y >= segment.Top && point.Y <= segment.Bottom)
             {

@@ -88,10 +88,26 @@ public static class M2Loader
                 blendMode = material.BlendingMode
             };
         }
+        if (parsed.animation is { } animation && root is Formats.M2.Root.M2RootWotlk ribbonRoot)
+        {
+            animation.Ribbons = ReadRibbons(ribbonRoot, textureFileDataIds, renderMaterials, parsed.mats);
+            animation.Particles = ReadParticles(ribbonRoot, textureFileDataIds, parsed.mats);
+            animation.RenderableParticleIndices = Enumerable.Range(0, animation.Particles.Length)
+                .Where(index => M2ParticleMeshBuilder.IsSupported(animation, animation.Particles[index]))
+                .ToArray();
+        }
 
         var profile = ReadProfile(model);
         if (profile == null || profile.Vertices.Length == 0)
-            throw new InvalidDataException($"Model {fileDataId} does not contain a skin profile.");
+        {
+            // Spell, glow, and other effect M2s can contain emitters without a
+            // skinned mesh. Keep them in the scene so their effects can draw.
+            if (parsed.animation is { } effects &&
+                (effects.Particles.Length > 0 || effects.Ribbons.Length > 0))
+                profile = new ProfileData([], [], [], []);
+            else
+                throw new InvalidDataException($"Model {fileDataId} does not contain a skin profile.");
+        }
 
         parsed.vertexCount = profile.Vertices.Length;
         parsed.indexCount = profile.Indices.Length;
@@ -245,6 +261,9 @@ public static class M2Loader
 
     private static M2Animation ReadAnimation(Formats.M2.Root.M2RootWotlk root)
     {
+        static bool HasKeys<T>(M2Track<T> track) =>
+            track.Timelines.Any(timeline => timeline.Times.Length > 0 && timeline.Values.Length > 0);
+
         if (root.Bones.Count > M2Animation.MaxGpuBones)
             throw new InvalidDataException($"M2 contains {root.Bones.Count} bones, exceeding the renderer's {M2Animation.MaxGpuBones}-bone palette.");
 
@@ -296,10 +315,214 @@ public static class M2Loader
             Bones = bones,
             Sequences = sequences,
             GlobalLoops = loops,
-            HasAnimatedBones = bones.Any(bone => (bone.Flags & 0x280) != 0),
+            HasAnimatedBones = bones.Any(bone => (bone.Flags & 0x2F8) != 0),
+            HasBillboardBones = bones.Any(bone => (bone.Flags & 0x78) != 0),
+            HasMaterialTracks = colors.Any(color => HasKeys(color.Color) || HasKeys(color.Alpha))
+                || weights.Any(HasKeys)
+                || transforms.Any(transform => HasKeys(transform.Translation)
+                    || HasKeys(transform.Rotation) || HasKeys(transform.Scale)),
             Colors = colors,
             TextureWeights = weights,
             TextureTransforms = transforms
+        };
+    }
+
+    private static M2RibbonAnimation[] ReadRibbons(
+        Formats.M2.Root.M2RootWotlk root,
+        uint[] textureFileDataIds,
+        ReadOnlySpan<M2RenderMaterial> materials,
+        M2Material[] textures)
+    {
+        var result = new List<M2RibbonAnimation>(root.RibbonEmitters.Count);
+        for (var i = 0; i < root.RibbonEmitters.Count; i++)
+        {
+            var source = root.RibbonEmitters[i];
+            if (source.BoneIndex >= root.Bones.Count ||
+                source.TextureIndices.Count == 0 || source.MaterialIndices.Count == 0 ||
+                source.TextureRows == 0 || source.TextureCols == 0)
+                continue;
+
+            var textureIndex = source.TextureIndices[0];
+            var materialIndex = source.MaterialIndices[0];
+            if (textureIndex >= textureFileDataIds.Length || materialIndex >= materials.Length)
+                continue;
+            var material = materials[materialIndex];
+            result.Add(new M2RibbonAnimation(
+                checked((int)source.BoneIndex), ToVector3(source.Position),
+                textureFileDataIds[textureIndex], textures[textureIndex].flags,
+                material.Flags, material.BlendMode,
+                source.EdgesPerSecond, source.EdgeLifetime, source.Gravity,
+                source.TextureRows, source.TextureCols,
+                ReadVectorTrack(source.Color), ReadFixedTrack(source.Alpha),
+                ReadFloatTrack(source.HeightAbove), ReadFloatTrack(source.HeightBelow),
+                ReadUInt16Track(source.TexSlot), ReadUInt8Track(source.Visibility)));
+        }
+        return [.. result];
+    }
+
+    private static M2ParticleAnimation[] ReadParticles(
+        Formats.M2.Root.M2RootWotlk root,
+        uint[] textureFileDataIds,
+        M2Material[] textures)
+    {
+        var result = new List<M2ParticleAnimation>(root.ParticleEmitters.Count);
+        for (var i = 0; i < root.ParticleEmitters.Count; i++)
+        {
+            var source = root.ParticleEmitters[i];
+            if (source.BoneId >= root.Bones.Count ||
+                source.TextureId >= textureFileDataIds.Length)
+                continue;
+            result.Add(new M2ParticleAnimation(
+                i, source.BoneId, ToVector3(source.Position),
+                textureFileDataIds[source.TextureId], textures[source.TextureId].flags,
+                source.Flags, source.BlendingType, source.EmitterType,
+                source.ParticleColorIndex, source.PriorityPlane,
+                source.Rows, source.Columns,
+                !string.IsNullOrEmpty(source.GeometryModelFilename) ||
+                    !string.IsNullOrEmpty(source.RecursionModelFilename),
+                source.LifespanVariation, source.EmissionRateVariation,
+                ToVector2(source.ScaleVary), source.Drag,
+                source.BaseSpin, source.BaseSpinVariation,
+                source.SpinSpeed, source.SpinSpeedVariation,
+                source.TwinkleSpeed, source.TwinklePercent,
+                new Vector2(source.TwinkleScale.Min, source.TwinkleScale.Max),
+                source.TailLength,
+                ToVector3(source.WindVector), source.WindTime,
+                ReadFloatTrack(source.EmissionSpeed),
+                ReadFloatTrack(source.SpeedVariation),
+                ReadFloatTrack(source.VerticalRange),
+                ReadFloatTrack(source.HorizontalRange),
+                ReadFloatTrack(source.Gravity),
+                ReadFloatTrack(source.Lifespan),
+                ReadFloatTrack(source.EmissionRate),
+                ReadFloatTrack(source.EmissionAreaWidth),
+                ReadFloatTrack(source.EmissionAreaLength),
+                ReadFloatTrack(source.ZSource),
+                ReadUInt8Track(source.EnabledIn),
+                ReadParticleLifeColor(source.ColorTrack),
+                ReadParticleLifeAlpha(source.AlphaTrack),
+                ReadParticleLifeScale(source.ScaleTrack),
+                ReadParticleLifeCell(source.HeadUvAnim),
+                ReadParticleLifeCell(source.TailUvAnim)));
+        }
+        return [.. result];
+    }
+
+    private static M2ParticleLifeTrack<Vector3> ReadParticleLifeColor(
+        Formats.M2.Root.Record.FBlockC3Vector block)
+    {
+        if (block.Timestamps.Count != block.Keys.Count)
+            return new([], []);
+        var times = new ushort[block.Timestamps.Count];
+        var values = new Vector3[times.Length];
+        for (var i = 0; i < times.Length; i++)
+        {
+            times[i] = block.Timestamps[i];
+            values[i] = ToVector3(block.Keys[i]) / 255f;
+        }
+        return new(times, values);
+    }
+
+    private static M2ParticleLifeTrack<float> ReadParticleLifeAlpha(
+        Formats.M2.Root.Record.FBlockFixed16 block)
+    {
+        if (block.Timestamps.Count != block.Keys.Count)
+            return new([], []);
+        var times = new ushort[block.Timestamps.Count];
+        var values = new float[times.Length];
+        for (var i = 0; i < times.Length; i++)
+        {
+            times[i] = block.Timestamps[i];
+            values[i] = Math.Min(1f, unchecked((ushort)block.Keys[i].Value) / 32767f);
+        }
+        return new(times, values);
+    }
+
+    private static M2ParticleLifeTrack<Vector2> ReadParticleLifeScale(
+        Formats.M2.Root.Record.FBlockC2Vector block)
+    {
+        if (block.Timestamps.Count != block.Keys.Count)
+            return new([], []);
+        var times = new ushort[block.Timestamps.Count];
+        var values = new Vector2[times.Length];
+        for (var i = 0; i < times.Length; i++)
+        {
+            times[i] = block.Timestamps[i];
+            values[i] = ToVector2(block.Keys[i]);
+        }
+        return new(times, values);
+    }
+
+    private static M2ParticleLifeTrack<float> ReadParticleLifeCell(
+        Formats.M2.Root.Record.FBlockUInt16 block)
+    {
+        if (block.Timestamps.Count != block.Keys.Count)
+            return new([], []);
+        var times = new ushort[block.Timestamps.Count];
+        var values = new float[times.Length];
+        for (var i = 0; i < times.Length; i++)
+        {
+            times[i] = block.Timestamps[i];
+            values[i] = block.Keys[i];
+        }
+        return new(times, values);
+    }
+
+    private static M2Track<float> ReadFloatTrack(Formats.M2.Root.Record.M2TrackFloat track)
+    {
+        var timelines = new M2Timeline<float>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Length);
+            timelines[i] = new M2Timeline<float>(times[..count], values[..count]);
+        }
+        return new M2Track<float>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static M2Track<float> ReadUInt16Track(Formats.M2.Root.Record.M2TrackUInt16 track)
+    {
+        var timelines = new M2Timeline<float>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Length);
+            var snapshots = new float[count];
+            for (var j = 0; j < count; j++) snapshots[j] = values[j];
+            timelines[i] = new M2Timeline<float>(times[..count], snapshots);
+        }
+        return new M2Track<float>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
+        };
+    }
+
+    private static M2Track<float> ReadUInt8Track(Formats.M2.Root.Record.M2TrackUInt8 track)
+    {
+        var timelines = new M2Timeline<float>[checked((int)track.TimelineCount())];
+        for (ulong i = 0; i < (ulong)timelines.Length; i++)
+        {
+            var times = track.TimelineTimestamps(i);
+            var values = track.TimelineValues(i);
+            var count = Math.Min(times.Length, values.Length);
+            var snapshots = new float[count];
+            for (var j = 0; j < count; j++) snapshots[j] = values[j];
+            timelines[i] = new M2Timeline<float>(times[..count], snapshots);
+        }
+        return new M2Track<float>
+        {
+            Interpolation = track.InterpolationType,
+            GlobalSequence = unchecked((short)track.GlobalSequence),
+            Timelines = timelines
         };
     }
 

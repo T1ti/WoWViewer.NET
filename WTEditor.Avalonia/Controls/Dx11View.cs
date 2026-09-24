@@ -753,7 +753,7 @@ namespace WTEditor.Avalonia.Controls
                         (int)engine.Stats.DrawCalls,
                         checked((long)engine.Stats.SubmittedTriangleCount),
                         delta * 1_000d,
-                        engine.CurrentWdtFileDataId));
+                        engine.CurrentMapId));
                     _vm.UpdateActiveLighting(
                         LightingSettingsProjection.ToDisplay(
                             engine.ActiveWorldLighting,
@@ -848,7 +848,8 @@ namespace WTEditor.Avalonia.Controls
         {
             _rendererSession.Engine?.NavigateTo(
                 request.MapId,
-                request.WdtFileDataId,
+                request.WdtPath,
+                request.WdtFileDataIdHint,
                 request.Position.X,
                 request.Position.Y,
                 request.IsGlobalWmo);

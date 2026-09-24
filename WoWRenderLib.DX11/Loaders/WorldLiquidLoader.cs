@@ -15,7 +15,7 @@ internal static class WorldLiquidLoader
     public static WorldLiquidResources Upload(
         ComPtr<ID3D11Device> device,
         ParsedWorldLiquid parsed,
-        uint rootAdtFileDataId)
+        uint cacheOwner)
     {
         ArgumentNullException.ThrowIfNull(parsed);
         if (parsed.IsEmpty)
@@ -74,7 +74,7 @@ internal static class WorldLiquidLoader
                 if (textureId == 0 || acquiredTextureIds.Contains(textureId))
                     continue;
 
-                BLPCache.GetOrLoad(device, textureId, rootAdtFileDataId);
+                BLPCache.GetOrLoad(device, textureId, cacheOwner);
                 acquiredTextureIds.Add(textureId);
             }
 
@@ -85,19 +85,19 @@ internal static class WorldLiquidLoader
             result.indexBuffer.Dispose();
             result.vertexBuffer.Dispose();
             foreach (var textureId in acquiredTextureIds)
-                BLPCache.Release(textureId, rootAdtFileDataId);
+                BLPCache.Release(textureId, cacheOwner);
             throw;
         }
     }
 
-    public static void Unload(ref WorldLiquidResources liquid, uint rootAdtFileDataId)
+    public static void Unload(ref WorldLiquidResources liquid, uint cacheOwner)
     {
         if (liquid.textureFileDataIds != null)
         {
             foreach (var textureId in liquid.textureFileDataIds)
             {
                 if (textureId != 0)
-                    BLPCache.Release(textureId, rootAdtFileDataId);
+                    BLPCache.Release(textureId, cacheOwner);
             }
         }
 
