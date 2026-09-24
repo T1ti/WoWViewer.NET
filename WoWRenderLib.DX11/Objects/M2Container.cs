@@ -3,6 +3,7 @@ using Silk.NET.Direct3D11;
 using System.Numerics;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Raycasting;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
@@ -20,6 +21,7 @@ namespace WoWRenderLib.DX11.Objects
         public int WmoDoodadIndex { get; set; } = -1;
         public uint UniqueID { get; set; }
         public ushort PlacementFlags { get; set; }
+        public M2InstanceAnimationState AnimationState { get; } = new();
 
         public WMOContainer? ParentWMO
         {

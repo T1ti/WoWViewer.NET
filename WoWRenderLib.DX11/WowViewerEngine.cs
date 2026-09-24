@@ -293,6 +293,7 @@ namespace WoWRenderLib.DX11
             if (lighting.IsDynamic)
             {
                 _dynamicWorldLightingEnabled = true;
+                sceneManager?.ApplyWorldLighting(lighting);
                 UpdateDynamicWorldLighting(force: true);
                 return;
             }

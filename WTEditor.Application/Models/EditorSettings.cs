@@ -37,6 +37,8 @@ public sealed record RenderingConfiguration
     public float MinimumModelScreenSizePixels { get; init; } = 1f;
     public float TerrainLodTransitionPixels { get; init; } = 32f;
     public int TileLoadingDistance { get; init; } = 4;
+    public int WorldLightingTime { get; init; } = 1440;
+    public bool UseLocalWorldLightingTime { get; init; }
     public float MovementSpeed { get; init; } = 150f;
     public float MouseSensitivity { get; init; } = 0.1f;
     public bool RenderADT { get; init; } = true;
@@ -67,6 +69,7 @@ public sealed record RenderingConfiguration
             TerrainLodTransitionPixels = ClampFinite(
                 TerrainLodTransitionPixels, 0f, 256f, defaults.TerrainLodTransitionPixels),
             TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
+            WorldLightingTime = Math.Clamp(WorldLightingTime, 0, 2879),
             MovementSpeed = ClampFinite(MovementSpeed, 1f, 10_000f, defaults.MovementSpeed),
             MouseSensitivity = ClampFinite(
                 MouseSensitivity, 0.001f, 2f, defaults.MouseSensitivity)

@@ -26,29 +26,32 @@ internal static class FrameProfileSnapshotFactory
         var gpuWorldModelMilliseconds = stats.GpuWorldModelTimeMs ?? 0;
         var gpuDoodadMilliseconds = stats.GpuDoodadTimeMs ?? 0;
         var gpuTerrainMilliseconds = stats.GpuTerrainTimeMs ?? 0;
+        var gpuLiquidMilliseconds = stats.GpuLiquidTimeMs ?? 0;
         var gpuDebugMilliseconds = stats.GpuDebugTimeMs ?? 0;
         var hasDetailedGpuTiming =
             stats.GpuWorldModelTimeMs.HasValue ||
             stats.GpuDoodadTimeMs.HasValue ||
             stats.GpuTerrainTimeMs.HasValue ||
+            stats.GpuLiquidTimeMs.HasValue ||
             stats.GpuDebugTimeMs.HasValue;
         var gpuOtherMilliseconds = Math.Max(
             0,
             (stats.GpuFrameTimeMs ?? 0) - gpuUploadMilliseconds -
             (hasDetailedGpuTiming
                 ? gpuWorldModelMilliseconds + gpuDoodadMilliseconds +
-                  gpuTerrainMilliseconds + gpuDebugMilliseconds
+                  gpuTerrainMilliseconds + gpuLiquidMilliseconds + gpuDebugMilliseconds
                 : stats.GpuDrawTimeMs ?? 0));
         var profiledSceneCpuMilliseconds =
             stats.SceneSetupTimeMs +
             stats.TileHierarchyCullingTimeMs +
             stats.WmoCullingTimeMs + stats.WmoSubmissionTimeMs +
-            stats.M2CullingTimeMs + stats.M2SubmissionTimeMs +
+            stats.M2CullingTimeMs + stats.M2AnimationTimeMs + stats.M2SubmissionTimeMs +
             stats.TerrainCullingTimeMs + stats.TerrainSubmissionTimeMs +
+            stats.LiquidCullingTimeMs + stats.LiquidSubmissionTimeMs +
             stats.DebugSubmissionTimeMs;
-        var sceneSetupDebugAndOtherMilliseconds =
-            stats.SceneSetupTimeMs + stats.DebugSubmissionTimeMs +
-            Math.Max(0, stats.SceneRenderTimeMs - profiledSceneCpuMilliseconds);
+        var otherSceneWorkMilliseconds = Math.Max(
+            0,
+            stats.SceneRenderTimeMs - profiledSceneCpuMilliseconds);
         var steps = new List<FrameTimingStep>
         {
             new("World streaming (CPU)", stats.TileUpdateTimeMs),
@@ -57,10 +60,15 @@ internal static class FrameProfileSnapshotFactory
             new("WMO culling (CPU)", stats.WmoCullingTimeMs),
             new("WMO command submission (CPU)", stats.WmoSubmissionTimeMs),
             new("M2 culling (CPU)", stats.M2CullingTimeMs),
+            new("M2 animations (CPU)", stats.M2AnimationTimeMs),
             new("M2 command submission (CPU)", stats.M2SubmissionTimeMs),
             new("Terrain culling (CPU)", stats.TerrainCullingTimeMs),
             new("Terrain command submission (CPU)", stats.TerrainSubmissionTimeMs),
-            new("Scene setup / debug (CPU)", sceneSetupDebugAndOtherMilliseconds),
+            new("Liquids culling (CPU)", stats.LiquidCullingTimeMs),
+            new("Liquids command submission (CPU)", stats.LiquidSubmissionTimeMs),
+            new("Scene setup (CPU)", stats.SceneSetupTimeMs),
+            new("Debug command submission (CPU)", stats.DebugSubmissionTimeMs),
+            new("Other scene work (CPU)", otherSceneWorkMilliseconds),
             new(
                 "Other frame work (CPU)",
                 inputMilliseconds + stats.UpdateTimeMs + stats.RenderOverheadTimeMs),
@@ -85,6 +93,10 @@ internal static class FrameProfileSnapshotFactory
                 gpuTerrainMilliseconds,
                 FrameTimingDomain.Gpu));
             steps.Add(new(
+                "Liquids span (GPU timeline)",
+                gpuLiquidMilliseconds,
+                FrameTimingDomain.Gpu));
+            steps.Add(new(
                 "Debug span (GPU timeline)",
                 gpuDebugMilliseconds,
                 FrameTimingDomain.Gpu));
@@ -98,10 +110,6 @@ internal static class FrameProfileSnapshotFactory
         }
 
         steps.Add(new("Other GPU timeline", gpuOtherMilliseconds, FrameTimingDomain.Gpu));
-        steps.Add(new(
-            "Producer mutex wait",
-            stats.MutexWaitTimeMs,
-            FrameTimingDomain.Presentation));
 
         return new FrameProfileSnapshot(
             frameNumber,

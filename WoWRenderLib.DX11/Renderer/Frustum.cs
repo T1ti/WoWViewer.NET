@@ -92,7 +92,14 @@ namespace WoWRenderLib.DX11.Renderer
             return true;
         }
 
-        public BoxIntersection ClassifyBox(Vector3 min, Vector3 max)
+        /// <summary>
+        /// Classifies an axis-aligned bounding box against the six planes of this
+        /// view frustum. The box's support vertices are tested against each plane
+        /// to determine whether it is fully outside, intersects, or is fully inside
+        /// the frustum. This is a conservative plane test, not a raycast, and does
+        /// not classify oriented boxes.
+        /// </summary>
+        public BoxIntersection ClassifyAxisAlignedBox(Vector3 min, Vector3 max)
         {
             var result = BoxIntersection.Inside;
             for (int i = 0; i < 6; i++)

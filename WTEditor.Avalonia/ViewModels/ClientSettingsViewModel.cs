@@ -69,6 +69,8 @@ public partial class ClientSettingsViewModel : ViewModelBase
             MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
             TerrainLodTransitionPixels = TerrainLodTransitionPixels,
             TileLoadingDistance = TileLoadingDistance,
+            WorldLightingTime = original.Rendering.WorldLightingTime,
+            UseLocalWorldLightingTime = original.Rendering.UseLocalWorldLightingTime,
             MovementSpeed = MovementSpeed,
             MouseSensitivity = MouseSensitivity,
             RenderADT = original.Rendering.RenderADT,

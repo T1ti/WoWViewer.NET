@@ -15,6 +15,20 @@ public sealed class M2Animation
     public M2Track<float>[] TextureWeights { get; init; } = [];
     public M2TextureAnimation[] TextureTransforms { get; init; } = [];
 
+    /// <summary>The first Stand sequence, or sequence zero when Stand is absent.</summary>
+    public int DefaultSequenceIndex
+    {
+        get
+        {
+            for (var i = 0; i < Sequences.Length; i++)
+            {
+                if (Sequences[i].AnimationId == 0)
+                    return i;
+            }
+            return 0;
+        }
+    }
+
     public M2AnimatedMaterial EvaluateMaterial(Submesh batch, int sequenceIndex, double elapsedMilliseconds)
     {
         sequenceIndex = ResolveSequenceIndex(sequenceIndex);
@@ -190,7 +204,8 @@ public sealed class M2Animation
     }
 }
 
-public readonly record struct M2Sequence(uint Duration, uint Flags, int AliasNext = -1);
+public readonly record struct M2Sequence(
+    uint Duration, uint Flags, int AliasNext = -1, ushort AnimationId = 0);
 
 public readonly record struct M2AnimatedMaterial(
     Vector4 Color, Matrix4x4 TextureMatrix1, Matrix4x4 TextureMatrix2,

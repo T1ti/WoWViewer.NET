@@ -73,7 +73,26 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
-        public bool AnimateModels { get; set; } = true;
+        private bool _animateModels = true;
+        private double _animationPausedMilliseconds;
+        private double _animationPauseStartedMilliseconds;
+        private long _lastRenderedAnimationTimeMilliseconds;
+        public bool AnimateModels
+        {
+            get => _animateModels;
+            set
+            {
+                if (_animateModels == value)
+                    return;
+
+                var now = Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds;
+                if (value)
+                    _animationPausedMilliseconds += now - _animationPauseStartedMilliseconds;
+                else
+                    _animationPauseStartedMilliseconds = now;
+                _animateModels = value;
+            }
+        }
         public bool EnableWmoPortalCulling { get; set; }
         public int TileLoadingDistance { get; set; } = 4;
         public float TerrainRenderDistance { get; set; } = 20_000f;
@@ -194,7 +213,8 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> wmoPerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2BonePaletteConstantBuffer = default;
-        private readonly Matrix4x4[] m2BonePalette = new Matrix4x4[M2Animation.MaxGpuBones];
+        private M2AnimationPose? _uploadedM2Pose;
+        private long _uploadedM2PoseVersion;
         private readonly long m2AnimationEpoch = Stopwatch.GetTimestamp();
         private ComPtr<ID3D11Buffer> instanceMatrixBuffer = default;
         private ComPtr<ID3D11DepthStencilView> depthStencilView = default;
@@ -1459,6 +1479,10 @@ namespace WoWRenderLib.DX11.Managers
             var lastM2HasTexMatrix2 = -1;
             bool? lastM2TwoSided = null;
 
+            // Sample a shared animation frame only when an animated model survives culling.
+            var animationTime = _lastRenderedAnimationTimeMilliseconds;
+            var animationTimeCaptured = false;
+
             foreach (var packet in m2InstancePackets.Values)
             {
                 var instances = packet.Instances;
@@ -1517,19 +1541,26 @@ namespace WoWRenderLib.DX11.Managers
                 if (_visibleIndices.Count == 0)
                     continue;
 
-                var animationTime = AnimateModels
-                    ? Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
-                    : 0d;
-                m2ConstantBuffer.hasSkinning = m2.animation is { HasAnimatedBones: true } ? 1 : 0;
-                if (m2.animation is { HasAnimatedBones: true } animation)
+                IReadOnlyList<M2AnimationDrawGroup> animationGroups;
+                if (AnimateModels && m2.animation is { } animation)
                 {
+                    if (!animationTimeCaptured)
+                    {
+                        animationTime = Math.Max(0,
+                            (long)(Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
+                                - _animationPausedMilliseconds));
+                        _lastRenderedAnimationTimeMilliseconds = animationTime;
+                        animationTimeCaptured = true;
+                    }
+
                     var animationStarted = Stopwatch.GetTimestamp();
-                    Array.Fill(m2BonePalette, Matrix4x4.Identity);
-                    animation.Evaluate(0, animationTime, m2BonePalette);
+                    animationGroups = packet.BuildAnimationGroups(
+                        animation, m2.submeshes, animationTime, _visibleIndices);
                     M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
-                    _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
-                        ref Unsafe.NullRef<Box>(), ref m2BonePalette[0], 0, 0);
-                    ConstantBufferUpdates++;
+                }
+                else
+                {
+                    animationGroups = packet.GetStaticDrawGroups(_visibleIndices);
                 }
 
                 var vertexBuffer = m2.vertexBuffer;
@@ -1540,114 +1571,128 @@ namespace WoWRenderLib.DX11.Managers
                 VertexBufferBindings++;
                 IndexBufferBindings++;
 
-                for (int batchStart = 0; batchStart < _visibleIndices.Count; batchStart += MaxInstancesPerBatch)
+                foreach (var animationGroup in animationGroups)
                 {
-                    int batchCount = Math.Min(MaxInstancesPerBatch, _visibleIndices.Count - batchStart);
-
-                    unsafe
+                    var pose = animationGroup.Pose;
+                    m2ConstantBuffer.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
+                    if (pose?.BonePalette is { } palette &&
+                        (!ReferenceEquals(_uploadedM2Pose, pose) ||
+                         _uploadedM2PoseVersion != pose.Version))
                     {
-                        MappedSubresource mapped = default;
-                        SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-
-                        var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
-                        for (int i = 0; i < batchCount; i++)
-                            dest[i] = packet.WorldMatrices[_visibleIndices[batchStart + i]];
-
-                        _deviceContext.Unmap(instanceMatrixBuffer, 0);
-                        InstanceBufferMapCalls++;
+                        _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
+                            ref Unsafe.NullRef<Box>(), ref palette[0], 0, 0);
+                        ConstantBufferUpdates++;
+                        _uploadedM2Pose = pose;
+                        _uploadedM2PoseVersion = pose.Version;
                     }
 
-                    _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
-                    VertexBufferBindings++;
-
-                    for (int j = 0; j < m2.submeshes.Length; j++)
+                    for (int batchStart = 0; batchStart < animationGroup.Indices.Count; batchStart += MaxInstancesPerBatch)
                     {
-                        var batch = m2.submeshes[j];
-                        _m2DepthStates.Apply(m2.usesLegacyDepthFlags, batch.renderFlags);
+                        int batchCount = Math.Min(MaxInstancesPerBatch, animationGroup.Indices.Count - batchStart);
 
-                        var isTwoSided = IsM2TwoSided(batch.renderFlags);
-                        if (lastM2TwoSided != isTwoSided)
+                        unsafe
                         {
-                            _deviceContext.RSSetState(
-                                isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
-                            lastM2TwoSided = isTwoSided;
+                            MappedSubresource mapped = default;
+                            SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+
+                            var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
+                            for (int i = 0; i < batchCount; i++)
+                                dest[i] = packet.WorldMatrices[animationGroup.Indices[batchStart + i]];
+
+                            _deviceContext.Unmap(instanceMatrixBuffer, 0);
+                            InstanceBufferMapCalls++;
                         }
 
-                        m2ConstantBuffer.blendMode = batch.blendType;
-                        m2ConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
-                        m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
-                        m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
-                        if (m2.animation is { } materialAnimation)
-                        {
-                            var animationStarted = Stopwatch.GetTimestamp();
-                            var material = materialAnimation.EvaluateMaterial(batch, 0, animationTime);
-                            M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
-                            m2ConstantBuffer.materialColor = material.Color;
-                            m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
-                            m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
-                            m2ConstantBuffer.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
-                            m2ConstantBuffer.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
-                        }
-                        else
-                        {
-                            m2ConstantBuffer.materialColor = Vector4.One;
-                            m2ConstantBuffer.texMatrix1 = Matrix4x4.Identity;
-                            m2ConstantBuffer.texMatrix2 = Matrix4x4.Identity;
-                            m2ConstantBuffer.hasTexMatrix1 = 0;
-                            m2ConstantBuffer.hasTexMatrix2 = 0;
-                        }
+                        _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                        VertexBufferBindings++;
 
-                        if (m2ConstantBuffer.blendMode != lastM2BlendMode ||
-                            m2ConstantBuffer.vertexShader != lastM2VertexShader ||
-                            m2ConstantBuffer.pixelShader != lastM2PixelShader ||
-                            m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
-                            m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
-                            lastM2HasAnimation != (m2.animation is not null) ||
-                            m2ConstantBuffer.materialColor != lastM2MaterialColor ||
-                            !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
-                            !m2ConstantBuffer.texMatrix2.Equals(lastM2TexMatrix2) ||
-                            m2ConstantBuffer.hasTexMatrix1 != lastM2HasTexMatrix1 ||
-                            m2ConstantBuffer.hasTexMatrix2 != lastM2HasTexMatrix2)
+                        for (int j = 0; j < m2.submeshes.Length; j++)
                         {
-                            _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
-                            ConstantBufferUpdates++;
-                            lastM2BlendMode = m2ConstantBuffer.blendMode;
-                            lastM2VertexShader = m2ConstantBuffer.vertexShader;
-                            lastM2PixelShader = m2ConstantBuffer.pixelShader;
-                            lastM2AlphaRef = m2ConstantBuffer.alphaRef;
-                            lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
-                            lastM2HasAnimation = m2.animation is not null;
-                            lastM2MaterialColor = m2ConstantBuffer.materialColor;
-                            lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;
-                            lastM2TexMatrix2 = m2ConstantBuffer.texMatrix2;
-                            lastM2HasTexMatrix1 = m2ConstantBuffer.hasTexMatrix1;
-                            lastM2HasTexMatrix2 = m2ConstantBuffer.hasTexMatrix2;
-                        }
+                            var batch = m2.submeshes[j];
+                            _m2DepthStates.Apply(m2.usesLegacyDepthFlags, batch.renderFlags);
 
-                        for (int s = 0; s < batch.material.Length; s++)
-                            _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
-                        if (batch.material.Length > 0)
-                        {
-                            _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
-                            var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
-                            for (var s = 0; s < samplerCount; s++)
+                            var isTwoSided = IsM2TwoSided(batch.renderFlags);
+                            if (lastM2TwoSided != isTwoSided)
                             {
-                                var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
-                                    ? textureFlags[s]
-                                    : 0;
-                                _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
+                                _deviceContext.RSSetState(
+                                    isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
+                                lastM2TwoSided = isTwoSided;
                             }
-                            _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
-                            TextureBindingCalls++;
-                        }
 
-                        _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
-                        drawCalls++;
-                        M2DrawCalls++;
-                        M2SubmittedInstances += (uint)batchCount;
-                        var submittedIndices = (ulong)batch.numFaces * (uint)batchCount;
-                        submittedIndexCount += submittedIndices;
-                        M2SubmittedIndices += submittedIndices;
+                            m2ConstantBuffer.blendMode = batch.blendType;
+                            m2ConstantBuffer.alphaRef = ApplyBlendMode((int)batch.blendType, ref currentBlendType);
+                            m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
+                            m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
+                            if (pose is not null)
+                            {
+                                var material = pose.Materials[j];
+                                m2ConstantBuffer.materialColor = material.Color;
+                                m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
+                                m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
+                                m2ConstantBuffer.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
+                                m2ConstantBuffer.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
+                            }
+                            else
+                            {
+                                m2ConstantBuffer.materialColor = Vector4.One;
+                                m2ConstantBuffer.texMatrix1 = Matrix4x4.Identity;
+                                m2ConstantBuffer.texMatrix2 = Matrix4x4.Identity;
+                                m2ConstantBuffer.hasTexMatrix1 = 0;
+                                m2ConstantBuffer.hasTexMatrix2 = 0;
+                            }
+
+                            if (m2ConstantBuffer.blendMode != lastM2BlendMode ||
+                                m2ConstantBuffer.vertexShader != lastM2VertexShader ||
+                                m2ConstantBuffer.pixelShader != lastM2PixelShader ||
+                                m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
+                                m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
+                                lastM2HasAnimation != (pose is not null) ||
+                                m2ConstantBuffer.materialColor != lastM2MaterialColor ||
+                                !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
+                                !m2ConstantBuffer.texMatrix2.Equals(lastM2TexMatrix2) ||
+                                m2ConstantBuffer.hasTexMatrix1 != lastM2HasTexMatrix1 ||
+                                m2ConstantBuffer.hasTexMatrix2 != lastM2HasTexMatrix2)
+                            {
+                                _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
+                                ConstantBufferUpdates++;
+                                lastM2BlendMode = m2ConstantBuffer.blendMode;
+                                lastM2VertexShader = m2ConstantBuffer.vertexShader;
+                                lastM2PixelShader = m2ConstantBuffer.pixelShader;
+                                lastM2AlphaRef = m2ConstantBuffer.alphaRef;
+                                lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
+                                lastM2HasAnimation = pose is not null;
+                                lastM2MaterialColor = m2ConstantBuffer.materialColor;
+                                lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;
+                                lastM2TexMatrix2 = m2ConstantBuffer.texMatrix2;
+                                lastM2HasTexMatrix1 = m2ConstantBuffer.hasTexMatrix1;
+                                lastM2HasTexMatrix2 = m2ConstantBuffer.hasTexMatrix2;
+                            }
+
+                            for (int s = 0; s < batch.material.Length; s++)
+                                _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
+                            if (batch.material.Length > 0)
+                            {
+                                _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
+                                var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
+                                for (var s = 0; s < samplerCount; s++)
+                                {
+                                    var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
+                                        ? textureFlags[s]
+                                        : 0;
+                                    _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
+                                }
+                                _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
+                                TextureBindingCalls++;
+                            }
+
+                            _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
+                            drawCalls++;
+                            M2DrawCalls++;
+                            M2SubmittedInstances += (uint)batchCount;
+                            var submittedIndices = (ulong)batch.numFaces * (uint)batchCount;
+                            submittedIndexCount += submittedIndices;
+                            M2SubmittedIndices += submittedIndices;
+                        }
                     }
                 }
             }

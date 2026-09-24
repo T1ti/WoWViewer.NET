@@ -116,6 +116,20 @@ public partial class LightingViewModel : ViewModelBase
         ? "Current contributors to the final blended values:"
         : "No active spatial light contributors reported.";
 
+    public void SetPreferences(int time, bool useLocalTime)
+    {
+        _synchronizing = true;
+        try
+        {
+            Time = time;
+            IsDynamic = useLocalTime;
+        }
+        finally
+        {
+            _synchronizing = false;
+        }
+    }
+
     public void Update(LightingSettingsSnapshot lighting)
     {
         if (Matches(lighting))

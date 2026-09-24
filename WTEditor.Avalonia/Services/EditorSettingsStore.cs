@@ -21,6 +21,8 @@ public sealed class PersistedRenderingSettings
     public float MinimumModelScreenSizePixels { get; set; } = 1f;
     public float TerrainLodTransitionPixels { get; set; } = 32f;
     public int TileLoadingDistance { get; set; } = 4;
+    public int WorldLightingTime { get; set; } = 1440;
+    public bool UseLocalWorldLightingTime { get; set; }
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
     public bool RenderADT { get; set; } = true;
@@ -46,6 +48,8 @@ public sealed class PersistedRenderingSettings
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = TerrainLodTransitionPixels,
         TileLoadingDistance = TileLoadingDistance,
+        WorldLightingTime = WorldLightingTime,
+        UseLocalWorldLightingTime = UseLocalWorldLightingTime,
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,
         RenderADT = RenderADT,
@@ -76,6 +80,8 @@ public sealed class PersistedRenderingSettings
         MinimumModelScreenSizePixels = rendering.MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = rendering.TerrainLodTransitionPixels,
         TileLoadingDistance = rendering.TileLoadingDistance,
+        WorldLightingTime = rendering.WorldLightingTime,
+        UseLocalWorldLightingTime = rendering.UseLocalWorldLightingTime,
         MovementSpeed = rendering.MovementSpeed,
         MouseSensitivity = rendering.MouseSensitivity,
         RenderADT = rendering.RenderADT,

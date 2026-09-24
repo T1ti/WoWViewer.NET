@@ -74,8 +74,6 @@
       </StackPanel>
     </Border>
 
-    <!-- These controls belong to this world viewport instance. Other viewport types
-         can provide their own visibility tools without inheriting these switches. -->
     <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
             Padding="5" CornerRadius="7" Background="#E61A2027"
             BorderBrush="#526170" BorderThickness="1" ZIndex="30">

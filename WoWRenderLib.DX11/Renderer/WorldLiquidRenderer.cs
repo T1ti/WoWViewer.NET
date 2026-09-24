@@ -227,7 +227,7 @@ internal sealed class WorldLiquidRenderer(
                     continue;
 
                 var bounds = batch.Bounds;
-                if (frustum.ClassifyBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
+                if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
                     continue;
 
                 var sphere = new BoundingSphere(
@@ -264,7 +264,7 @@ internal sealed class WorldLiquidRenderer(
                 var batch = liquid.batches[batchIndex];
                 candidateCount++;
                 var bounds = BoundingBox.Transform(batch.Bounds, matrix);
-                if (frustum.ClassifyBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
+                if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
                     continue;
                 var radius = Vector3.Distance(bounds.Center, bounds.Max);
                 if (!IsWithinRenderDistance(camera.Position, bounds.Center, radius, wmoRenderDistance))

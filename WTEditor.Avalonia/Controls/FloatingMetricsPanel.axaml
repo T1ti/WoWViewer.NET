@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:WTEditor.Avalonia.Controls"
-             xmlns:models="using:WTEditor.Application.Models"
              xmlns:vm="using:WTEditor.Avalonia.ViewModels"
              xmlns:icons="using:WTEditor.Avalonia.Presentation"
              x:Class="WTEditor.Avalonia.Controls.FloatingMetricsPanel"
@@ -27,20 +26,35 @@
           CornerRadius="7" BoxShadow="0 8 24 0 #99000000" ClipToBounds="True">
     <Grid RowDefinitions="38,*">
       <Border Grid.Row="0" Background="#293440" Padding="10,0">
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <PathIcon Width="16" Height="16" Foreground="#6CB6FF"
                       Data="{x:Static icons:EditorIcons.Profiler}"/>
-            <TextBlock Text="Frame profiler" FontWeight="SemiBold"/>
+            <TextBlock Text="World viewport profiler" FontWeight="SemiBold"/>
           </StackPanel>
           <TextBlock Grid.Column="1" Text="{Binding PerformanceEnvironmentLabel}" Foreground="#AFC7DC"
                      FontSize="10" Margin="8,0"/>
           <CheckBox Grid.Column="2" Content="Pause" Margin="8,0"
                     IsChecked="{Binding IsProfilingPaused}"/>
-          <Button Grid.Column="3" Content="Capture 10 s" Margin="4,0,8,0" Padding="9,3"
-                  Command="{Binding StartPerformanceCaptureCommand}"
-                  ToolTip.Tip="Waits 2 seconds for GPU timing to settle, then records 10 seconds"/>
-          <Button Grid.Column="4" Width="28" Height="26" Padding="0"
+          <CheckBox Grid.Column="3" Content="Detailed capture" Margin="8,0"
+                    IsChecked="{Binding IsDetailedGpuProfilingEnabled}"
+                    ToolTip.Tip="Collect per-pass GPU timestamps; sampled every 8 frames"/>
+          <Button Grid.Column="4" Content="Capture 10 s" Margin="4,0,8,0" Padding="9,3"
+                  Command="{Binding StartPerformanceCaptureCommand}">
+            <ToolTip.Tip>
+              <StackPanel Spacing="4" MaxWidth="380">
+                <TextBlock Text="{Binding PerformanceCaptureStatus}" Foreground="#D6E5EF"
+                           FontSize="11" TextWrapping="Wrap"/>
+                <TextBlock Text="Waits 2 seconds for GPU timing to settle, then records 10 seconds."
+                           FontSize="11" TextWrapping="Wrap"/>
+                <TextBlock Text="Capture terrain-only, WMO-only, M2-only, then the mixed scene. Do not move the camera or change visibility while a capture is running."
+                           FontSize="11" TextWrapping="Wrap"/>
+                <TextBlock Text="Leave detailed timing off for an unperturbed baseline. Enable it only when pass-level GPU timing is needed; CPU pass timings and command counters remain available in both modes."
+                           FontSize="11" TextWrapping="Wrap"/>
+              </StackPanel>
+            </ToolTip.Tip>
+          </Button>
+          <Button Grid.Column="5" Width="28" Height="26" Padding="0"
                   Command="{Binding CloseMetricsPanelCommand}" ToolTip.Tip="Close profiler">
             <PathIcon Width="12" Height="12" Data="{x:Static icons:EditorIcons.Close}"/>
           </Button>
@@ -61,7 +75,7 @@
               <StackPanel>
                 <TextBlock Text="GPU timeline" Foreground="#FF99C7" FontSize="11"/>
                 <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="#FF5DA2"
-                           Text="{Binding ProfileGpuMilliseconds, StringFormat='{}{0:F2} ms'}"/>
+                           Text="{Binding ProfileGpuMillisecondsDisplay}"/>
               </StackPanel>
             </Border>
             <Border Grid.Column="2" Padding="8" Background="#25303A" CornerRadius="4" Margin="4,0,0,0">
@@ -72,6 +86,29 @@
               </StackPanel>
             </Border>
           </Grid>
+
+          <Border Padding="9" CornerRadius="4" Background="#242D35">
+            <StackPanel Spacing="6">
+              <TextBlock Text="Viewport workload" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+              <Grid ColumnDefinitions="*,*,*,*,*">
+                <CheckBox Content="Terrain" IsChecked="{Binding RenderTerrain}"/>
+                <CheckBox Grid.Column="1" Content="Liquids" IsChecked="{Binding RenderLiquid}"/>
+                <CheckBox Grid.Column="2" Content="WMO" IsChecked="{Binding RenderWorldModels}"/>
+                <CheckBox Grid.Column="3" Content="M2" IsChecked="{Binding RenderDoodads}"/>
+                <CheckBox Grid.Column="4" Content="M2 animations" IsChecked="{Binding AnimateModels}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Text="WMO portal culling" Foreground="#AFC7DC"/>
+                <CheckBox Grid.Column="1" IsChecked="{Binding WmoPortalCullingEnabled}"/>
+                <TextBlock Grid.Row="1" Text="Minimum model pixels" Foreground="#AFC7DC"/>
+                <TextBlock Grid.Row="1" Grid.Column="1"
+                           Text="{Binding MinimumModelScreenSizePixels, StringFormat='{}{0:F2} px'}"/>
+                <TextBlock Grid.Row="2" Text="Terrain LOD transition" Foreground="#AFC7DC"/>
+                <TextBlock Grid.Row="2" Grid.Column="1"
+                           Text="{Binding TerrainLodTransitionPixels, StringFormat='{}{0:F0} px'}"/>
+              </Grid>
+            </StackPanel>
+          </Border>
 
           <Border Padding="9" CornerRadius="4" Background="#49351F" BorderBrush="#8B642D"
                   BorderThickness="1" IsVisible="{Binding IsPerformanceEnvironmentWarningVisible}">
@@ -84,20 +121,6 @@
               <TextBlock Text="{Binding ProfileBottleneck}" Foreground="#FFD166" FontWeight="SemiBold"/>
               <TextBlock Text="Compares CPU frame time with elapsed time between GPU command-stream markers. A slow CPU can leave the GPU idle inside that span, so this is not GPU utilization."
                          Foreground="#C5D0DA" TextWrapping="Wrap" FontSize="11"/>
-            </StackPanel>
-          </Border>
-
-          <Border Padding="9" CornerRadius="4" Background="#20313A" BorderBrush="#365365" BorderThickness="1">
-            <StackPanel Spacing="4">
-              <TextBlock Text="Timed capture" Foreground="#7CC7F2" FontWeight="SemiBold"/>
-              <CheckBox Content="Detailed GPU pass timing (sampled every 8 frames)"
-                        IsChecked="{Binding IsDetailedGpuProfilingEnabled}"/>
-              <TextBlock Text="{Binding PerformanceCaptureStatus}" Foreground="#D6E5EF"
-                         FontSize="11" TextWrapping="Wrap"/>
-              <TextBlock Text="Capture terrain-only, WMO-only, M2-only, then the mixed scene. Do not move the camera or change visibility while a capture is running."
-                         Foreground="#AFC0CF" FontSize="11" TextWrapping="Wrap"/>
-              <TextBlock Text="Leave detailed timing off for an unperturbed baseline. Enable it only when pass-level GPU timing is needed; CPU pass timings and command counters remain available in both modes."
-                         Foreground="#91A4B5" FontSize="11" TextWrapping="Wrap"/>
             </StackPanel>
           </Border>
 
@@ -116,11 +139,13 @@
             <TextBlock Text="Latest measured frame" FontWeight="SemiBold"/>
             <ItemsControl ItemsSource="{Binding CurrentFrameSteps}">
               <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid ColumnDefinitions="12,*,78" Margin="0,2">
+                <DataTemplate x:DataType="vm:ProfilerFrameStepViewModel">
+                  <Grid ColumnDefinitions="12,*,78" Margin="0,2"
+                        ToolTip.Tip="{Binding Description}">
                     <Border Width="8" Height="8" CornerRadius="2"
                             Background="{Binding Name, Converter={StaticResource FrameStepBrushConverter}}"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Name}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                               Foreground="{Binding Name, Converter={StaticResource FrameStepBrushConverter}}"/>
                     <TextBlock Grid.Column="2" HorizontalAlignment="Right" Foreground="#D7E1E9"
                                Text="{Binding DurationMilliseconds, StringFormat='{}{0:F3} ms'}"/>
                   </Grid>
@@ -133,16 +158,17 @@
 
           <StackPanel Spacing="5">
             <TextBlock Text="Render passes" FontWeight="SemiBold"/>
-            <ItemsControl ItemsSource="{Binding ProfileRenderWorkload.Passes}">
+            <ItemsControl ItemsSource="{Binding ProfileRenderPasses}">
               <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="models:RenderPassMetrics">
-                  <Border Padding="9" Margin="0,0,0,5" CornerRadius="4" Background="#242D35">
+                <DataTemplate x:DataType="vm:ProfilerRenderPassViewModel">
+                  <Border Padding="9" Margin="0,0,0,5" CornerRadius="4" Background="#242D35"
+                          ToolTip.Tip="{Binding Description}">
                     <StackPanel Spacing="6">
                       <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
                           <TextBlock Text="GPU span" Foreground="#FF99C7" FontSize="11"/>
-                          <TextBlock Text="{Binding GpuMilliseconds, StringFormat='{}{0:F3} ms'}"
+                          <TextBlock Text="{Binding GpuSpanDisplay}"
                                      Foreground="#FF79B6" FontWeight="SemiBold"/>
                         </StackPanel>
                       </Grid>

@@ -360,12 +360,15 @@ public sealed class EditorSettingsSmokeTests
                 TerrainRenderDistance = 12_500f,
                 ModelRenderDistance = 8_000f,
                 TileLoadingDistance = 6,
+                WorldLightingTime = 1800,
+                UseLocalWorldLightingTime = true,
                 MovementSpeed = 225f,
                 MouseSensitivity = 0.25f,
                 RenderADT = false,
                 RenderLiquid = false,
                 RenderWMO = true,
                 RenderM2 = false,
+                AnimateModels = false,
                 EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
                 ShowBoundingSpheres = true,
@@ -446,7 +449,29 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
-    public void WorldViewportVisibilityIsLocalAndDoesNotModifyEditorSettings()
+    public void ViewportStreamingSettingsSurviveSessionSaveAndReload()
+    {
+        var store = new MemorySettingsStore(new EditorSettingsSnapshot());
+        var session = new EditorSession(store);
+        using var firstViewport = new Editor3DViewModel(session);
+        using var secondViewport = new Editor3DViewModel(session);
+
+        firstViewport.TileLoadingDistance = 8;
+        firstViewport.TerrainRenderDistance = 12_000f;
+        firstViewport.ModelRenderDistance = 9_000f;
+
+        Assert.AreEqual(8, session.Current.Rendering.TileLoadingDistance);
+        Assert.AreEqual(8, secondViewport.TileLoadingDistance);
+        session.Save();
+
+        var restored = new EditorSession(store);
+        Assert.AreEqual(8, restored.Current.Rendering.TileLoadingDistance);
+        Assert.AreEqual(12_000f, restored.Current.Rendering.TerrainRenderDistance);
+        Assert.AreEqual(9_000f, restored.Current.Rendering.ModelRenderDistance);
+    }
+
+    [TestMethod]
+    public void WorldViewportVisibilityIsPersistedAndSharedAcrossViewports()
     {
         var initial = new EditorSettingsSnapshot
         {
@@ -468,29 +493,66 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.RenderingConfigurationChanged += (_, configuration) => published = configuration;
 
         firstViewport.RenderTerrain = false;
+        firstViewport.RenderLiquid = false;
+        firstViewport.RenderWorldModels = false;
         firstViewport.RenderDoodads = false;
+        firstViewport.AnimateModels = false;
         firstViewport.WmoPortalCullingEnabled = true;
+        firstViewport.ShowBoundingBoxes = true;
+        firstViewport.ShowBoundingSpheres = true;
         firstViewport.ShowTerrainGrid = true;
         firstViewport.ShowTerrainWireframe = true;
 
         Assert.IsNotNull(published);
         Assert.IsFalse(published.RenderADT);
         Assert.IsFalse(published.RenderM2);
-        Assert.IsTrue(published.RenderWMO);
+        Assert.IsFalse(published.RenderWMO);
+        Assert.IsFalse(published.RenderLiquid);
+        Assert.IsFalse(published.AnimateModels);
         Assert.IsTrue(published.EnableWmoPortalCulling);
         Assert.IsTrue(published.ShowTerrainGrid);
         Assert.IsTrue(published.ShowTerrainWireframe);
-        Assert.IsTrue(secondViewport.RenderTerrain);
-        Assert.IsTrue(secondViewport.RenderDoodads);
-        Assert.IsFalse(secondViewport.WmoPortalCullingEnabled);
-        Assert.IsFalse(secondViewport.ShowTerrainGrid);
-        Assert.IsFalse(secondViewport.ShowTerrainWireframe);
-        Assert.IsTrue(session.Current.Rendering.RenderADT);
-        Assert.IsTrue(session.Current.Rendering.RenderM2);
-        Assert.IsFalse(session.Current.Rendering.EnableWmoPortalCulling);
-        Assert.IsFalse(session.Current.Rendering.ShowTerrainGrid);
-        Assert.IsFalse(session.Current.Rendering.ShowTerrainWireframe);
+        Assert.IsFalse(secondViewport.RenderTerrain);
+        Assert.IsFalse(secondViewport.RenderLiquid);
+        Assert.IsFalse(secondViewport.RenderWorldModels);
+        Assert.IsFalse(secondViewport.RenderDoodads);
+        Assert.IsFalse(secondViewport.AnimateModels);
+        Assert.IsTrue(secondViewport.WmoPortalCullingEnabled);
+        Assert.IsTrue(secondViewport.ShowBoundingBoxes);
+        Assert.IsTrue(secondViewport.ShowBoundingSpheres);
+        Assert.IsTrue(secondViewport.ShowTerrainGrid);
+        Assert.IsTrue(secondViewport.ShowTerrainWireframe);
+        Assert.IsFalse(session.Current.Rendering.RenderADT);
+        Assert.IsFalse(session.Current.Rendering.RenderM2);
+        Assert.IsTrue(session.Current.Rendering.EnableWmoPortalCulling);
+        Assert.IsTrue(session.Current.Rendering.ShowTerrainGrid);
+        Assert.IsTrue(session.Current.Rendering.ShowTerrainWireframe);
         Assert.AreEqual(0, store.SaveCount);
+        session.Save();
+        Assert.AreEqual(session.Current.Rendering, new EditorSession(store).Current.Rendering);
+    }
+
+    [TestMethod]
+    public void ViewportLightingPreferencesSurviveSessionSaveAndReload()
+    {
+        var store = new MemorySettingsStore(new EditorSettingsSnapshot());
+        var session = new EditorSession(store);
+        using var viewport = new Editor3DViewModel(session);
+        viewport.UpdateActiveLighting(new LightingSettingsSnapshot(
+            12, 1440, Vector3.UnitZ, Vector3.One, Vector3.One,
+            Vector3.Zero, Vector3.Zero, Vector3.Zero, Vector3.Zero,
+            1f, 1f, 1f, 1f, false, false, false));
+
+        viewport.Lighting.Time = 1800;
+        viewport.Lighting.IsDynamic = true;
+        session.Save();
+
+        var restored = new EditorSession(store);
+        using var restoredViewport = new Editor3DViewModel(restored);
+        Assert.AreEqual(1800, restored.Current.Rendering.WorldLightingTime);
+        Assert.IsTrue(restored.Current.Rendering.UseLocalWorldLightingTime);
+        Assert.AreEqual(1800L, restoredViewport.Lighting.Time);
+        Assert.IsTrue(restoredViewport.Lighting.IsDynamic);
     }
 
     [TestMethod]
@@ -513,9 +575,14 @@ public sealed class EditorSettingsSmokeTests
                 Height = 720
             }, save: true);
 
+            using var viewport = new Editor3DViewModel(session);
+            viewport.TileLoadingDistance = 8;
+            viewport.RenderTerrain = false;
             session.UpdateWindow(session.Current.Window with { State = "FullScreen" }, save: true);
 
             var restored = store.Load();
+            Assert.AreEqual(8, restored.Rendering.TileLoadingDistance);
+            Assert.IsFalse(restored.Rendering.RenderADT);
             Assert.AreEqual(new WindowPlacement
             {
                 HasBounds = true,

@@ -21,6 +21,7 @@ using WTEditor.Avalonia.ViewModels;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
+using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Diagnostics;
 
@@ -345,6 +346,11 @@ namespace WTEditor.Avalonia.Controls
                 new Vector2D<int>(width, height),
                 _vm?.HasInitialCameraPosition == true ? _vm.InitialCameraPosition : null,
                 _vm?.HasInitialCameraDirection == true ? _vm.InitialCameraDirection : null);
+            _rendererSession.Engine?.ApplyWorldLighting(WorldLightingSettings.Defaults with
+            {
+                Time = _renderingConfiguration.WorldLightingTime,
+                IsDynamic = _renderingConfiguration.UseLocalWorldLightingTime
+            });
             ReplayCurrentWorldNavigation();
         }
 

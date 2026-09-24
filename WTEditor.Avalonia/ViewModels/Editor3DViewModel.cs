@@ -57,24 +57,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     public WorldNavigationRequest? CurrentWorldNavigation { get; private set; }
 
     public ClientConfiguration ClientConfiguration => _session.Current.Client;
-    public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering with
-    {
-        RenderADT = RenderTerrain,
-        RenderLiquid = RenderLiquid,
-        RenderWMO = RenderWorldModels,
-        RenderM2 = RenderDoodads,
-        AnimateModels = AnimateModels,
-        EnableWmoPortalCulling = WmoPortalCullingEnabled,
-        MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
-        TerrainLodTransitionPixels = TerrainLodTransitionPixels,
-        TerrainRenderDistance = TerrainRenderDistance,
-        ModelRenderDistance = ModelRenderDistance,
-        TileLoadingDistance = TileLoadingDistance,
-        ShowBoundingBoxes = ShowBoundingBoxes,
-        ShowBoundingSpheres = ShowBoundingSpheres,
-        ShowTerrainGrid = ShowTerrainGrid,
-        ShowTerrainWireframe = ShowTerrainWireframe
-    };
+    public RenderingConfiguration RenderingConfiguration => _session.Current.Rendering;
     public KeyboardLayoutMode KeyboardLayout => _session.Current.KeyboardLayout;
     public bool HasInitialCameraPosition => _session.Current.Camera != null;
     public Vector3 InitialCameraPosition => _session.Current.Camera?.Position ?? Vector3.Zero;
@@ -212,6 +195,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _showBoundingSpheres = session.Current.Rendering.ShowBoundingSpheres;
         _showTerrainGrid = session.Current.Rendering.ShowTerrainGrid;
         _showTerrainWireframe = session.Current.Rendering.ShowTerrainWireframe;
+        Lighting.SetPreferences(
+            session.Current.Rendering.WorldLightingTime,
+            session.Current.Rendering.UseLocalWorldLightingTime);
         _cameraPosition = session.Current.Camera?.Position ?? Vector3.Zero;
         _cameraDirection = session.Current.Camera?.Direction ?? Vector3.Zero;
         _lastProcessCpuTime = _currentProcess.TotalProcessorTime;
@@ -265,12 +251,18 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _session.UpdateRendering(RenderingConfiguration with { MouseSensitivity = value });
     }
 
-    partial void OnRenderTerrainChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnRenderLiquidChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnRenderWorldModelsChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnRenderDoodadsChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnAnimateModelsChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnWmoPortalCullingEnabledChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnRenderTerrainChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderADT = value });
+    partial void OnRenderLiquidChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderLiquid = value });
+    partial void OnRenderWorldModelsChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderWMO = value });
+    partial void OnRenderDoodadsChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderM2 = value });
+    partial void OnAnimateModelsChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { AnimateModels = value });
+    partial void OnWmoPortalCullingEnabledChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { EnableWmoPortalCulling = value });
     partial void OnMinimumModelScreenSizePixelsChanged(float value)
     {
         var normalized = Math.Clamp(value, 0f, 16f);
@@ -280,7 +272,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        PublishViewportRenderingConfiguration();
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { MinimumModelScreenSizePixels = value });
     }
     partial void OnTerrainLodTransitionPixelsChanged(float value)
     {
@@ -291,22 +283,27 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        PublishViewportRenderingConfiguration();
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TerrainLodTransitionPixels = value });
     }
-    partial void OnTerrainRenderDistanceChanged(float value) => PublishViewportRenderingConfiguration();
-    partial void OnModelRenderDistanceChanged(float value) => PublishViewportRenderingConfiguration();
-    partial void OnTileLoadingDistanceChanged(int value) => PublishViewportRenderingConfiguration();
-    partial void OnShowBoundingBoxesChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnShowBoundingSpheresChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnShowTerrainGridChanged(bool value) => PublishViewportRenderingConfiguration();
-    partial void OnShowTerrainWireframeChanged(bool value) => PublishViewportRenderingConfiguration();
+    partial void OnTerrainRenderDistanceChanged(float value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TerrainRenderDistance = value });
+    partial void OnModelRenderDistanceChanged(float value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ModelRenderDistance = value });
+    partial void OnTileLoadingDistanceChanged(int value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TileLoadingDistance = value });
+    partial void OnShowBoundingBoxesChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowBoundingBoxes = value });
+    partial void OnShowBoundingSpheresChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowBoundingSpheres = value });
+    partial void OnShowTerrainGridChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainGrid = value });
+    partial void OnShowTerrainWireframeChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainWireframe = value });
 
-    private void PublishViewportRenderingConfiguration()
+    private void UpdatePersistedRenderingConfiguration(RenderingConfiguration rendering)
     {
-        if (_synchronizingRenderingSettings)
-            return;
-
-        RenderingConfigurationChanged?.Invoke(this, RenderingConfiguration);
+        if (!_synchronizingRenderingSettings)
+            _session.UpdateRendering(rendering);
     }
 
     public void UpdateTelemetry(ViewportTelemetry telemetry)
@@ -342,7 +339,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _session.UpdateRendering(RenderingConfiguration with
         {
             AmbientColor = lighting.AmbientColor,
-            DiffuseColor = lighting.DiffuseColor
+            DiffuseColor = lighting.DiffuseColor,
+            WorldLightingTime = checked((int)lighting.Time),
+            UseLocalWorldLightingTime = lighting.IsDynamic
         });
         LightingSettingsChanged?.Invoke(this, lighting);
     }
@@ -505,13 +504,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     private void UpdateCurrentFrameSteps(IReadOnlyList<FrameTimingStep> steps)
     {
-        var visibleSteps = steps
-            .Where(step => step.Name != "Resource uploads (GPU timeline)" || step.DurationMilliseconds >= 0.001d)
-            .OrderBy(step => FrameTimingCategoryCatalog.OrderOf(step.Name))
-            .ThenBy(step => step.Name, StringComparer.Ordinal)
-            .ToArray();
+        var visibleSteps = FrameTimingCategoryCatalog.OrderSteps(steps);
 
-        for (var index = 0; index < visibleSteps.Length; index++)
+        for (var index = 0; index < visibleSteps.Count; index++)
         {
             if (index == CurrentFrameSteps.Count)
                 CurrentFrameSteps.Add(new ProfilerFrameStepViewModel(visibleSteps[index]));
@@ -519,7 +514,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
                 CurrentFrameSteps[index].Update(visibleSteps[index]);
         }
 
-        while (CurrentFrameSteps.Count > visibleSteps.Length)
+        while (CurrentFrameSteps.Count > visibleSteps.Count)
             CurrentFrameSteps.RemoveAt(CurrentFrameSteps.Count - 1);
     }
 
@@ -763,6 +758,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         {
             MoveSpeed = configuration.MovementSpeed;
             MouseSensitivity = configuration.MouseSensitivity;
+            RenderTerrain = configuration.RenderADT;
+            RenderWorldModels = configuration.RenderWMO;
+            RenderDoodads = configuration.RenderM2;
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
             WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
@@ -775,6 +773,14 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;
             ShowTerrainWireframe = configuration.ShowTerrainWireframe;
+            if (Lighting.IsDynamic != configuration.UseLocalWorldLightingTime ||
+                (!configuration.UseLocalWorldLightingTime &&
+                 Lighting.Time != configuration.WorldLightingTime))
+            {
+                Lighting.SetPreferences(
+                    configuration.WorldLightingTime,
+                    configuration.UseLocalWorldLightingTime);
+            }
         }
         finally
         {

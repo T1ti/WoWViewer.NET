@@ -251,7 +251,8 @@ public static class M2Loader
         var sequences = new M2Sequence[root.Sequences.Count];
         for (var i = 0; i < sequences.Length; i++)
             sequences[i] = new M2Sequence(root.Sequences[i].Duration,
-                root.Sequences[i].Flags, root.Sequences[i].AliasNext);
+                root.Sequences[i].Flags, root.Sequences[i].AliasNext,
+                root.Sequences[i].Id);
 
         var loops = new uint[root.GlobalLoops.Count];
         for (var i = 0; i < loops.Length; i++)
