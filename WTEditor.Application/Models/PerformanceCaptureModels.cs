@@ -27,7 +27,10 @@ public sealed record PerformanceCaptureContext(
     public string BuildConfiguration { get; init; } = "Unknown";
     public bool D3D11DebugLayerEnabled { get; init; }
     public bool RenderLiquid { get; init; } = true;
+    public bool RenderParticles { get; init; } = true;
     public bool AnimateModels { get; init; } = true;
+    public float AnimationRenderDistancePercent { get; init; } = 50f;
+    public float ParticleRenderDistancePercent { get; init; } = 20f;
     public float MinimumModelScreenSizePixels { get; init; }
     public float TerrainLodTransitionPixels { get; init; }
 }

@@ -78,6 +78,8 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool RenderM2 { get; set; } = true;
+        public bool RenderParticles { get; set; } = true;
+        public bool DisableScreenGlow { get; set; }
         public bool EnableClientGlow { get; set; }
 
         private static uint NextSceneOwnerId() =>
@@ -106,6 +108,8 @@ namespace WoWRenderLib.DX11.Managers
         public int TileLoadingDistance { get; set; } = 4;
         public float TerrainRenderDistance { get; set; } = 20_000f;
         public float ModelRenderDistance { get; set; } = 20_000f;
+        public float AnimationRenderDistancePercent { get; set; } = 50f;
+        public float ParticleRenderDistancePercent { get; set; } = 20f;
         public float MinimumModelScreenSizePixels { get; set; } = 1f;
         public float TerrainLodTransitionPixels { get; set; } = 32f;
         public Vector3? BrushWorldPosition { get; private set; }
@@ -282,6 +286,8 @@ namespace WoWRenderLib.DX11.Managers
             new ComPtr<ID3D11SamplerState>[4];
         private readonly Dictionary<uint, ComPtr<ID3D11ShaderResourceView>> _frameTextureSrvs = [];
         private readonly List<int> _visibleIndices = new(64);
+        private readonly List<int> _animatedVisibleIndices = new(64);
+        private readonly List<int> _particleVisibleIndices = new(64);
         private readonly List<bool> _visibleTerrainFarLod = new(MaxTerrainChunksPerTile);
         private readonly List<WmoVisibilityBatch> _wmoVisibilityBatches = [];
         private readonly string? _wmoGroupTraceFilter =
@@ -314,6 +320,7 @@ namespace WoWRenderLib.DX11.Managers
         public double WmoSubmissionTimeMs { get; private set; }
         public double M2CullingTimeMs { get; private set; }
         public double M2AnimationTimeMs { get; private set; }
+        public double M2ParticleRibbonTimeMs { get; private set; }
         public double M2SubmissionTimeMs { get; private set; }
         public double TerrainCullingTimeMs { get; private set; }
         public double TerrainSubmissionTimeMs { get; private set; }
@@ -847,6 +854,7 @@ namespace WoWRenderLib.DX11.Managers
             WmoSubmissionTimeMs = 0;
             M2CullingTimeMs = 0;
             M2AnimationTimeMs = 0;
+            M2ParticleRibbonTimeMs = 0;
             M2SubmissionTimeMs = 0;
             TerrainCullingTimeMs = 0;
             TerrainSubmissionTimeMs = 0;
@@ -929,7 +937,8 @@ namespace WoWRenderLib.DX11.Managers
             ComPtr<ID3D11ShaderResourceView> nullSRV = default;
             _deviceContext.PSSetShaderResources(0, 1, ref nullSRV);
 
-            var applyClientGlow = EnableClientGlow && _renderWidth > 0 && _renderHeight > 0;
+            var applyClientGlow = EnableClientGlow && !DisableScreenGlow &&
+                                  _renderWidth > 0 && _renderHeight > 0;
             var sceneTarget = applyClientGlow
                 ? _glowRenderer.GetSceneTarget(_renderWidth, _renderHeight)
                 : renderTargetView;
@@ -1560,6 +1569,7 @@ namespace WoWRenderLib.DX11.Managers
             var ribbonSubmissions = _ribbonSubmissions;
             var particleSubmissions = _particleSubmissions;
             var m2MeshSubmissions = _m2MeshSubmissions;
+            var animateVisibleParticles = RenderM2 && AnimateModels && RenderParticles;
             ribbonSubmissions.Clear();
             particleSubmissions.Clear();
             m2MeshSubmissions.Clear();
@@ -1579,6 +1589,8 @@ namespace WoWRenderLib.DX11.Managers
                 candidateM2s += instances.Count;
                 var cullingStarted = Stopwatch.GetTimestamp();
                 _visibleIndices.Clear();
+                _animatedVisibleIndices.Clear();
+                _particleVisibleIndices.Clear();
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
@@ -1616,6 +1628,18 @@ namespace WoWRenderLib.DX11.Managers
 
                         visibleM2s++;
                         _visibleIndices.Add(i);
+                        if (AnimateModels)
+                        {
+                            var distanceSquared = Vector3.DistanceSquared(camera.Position, sphere.Center);
+                            if (M2EffectDistancePolicy.IsWithin(
+                                    distanceSquared, sphere.Radius, ModelRenderDistance,
+                                    AnimationRenderDistancePercent))
+                                _animatedVisibleIndices.Add(i);
+                            if (RenderParticles && M2EffectDistancePolicy.IsWithin(
+                                    distanceSquared, sphere.Radius, ModelRenderDistance,
+                                    ParticleRenderDistancePercent))
+                                _particleVisibleIndices.Add(i);
+                        }
                     }
                 }
                 var cullingElapsed = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
@@ -1626,9 +1650,11 @@ namespace WoWRenderLib.DX11.Managers
                     continue;
 
                 if (AnimateModels && m2.animation is { } activeAnimation &&
-                    (activeAnimation.HasAnimatedBones || activeAnimation.HasMaterialTracks ||
-                     activeAnimation.Ribbons.Length > 0 ||
-                     activeAnimation.RenderableParticleIndices.Length > 0) &&
+                    ((_animatedVisibleIndices.Count > 0 &&
+                      (activeAnimation.HasAnimatedBones || activeAnimation.HasMaterialTracks ||
+                       activeAnimation.Ribbons.Length > 0)) ||
+                     (_particleVisibleIndices.Count > 0 && animateVisibleParticles &&
+                      activeAnimation.RenderableParticleIndices.Length > 0)) &&
                     !animationTimeCaptured)
                 {
                     animationTime = Math.Max(0,
@@ -1639,14 +1665,16 @@ namespace WoWRenderLib.DX11.Managers
                 }
 
                 IReadOnlyList<M2AnimationDrawGroup> animationGroups;
-                if (AnimateModels && m2.animation is { } animation &&
+                if (m2.animation is { } animation &&
                     (animation.HasAnimatedBones || animation.HasMaterialTracks))
                 {
                     var animationStarted = Stopwatch.GetTimestamp();
                     var rigidCameraView = cameraMatrix;
                     rigidCameraView.M41 = rigidCameraView.M42 = rigidCameraView.M43 = 0;
                     animationGroups = packet.BuildAnimationGroups(
-                        animation, m2.submeshes, animationTime, rigidCameraView, _visibleIndices);
+                        animation, m2.submeshes, animationTime, rigidCameraView,
+                        _visibleIndices, _animatedVisibleIndices,
+                        preserveLastPose: !AnimateModels);
                     M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
                 }
                 else
@@ -1655,31 +1683,46 @@ namespace WoWRenderLib.DX11.Managers
                 }
 
                 if (AnimateModels && m2.animation is { } effectAnimation &&
-                    (effectAnimation.Ribbons.Length > 0 ||
-                     effectAnimation.RenderableParticleIndices.Length > 0))
+                    ((_animatedVisibleIndices.Count > 0 && effectAnimation.Ribbons.Length > 0) ||
+                     (_particleVisibleIndices.Count > 0 && animateVisibleParticles &&
+                      effectAnimation.RenderableParticleIndices.Length > 0)))
                 {
-                    foreach (var index in _visibleIndices)
+                    var effectsStarted = Stopwatch.GetTimestamp();
+                    if (effectAnimation.Ribbons.Length > 0)
                     {
-                        var frame = instances[index].AnimationState.GetFrameKey(
-                            effectAnimation, animationTime);
-                        var world = packet.WorldMatrices[index];
-                        var distanceSquared = Vector3.DistanceSquared(camera.Position,
-                            packet.WorldBounds[index].Center);
-                        for (var ribbonIndex = 0; ribbonIndex < effectAnimation.Ribbons.Length; ribbonIndex++)
-                            ribbonSubmissions.Add(new M2RibbonSubmission(
-                                instances[index], effectAnimation,
-                                effectAnimation.Ribbons[ribbonIndex], ribbonIndex,
-                                frame, world, m2.usesLegacyDepthFlags,
-                                distanceSquared));
-                        if (effectAnimation.RenderableParticleIndices.Length == 0)
-                            continue;
-                        var modelToView = world * cameraMatrix;
-                        foreach (var particleIndex in effectAnimation.RenderableParticleIndices)
-                            particleSubmissions.Add(new M2ParticleSubmission(
-                                instances[index], effectAnimation,
-                                effectAnimation.Particles[particleIndex], particleIndex,
-                                frame, world, modelToView, distanceSquared));
+                        foreach (var index in _animatedVisibleIndices)
+                        {
+                            var frame = instances[index].AnimationState.GetFrameKey(
+                                effectAnimation, animationTime);
+                            var world = packet.WorldMatrices[index];
+                            var distanceSquared = Vector3.DistanceSquared(camera.Position,
+                                packet.WorldBounds[index].Center);
+                            for (var ribbonIndex = 0; ribbonIndex < effectAnimation.Ribbons.Length; ribbonIndex++)
+                                ribbonSubmissions.Add(new M2RibbonSubmission(
+                                    instances[index], effectAnimation,
+                                    effectAnimation.Ribbons[ribbonIndex], ribbonIndex,
+                                    frame, world, m2.usesLegacyDepthFlags,
+                                    distanceSquared));
+                        }
                     }
+                    if (animateVisibleParticles && effectAnimation.RenderableParticleIndices.Length > 0)
+                    {
+                        foreach (var index in _particleVisibleIndices)
+                        {
+                            var frame = instances[index].AnimationState.GetFrameKey(
+                                effectAnimation, animationTime);
+                            var world = packet.WorldMatrices[index];
+                            var distanceSquared = Vector3.DistanceSquared(camera.Position,
+                                packet.WorldBounds[index].Center);
+                            var modelToView = world * cameraMatrix;
+                            foreach (var particleIndex in effectAnimation.RenderableParticleIndices)
+                                particleSubmissions.Add(new M2ParticleSubmission(
+                                    instances[index], effectAnimation,
+                                    effectAnimation.Particles[particleIndex], particleIndex,
+                                    frame, world, modelToView, distanceSquared));
+                        }
+                    }
+                    M2ParticleRibbonTimeMs += Stopwatch.GetElapsedTime(effectsStarted).TotalMilliseconds;
                 }
 
                 var hasOpaque = false;
@@ -1851,7 +1894,6 @@ namespace WoWRenderLib.DX11.Managers
             // Opaque M2 geometry writes depth before translucent water. Draw
             // read-only/blended M2 materials after water so a nearer beam or
             // particle is not tinted by water farther from the camera.
-            var m2AnimationBeforeSubmission = M2AnimationTimeMs;
             var opaqueM2Started = Stopwatch.GetTimestamp();
             DrawM2Meshes(false);
             var opaqueM2SubmissionTimeMs = Stopwatch.GetElapsedTime(opaqueM2Started).TotalMilliseconds;
@@ -1902,18 +1944,21 @@ namespace WoWRenderLib.DX11.Managers
             lastM2TwoSided = null;
             var translucentM2Started = Stopwatch.GetTimestamp();
             DrawM2Meshes(true);
+            var translucentM2SubmissionTimeMs =
+                Stopwatch.GetElapsedTime(translucentM2Started).TotalMilliseconds;
+            M2SubmissionTimeMs = opaqueM2SubmissionTimeMs + translucentM2SubmissionTimeMs;
 
+            var effectDrawStarted = Stopwatch.GetTimestamp();
+            _effectRenderer.BeginFrame();
             ribbonSubmissions.Sort(static (a, b) =>
                 b.DistanceSquared.CompareTo(a.DistanceSquared));
             if (ribbonSubmissions.Count > 0)
                 _effectRenderer.Begin();
             foreach (var submission in ribbonSubmissions)
             {
-                var animationStarted = Stopwatch.GetTimestamp();
                 var mesh = _effectRenderer.GetRibbonMesh(
                     submission.Instance, submission.Animation,
                     submission.RibbonIndex, submission.Frame);
-                M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
                 if (mesh.Indices.Length == 0)
                     continue;
 
@@ -1932,48 +1977,43 @@ namespace WoWRenderLib.DX11.Managers
                 submittedIndexCount += (uint)mesh.Indices.Length;
                 M2SubmittedIndices += (uint)mesh.Indices.Length;
             }
-            particleSubmissions.Sort(static (a, b) =>
-                b.DistanceSquared.CompareTo(a.DistanceSquared));
-            if (particleSubmissions.Count > 0)
-                _effectRenderer.Begin();
-            foreach (var submission in particleSubmissions)
+            if (animateVisibleParticles && particleSubmissions.Count > 0)
             {
-                var animationStarted = Stopwatch.GetTimestamp();
-                var mesh = _effectRenderer.GetParticleMesh(
-                    submission.Instance, submission.Animation,
-                    submission.ParticleIndex, submission.Frame,
-                    submission.ModelToView);
-                M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
-                if (mesh.Indices.Length == 0)
-                    continue;
-
-                var particle = submission.Particle;
-                _m2DepthStates.Apply(true, particle.BlendMode > 1 ? (ushort)0x10 : (ushort)0);
-                _deviceContext.RSSetState(m2TwoSidedRasterizerState);
-                ApplyBlendMode(GetM2BlendStateIndex(particle.BlendMode), ref currentBlendType);
-                var alphaReference = particle.BlendMode switch
+                particleSubmissions.Sort(static (a, b) =>
+                    b.DistanceSquared.CompareTo(a.DistanceSquared));
+                _effectRenderer.Begin();
+                foreach (var submission in particleSubmissions)
                 {
-                    0 => -1f,
-                    1 => 224f / 255f,
-                    _ => 1f / 255f
-                };
-                var texture = ResolveFrameTexture(particle.TextureFileDataId);
-                var sampler = m2TextureSamplers[GetM2SamplerIndex(particle.TextureFlags)];
-                _effectRenderer.Draw(mesh, submission.World, cameraMatrix,
-                    projectionMatrix, alphaReference, texture, sampler);
-                drawCalls++;
-                M2DrawCalls++;
-                submittedIndexCount += (uint)mesh.Indices.Length;
-                M2SubmittedIndices += (uint)mesh.Indices.Length;
+                    var mesh = _effectRenderer.GetParticleMesh(
+                        submission.Instance, submission.Animation,
+                        submission.ParticleIndex, submission.Frame,
+                        submission.ModelToView);
+                    if (mesh.Indices.Length == 0)
+                        continue;
+
+                    var particle = submission.Particle;
+                    _m2DepthStates.Apply(true, particle.BlendMode > 1 ? (ushort)0x10 : (ushort)0);
+                    _deviceContext.RSSetState(m2TwoSidedRasterizerState);
+                    ApplyBlendMode(GetM2BlendStateIndex(particle.BlendMode), ref currentBlendType);
+                    var alphaReference = particle.BlendMode switch
+                    {
+                        0 => -1f,
+                        1 => 224f / 255f,
+                        _ => 1f / 255f
+                    };
+                    var texture = ResolveFrameTexture(particle.TextureFileDataId);
+                    var sampler = m2TextureSamplers[GetM2SamplerIndex(particle.TextureFlags)];
+                    _effectRenderer.Draw(mesh, submission.World, cameraMatrix,
+                        projectionMatrix, alphaReference, texture, sampler);
+                    drawCalls++;
+                    M2DrawCalls++;
+                    submittedIndexCount += (uint)mesh.Indices.Length;
+                    M2SubmittedIndices += (uint)mesh.Indices.Length;
+                }
             }
+            M2ParticleRibbonTimeMs += Stopwatch.GetElapsedTime(effectDrawStarted).TotalMilliseconds;
             gpuTimer?.EndDoodads();
             _m2DepthStates.EndPass();
-            var translucentM2SubmissionTimeMs =
-                Stopwatch.GetElapsedTime(translucentM2Started).TotalMilliseconds;
-            M2SubmissionTimeMs = Math.Max(
-                0,
-                opaqueM2SubmissionTimeMs + translucentM2SubmissionTimeMs -
-                (M2AnimationTimeMs - m2AnimationBeforeSubmission));
 
             ApplyBlendMode(0, ref currentBlendType);
 

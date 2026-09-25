@@ -45,7 +45,8 @@ internal static class FrameProfileSnapshotFactory
             stats.SceneSetupTimeMs +
             stats.TileHierarchyCullingTimeMs +
             stats.WmoCullingTimeMs + stats.WmoSubmissionTimeMs +
-            stats.M2CullingTimeMs + stats.M2AnimationTimeMs + stats.M2SubmissionTimeMs +
+            stats.M2CullingTimeMs + stats.M2AnimationTimeMs +
+            stats.M2ParticleRibbonTimeMs + stats.M2SubmissionTimeMs +
             stats.TerrainCullingTimeMs + stats.TerrainSubmissionTimeMs +
             stats.LiquidCullingTimeMs + stats.LiquidSubmissionTimeMs +
             stats.DebugSubmissionTimeMs;
@@ -61,6 +62,7 @@ internal static class FrameProfileSnapshotFactory
             new("WMO command submission (CPU)", stats.WmoSubmissionTimeMs),
             new("M2 culling (CPU)", stats.M2CullingTimeMs),
             new("M2 animations (CPU)", stats.M2AnimationTimeMs),
+            new("M2 particles and ribbons (CPU)", stats.M2ParticleRibbonTimeMs),
             new("M2 command submission (CPU)", stats.M2SubmissionTimeMs),
             new("Terrain culling (CPU)", stats.TerrainCullingTimeMs),
             new("Terrain command submission (CPU)", stats.TerrainSubmissionTimeMs),

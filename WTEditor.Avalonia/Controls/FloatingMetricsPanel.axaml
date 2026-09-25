@@ -87,29 +87,6 @@
             </Border>
           </Grid>
 
-          <Border Padding="9" CornerRadius="4" Background="#242D35">
-            <StackPanel Spacing="6">
-              <TextBlock Text="Viewport workload" Foreground="#9FB4C6" FontWeight="SemiBold"/>
-              <Grid ColumnDefinitions="*,*,*,*,*">
-                <CheckBox Content="Terrain" IsChecked="{Binding RenderTerrain}"/>
-                <CheckBox Grid.Column="1" Content="Liquids" IsChecked="{Binding RenderLiquid}"/>
-                <CheckBox Grid.Column="2" Content="WMO" IsChecked="{Binding RenderWorldModels}"/>
-                <CheckBox Grid.Column="3" Content="M2" IsChecked="{Binding RenderDoodads}"/>
-                <CheckBox Grid.Column="4" Content="M2 animations" IsChecked="{Binding AnimateModels}"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                <TextBlock Text="WMO portal culling" Foreground="#AFC7DC"/>
-                <CheckBox Grid.Column="1" IsChecked="{Binding WmoPortalCullingEnabled}"/>
-                <TextBlock Grid.Row="1" Text="Minimum model pixels" Foreground="#AFC7DC"/>
-                <TextBlock Grid.Row="1" Grid.Column="1"
-                           Text="{Binding MinimumModelScreenSizePixels, StringFormat='{}{0:F2} px'}"/>
-                <TextBlock Grid.Row="2" Text="Terrain LOD transition" Foreground="#AFC7DC"/>
-                <TextBlock Grid.Row="2" Grid.Column="1"
-                           Text="{Binding TerrainLodTransitionPixels, StringFormat='{}{0:F0} px'}"/>
-              </Grid>
-            </StackPanel>
-          </Border>
-
           <Border Padding="9" CornerRadius="4" Background="#49351F" BorderBrush="#8B642D"
                   BorderThickness="1" IsVisible="{Binding IsPerformanceEnvironmentWarningVisible}">
             <TextBlock Text="Performance captures from Debug builds or with D3D11 validation enabled are diagnostic only. Use Release with validation off for representative timings."

@@ -11,12 +11,6 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _keyboardLayout;
     [ObservableProperty] private bool _isForegroundFrameRateLimitEnabled;
     [ObservableProperty] private int _viewportFrameRateLimit;
-    [ObservableProperty] private float _terrainRenderDistance;
-    [ObservableProperty] private float _modelRenderDistance;
-    [ObservableProperty] private float _minimumModelScreenSizePixels;
-    [ObservableProperty] private float _terrainLodTransitionPixels;
-    [ObservableProperty] private int _tileLoadingDistance;
-    [ObservableProperty] private float _movementSpeed;
     [ObservableProperty] private float _mouseSensitivity;
     [ObservableProperty] private float _ambientColorR;
     [ObservableProperty] private float _ambientColorG;
@@ -24,10 +18,6 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private float _diffuseColorR;
     [ObservableProperty] private float _diffuseColorG;
     [ObservableProperty] private float _diffuseColorB;
-    [ObservableProperty] private bool _showBoundingBoxes;
-    [ObservableProperty] private bool _showBoundingSpheres;
-    [ObservableProperty] private bool _showTerrainGrid;
-    [ObservableProperty] private bool _showTerrainWireframe;
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
@@ -35,12 +25,6 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _keyboardLayout = ToDisplayName(settings.KeyboardLayout);
         _isForegroundFrameRateLimitEnabled = rendererSettings.IsForegroundFrameRateLimitEnabled;
         _viewportFrameRateLimit = rendererSettings.ViewportFrameRateLimit;
-        _terrainRenderDistance = rendererSettings.TerrainRenderDistance;
-        _modelRenderDistance = rendererSettings.ModelRenderDistance;
-        _minimumModelScreenSizePixels = rendererSettings.MinimumModelScreenSizePixels;
-        _terrainLodTransitionPixels = rendererSettings.TerrainLodTransitionPixels;
-        _tileLoadingDistance = rendererSettings.TileLoadingDistance;
-        _movementSpeed = rendererSettings.MovementSpeed;
         _mouseSensitivity = rendererSettings.MouseSensitivity;
         _ambientColorR = rendererSettings.AmbientColor.X;
         _ambientColorG = rendererSettings.AmbientColor.Y;
@@ -48,41 +32,17 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _diffuseColorR = rendererSettings.DiffuseColor.X;
         _diffuseColorG = rendererSettings.DiffuseColor.Y;
         _diffuseColorB = rendererSettings.DiffuseColor.Z;
-        _showBoundingBoxes = rendererSettings.ShowBoundingBoxes;
-        _showBoundingSpheres = rendererSettings.ShowBoundingSpheres;
-        _showTerrainGrid = rendererSettings.ShowTerrainGrid;
-        _showTerrainWireframe = rendererSettings.ShowTerrainWireframe;
     }
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
     {
-        Client = original.Client,
-        Rendering = new RenderingConfiguration
+        Rendering = original.Rendering with
         {
             IsForegroundFrameRateLimitEnabled = IsForegroundFrameRateLimitEnabled,
-            IsForegroundFrameRateLimitInitialized = original.Rendering.IsForegroundFrameRateLimitInitialized,
             ViewportFrameRateLimit = ViewportFrameRateLimit,
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
             DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
-            TerrainRenderDistance = TerrainRenderDistance,
-            ModelRenderDistance = ModelRenderDistance,
-            MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
-            TerrainLodTransitionPixels = TerrainLodTransitionPixels,
-            TileLoadingDistance = TileLoadingDistance,
-            WorldLightingTime = original.Rendering.WorldLightingTime,
-            UseLocalWorldLightingTime = original.Rendering.UseLocalWorldLightingTime,
-            MovementSpeed = MovementSpeed,
             MouseSensitivity = MouseSensitivity,
-            RenderADT = original.Rendering.RenderADT,
-            RenderLiquid = original.Rendering.RenderLiquid,
-            RenderWMO = original.Rendering.RenderWMO,
-            RenderM2 = original.Rendering.RenderM2,
-            AnimateModels = original.Rendering.AnimateModels,
-            EnableWmoPortalCulling = original.Rendering.EnableWmoPortalCulling,
-            ShowBoundingBoxes = ShowBoundingBoxes,
-            ShowBoundingSpheres = ShowBoundingSpheres,
-            ShowTerrainGrid = ShowTerrainGrid,
-            ShowTerrainWireframe = ShowTerrainWireframe
         },
         KeyboardLayout = ParseKeyboardLayout(KeyboardLayout)
     };

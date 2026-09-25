@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace WoWRenderLib.Structs;
 
@@ -9,6 +10,15 @@ namespace WoWRenderLib.Structs;
 /// </summary>
 public static class M2ParticleMeshBuilder
 {
+    private sealed class EmissionScheduleCache
+    {
+        public readonly Dictionary<M2ParticleAnimation, Dictionary<int, M2ParticleEmissionSchedule?>>
+            ByEmitter = new(ReferenceEqualityComparer.Instance);
+    }
+
+    private static readonly ConditionalWeakTable<M2Animation, EmissionScheduleCache>
+        EmissionSchedules = new();
+
     private const int MaxParticles = 1024;
     private const uint Unlit = 0x1;
     private const uint DepthSort = 0x2;
@@ -108,8 +118,7 @@ public static class M2ParticleMeshBuilder
         uint stableSeed,
         Matrix4x4 modelToView)
     {
-        if (!double.IsFinite(timeMilliseconds) || timeMilliseconds < 0d ||
-            !Matrix4x4.Invert(modelToView, out var viewToModel))
+        if (!double.IsFinite(timeMilliseconds) || timeMilliseconds < 0d)
             return M2RibbonMesh.Empty;
 
         sequenceIndex = animation.ResolveSequenceIndex(sequenceIndex);
@@ -117,8 +126,7 @@ public static class M2ParticleMeshBuilder
             ? animation.Sequences[sequenceIndex] : default;
         if (Sample(emitter.Enabled, 1f, timeMilliseconds) == 0f)
             return M2RibbonMesh.Empty;
-        var schedule = M2ParticleEmissionSchedule.Create(emitter.EmissionRate,
-            sequenceIndex, sequence, animation.GlobalLoops);
+        var schedule = GetEmissionSchedule(animation, emitter, sequenceIndex, sequence);
         if (schedule is null)
             return M2RibbonMesh.Empty;
         var life = Sample(emitter.Lifespan, 0f, timeMilliseconds);
@@ -134,6 +142,8 @@ public static class M2ParticleMeshBuilder
             return M2RibbonMesh.Empty;
         var newest = (long)last;
         var oldest = Math.Max((long)first, newest - MaxParticles + 1);
+        if (!Matrix4x4.Invert(modelToView, out var viewToModel))
+            return M2RibbonMesh.Empty;
         var right = Normalize(Vector3.TransformNormal(Vector3.UnitX, viewToModel));
         var up = Normalize(Vector3.TransformNormal(Vector3.UnitY, viewToModel));
         if (right == Vector3.Zero || up == Vector3.Zero)
@@ -151,6 +161,7 @@ public static class M2ParticleMeshBuilder
             return M2RibbonMesh.Empty;
         var twinkle = float.IsFinite(emitter.TwinkleScale.X) &&
             emitter.TwinkleScale.X > 0f ? emitter.TwinkleScale.X : 1f;
+        var sortParticlesByDepth = emitter.BlendMode == 2;
         if ((emitter.Flags & Tumble) != 0)
         {
             right = Normalize(Vector3.TransformNormal(Vector3.UnitX, currentBone));
@@ -283,7 +294,8 @@ public static class M2ParticleMeshBuilder
                 : 0;
             var tailUv = new Vector2(tailCell % emitter.Columns * tile.X,
                 (tailCell / emitter.Columns) % emitter.Rows * tile.Y);
-            var depth = Vector3.Transform(center, modelToView).Z;
+            var depth = sortParticlesByDepth
+                ? Vector3.Transform(center, modelToView).Z : 0f;
             if (IsFinite(center) && IsFinite(size) && IsFinite(color) &&
                 IsFinite(velocity) && IsFinite(tailVector) &&
                 float.IsFinite(depth) && float.IsFinite(spin))
@@ -291,7 +303,10 @@ public static class M2ParticleMeshBuilder
                     tile, velocity, tailVector, depth));
         }
 
-        points.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
+        // Additive blending is order independent; only alpha-blended heads
+        // need the per-particle depth sort.
+        if (sortParticlesByDepth)
+            points.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
         var hasHead = (emitter.Flags & HasHead) != 0;
         var hasTail = (emitter.Flags & HasTail) != 0;
         var quadsPerPoint = (hasHead ? 1 : 0) + (hasTail ? 1 : 0);
@@ -406,6 +421,32 @@ public static class M2ParticleMeshBuilder
             }
         }
         return (position, velocity);
+    }
+
+    private static M2ParticleEmissionSchedule? GetEmissionSchedule(
+        M2Animation animation,
+        M2ParticleAnimation emitter,
+        int sequenceIndex,
+        M2Sequence sequence)
+    {
+        var cache = EmissionSchedules.GetValue(animation,
+            static _ => new EmissionScheduleCache());
+        lock (cache)
+        {
+            if (!cache.ByEmitter.TryGetValue(emitter, out var bySequence))
+            {
+                bySequence = [];
+                cache.ByEmitter.Add(emitter, bySequence);
+            }
+            if (!bySequence.TryGetValue(sequenceIndex, out var schedule))
+            {
+                schedule = M2ParticleEmissionSchedule.Create(
+                    emitter.EmissionRate, sequenceIndex, sequence,
+                    animation.GlobalLoops);
+                bySequence.Add(sequenceIndex, schedule);
+            }
+            return schedule;
+        }
     }
 
     private static bool HasOnlyConstantKeys(M2Track<float> track) =>

@@ -31,16 +31,22 @@ public sealed class RendererSettings
 
     public float TerrainRenderDistance { get; set; } = 20_000f;
     public float ModelRenderDistance { get; set; } = 20_000f;
+    public float AnimationRenderDistancePercent { get; set; } = 50f;
+    public float ParticleRenderDistancePercent { get; set; } = 20f;
     public float MinimumModelScreenSizePixels { get; set; } = 1f;
     public float TerrainLodTransitionPixels { get; set; } = 32f;
     public int TileLoadingDistance { get; set; } = 4;
     public float MovementSpeed { get; set; } = 150f;
     public float MouseSensitivity { get; set; } = 0.1f;
+    // The model viewer can use the configured colors; the world viewport uses evaluated world lighting.
+    public bool UseConfiguredLighting { get; set; } = true;
 
     public bool RenderADT { get; set; } = true;
     public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
+    public bool RenderParticles { get; set; } = true;
+    public bool DisableScreenGlow { get; set; }
     public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
@@ -54,15 +60,20 @@ public sealed class RendererSettings
         DiffuseColor = DiffuseColor,
         TerrainRenderDistance = TerrainRenderDistance,
         ModelRenderDistance = ModelRenderDistance,
+        AnimationRenderDistancePercent = AnimationRenderDistancePercent,
+        ParticleRenderDistancePercent = ParticleRenderDistancePercent,
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = TerrainLodTransitionPixels,
         TileLoadingDistance = TileLoadingDistance,
         MovementSpeed = MovementSpeed,
         MouseSensitivity = MouseSensitivity,
+        UseConfiguredLighting = UseConfiguredLighting,
         RenderADT = RenderADT,
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
+        RenderParticles = RenderParticles,
+        DisableScreenGlow = DisableScreenGlow,
         AnimateModels = AnimateModels,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,

@@ -63,6 +63,7 @@ internal sealed class SkyRenderer(
     private WorldSkyLighting _lighting = WorldSkyLighting.None;
     private readonly HashSet<uint> _trackedSkyboxFileDataIds = [];
     private readonly Dictionary<uint, M2AnimationPoseCache> _animationCaches = [];
+    private readonly Dictionary<uint, (M2Animation Animation, M2AnimationPose Pose)> _lastSkyboxPoses = [];
     private M2AnimationPose? _uploadedPose;
     private long _uploadedPoseVersion;
     private bool _initialized;
@@ -173,6 +174,7 @@ internal sealed class SkyRenderer(
             M2Cache.Release(fileDataId, CacheOwnerId);
             _trackedSkyboxFileDataIds.Remove(fileDataId);
             _animationCaches.Remove(fileDataId);
+            _lastSkyboxPoses.Remove(fileDataId);
         }
 
         foreach (var fileDataId in requestedFileDataIds)
@@ -307,22 +309,35 @@ internal sealed class SkyRenderer(
         };
 
         M2AnimationPose? pose = null;
-        if (animateModels && model.animation is { } animation &&
+        if (model.animation is { } animation &&
             (animation.HasAnimatedBones || animation.HasMaterialTracks))
         {
-            var time = SkyboxAnimationClock.GetTimeMilliseconds(
-                animation, flags, sceneTimeMilliseconds, lightTime);
-            if (!_animationCaches.TryGetValue(model.fileDataID, out var cache))
+            if (!animateModels &&
+                _lastSkyboxPoses.TryGetValue(model.fileDataID, out var last) &&
+                ReferenceEquals(last.Animation, animation))
             {
-                cache = new M2AnimationPoseCache();
-                _animationCaches.Add(model.fileDataID, cache);
+                pose = last.Pose;
             }
-            cache.BeginFrame(animation, time, true);
-            var frame = new M2AnimationFrameKey(animation.DefaultSequenceIndex, time);
-            var key = animation.HasBillboardBones
-                ? new M2AnimationPoseKey(frame, 0, SkyboxTransform * view)
-                : M2AnimationPoseKey.Shared(frame);
-            pose = cache.GetPose(animation, key, model.submeshes, true);
+            else
+            {
+                var time = animateModels
+                    ? SkyboxAnimationClock.GetTimeMilliseconds(
+                        animation, flags, sceneTimeMilliseconds, lightTime)
+                    : 0;
+                if (!_animationCaches.TryGetValue(model.fileDataID, out var cache))
+                {
+                    cache = new M2AnimationPoseCache();
+                    _animationCaches.Add(model.fileDataID, cache);
+                }
+                cache.BeginFrame(animation, time, true);
+                var frame = new M2AnimationFrameKey(animation.DefaultSequenceIndex, time);
+                var key = animation.HasBillboardBones
+                    ? new M2AnimationPoseKey(frame, 0, SkyboxTransform * view)
+                    : M2AnimationPoseKey.Shared(frame);
+                pose = cache.GetPose(animation, key, model.submeshes, true);
+                if (pose is not null)
+                    _lastSkyboxPoses[model.fileDataID] = (animation, pose);
+            }
         }
 
         constants.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
@@ -544,6 +559,7 @@ internal sealed class SkyRenderer(
             M2Cache.Release(fileDataId, CacheOwnerId);
         _trackedSkyboxFileDataIds.Clear();
         _animationCaches.Clear();
+        _lastSkyboxPoses.Clear();
         foreach (var blendState in _blendStates)
             blendState.Dispose();
         foreach (var sampler in _samplers)

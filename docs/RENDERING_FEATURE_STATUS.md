@@ -82,9 +82,22 @@ for every M2 effect or other client versions.
   and playback offset. The first Stand sequence is the default. Visible
   placements with the same frame share material evaluation and, where possible,
   bone palettes. Unchanged frames reuse cached results.
-- **Animation toggle and visibility:** Disabling animations takes the static
-  draw path without bone/material evaluation, palette uploads, or particle and
-  ribbon updates. Effect meshes are built only for visible placements.
+- **Animation toggle and visibility:** Disabling animations retains the last
+  evaluated bone and material pose for each visible placement. A placement
+  without a prior pose samples frame zero once and reuses it. No further pose,
+  particle, or ribbon updates run while animation is paused. The independent
+  particle toggle suppresses particle submissions, mesh rebuilds, and draws.
+  Both effects are submitted only after M2 distance, frustum, portal, and
+  projected-pixel culling. Animation/ribbon and particle distances are separate
+  0–100% limits of the M2 model distance, defaulting to 50% and 20%; placements
+  beyond the animation limit share cached frame-zero poses so they remain
+  instanced. The global animation toggle preserves the last pose, sharing one
+  snapshot across placements that used the same evaluated pose.
+  Camera-centered skyboxes freeze with the global animation toggle but do not
+  use world-placement distance limits. The profiler counts particle/ribbon
+  geometry and draw submission in their own CPU category; M2 command submission
+  measures mesh draws. Effect vertices and indices append to streaming buffers
+  instead of discarding both buffers for every emitter.
 - **Bone and material paths:** Skeletal and material tracks drive live M2
   rendering. Spherical and cylindrical billboard bones face the camera while
   preserving the pivot and child transforms. Animated skybox M2s use the same
@@ -98,6 +111,9 @@ for every M2 effect or other client versions.
   burst-velocity flags are admitted. Particle-only M2s and the blue, red, and
   white sparkler emitters are accepted for rendering. WotLK M2 blend IDs,
   including additive mode 4, map to the intended DX11 blend states.
+  Emitter schedules are cached per immutable animation/emitter/sequence;
+  emitter meshes rebuild lazily for changed frames or views, and additive
+  particles skip the unnecessary depth sort.
 - **White instance portal visual check (2026-09-24):** Both sphere emitters
   generate rings in the model's Y/Z opening plane. An installed-client asset
   geometry check found particles across the opening at several animation times.
@@ -142,7 +158,7 @@ for every M2 effect or other client versions.
 | LightData sky colors | Implemented | Top, middle, band 1/2, smog, and fog colors drive a camera-oriented gradient sky pass. |
 | LightParams skybox model override | Implemented | LightSkybox is resolved by named columns and its SkyboxFileDataID is rendered as a camera-centred M2. Flag 0x4 flattens the cone to the available sky-fog color. |
 | Multiple skybox crossfades | Implemented | Distinct default, zone, and local skyboxes are retained together, their opacity weights are interpolated through each spatial blend, and every active model is submitted. |
-| Animated skybox models | Partial parity | Active 3.3.5 skybox M2s use bone and material tracks through the same cached evaluator as world M2s. The animation toggle skips their evaluation and palette upload. LightSkybox flag 0x1 maps the lighting day onto the default sequence; other skyboxes use the scene animation clock. This clock mapping still needs comparison with the 3.3.5 client. |
+| Animated skybox models | Partial parity | Active 3.3.5 skybox M2s use bone and material tracks through the same cached evaluator as world M2s. The animation toggle retains the last pose, or evaluates frame zero once for a newly visible skybox. LightSkybox flag 0x1 maps the lighting day onto the default sequence; other skyboxes use the scene animation clock. This clock mapping still needs comparison with the 3.3.5 client. |
 | Celestial skybox override | Not yet | CelestialSkyboxFileDataID is decoded but not submitted. |
 | Sun, moons, and stars | Not yet | Directional exterior lighting is active, but celestial discs and star fields are not rendered. |
 | Cloud layers | Not yet | LightData cloud colors/density and cloud textures are not rendered. |

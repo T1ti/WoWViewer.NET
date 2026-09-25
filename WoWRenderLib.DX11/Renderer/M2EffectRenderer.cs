@@ -15,10 +15,14 @@ internal sealed class M2EffectRenderer(
     ComPtr<ID3D11DeviceContext> context) : IDisposable
 {
     private const int MaxEdges = 4096;
+    private const int StreamVertexCapacity = MaxEdges * 16;
+    private const int StreamIndexCapacity = StreamVertexCapacity * 3 / 2;
     private ShaderManager? _shaderManager;
     private ComPtr<ID3D11Buffer> _vertexBuffer;
     private ComPtr<ID3D11Buffer> _indexBuffer;
     private ComPtr<ID3D11Buffer> _constantBuffer;
+    private int _vertexCursor;
+    private int _indexCursor;
     private readonly ConditionalWeakTable<M2Container, RibbonCacheEntry> _ribbonCache = new();
     private readonly ConditionalWeakTable<M2Container, ParticleCacheEntry> _particleCache = new();
 
@@ -36,6 +40,7 @@ internal sealed class M2EffectRenderer(
         public Matrix4x4 ModelToView;
         public uint Seed;
         public M2RibbonMesh[] Meshes = [];
+        public bool[] Built = [];
     }
 
     private struct RibbonConstants
@@ -53,14 +58,14 @@ internal sealed class M2EffectRenderer(
         shaderManager.GetOrCompileShader("m2_effect");
         var vertexDesc = new BufferDesc
         {
-            ByteWidth = (uint)(MaxEdges * 2 * sizeof(M2RibbonVertex)),
+            ByteWidth = (uint)(StreamVertexCapacity * sizeof(M2RibbonVertex)),
             Usage = Usage.Dynamic,
             BindFlags = (uint)BindFlag.VertexBuffer,
             CPUAccessFlags = (uint)CpuAccessFlag.Write
         };
         SilkMarshal.ThrowHResult(device.CreateBuffer(in vertexDesc, null, ref _vertexBuffer));
         var indexDesc = vertexDesc;
-        indexDesc.ByteWidth = (uint)((MaxEdges - 1) * 6 * sizeof(ushort));
+        indexDesc.ByteWidth = (uint)(StreamIndexCapacity * sizeof(ushort));
         indexDesc.BindFlags = (uint)BindFlag.IndexBuffer;
         SilkMarshal.ThrowHResult(device.CreateBuffer(in indexDesc, null, ref _indexBuffer));
         var constantsDesc = new BufferDesc
@@ -112,16 +117,24 @@ internal sealed class M2EffectRenderer(
             entry.ModelToView = modelToView;
             entry.Seed = seed;
             if (entry.Meshes.Length != animation.Particles.Length)
+            {
                 entry.Meshes = new M2RibbonMesh[animation.Particles.Length];
-            foreach (var index in animation.RenderableParticleIndices)
-                entry.Meshes[index] = M2ParticleMeshBuilder.BuildSupported(
-                    animation, animation.Particles[index], frame.SequenceIndex,
-                    frame.TimeMilliseconds, seed, modelToView);
+                entry.Built = new bool[animation.Particles.Length];
+            }
+            else
+                Array.Clear(entry.Built);
+        }
+        if (!entry.Built[particleIndex])
+        {
+            entry.Meshes[particleIndex] = M2ParticleMeshBuilder.BuildSupported(
+                animation, animation.Particles[particleIndex], frame.SequenceIndex,
+                frame.TimeMilliseconds, seed, modelToView);
+            entry.Built[particleIndex] = true;
         }
         return entry.Meshes[particleIndex];
     }
 
-    public void Begin()
+    public unsafe void Begin()
     {
         if (_shaderManager is null)
             return;
@@ -131,6 +144,19 @@ internal sealed class M2EffectRenderer(
         context.VSSetShader(shader.VertexShader, ref nullClassInstance, 0);
         context.PSSetShader(shader.PixelShader, ref nullClassInstance, 0);
         context.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+        context.VSSetConstantBuffers(0, 1, ref _constantBuffer);
+        context.PSSetConstantBuffers(0, 1, ref _constantBuffer);
+        var vertexBuffer = _vertexBuffer;
+        uint stride = (uint)sizeof(M2RibbonVertex);
+        uint offset = 0;
+        context.IASetVertexBuffers(0, 1, ref vertexBuffer, in stride, in offset);
+        context.IASetIndexBuffer(_indexBuffer, Format.FormatR16Uint, 0);
+    }
+
+    public void BeginFrame()
+    {
+        _vertexCursor = 0;
+        _indexCursor = 0;
     }
 
     public unsafe void Draw(
@@ -144,12 +170,28 @@ internal sealed class M2EffectRenderer(
     {
         if (mesh.Indices.Length == 0 || _shaderManager is null)
             return;
+        if (mesh.Vertices.Length > StreamVertexCapacity ||
+            mesh.Indices.Length > StreamIndexCapacity)
+            throw new InvalidOperationException("M2 effect mesh exceeds the streaming buffer capacity.");
+
+        // DISCARD once for a new stream segment, then append without renaming
+        // the buffers for every emitter in the frame.
+        var discard = _vertexCursor == 0 ||
+            _vertexCursor + mesh.Vertices.Length > StreamVertexCapacity ||
+            _indexCursor + mesh.Indices.Length > StreamIndexCapacity;
+        if (discard)
+            _vertexCursor = _indexCursor = 0;
+        var mapMode = discard ? Map.WriteDiscard : Map.WriteNoOverwrite;
         MappedSubresource mapped = default;
-        SilkMarshal.ThrowHResult(context.Map(_vertexBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-        mesh.Vertices.AsSpan().CopyTo(new Span<M2RibbonVertex>(mapped.PData, mesh.Vertices.Length));
+        SilkMarshal.ThrowHResult(context.Map(_vertexBuffer, 0, mapMode, 0, ref mapped));
+        mesh.Vertices.AsSpan().CopyTo(
+            new Span<M2RibbonVertex>(mapped.PData, StreamVertexCapacity)
+                .Slice(_vertexCursor, mesh.Vertices.Length));
         context.Unmap(_vertexBuffer, 0);
-        SilkMarshal.ThrowHResult(context.Map(_indexBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-        mesh.Indices.AsSpan().CopyTo(new Span<ushort>(mapped.PData, mesh.Indices.Length));
+        SilkMarshal.ThrowHResult(context.Map(_indexBuffer, 0, mapMode, 0, ref mapped));
+        mesh.Indices.AsSpan().CopyTo(
+            new Span<ushort>(mapped.PData, StreamIndexCapacity)
+                .Slice(_indexCursor, mesh.Indices.Length));
         context.Unmap(_indexBuffer, 0);
 
         var constants = new RibbonConstants
@@ -161,16 +203,11 @@ internal sealed class M2EffectRenderer(
             Padding = Vector3.Zero
         };
         context.UpdateSubresource(_constantBuffer, 0, ref Unsafe.NullRef<Box>(), ref constants, 0, 0);
-        context.VSSetConstantBuffers(0, 1, ref _constantBuffer);
-        context.PSSetConstantBuffers(0, 1, ref _constantBuffer);
         context.PSSetShaderResources(0, 1, ref texture);
         context.PSSetSamplers(0, 1, ref sampler);
-        var vertexBuffer = _vertexBuffer;
-        uint stride = (uint)sizeof(M2RibbonVertex);
-        uint offset = 0;
-        context.IASetVertexBuffers(0, 1, ref vertexBuffer, in stride, in offset);
-        context.IASetIndexBuffer(_indexBuffer, Format.FormatR16Uint, 0);
-        context.DrawIndexed((uint)mesh.Indices.Length, 0, 0);
+        context.DrawIndexed((uint)mesh.Indices.Length, (uint)_indexCursor, _vertexCursor);
+        _vertexCursor += mesh.Vertices.Length;
+        _indexCursor += mesh.Indices.Length;
     }
 
     public void Dispose()

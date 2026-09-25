@@ -96,17 +96,21 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _renderLiquid;
     [ObservableProperty] private bool _renderWorldModels;
     [ObservableProperty] private bool _renderDoodads;
+    [ObservableProperty] private bool _renderParticles;
     [ObservableProperty] private bool _animateModels;
     [ObservableProperty] private bool _wmoPortalCullingEnabled;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
     [ObservableProperty] private float _terrainLodTransitionPixels;
     [ObservableProperty] private float _terrainRenderDistance;
     [ObservableProperty] private float _modelRenderDistance;
+    [ObservableProperty] private float _animationRenderDistancePercent;
+    [ObservableProperty] private float _particleRenderDistancePercent;
     [ObservableProperty] private int _tileLoadingDistance;
     [ObservableProperty] private bool _showBoundingBoxes;
     [ObservableProperty] private bool _showBoundingSpheres;
     [ObservableProperty] private bool _showTerrainGrid;
     [ObservableProperty] private bool _showTerrainWireframe;
+    [ObservableProperty] private bool _disableScreenGlow;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
     public ObservableCollection<ProfilerFrameStepViewModel> CurrentFrameSteps { get; } = [];
@@ -184,17 +188,21 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _renderLiquid = session.Current.Rendering.RenderLiquid;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
         _renderDoodads = session.Current.Rendering.RenderM2;
+        _renderParticles = session.Current.Rendering.RenderParticles;
         _animateModels = session.Current.Rendering.AnimateModels;
         _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
         _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
         _terrainRenderDistance = session.Current.Rendering.TerrainRenderDistance;
         _modelRenderDistance = session.Current.Rendering.ModelRenderDistance;
+        _animationRenderDistancePercent = session.Current.Rendering.AnimationRenderDistancePercent;
+        _particleRenderDistancePercent = session.Current.Rendering.ParticleRenderDistancePercent;
         _tileLoadingDistance = session.Current.Rendering.TileLoadingDistance;
         _showBoundingBoxes = session.Current.Rendering.ShowBoundingBoxes;
         _showBoundingSpheres = session.Current.Rendering.ShowBoundingSpheres;
         _showTerrainGrid = session.Current.Rendering.ShowTerrainGrid;
         _showTerrainWireframe = session.Current.Rendering.ShowTerrainWireframe;
+        _disableScreenGlow = session.Current.Rendering.DisableScreenGlow;
         Lighting.SetPreferences(
             session.Current.Rendering.WorldLightingTime,
             session.Current.Rendering.UseLocalWorldLightingTime);
@@ -259,6 +267,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderWMO = value });
     partial void OnRenderDoodadsChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderM2 = value });
+    partial void OnRenderParticlesChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderParticles = value });
     partial void OnAnimateModelsChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { AnimateModels = value });
     partial void OnWmoPortalCullingEnabledChanged(bool value) =>
@@ -289,6 +299,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TerrainRenderDistance = value });
     partial void OnModelRenderDistanceChanged(float value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ModelRenderDistance = value });
+    partial void OnAnimationRenderDistancePercentChanged(float value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { AnimationRenderDistancePercent = value });
+    partial void OnParticleRenderDistancePercentChanged(float value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ParticleRenderDistancePercent = value });
     partial void OnTileLoadingDistanceChanged(int value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TileLoadingDistance = value });
     partial void OnShowBoundingBoxesChanged(bool value) =>
@@ -299,6 +313,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainGrid = value });
     partial void OnShowTerrainWireframeChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainWireframe = value });
+    partial void OnDisableScreenGlowChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { DisableScreenGlow = value });
 
     private void UpdatePersistedRenderingConfiguration(RenderingConfiguration rendering)
     {
@@ -321,16 +337,6 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
 
     public void UpdateActiveLighting(LightingSettingsSnapshot lighting)
     {
-        if (RenderingConfiguration.AmbientColor != lighting.AmbientColor ||
-            RenderingConfiguration.DiffuseColor != lighting.DiffuseColor)
-        {
-            _session.UpdateRendering(RenderingConfiguration with
-            {
-                AmbientColor = lighting.AmbientColor,
-                DiffuseColor = lighting.DiffuseColor
-            });
-        }
-
         Lighting.Update(lighting);
     }
 
@@ -338,8 +344,6 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     {
         _session.UpdateRendering(RenderingConfiguration with
         {
-            AmbientColor = lighting.AmbientColor,
-            DiffuseColor = lighting.DiffuseColor,
             WorldLightingTime = checked((int)lighting.Time),
             UseLocalWorldLightingTime = lighting.IsDynamic
         });
@@ -610,7 +614,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
             TerrainLodTransitionPixels = TerrainLodTransitionPixels,
             RenderLiquid = RenderLiquid,
-            AnimateModels = AnimateModels
+            RenderParticles = RenderParticles,
+            AnimateModels = AnimateModels,
+            AnimationRenderDistancePercent = AnimationRenderDistancePercent,
+            ParticleRenderDistancePercent = ParticleRenderDistancePercent
         };
         IsPerformanceCaptureActive = true;
         IsProfilingPaused = false;
@@ -761,11 +768,14 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             RenderTerrain = configuration.RenderADT;
             RenderWorldModels = configuration.RenderWMO;
             RenderDoodads = configuration.RenderM2;
+            RenderParticles = configuration.RenderParticles;
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
             WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
             TerrainRenderDistance = configuration.TerrainRenderDistance;
             ModelRenderDistance = configuration.ModelRenderDistance;
+            AnimationRenderDistancePercent = configuration.AnimationRenderDistancePercent;
+            ParticleRenderDistancePercent = configuration.ParticleRenderDistancePercent;
             TileLoadingDistance = configuration.TileLoadingDistance;
             RenderLiquid = configuration.RenderLiquid;
             AnimateModels = configuration.AnimateModels;
@@ -773,6 +783,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;
             ShowTerrainWireframe = configuration.ShowTerrainWireframe;
+            DisableScreenGlow = configuration.DisableScreenGlow;
             if (Lighting.IsDynamic != configuration.UseLocalWorldLightingTime ||
                 (!configuration.UseLocalWorldLightingTime &&
                  Lighting.Time != configuration.WorldLightingTime))

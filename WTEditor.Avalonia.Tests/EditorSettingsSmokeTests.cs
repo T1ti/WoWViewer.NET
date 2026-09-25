@@ -368,6 +368,7 @@ public sealed class EditorSettingsSmokeTests
                 RenderLiquid = false,
                 RenderWMO = true,
                 RenderM2 = false,
+                RenderParticles = false,
                 AnimateModels = false,
                 EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
@@ -459,15 +460,23 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.TileLoadingDistance = 8;
         firstViewport.TerrainRenderDistance = 12_000f;
         firstViewport.ModelRenderDistance = 9_000f;
+        firstViewport.AnimationRenderDistancePercent = 65f;
+        firstViewport.ParticleRenderDistancePercent = 15f;
 
         Assert.AreEqual(8, session.Current.Rendering.TileLoadingDistance);
         Assert.AreEqual(8, secondViewport.TileLoadingDistance);
+        Assert.AreEqual(65f, secondViewport.AnimationRenderDistancePercent);
+        Assert.AreEqual(15f, secondViewport.ParticleRenderDistancePercent);
+        Assert.AreEqual(65f, session.Current.Rendering.ToDx11().Clone().AnimationRenderDistancePercent);
+        Assert.AreEqual(15f, session.Current.Rendering.ToDx11().Clone().ParticleRenderDistancePercent);
         session.Save();
 
         var restored = new EditorSession(store);
         Assert.AreEqual(8, restored.Current.Rendering.TileLoadingDistance);
         Assert.AreEqual(12_000f, restored.Current.Rendering.TerrainRenderDistance);
         Assert.AreEqual(9_000f, restored.Current.Rendering.ModelRenderDistance);
+        Assert.AreEqual(65f, restored.Current.Rendering.AnimationRenderDistancePercent);
+        Assert.AreEqual(15f, restored.Current.Rendering.ParticleRenderDistancePercent);
     }
 
     [TestMethod]
@@ -496,6 +505,7 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.RenderLiquid = false;
         firstViewport.RenderWorldModels = false;
         firstViewport.RenderDoodads = false;
+        firstViewport.RenderParticles = false;
         firstViewport.AnimateModels = false;
         firstViewport.WmoPortalCullingEnabled = true;
         firstViewport.ShowBoundingBoxes = true;
@@ -508,6 +518,9 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsFalse(published.RenderM2);
         Assert.IsFalse(published.RenderWMO);
         Assert.IsFalse(published.RenderLiquid);
+        Assert.IsFalse(published.RenderParticles);
+        Assert.IsFalse(published.ToDx11().RenderParticles);
+        Assert.IsFalse(published.ToDx11().Clone().RenderParticles);
         Assert.IsFalse(published.AnimateModels);
         Assert.IsTrue(published.EnableWmoPortalCulling);
         Assert.IsTrue(published.ShowTerrainGrid);
@@ -516,6 +529,7 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsFalse(secondViewport.RenderLiquid);
         Assert.IsFalse(secondViewport.RenderWorldModels);
         Assert.IsFalse(secondViewport.RenderDoodads);
+        Assert.IsFalse(secondViewport.RenderParticles);
         Assert.IsFalse(secondViewport.AnimateModels);
         Assert.IsTrue(secondViewport.WmoPortalCullingEnabled);
         Assert.IsTrue(secondViewport.ShowBoundingBoxes);
@@ -524,6 +538,7 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(secondViewport.ShowTerrainWireframe);
         Assert.IsFalse(session.Current.Rendering.RenderADT);
         Assert.IsFalse(session.Current.Rendering.RenderM2);
+        Assert.IsFalse(session.Current.Rendering.RenderParticles);
         Assert.IsTrue(session.Current.Rendering.EnableWmoPortalCulling);
         Assert.IsTrue(session.Current.Rendering.ShowTerrainGrid);
         Assert.IsTrue(session.Current.Rendering.ShowTerrainWireframe);
@@ -647,6 +662,8 @@ public sealed class EditorSettingsSmokeTests
             DiffuseColor = new Vector3(float.NaN, float.PositiveInfinity, float.NegativeInfinity),
             TerrainRenderDistance = float.NaN,
             ModelRenderDistance = float.PositiveInfinity,
+            AnimationRenderDistancePercent = float.NaN,
+            ParticleRenderDistancePercent = float.PositiveInfinity,
             MinimumModelScreenSizePixels = float.NegativeInfinity,
             TerrainLodTransitionPixels = float.NaN,
             MovementSpeed = float.PositiveInfinity,
@@ -657,6 +674,8 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(defaults.DiffuseColor, normalized.DiffuseColor);
         Assert.AreEqual(defaults.TerrainRenderDistance, normalized.TerrainRenderDistance);
         Assert.AreEqual(defaults.ModelRenderDistance, normalized.ModelRenderDistance);
+        Assert.AreEqual(defaults.AnimationRenderDistancePercent, normalized.AnimationRenderDistancePercent);
+        Assert.AreEqual(defaults.ParticleRenderDistancePercent, normalized.ParticleRenderDistancePercent);
         Assert.AreEqual(defaults.MinimumModelScreenSizePixels, normalized.MinimumModelScreenSizePixels);
         Assert.AreEqual(defaults.TerrainLodTransitionPixels, normalized.TerrainLodTransitionPixels);
         Assert.AreEqual(defaults.MovementSpeed, normalized.MovementSpeed);

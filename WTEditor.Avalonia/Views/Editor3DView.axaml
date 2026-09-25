@@ -95,8 +95,12 @@
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Doodad}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding AnimateModels}"
-                      ToolTip.Tip="Play or freeze M2 model animations">
+                      ToolTip.Tip="Play or pause M2 animations and particle effects">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Animation}"/>
+        </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderParticles}"
+                      ToolTip.Tip="Show or hide M2 particles; hidden particles are not calculated">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Particles}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainGrid}"
                       ToolTip.Tip="Show terrain chunk boundaries in white and ADT boundaries in red">
@@ -115,14 +119,11 @@
                       BorderBrush="#526170" BorderThickness="1" CornerRadius="7">
                 <ScrollViewer MaxHeight="620" VerticalScrollBarVisibility="Auto">
                   <StackPanel Spacing="10">
-                    <TextBlock Text="Advanced rendering" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                    <TextBlock Text="ADVANCED RENDERING" Foreground="#FFFFFF" FontWeight="SemiBold"/>
                     <TextBlock Text="Navigation" Foreground="#9FB4C6" FontWeight="SemiBold"/>
-                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto" RowSpacing="6">
                       <TextBlock Text="Camera speed" Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       <NumericUpDown Grid.Column="1" Value="{Binding MoveSpeed}" Minimum="1" Maximum="10000" Increment="5"/>
-                      <TextBlock Grid.Row="1" Text="Mouse sensitivity" Foreground="#D7E2EC" VerticalAlignment="Center"/>
-                      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding MouseSensitivity}"
-                                     Minimum="0.001" Maximum="2" Increment="0.005" FormatString="0.###"/>
                     </Grid>
                     <Separator/>
                     <TextBlock Text="Distances and streaming" Foreground="#9FB4C6" FontWeight="SemiBold"/>
@@ -139,6 +140,24 @@
                     </Grid>
                     <Separator/>
                     <TextBlock Text="Level of detail" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <Grid ColumnDefinitions="*,160" RowDefinitions="Auto,Auto" RowSpacing="6">
+                      <TextBlock Text="Animation distance" Foreground="#D7E2EC" VerticalAlignment="Center"
+                                 ToolTip.Tip="Maximum animation distance as a percentage of model distance"/>
+                      <Grid Grid.Column="1" ColumnDefinitions="*,38" ColumnSpacing="6">
+                        <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                Value="{Binding AnimationRenderDistancePercent}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding AnimationRenderDistancePercent, StringFormat='{}{0:0}%'}"
+                                   Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      </Grid>
+                      <TextBlock Grid.Row="1" Text="Particle distance" Foreground="#D7E2EC" VerticalAlignment="Center"
+                                 ToolTip.Tip="Maximum particle distance as a percentage of model distance"/>
+                      <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,38" ColumnSpacing="6">
+                        <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                Value="{Binding ParticleRenderDistancePercent}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding ParticleRenderDistancePercent, StringFormat='{}{0:0}%'}"
+                                   Foreground="#D7E2EC" VerticalAlignment="Center"/>
+                      </Grid>
+                    </Grid>
                     <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6">
                       <TextBlock Text="Minimum model pixels" Foreground="#D7E2EC" VerticalAlignment="Center"
                                  ToolTip.Tip="Cull models below this projected diameter; 0 disables size culling"/>
@@ -156,6 +175,10 @@
                     <CheckBox Content="WMO portal culling" IsChecked="{Binding WmoPortalCullingEnabled}" Foreground="#D7E2EC"/>
                     <TextBlock Text="Portal culling is experimental for this client build."
                                Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="310"/>
+                    <Separator/>
+                    <TextBlock Text="Rendering" Foreground="#9FB4C6" FontWeight="SemiBold"/>
+                    <CheckBox Content="Disable screen glow" IsChecked="{Binding DisableScreenGlow}" Foreground="#D7E2EC"/>
+                    <CheckBox Content="Specular lighting (placeholder)" IsEnabled="False" Foreground="#D7E2EC"/>
                   </StackPanel>
                 </ScrollViewer>
               </Border>

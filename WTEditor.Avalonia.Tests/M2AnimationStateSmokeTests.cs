@@ -1,5 +1,8 @@
 using System.Numerics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Structs;
 
@@ -8,6 +11,107 @@ namespace WTEditor.Avalonia.Tests;
 [TestClass]
 public sealed class M2AnimationStateSmokeTests
 {
+    [TestMethod]
+    public void EffectDistancePercentagesUseModelDistanceAndZeroDisablesEffects()
+    {
+        Assert.IsTrue(M2EffectDistancePolicy.IsWithin(25f * 25f, 0f, 100f, 50f));
+        Assert.IsFalse(M2EffectDistancePolicy.IsWithin(25f * 25f, 0f, 100f, 20f));
+        Assert.IsTrue(M2EffectDistancePolicy.IsWithin(50f * 50f, 0f, 100f, 50f));
+        Assert.IsFalse(M2EffectDistancePolicy.IsWithin(50.01f * 50.01f, 0f, 100f, 50f));
+        Assert.IsTrue(M2EffectDistancePolicy.IsWithin(55f * 55f, 5f, 100f, 50f));
+        Assert.IsTrue(M2EffectDistancePolicy.IsWithin(105f * 105f, 5f, 100f, 100f));
+        Assert.IsFalse(M2EffectDistancePolicy.IsWithin(0f, 5f, 100f, 0f));
+        Assert.IsFalse(M2EffectDistancePolicy.IsWithin(float.NaN, 0f, 100f, 100f));
+    }
+
+    [TestMethod]
+    public void PausedAndDistantPlacementsKeepTheirPoseWithoutReevaluation()
+    {
+        static M2Container Placement()
+        {
+            // The packet's pose grouping only needs placement animation state.
+            // Avoid constructing a GPU-backed model in this CPU smoke test.
+            var placement = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+            typeof(M2Container).GetField("<AnimationState>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(placement, new M2InstanceAnimationState());
+            return placement;
+        }
+
+        static M2AnimationPose PoseFor(IReadOnlyList<M2AnimationDrawGroup> groups, int index) =>
+            groups.Single(group => group.Indices.Contains(index)).Pose!;
+
+        var packet = new M2InstancePacket([Placement(), Placement()]);
+        var animation = CreateAnimation();
+        var submeshes = new[] { new Submesh { colorIndex = 0, textureWeightIndex = -1 } };
+        var visible = new[] { 0, 1 };
+
+        var running = packet.BuildAnimationGroups(animation, submeshes, 250,
+            Matrix4x4.Identity, visible, [0]);
+        var livePose = PoseFor(running, 0);
+        var initialPose = PoseFor(running, 1);
+        Assert.AreEqual(2.5f, livePose.BonePalette![0].M41, 0.0001f);
+        Assert.AreEqual(0f, initialPose.BonePalette![0].M41, 0.0001f);
+
+        var paused = packet.BuildAnimationGroups(animation, submeshes, 350,
+            Matrix4x4.Identity, visible, []);
+        var frozenPose = PoseFor(paused, 0);
+        Assert.AreNotSame(livePose, frozenPose);
+        Assert.AreEqual(2.5f, frozenPose.BonePalette![0].M41, 0.0001f);
+        Assert.AreSame(initialPose, PoseFor(paused, 1));
+
+        var stillPaused = packet.BuildAnimationGroups(animation, submeshes, 450,
+            Matrix4x4.Identity, visible, []);
+        Assert.AreSame(frozenPose, PoseFor(stillPaused, 0));
+        Assert.AreSame(initialPose, PoseFor(stillPaused, 1));
+
+        var resumed = packet.BuildAnimationGroups(animation, submeshes, 550,
+            Matrix4x4.Identity, visible, [1]);
+        Assert.AreSame(frozenPose, PoseFor(resumed, 0));
+        Assert.AreEqual(2.5f, frozenPose.BonePalette[0].M41, 0.0001f);
+        Assert.AreEqual(5.5f, PoseFor(resumed, 1).BonePalette![0].M41, 0.0001f);
+    }
+
+    [TestMethod]
+    public void DistanceCulledPlacementsShareFrameZeroInsteadOfSplittingDrawCalls()
+    {
+        static M2Container Placement()
+        {
+            var placement = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+            typeof(M2Container).GetField("<AnimationState>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(placement, new M2InstanceAnimationState());
+            return placement;
+        }
+
+        var packet = new M2InstancePacket([Placement(), Placement()]);
+        var animation = CreateAnimation();
+        var submeshes = new[] { new Submesh { colorIndex = 0, textureWeightIndex = -1 } };
+        var visible = new[] { 0, 1 };
+
+        Assert.AreEqual(1, packet.BuildAnimationGroups(animation, submeshes, 250,
+            Matrix4x4.Identity, visible, visible).Count);
+
+        var distant = packet.BuildAnimationGroups(animation, submeshes, 350,
+            Matrix4x4.Identity, visible, [], preserveLastPose: false);
+        Assert.AreEqual(1, distant.Count);
+        CollectionAssert.AreEquivalent(visible, distant[0].Indices.ToArray());
+        Assert.AreEqual(0f, distant[0].Pose!.BonePalette![0].M41, 0.0001f);
+
+        var halfDistance = packet.BuildAnimationGroups(animation, submeshes, 450,
+            Matrix4x4.Identity, visible, [0], preserveLastPose: false);
+        Assert.AreEqual(2, halfDistance.Count);
+        Assert.AreEqual(0f, halfDistance.Single(group => group.Indices.Contains(1))
+            .Pose!.BonePalette![0].M41, 0.0001f);
+
+        packet.BuildAnimationGroups(animation, submeshes, 550,
+            Matrix4x4.Identity, visible, visible);
+        var paused = packet.BuildAnimationGroups(animation, submeshes, 550,
+            Matrix4x4.Identity, visible, []);
+        Assert.AreEqual(1, paused.Count);
+        CollectionAssert.AreEquivalent(visible, paused[0].Indices.ToArray());
+    }
+
     [TestMethod]
     public void HiddenPlacementsNeverBuildAnimationPosesAndStaticDrawsReuseCulledIndices()
     {

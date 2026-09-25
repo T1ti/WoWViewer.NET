@@ -34,6 +34,8 @@ public sealed record RenderingConfiguration
     public Vector3 DiffuseColor { get; init; } = new(1f, 136f / 255f, 0f);
     public float TerrainRenderDistance { get; init; } = 20_000f;
     public float ModelRenderDistance { get; init; } = 20_000f;
+    public float AnimationRenderDistancePercent { get; init; } = 50f;
+    public float ParticleRenderDistancePercent { get; init; } = 20f;
     public float MinimumModelScreenSizePixels { get; init; } = 1f;
     public float TerrainLodTransitionPixels { get; init; } = 32f;
     public int TileLoadingDistance { get; init; } = 4;
@@ -45,6 +47,8 @@ public sealed record RenderingConfiguration
     public bool RenderLiquid { get; init; } = true;
     public bool RenderWMO { get; init; } = true;
     public bool RenderM2 { get; init; } = true;
+    public bool RenderParticles { get; init; } = true;
+    public bool DisableScreenGlow { get; init; }
     public bool AnimateModels { get; init; } = true;
     public bool EnableWmoPortalCulling { get; init; }
     public bool ShowBoundingBoxes { get; init; }
@@ -64,6 +68,10 @@ public sealed record RenderingConfiguration
                 TerrainRenderDistance, 100f, 1_000_000f, defaults.TerrainRenderDistance),
             ModelRenderDistance = ClampFinite(
                 ModelRenderDistance, 100f, 1_000_000f, defaults.ModelRenderDistance),
+            AnimationRenderDistancePercent = ClampFinite(
+                AnimationRenderDistancePercent, 0f, 100f, defaults.AnimationRenderDistancePercent),
+            ParticleRenderDistancePercent = ClampFinite(
+                ParticleRenderDistancePercent, 0f, 100f, defaults.ParticleRenderDistancePercent),
             MinimumModelScreenSizePixels = ClampFinite(
                 MinimumModelScreenSizePixels, 0f, 16f, defaults.MinimumModelScreenSizePixels),
             TerrainLodTransitionPixels = ClampFinite(

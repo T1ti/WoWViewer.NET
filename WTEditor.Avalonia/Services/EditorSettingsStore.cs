@@ -18,6 +18,8 @@ public sealed class PersistedRenderingSettings
     public float DiffuseColorB { get; set; }
     public float TerrainRenderDistance { get; set; } = 20_000f;
     public float ModelRenderDistance { get; set; } = 20_000f;
+    public float AnimationRenderDistancePercent { get; set; } = 50f;
+    public float ParticleRenderDistancePercent { get; set; } = 20f;
     public float MinimumModelScreenSizePixels { get; set; } = 1f;
     public float TerrainLodTransitionPixels { get; set; } = 32f;
     public int TileLoadingDistance { get; set; } = 4;
@@ -29,6 +31,8 @@ public sealed class PersistedRenderingSettings
     public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
     public bool RenderM2 { get; set; } = true;
+    public bool RenderParticles { get; set; } = true;
+    public bool DisableScreenGlow { get; set; }
     public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
@@ -45,6 +49,8 @@ public sealed class PersistedRenderingSettings
         DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
         TerrainRenderDistance = TerrainRenderDistance,
         ModelRenderDistance = ModelRenderDistance,
+        AnimationRenderDistancePercent = AnimationRenderDistancePercent,
+        ParticleRenderDistancePercent = ParticleRenderDistancePercent,
         MinimumModelScreenSizePixels = MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = TerrainLodTransitionPixels,
         TileLoadingDistance = TileLoadingDistance,
@@ -56,6 +62,8 @@ public sealed class PersistedRenderingSettings
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
         RenderM2 = RenderM2,
+        RenderParticles = RenderParticles,
+        DisableScreenGlow = DisableScreenGlow,
         AnimateModels = AnimateModels,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
@@ -77,6 +85,8 @@ public sealed class PersistedRenderingSettings
         DiffuseColorB = rendering.DiffuseColor.Z,
         TerrainRenderDistance = rendering.TerrainRenderDistance,
         ModelRenderDistance = rendering.ModelRenderDistance,
+        AnimationRenderDistancePercent = rendering.AnimationRenderDistancePercent,
+        ParticleRenderDistancePercent = rendering.ParticleRenderDistancePercent,
         MinimumModelScreenSizePixels = rendering.MinimumModelScreenSizePixels,
         TerrainLodTransitionPixels = rendering.TerrainLodTransitionPixels,
         TileLoadingDistance = rendering.TileLoadingDistance,
@@ -88,6 +98,8 @@ public sealed class PersistedRenderingSettings
         RenderLiquid = rendering.RenderLiquid,
         RenderWMO = rendering.RenderWMO,
         RenderM2 = rendering.RenderM2,
+        RenderParticles = rendering.RenderParticles,
+        DisableScreenGlow = rendering.DisableScreenGlow,
         AnimateModels = rendering.AnimateModels,
         EnableWmoPortalCulling = rendering.EnableWmoPortalCulling,
         ShowBoundingBoxes = rendering.ShowBoundingBoxes,

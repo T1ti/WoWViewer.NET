@@ -113,6 +113,7 @@ namespace WoWRenderLib.DX11
         public double WmoSubmissionTimeMs { get; internal set; }
         public double M2CullingTimeMs { get; internal set; }
         public double M2AnimationTimeMs { get; internal set; }
+        public double M2ParticleRibbonTimeMs { get; internal set; }
         public double M2SubmissionTimeMs { get; internal set; }
         public double TerrainCullingTimeMs { get; internal set; }
         public double TerrainSubmissionTimeMs { get; internal set; }
@@ -705,6 +706,7 @@ namespace WoWRenderLib.DX11
                     Stats.WmoSubmissionTimeMs = sceneManager.WmoSubmissionTimeMs;
                     Stats.M2CullingTimeMs = sceneManager.M2CullingTimeMs;
                     Stats.M2AnimationTimeMs = sceneManager.M2AnimationTimeMs;
+                    Stats.M2ParticleRibbonTimeMs = sceneManager.M2ParticleRibbonTimeMs;
                     Stats.M2SubmissionTimeMs = sceneManager.M2SubmissionTimeMs;
                     Stats.TerrainCullingTimeMs = sceneManager.TerrainCullingTimeMs;
                     Stats.TerrainSubmissionTimeMs = sceneManager.TerrainSubmissionTimeMs;
@@ -1107,16 +1109,23 @@ namespace WoWRenderLib.DX11
                 sceneManager.TileLoadingDistance = Math.Clamp(Settings.TileLoadingDistance, 0, 32);
                 sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
                 sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
+                sceneManager.AnimationRenderDistancePercent = Settings.AnimationRenderDistancePercent;
+                sceneManager.ParticleRenderDistancePercent = Settings.ParticleRenderDistancePercent;
                 sceneManager.MinimumModelScreenSizePixels = Math.Clamp(Settings.MinimumModelScreenSizePixels, 0f, 16f);
                 sceneManager.TerrainLodTransitionPixels = Math.Clamp(Settings.TerrainLodTransitionPixels, 0f, 256f);
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderLiquid = Settings.RenderLiquid;
                 sceneManager.RenderWMO = Settings.RenderWMO;
                 sceneManager.RenderM2 = Settings.RenderM2;
+                sceneManager.RenderParticles = Settings.RenderParticles;
+                sceneManager.DisableScreenGlow = Settings.DisableScreenGlow;
                 sceneManager.AnimateModels = Settings.AnimateModels;
                 sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;
-                sceneManager.AmbientColor = Settings.AmbientColor;
-                sceneManager.DiffuseColor = Settings.DiffuseColor;
+                if (Settings.UseConfiguredLighting)
+                {
+                    sceneManager.AmbientColor = Settings.AmbientColor;
+                    sceneManager.DiffuseColor = Settings.DiffuseColor;
+                }
                 sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;
                 sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
                 sceneManager.ShowTerrainGrid = Settings.ShowTerrainGrid;

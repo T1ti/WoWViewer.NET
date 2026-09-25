@@ -15,8 +15,18 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
 {
     private bool _isBuilt;
     private readonly Dictionary<M2AnimationPoseKey, M2AnimationDrawGroup> _groupsByFrame = [];
+    private readonly Dictionary<M2AnimationPose, M2AnimationDrawGroup> _groupsByPose = new(ReferenceEqualityComparer.Instance);
     private readonly List<M2AnimationDrawGroup> _drawGroups = [];
     private readonly Stack<M2AnimationDrawGroup> _availableGroups = [];
+    private readonly Dictionary<int, M2AnimationPose> _lastLivePoses = [];
+    private readonly Dictionary<int, M2AnimationPose> _frozenPoses = [];
+    private readonly Dictionary<M2AnimationPose, M2AnimationPose> _snapshotsBySource = new(ReferenceEqualityComparer.Instance);
+    private readonly M2AnimationPoseCache _initialPoseCache = new();
+    private readonly Dictionary<int, M2AnimationPoseKey> _distantBillboardKeys = [];
+    private readonly List<int> _lastFrozenVisibleIndices = [];
+    private bool _hasFrozenDrawGroups;
+    private bool _lastFrozenGroupsPreserveLastPose;
+    private M2Animation? _poseAnimation;
     private readonly M2AnimationDrawGroup[] _staticDrawGroups = [new()];
     private readonly List<int> _retainedVisibleIndices = [];
 
@@ -44,9 +54,47 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
         long sceneTimeMilliseconds,
         Matrix4x4 cameraView,
         IReadOnlyList<int> visibleIndices)
+        => BuildAnimationGroups(animation, submeshes, sceneTimeMilliseconds,
+            cameraView, visibleIndices, visibleIndices, true);
+
+    /// <summary>
+    /// Animate near placements. A paused viewport retains its last pose; placements
+    /// beyond the animation distance share cached frame-zero poses for instancing.
+    /// </summary>
+    public IReadOnlyList<M2AnimationDrawGroup> BuildAnimationGroups(
+        M2Animation animation,
+        Submesh[] submeshes,
+        long sceneTimeMilliseconds,
+        Matrix4x4 cameraView,
+        IReadOnlyList<int> visibleIndices,
+        IReadOnlyList<int> liveIndices,
+        bool preserveLastPose = true)
     {
-        AnimationCache.BeginFrame(animation, sceneTimeMilliseconds, true);
+        if (!ReferenceEquals(_poseAnimation, animation))
+        {
+            _lastLivePoses.Clear();
+            _frozenPoses.Clear();
+            _distantBillboardKeys.Clear();
+            _hasFrozenDrawGroups = false;
+            _poseAnimation = animation;
+        }
+        if (liveIndices.Count == 0 && _hasFrozenDrawGroups &&
+            _lastFrozenGroupsPreserveLastPose == preserveLastPose &&
+            visibleIndices.Count == _lastFrozenVisibleIndices.Count)
+        {
+            var sameVisibleSet = true;
+            for (var i = 0; i < visibleIndices.Count; i++)
+            {
+                if (visibleIndices[i] == _lastFrozenVisibleIndices[i])
+                    continue;
+                sameVisibleSet = false;
+                break;
+            }
+            if (sameVisibleSet)
+                return _drawGroups;
+        }
         _groupsByFrame.Clear();
+        _groupsByPose.Clear();
         foreach (var group in _drawGroups)
         {
             group.Reset(null);
@@ -54,8 +102,64 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
         }
         _drawGroups.Clear();
 
+        _initialPoseCache.BeginFrame(animation, 0, true);
+        _snapshotsBySource.Clear();
+        if (!preserveLastPose)
+            _frozenPoses.Clear();
+
+        // Capture paused poses before the live cache recycles last frame's poses.
+        // liveIndices is an ordered subset of visibleIndices.
+        var liveCursor = 0;
+        if (preserveLastPose)
+        {
+            foreach (var instanceIndex in visibleIndices)
+            {
+                if (liveCursor < liveIndices.Count && liveIndices[liveCursor] == instanceIndex)
+                {
+                    liveCursor++;
+                    continue;
+                }
+
+                if (_frozenPoses.ContainsKey(instanceIndex))
+                    continue;
+                if (_lastLivePoses.TryGetValue(instanceIndex, out var lastPose))
+                {
+                    if (!_snapshotsBySource.TryGetValue(lastPose, out var snapshot))
+                    {
+                        snapshot = CopyPose(lastPose);
+                        _snapshotsBySource.Add(lastPose, snapshot);
+                    }
+                    _frozenPoses.Add(instanceIndex, snapshot);
+                    continue;
+                }
+
+                _frozenPoses.Add(instanceIndex,
+                    GetInitialPose(animation, submeshes, cameraView, instanceIndex));
+            }
+        }
+
+        _lastLivePoses.Clear();
+        AnimationCache.BeginFrame(animation, sceneTimeMilliseconds, liveIndices.Count > 0);
+        liveCursor = 0;
         foreach (var instanceIndex in visibleIndices)
         {
+            if (liveCursor >= liveIndices.Count || liveIndices[liveCursor] != instanceIndex)
+            {
+                var frozenPose = preserveLastPose
+                    ? _frozenPoses[instanceIndex]
+                    : GetInitialPose(animation, submeshes, cameraView, instanceIndex);
+                if (!_groupsByPose.TryGetValue(frozenPose, out var frozenGroup))
+                {
+                    frozenGroup = RentGroup(frozenPose);
+                    _groupsByPose.Add(frozenPose, frozenGroup);
+                }
+                frozenGroup.AddInstance(instanceIndex);
+                continue;
+            }
+            liveCursor++;
+            _frozenPoses.Remove(instanceIndex);
+            if (_distantBillboardKeys.Remove(instanceIndex, out var distantKey))
+                _initialPoseCache.RemovePose(distantKey);
             var frame = Instances[instanceIndex].AnimationState.GetFrameKey(
                 animation, sceneTimeMilliseconds);
             var key = animation.HasBillboardBones
@@ -65,17 +169,67 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
             if (!_groupsByFrame.TryGetValue(key, out var group))
             {
                 var pose = AnimationCache.GetPose(animation, key, submeshes, true);
-                group = _availableGroups.Count > 0
-                    ? _availableGroups.Pop()
-                    : new M2AnimationDrawGroup();
-                group.Reset(pose);
+                group = RentGroup(pose);
                 _groupsByFrame.Add(key, group);
-                _drawGroups.Add(group);
             }
             group.AddInstance(instanceIndex);
+            _lastLivePoses[instanceIndex] = group.Pose!;
+        }
+        _hasFrozenDrawGroups = liveIndices.Count == 0;
+        _lastFrozenGroupsPreserveLastPose = preserveLastPose;
+        _lastFrozenVisibleIndices.Clear();
+        if (_hasFrozenDrawGroups)
+        {
+            foreach (var index in visibleIndices)
+                _lastFrozenVisibleIndices.Add(index);
         }
         return _drawGroups;
     }
+
+    private M2AnimationDrawGroup RentGroup(M2AnimationPose? pose)
+    {
+        var group = _availableGroups.Count > 0
+            ? _availableGroups.Pop()
+            : new M2AnimationDrawGroup();
+        group.Reset(pose);
+        _drawGroups.Add(group);
+        return group;
+    }
+
+    private M2AnimationPose GetInitialPose(M2Animation animation, Submesh[] submeshes,
+        Matrix4x4 cameraView, int instanceIndex)
+    {
+        var sequence = Instances[instanceIndex].AnimationState.GetFrameKey(animation, 0).SequenceIndex;
+        var initialFrame = new M2AnimationFrameKey(sequence, 0);
+        var initialKey = M2AnimationPoseKey.Shared(initialFrame);
+        if (animation.HasBillboardBones)
+        {
+            if (_distantBillboardKeys.TryGetValue(instanceIndex, out var retainedKey))
+            {
+                if (retainedKey.Frame == initialFrame)
+                    initialKey = retainedKey;
+                else
+                {
+                    _initialPoseCache.RemovePose(retainedKey);
+                    _distantBillboardKeys.Remove(instanceIndex);
+                }
+            }
+            if (initialKey.InstanceIndex < 0)
+            {
+                initialKey = new M2AnimationPoseKey(initialFrame, instanceIndex,
+                    WorldRigidMatrices[instanceIndex] * cameraView);
+                _distantBillboardKeys[instanceIndex] = initialKey;
+            }
+        }
+        return _initialPoseCache.GetPose(animation, initialKey, submeshes, true)!;
+    }
+
+    private static M2AnimationPose CopyPose(M2AnimationPose source) => new()
+    {
+        Version = source.Version,
+        BonePalette = source.BonePalette is { } bones ? (Matrix4x4[])bones.Clone() : null,
+        Materials = (M2AnimatedMaterial[])source.Materials.Clone()
+    };
 
     public List<M2Container> Instances { get; } = instances;
     public BoundingSphere[] WorldBounds { get; private set; } = [];
@@ -102,6 +256,11 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
             return true;
         }
 
+        _lastLivePoses.Clear();
+        _frozenPoses.Clear();
+        _distantBillboardKeys.Clear();
+        _initialPoseCache.BeginFrame(null, 0, true);
+        _hasFrozenDrawGroups = false;
         WorldBounds = new BoundingSphere[Instances.Count];
         WorldMatrices = new Matrix4x4[Instances.Count];
         _worldTransformRevisions = new ulong[Instances.Count];

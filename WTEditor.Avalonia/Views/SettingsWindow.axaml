@@ -7,57 +7,38 @@
         CanResize="False" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="24" Spacing="14">
     <TextBlock FontSize="20" FontWeight="SemiBold" Text="WoW.Tools settings" />
-    <TabControl MinHeight="360">
+    <TabControl MinHeight="260">
       <TabItem Header="Rendering">
         <StackPanel Margin="8" Spacing="10">
-          <TextBlock TextWrapping="Wrap" Opacity="0.75"
-                     Text="Tile loading distance is used for both loading and unloading. Larger values increase memory use and streaming work." />
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="10">
-            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Terrain render distance" />
-            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TerrainRenderDistance}" />
-            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Tile loading distance" />
-            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TileLoadingDistance}" />
-            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Model render distance" />
-            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ModelRenderDistance}" />
-            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Movement speed" />
-            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MovementSpeed}" />
-            <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Mouse sensitivity" />
-            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding MouseSensitivity}" />
-            <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="Ambient color (R,G,B)" />
-            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="10">
+            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Ambient light (R,G,B)" />
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
               <TextBox Width="60" Text="{Binding AmbientColorR}" PlaceholderText="R" />
               <TextBox Width="60" Text="{Binding AmbientColorG}" PlaceholderText="G" />
               <TextBox Width="60" Text="{Binding AmbientColorB}" PlaceholderText="B" />
             </StackPanel>
-            <TextBlock Grid.Row="6" VerticalAlignment="Center" Text="Diffuse color (R,G,B)" />
-            <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Direct light (R,G,B)" />
+            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
               <TextBox Width="60" Text="{Binding DiffuseColorR}" PlaceholderText="R" />
               <TextBox Width="60" Text="{Binding DiffuseColorG}" PlaceholderText="G" />
               <TextBox Width="60" Text="{Binding DiffuseColorB}" PlaceholderText="B" />
             </StackPanel>
-            <TextBlock Grid.Row="7" VerticalAlignment="Center" Text="Minimum model size (pixels)" />
-            <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding MinimumModelScreenSizePixels}"
-                     ToolTip.Tip="Cull WMO and M2 objects smaller than this projected diameter; 0 disables" />
-            <TextBlock Grid.Row="8" VerticalAlignment="Center" Text="Terrain LOD transition (pixels)" />
-            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding TerrainLodTransitionPixels}"
-                     ToolTip.Tip="Use the half-index terrain mesh below this projected chunk diameter; 0 disables" />
-            <CheckBox Grid.Row="9" VerticalAlignment="Center" Content="Enable foreground FPS cap"
+            <CheckBox Grid.Row="2" VerticalAlignment="Center" Content="Enable foreground FPS cap"
                       IsChecked="{Binding IsForegroundFrameRateLimitEnabled}" />
-            <NumericUpDown Grid.Row="9" Grid.Column="1" Value="{Binding ViewportFrameRateLimit}"
+            <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ViewportFrameRateLimit}"
                            Minimum="30" Maximum="360" Increment="10"
                            IsEnabled="{Binding IsForegroundFrameRateLimitEnabled}"
                            ToolTip.Tip="Renderer cap while the viewport is visible. A minimized window or inactive editor tab uses 1 FPS." />
           </Grid>
-          <WrapPanel Orientation="Horizontal" ItemWidth="180">
-            <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" />
-            <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" />
-            <CheckBox Content="Show terrain grid" IsChecked="{Binding ShowTerrainGrid}" />
-            <CheckBox Content="Show terrain wireframe" IsChecked="{Binding ShowTerrainWireframe}" />
-          </WrapPanel>
+          <TextBlock Text="Model viewer lighting uses these ambient and direct light values. The editor viewport uses world lighting."
+                     TextWrapping="Wrap" Opacity="0.75" />
         </StackPanel>
       </TabItem>
       <TabItem Header="General">
         <StackPanel Margin="8" Spacing="10">
+          <TextBlock Text="Mouse sensitivity" />
+          <NumericUpDown Value="{Binding MouseSensitivity}" Minimum="0.001" Maximum="2"
+                         Increment="0.005" FormatString="0.###" HorizontalAlignment="Left" Width="180" />
           <TextBlock Text="Keyboard layout" />
           <ComboBox ItemsSource="{Binding KeyboardLayouts}" SelectedItem="{Binding KeyboardLayout}"
                     HorizontalAlignment="Left" Width="180" />

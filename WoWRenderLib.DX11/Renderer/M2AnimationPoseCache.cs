@@ -15,6 +15,12 @@ internal sealed class M2AnimationPoseCache
 
     internal int CachedPoseCount => _poses.Count;
 
+    public void RemovePose(M2AnimationPoseKey key)
+    {
+        if (_poses.Remove(key, out var pose))
+            _availablePoses.Push(pose);
+    }
+
     public void BeginFrame(M2Animation? animation, long sceneTimeMilliseconds, bool animate)
     {
         if (!ReferenceEquals(_animation, animation) ||
