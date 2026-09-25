@@ -1,6 +1,9 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.DX11.Managers;
+using WoWRenderLib.DX11.Objects;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Structs;
 
 namespace WTEditor.Avalonia.Tests;
@@ -8,6 +11,71 @@ namespace WTEditor.Avalonia.Tests;
 [TestClass]
 public sealed class M2ParticleSmokeTests
 {
+    [TestMethod]
+    public void PausedParticlesReuseLastMeshAcrossFramesAndCameraChanges()
+    {
+        static M2Container Placement() =>
+            (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+
+        var animation = CreateAnimation();
+        animation.Particles = [CreateEmitter()];
+        var renderer = new M2EffectRenderer(default, default);
+        var instance = Placement();
+        var liveFrame = new M2AnimationFrameKey(0, 750);
+        var live = renderer.GetParticleMesh(instance, animation, 0,
+            liveFrame, Matrix4x4.Identity);
+        Assert.IsTrue(live.Vertices.Length > 0);
+
+        var movedCamera = Matrix4x4.CreateRotationY(0.5f);
+        var frozen = renderer.GetFrozenParticleMesh(instance, animation, 0,
+            new M2AnimationFrameKey(0, 900), movedCamera);
+        var frozenAgain = renderer.GetFrozenParticleMesh(instance, animation, 0,
+            new M2AnimationFrameKey(0, 950), Matrix4x4.CreateRotationY(1f));
+        Assert.AreSame(live.Vertices, frozen.Vertices);
+        Assert.AreSame(frozen.Vertices, frozenAgain.Vertices);
+        Assert.AreSame(frozen.Indices, frozenAgain.Indices);
+
+        var resumed = renderer.GetParticleMesh(instance, animation, 0,
+            new M2AnimationFrameKey(0, 900), movedCamera);
+        Assert.AreNotSame(live.Vertices, resumed.Vertices);
+
+        var neverAnimated = Placement();
+        var fallback = renderer.GetFrozenParticleMesh(neverAnimated, animation, 0,
+            liveFrame, Matrix4x4.Identity);
+        Assert.IsTrue(fallback.Vertices.Length > 0);
+        Assert.AreSame(fallback.Vertices, renderer.GetFrozenParticleMesh(
+            neverAnimated, animation, 0, new M2AnimationFrameKey(0, 900),
+            movedCamera).Vertices);
+        fallback.Vertices[0] = fallback.Vertices[0] with
+        {
+            Position = new Vector3(1234f, 1234f, 1234f)
+        };
+        var restarted = renderer.GetParticleMesh(
+            neverAnimated, animation, 0, liveFrame, Matrix4x4.Identity);
+        Assert.AreNotEqual(1234f, restarted.Vertices[0].Position.X);
+    }
+
+    [TestMethod]
+    public void StableParticleCountsReuseBuffersWithoutSteadyFrameAllocations()
+    {
+        var animation = CreateAnimation();
+        var emitter = CreateEmitter();
+        var mesh = M2ParticleMeshBuilder.BuildSupported(animation, emitter, 0,
+            750, 123u, Matrix4x4.Identity);
+        for (var i = 0; i < 20; i++)
+            mesh = M2ParticleMeshBuilder.BuildSupported(animation, emitter, 0,
+                751, 123u, Matrix4x4.Identity, mesh.Vertices, mesh.Indices);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 200; i++)
+            mesh = M2ParticleMeshBuilder.BuildSupported(animation, emitter, 0,
+                751, 123u, Matrix4x4.Identity, mesh.Vertices, mesh.Indices);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.IsTrue(allocated < 32_768L,
+            $"Stable emitter allocated {allocated} bytes across 200 updates.");
+    }
+
     [TestMethod]
     public void M2EffectBlendIdsUseClientBlendStates()
     {
@@ -41,6 +109,11 @@ public sealed class M2ParticleSmokeTests
             123u, Matrix4x4.Identity);
         CollectionAssert.AreEqual(mesh.Vertices, repeated.Vertices);
         CollectionAssert.AreEqual(mesh.Indices, repeated.Indices);
+
+        var reused = M2ParticleMeshBuilder.BuildSupported(animation, emitter, 0, 751,
+            123u, Matrix4x4.Identity, repeated.Vertices, repeated.Indices);
+        Assert.AreSame(repeated.Vertices, reused.Vertices);
+        Assert.AreSame(repeated.Indices, reused.Indices);
 
         var translatedCamera = Matrix4x4.CreateTranslation(0f, 0f, -1f);
         var behindCamera = M2ParticleMeshBuilder.Build(animation, emitter, 0,

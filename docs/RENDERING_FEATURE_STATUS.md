@@ -84,9 +84,11 @@ for every M2 effect or other client versions.
   bone palettes. Unchanged frames reuse cached results.
 - **Animation toggle and visibility:** Disabling animations retains the last
   evaluated bone and material pose for each visible placement. A placement
-  without a prior pose samples frame zero once and reuses it. No further pose,
-  particle, or ribbon updates run while animation is paused. The independent
-  particle toggle suppresses particle submissions, mesh rebuilds, and draws.
+  without a prior pose samples frame zero once and reuses it. Paused particles
+  keep drawing their last rendered mesh without emission or bone resampling;
+  a newly visible emitter builds once at the paused scene time. Ribbons stop
+  updating and drawing while paused. The independent particle toggle suppresses
+  particle submissions, mesh rebuilds, and draws.
   Both effects are submitted only after M2 distance, frustum, portal, and
   projected-pixel culling. Animation/ribbon and particle distances are separate
   0–100% limits of the M2 model distance, defaulting to 50% and 20%; placements
@@ -97,7 +99,9 @@ for every M2 effect or other client versions.
   use world-placement distance limits. The profiler counts particle/ribbon
   geometry and draw submission in their own CPU category; M2 command submission
   measures mesh draws. Effect vertices and indices append to streaming buffers
-  instead of discarding both buffers for every emitter.
+  instead of discarding both buffers for every emitter. Live particle evaluation
+  reuses point scratch storage and vertex/index arrays when counts match to
+  reduce Gen0 allocation pressure.
 - **Bone and material paths:** Skeletal and material tracks drive live M2
   rendering. Spherical and cylindrical billboard bones face the camera while
   preserving the pivot and child transforms. Animated skybox M2s use the same

@@ -126,10 +126,49 @@ internal sealed class M2EffectRenderer(
         }
         if (!entry.Built[particleIndex])
         {
+            var previous = entry.Meshes[particleIndex];
             entry.Meshes[particleIndex] = M2ParticleMeshBuilder.BuildSupported(
                 animation, animation.Particles[particleIndex], frame.SequenceIndex,
-                frame.TimeMilliseconds, seed, modelToView);
+                frame.TimeMilliseconds, seed, modelToView,
+                previous.Vertices, previous.Indices);
             entry.Built[particleIndex] = true;
+        }
+        return entry.Meshes[particleIndex];
+    }
+
+    /// <summary>
+    /// Return the last rendered mesh without sampling particle tracks or the new
+    /// camera. A newly visible emitter is sampled once at the paused scene time.
+    /// </summary>
+    public M2RibbonMesh GetFrozenParticleMesh(
+        M2Container instance,
+        M2Animation animation,
+        int particleIndex,
+        M2AnimationFrameKey fallbackFrame,
+        Matrix4x4 modelToView)
+    {
+        var entry = _particleCache.GetValue(instance, static _ => new ParticleCacheEntry());
+        var seed = instance.UniqueID ^ (uint)instance.WmoDoodadIndex * 0x9E3779B9u;
+        if (!ReferenceEquals(entry.Animation, animation) || entry.Seed != seed ||
+            entry.Meshes.Length != animation.Particles.Length)
+        {
+            entry.Animation = animation;
+            entry.Seed = seed;
+            entry.Meshes = new M2RibbonMesh[animation.Particles.Length];
+            entry.Built = new bool[animation.Particles.Length];
+            entry.Frame = new M2AnimationFrameKey(-1, -1);
+        }
+
+        if (!entry.Built[particleIndex])
+        {
+            entry.Meshes[particleIndex] = M2ParticleMeshBuilder.BuildSupported(
+                animation, animation.Particles[particleIndex],
+                fallbackFrame.SequenceIndex, fallbackFrame.TimeMilliseconds,
+                seed, modelToView);
+            entry.Built[particleIndex] = true;
+            // The fallback mesh must be refreshed if live playback resumes at
+            // the same frame and camera that preceded the pause.
+            entry.Frame = new M2AnimationFrameKey(-1, -1);
         }
         return entry.Meshes[particleIndex];
     }

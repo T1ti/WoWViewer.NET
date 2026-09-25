@@ -986,6 +986,7 @@ namespace WoWRenderLib.DX11.Managers
             var tileCullingStarted = Stopwatch.GetTimestamp();
             coarseCulledTileIndices.Clear();
             terrainFrustumIntersections.Clear();
+            var fullyInsideTileCount = 0;
             foreach (var bounds in tileSceneBounds.Values)
             {
                 bounds.IsCoarseCulledThisFrame = false;
@@ -1013,8 +1014,11 @@ namespace WoWRenderLib.DX11.Managers
                 // bounds are necessarily inside too, so the ADT loop can reuse this
                 // result instead of classifying the terrain bounds again.
                 if (combinedFrustumIntersection == Frustum.BoxIntersection.Inside)
+                {
                     terrainFrustumIntersections[tileIndex] =
                         Frustum.BoxIntersection.Inside;
+                    fullyInsideTileCount++;
+                }
             }
             TileHierarchyCullingTimeMs = Stopwatch.GetElapsedTime(tileCullingStarted).TotalMilliseconds;
             CullingTimeMs += TileHierarchyCullingTimeMs;
@@ -1569,13 +1573,14 @@ namespace WoWRenderLib.DX11.Managers
             var ribbonSubmissions = _ribbonSubmissions;
             var particleSubmissions = _particleSubmissions;
             var m2MeshSubmissions = _m2MeshSubmissions;
-            var animateVisibleParticles = RenderM2 && AnimateModels && RenderParticles;
+            var renderVisibleParticles = RenderM2 && RenderParticles;
             ribbonSubmissions.Clear();
             particleSubmissions.Clear();
             m2MeshSubmissions.Clear();
 
             // Sample a shared animation frame only when a visible animated model needs it.
 
+            var m2CameraPosition = camera.Position;
             foreach (var packet in m2InstancePackets.Values)
             {
                 var instances = packet.Instances;
@@ -1588,35 +1593,50 @@ namespace WoWRenderLib.DX11.Managers
 
                 candidateM2s += instances.Count;
                 var cullingStarted = Stopwatch.GetTimestamp();
+                var packetAnimation = m2.animation;
+                var checkAnimationDistance = AnimateModels && packetAnimation is { } &&
+                    (packetAnimation.HasAnimatedBones || packetAnimation.HasMaterialTracks ||
+                     packetAnimation.Ribbons.Length > 0);
+                var checkParticleDistance = renderVisibleParticles &&
+                    packetAnimation is { RenderableParticleIndices.Length: > 0 };
                 _visibleIndices.Clear();
                 _animatedVisibleIndices.Clear();
                 _particleVisibleIndices.Clear();
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
-                    if (RenderWMO &&
-                        instance.ParentWMO is { } parentWmo &&
+                    var parentWmo = instance.ParentWMO;
+                    if (RenderWMO && parentWmo is not null &&
                         !parentWmo.IsCameraVisibleForFrame(_renderFrameNumber))
                         continue;
 
-                    if (EnableWmoPortalCulling &&
-                        instance.ParentWMO is { } &&
-                        !instance.ParentWMO.IsDoodadPortalVisible(
-                            instance.WmoDoodadIndex,
+                    if (EnableWmoPortalCulling && parentWmo is not null &&
+                        !parentWmo.IsDoodadPortalVisible(instance.WmoDoodadIndex,
                             _renderFrameNumber))
                     {
                         portalCulledM2s++;
                         continue;
                     }
-                    packet.RefreshSpatialData(i, m2);
+                    // The tile aggregate contains every owned M2. A tile wholly
+                    // outside the frustum needs no per-placement spatial checks.
+                    var tileIndex = (int)instance.ParentTileIndex;
+                    if (coarseCulledTileIndices.Count > 0 &&
+                        coarseCulledTileIndices.Contains(tileIndex))
+                        continue;
+
+                    packet.RefreshSpatialData(i, instance, m2);
                     var sphere = packet.WorldBounds[i];
-                    if (ScreenSpaceCulling.IntersectsRenderDistance(camera.Position, sphere.Center, sphere.Radius, ModelRenderDistance) &&
-                        frustum.IsSphereVisible(sphere.Center, sphere.Radius))
+                    var cameraToSphere = sphere.Center - m2CameraPosition;
+                    var distanceSquared = cameraToSphere.LengthSquared();
+                    if (ScreenSpaceCulling.IntersectsRenderDistanceSquared(distanceSquared, sphere.Radius, ModelRenderDistance) &&
+                        ((fullyInsideTileCount > 0 &&
+                          terrainFrustumIntersections.TryGetValue(tileIndex, out var tileIntersection) &&
+                          tileIntersection == Frustum.BoxIntersection.Inside) ||
+                         frustum.IsSphereVisible(sphere.Center, sphere.Radius)))
                     {
-                        if (!instance.IsSelected && ScreenSpaceCulling.IsBelowPixelThresholdNormalized(
-                                camera.Position,
+                        if (!instance.IsSelected && ScreenSpaceCulling.IsBelowPixelThresholdNormalizedFromOffset(
+                                cameraToSphere,
                                 normalizedCameraForward,
-                                sphere.Center,
                                 sphere.Radius,
                                 verticalProjectionScale,
                                 _renderHeight,
@@ -1628,14 +1648,13 @@ namespace WoWRenderLib.DX11.Managers
 
                         visibleM2s++;
                         _visibleIndices.Add(i);
-                        if (AnimateModels)
+                        if (checkAnimationDistance || checkParticleDistance)
                         {
-                            var distanceSquared = Vector3.DistanceSquared(camera.Position, sphere.Center);
-                            if (M2EffectDistancePolicy.IsWithin(
+                            if (checkAnimationDistance && M2EffectDistancePolicy.IsWithin(
                                     distanceSquared, sphere.Radius, ModelRenderDistance,
                                     AnimationRenderDistancePercent))
                                 _animatedVisibleIndices.Add(i);
-                            if (RenderParticles && M2EffectDistancePolicy.IsWithin(
+                            if (checkParticleDistance && M2EffectDistancePolicy.IsWithin(
                                     distanceSquared, sphere.Radius, ModelRenderDistance,
                                     ParticleRenderDistancePercent))
                                 _particleVisibleIndices.Add(i);
@@ -1653,7 +1672,7 @@ namespace WoWRenderLib.DX11.Managers
                     ((_animatedVisibleIndices.Count > 0 &&
                       (activeAnimation.HasAnimatedBones || activeAnimation.HasMaterialTracks ||
                        activeAnimation.Ribbons.Length > 0)) ||
-                     (_particleVisibleIndices.Count > 0 && animateVisibleParticles &&
+                     (_particleVisibleIndices.Count > 0 && renderVisibleParticles &&
                       activeAnimation.RenderableParticleIndices.Length > 0)) &&
                     !animationTimeCaptured)
                 {
@@ -1682,13 +1701,14 @@ namespace WoWRenderLib.DX11.Managers
                     animationGroups = packet.RetainStaticDrawGroups(_visibleIndices);
                 }
 
-                if (AnimateModels && m2.animation is { } effectAnimation &&
-                    ((_animatedVisibleIndices.Count > 0 && effectAnimation.Ribbons.Length > 0) ||
-                     (_particleVisibleIndices.Count > 0 && animateVisibleParticles &&
+                if (m2.animation is { } effectAnimation &&
+                    ((AnimateModels && _animatedVisibleIndices.Count > 0 &&
+                      effectAnimation.Ribbons.Length > 0) ||
+                     (_particleVisibleIndices.Count > 0 && renderVisibleParticles &&
                       effectAnimation.RenderableParticleIndices.Length > 0)))
                 {
                     var effectsStarted = Stopwatch.GetTimestamp();
-                    if (effectAnimation.Ribbons.Length > 0)
+                    if (AnimateModels && effectAnimation.Ribbons.Length > 0)
                     {
                         foreach (var index in _animatedVisibleIndices)
                         {
@@ -1705,7 +1725,7 @@ namespace WoWRenderLib.DX11.Managers
                                     distanceSquared));
                         }
                     }
-                    if (animateVisibleParticles && effectAnimation.RenderableParticleIndices.Length > 0)
+                    if (renderVisibleParticles && effectAnimation.RenderableParticleIndices.Length > 0)
                     {
                         foreach (var index in _particleVisibleIndices)
                         {
@@ -1977,17 +1997,25 @@ namespace WoWRenderLib.DX11.Managers
                 submittedIndexCount += (uint)mesh.Indices.Length;
                 M2SubmittedIndices += (uint)mesh.Indices.Length;
             }
-            if (animateVisibleParticles && particleSubmissions.Count > 0)
+            if (renderVisibleParticles && particleSubmissions.Count > 0)
             {
-                particleSubmissions.Sort(static (a, b) =>
-                    b.DistanceSquared.CompareTo(a.DistanceSquared));
+                // Additive emitters do not need ordering; alpha emitters do.
+                if (particleSubmissions.Exists(static submission =>
+                        submission.Particle.BlendMode == 2))
+                    particleSubmissions.Sort(static (a, b) =>
+                        b.DistanceSquared.CompareTo(a.DistanceSquared));
                 _effectRenderer.Begin();
                 foreach (var submission in particleSubmissions)
                 {
-                    var mesh = _effectRenderer.GetParticleMesh(
-                        submission.Instance, submission.Animation,
-                        submission.ParticleIndex, submission.Frame,
-                        submission.ModelToView);
+                    var mesh = AnimateModels
+                        ? _effectRenderer.GetParticleMesh(
+                            submission.Instance, submission.Animation,
+                            submission.ParticleIndex, submission.Frame,
+                            submission.ModelToView)
+                        : _effectRenderer.GetFrozenParticleMesh(
+                            submission.Instance, submission.Animation,
+                            submission.ParticleIndex, submission.Frame,
+                            submission.ModelToView);
                     if (mesh.Indices.Length == 0)
                         continue;
 

@@ -12,10 +12,14 @@ public sealed class M2InstanceAnimationState
     public long TimeOffsetMilliseconds { get; set; }
 
     internal M2AnimationFrameKey GetFrameKey(M2Animation animation, long sceneTimeMilliseconds)
+        => GetFrameKey(animation, sceneTimeMilliseconds, -1);
+
+    internal M2AnimationFrameKey GetFrameKey(
+        M2Animation animation, long sceneTimeMilliseconds, int defaultSequenceIndex)
     {
         var sequence = (uint)SequenceIndex < animation.Sequences.Length
             ? SequenceIndex
-            : animation.DefaultSequenceIndex;
+            : defaultSequenceIndex >= 0 ? defaultSequenceIndex : animation.DefaultSequenceIndex;
         var time = Math.Max(0, sceneTimeMilliseconds + TimeOffsetMilliseconds);
         return new M2AnimationFrameKey(sequence, time);
     }

@@ -722,6 +722,29 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void ScreenSpaceCulling_OffsetThresholdMatchesProjectedDiameter()
+    {
+        var forward = Vector3.UnitX;
+        foreach (var center in new[]
+                 {
+                     new Vector3(-1f, 0f, 0f),
+                     new Vector3(1f, 0f, 0f),
+                     new Vector3(100f, 20f, 0f),
+                     new Vector3(10_000f, 0f, 0f)
+                 })
+        foreach (var radius in new[] { -1f, 0f, 0.5f, 5f })
+        foreach (var threshold in new[] { 0f, 1f, 10f, float.PositiveInfinity, float.NaN })
+        {
+            var expected = ScreenSpaceCulling.IsBelowPixelThresholdNormalized(
+                Vector3.Zero, forward, center, radius, 2.4f, 1_080, threshold);
+            var actual = ScreenSpaceCulling.IsBelowPixelThresholdNormalizedFromOffset(
+                center, forward, radius, 2.4f, 1_080, threshold);
+            Assert.AreEqual(expected, actual,
+                $"center={center}, radius={radius}, threshold={threshold}");
+        }
+    }
+
+    [TestMethod]
     public void Frustum_ClassifiesBoxesForHierarchicalTerrainCulling()
     {
         var frustum = new Frustum();
@@ -1260,6 +1283,12 @@ public sealed class EditorSettingsSmokeTests
             new Vector3(110.01f, 0f, 0f),
             10f,
             100f));
+        Assert.IsTrue(ScreenSpaceCulling.IntersectsRenderDistanceSquared(
+            110f * 110f, 10f, 100f));
+        Assert.IsFalse(ScreenSpaceCulling.IntersectsRenderDistanceSquared(
+            110.01f * 110.01f, 10f, 100f));
+        Assert.IsFalse(ScreenSpaceCulling.IntersectsRenderDistanceSquared(
+            float.NaN, 10f, 100f));
 
         Assert.IsTrue(ScreenSpaceCulling.IsFullyWithinRenderDistance(
             Vector3.Zero,

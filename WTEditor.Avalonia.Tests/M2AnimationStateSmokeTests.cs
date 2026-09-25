@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Renderer;
+using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Structs;
 
 namespace WTEditor.Avalonia.Tests;
@@ -11,6 +12,77 @@ namespace WTEditor.Avalonia.Tests;
 [TestClass]
 public sealed class M2AnimationStateSmokeTests
 {
+    [TestMethod]
+    public void SpatialDataReusesCapacityWhenPlacementsChange()
+    {
+        static M2Container Placement(uint fileDataId, float x)
+        {
+            var placement = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+            placement.FileDataId = fileDataId;
+            placement.Scale = 1f;
+            placement.Position = new Vector3(x, 0f, 0f);
+            return placement;
+        }
+
+        var instances = new List<M2Container>
+        {
+            Placement(7, 1f), Placement(7, 2f), Placement(7, 3f)
+        };
+        var packet = new M2InstancePacket(instances);
+        var model = new ParsedDoodadBatch
+        {
+            fileDataID = 7,
+            boundingBox = new BoundingBox(new Vector3(-1f), new Vector3(1f)),
+            boundingRadius = 1f
+        };
+
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        var bounds = packet.WorldBounds;
+        var matrices = packet.WorldMatrices;
+        Assert.IsTrue(bounds.Length >= instances.Count);
+
+        var initialCenter = packet.WorldBounds[0].Center;
+        packet.RefreshSpatialData(0, instances[0], model);
+        Assert.AreEqual(initialCenter, packet.WorldBounds[0].Center);
+        instances[0].Position = new Vector3(10f, 0f, 0f);
+        packet.RefreshSpatialData(0, instances[0], model);
+        Assert.AreNotEqual(initialCenter, packet.WorldBounds[0].Center);
+
+        instances.RemoveAt(1);
+        packet.Invalidate();
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        Assert.AreSame(bounds, packet.WorldBounds);
+        Assert.AreSame(matrices, packet.WorldMatrices);
+        Assert.AreEqual(instances[1].CachedBoundingSphere!.Value, packet.WorldBounds[1]);
+
+        instances.Add(Placement(7, 4f));
+        packet.Invalidate();
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        Assert.AreSame(bounds, packet.WorldBounds);
+        Assert.AreSame(matrices, packet.WorldMatrices);
+
+        instances.Add(Placement(7, 5f));
+        instances.Add(Placement(7, 6f));
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        Assert.AreNotSame(bounds, packet.WorldBounds);
+        Assert.AreNotSame(matrices, packet.WorldMatrices);
+
+        var billboardAnimation = new M2Animation
+        {
+            Bones = [], Sequences = [], GlobalLoops = [], HasBillboardBones = true
+        };
+        model.animation = billboardAnimation;
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        var rigidMatrices = packet.WorldRigidMatrices;
+        Assert.IsTrue(rigidMatrices.Length >= instances.Count);
+
+        model.animation = null;
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        model.animation = billboardAnimation;
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+        Assert.AreSame(rigidMatrices, packet.WorldRigidMatrices);
+    }
+
     [TestMethod]
     public void EffectDistancePercentagesUseModelDistanceAndZeroDisablesEffects()
     {
@@ -110,6 +182,67 @@ public sealed class M2AnimationStateSmokeTests
             Matrix4x4.Identity, visible, []);
         Assert.AreEqual(1, paused.Count);
         CollectionAssert.AreEquivalent(visible, paused[0].Indices.ToArray());
+    }
+
+    [TestMethod]
+    public void LivePlacementsShareGroupsOnlyWhenTheirFramesMatch()
+    {
+        static M2Container Placement(long offset)
+        {
+            var placement = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+            typeof(M2Container).GetField("<AnimationState>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(placement, new M2InstanceAnimationState
+                {
+                    TimeOffsetMilliseconds = offset
+                });
+            return placement;
+        }
+
+        var packet = new M2InstancePacket([Placement(0), Placement(0), Placement(100)]);
+        var animation = CreateAnimation();
+        var groups = packet.BuildAnimationGroups(animation,
+            [new Submesh { colorIndex = -1, textureWeightIndex = -1 }],
+            250, Matrix4x4.Identity, new[] { 0, 1, 2 });
+
+        Assert.AreEqual(2, groups.Count);
+        CollectionAssert.AreEqual(new[] { 0, 1 }, groups[0].Indices.ToArray());
+        CollectionAssert.AreEqual(new[] { 2 }, groups[1].Indices.ToArray());
+        Assert.AreEqual(2, packet.AnimationCache.CachedPoseCount);
+    }
+
+    [TestMethod]
+    public void BillboardPlacementsKeepSeparateDrawGroups()
+    {
+        static M2Container Placement()
+        {
+            var placement = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+            placement.FileDataId = 7;
+            placement.Scale = 1f;
+            typeof(M2Container).GetField("<AnimationState>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(placement, new M2InstanceAnimationState());
+            return placement;
+        }
+
+        var animation = CreateBillboardAnimation();
+        var packet = new M2InstancePacket([Placement(), Placement()]);
+        var model = new ParsedDoodadBatch
+        {
+            fileDataID = 7,
+            boundingBox = new BoundingBox(new Vector3(-1f), new Vector3(1f)),
+            boundingRadius = 1f,
+            animation = animation
+        };
+        Assert.IsTrue(packet.EnsureSpatialData(model));
+
+        var groups = packet.BuildAnimationGroups(animation,
+            [new Submesh { colorIndex = -1, textureWeightIndex = -1 }],
+            250, Matrix4x4.Identity, new[] { 0, 1 });
+        Assert.AreEqual(2, groups.Count);
+        CollectionAssert.AreEqual(new[] { 0 }, groups[0].Indices.ToArray());
+        CollectionAssert.AreEqual(new[] { 1 }, groups[1].Indices.ToArray());
+        Assert.AreNotSame(groups[0].Pose, groups[1].Pose);
     }
 
     [TestMethod]

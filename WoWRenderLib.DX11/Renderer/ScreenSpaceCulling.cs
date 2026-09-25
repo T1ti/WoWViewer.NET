@@ -9,9 +9,16 @@ public static class ScreenSpaceCulling
         Vector3 sphereCenter,
         float sphereRadius,
         float renderDistance)
+        => IntersectsRenderDistanceSquared(
+            Vector3.DistanceSquared(cameraPosition, sphereCenter), sphereRadius, renderDistance);
+
+    public static bool IntersectsRenderDistanceSquared(
+        float distanceSquared,
+        float sphereRadius,
+        float renderDistance)
     {
         var maxDistance = Math.Max(0f, renderDistance) + Math.Max(0f, sphereRadius);
-        return Vector3.DistanceSquared(cameraPosition, sphereCenter) <= maxDistance * maxDistance;
+        return distanceSquared <= maxDistance * maxDistance;
     }
 
     public static bool IsFullyWithinRenderDistance(
@@ -100,4 +107,27 @@ public static class ScreenSpaceCulling
             sphereRadius,
             verticalProjectionScale,
             viewportHeight) < minimumDiameterPixels;
+
+    /// <summary>Fast threshold check when the camera-to-sphere offset is already available.</summary>
+    public static bool IsBelowPixelThresholdNormalizedFromOffset(
+        Vector3 cameraToSphere,
+        Vector3 normalizedCameraForward,
+        float sphereRadius,
+        float verticalProjectionScale,
+        uint viewportHeight,
+        float minimumDiameterPixels)
+    {
+        if (!(minimumDiameterPixels > 0f))
+            return false;
+        if (sphereRadius <= 0f || verticalProjectionScale <= 0f || viewportHeight == 0)
+            return true;
+
+        var centerDepth = Vector3.Dot(cameraToSphere, normalizedCameraForward);
+        if (centerDepth <= sphereRadius)
+            return false;
+
+        var nearestDepth = MathF.Max(1f, centerDepth - sphereRadius);
+        return sphereRadius * verticalProjectionScale * viewportHeight <
+            minimumDiameterPixels * nearestDepth;
+    }
 }

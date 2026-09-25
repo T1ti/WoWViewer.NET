@@ -50,7 +50,7 @@ namespace WoWRenderLib.Structs
 
         public static BoundingBox Transform(BoundingBox box, Matrix4x4 transform)
         {
-            var corners = new Vector3[8]
+            Span<Vector3> corners = stackalloc Vector3[8]
             {
                 new Vector3(box.Min.X, box.Min.Y, box.Min.Z),
                 new Vector3(box.Min.X, box.Min.Y, box.Max.Z),

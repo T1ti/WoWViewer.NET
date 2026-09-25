@@ -15,6 +15,44 @@ namespace WTEditor.Avalonia.Tests;
 public sealed class WorldLiquidSmokeTests
 {
     [TestMethod]
+    public void BatchOrderPreservesBackToFrontDepthAndSourceTies()
+    {
+        var keys = new List<WorldLiquidSortKey>
+        {
+            new(0, 10f, 2, 0, 0),
+            new(1, 20f, 9, 0, 0),
+            new(2, 10f, 1, 2, 0),
+            new(3, 10f, 1, 1, 2),
+            new(4, 10f, 1, 1, 1)
+        };
+
+        keys.Sort(WorldLiquidBatchOrdering.Compare);
+
+        CollectionAssert.AreEqual(new[] { 1, 4, 3, 2, 0 },
+            keys.Select(key => key.VisibleIndex).ToArray());
+    }
+
+    [TestMethod]
+    public void TransformedLiquidBoundsDoNotAllocatePerBatch()
+    {
+        var box = new BoundingBox(new Vector3(-1f, -2f, -3f),
+            new Vector3(2f, 4f, 5f));
+        var matrix = Matrix4x4.CreateRotationZ(MathF.PI / 2f) *
+            Matrix4x4.CreateTranslation(10f, 20f, 30f);
+        var transformed = BoundingBox.Transform(box, matrix);
+        Assert.AreEqual(6f, transformed.Min.X, 0.0001f);
+        Assert.AreEqual(12f, transformed.Max.X, 0.0001f);
+        Assert.AreEqual(19f, transformed.Min.Y, 0.0001f);
+        Assert.AreEqual(22f, transformed.Max.Y, 0.0001f);
+
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 100; i++)
+            transformed = BoundingBox.Transform(box, matrix);
+        Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
+        Assert.AreEqual(27f, transformed.Min.Z, 0.0001f);
+    }
+
+    [TestMethod]
     public void EmptyExistsBitmapEmitsEveryQuadAndUsesMhxAxes()
     {
         var result = Build(new WorldLiquidLayerInput

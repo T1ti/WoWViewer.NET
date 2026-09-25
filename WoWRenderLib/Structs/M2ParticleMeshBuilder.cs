@@ -10,6 +10,7 @@ namespace WoWRenderLib.Structs;
 /// </summary>
 public static class M2ParticleMeshBuilder
 {
+    [ThreadStatic] private static List<Point>? _pointScratch;
     private sealed class EmissionScheduleCache
     {
         public readonly Dictionary<M2ParticleAnimation, Dictionary<int, M2ParticleEmissionSchedule?>>
@@ -116,7 +117,9 @@ public static class M2ParticleMeshBuilder
         int sequenceIndex,
         double timeMilliseconds,
         uint stableSeed,
-        Matrix4x4 modelToView)
+        Matrix4x4 modelToView,
+        M2RibbonVertex[]? reusableVertices = null,
+        ushort[]? reusableIndices = null)
     {
         if (!double.IsFinite(timeMilliseconds) || timeMilliseconds < 0d)
             return M2RibbonMesh.Empty;
@@ -169,7 +172,11 @@ public static class M2ParticleMeshBuilder
             if (right.LengthSquared() < 1e-12f || up.LengthSquared() < 1e-12f)
                 return M2RibbonMesh.Empty;
         }
-        var points = new List<Point>((int)(newest - oldest + 1));
+        var points = _pointScratch ??= new List<Point>();
+        points.Clear();
+        var possiblePointCount = (int)(newest - oldest + 1);
+        if (points.Capacity < possiblePointCount)
+            points.Capacity = possiblePointCount;
         for (var n = oldest; n <= newest; n++)
         {
             var born = schedule.BirthTime(n);
@@ -310,8 +317,12 @@ public static class M2ParticleMeshBuilder
         var hasHead = (emitter.Flags & HasHead) != 0;
         var hasTail = (emitter.Flags & HasTail) != 0;
         var quadsPerPoint = (hasHead ? 1 : 0) + (hasTail ? 1 : 0);
-        var vertices = new M2RibbonVertex[points.Count * quadsPerPoint * 4];
-        var indices = new ushort[points.Count * quadsPerPoint * 6];
+        var vertexCount = points.Count * quadsPerPoint * 4;
+        var indexCount = points.Count * quadsPerPoint * 6;
+        var vertices = reusableVertices is { Length: var vertexLength } && vertexLength == vertexCount
+            ? reusableVertices : new M2RibbonVertex[vertexCount];
+        var indices = reusableIndices is { Length: var indexLength } && indexLength == indexCount
+            ? reusableIndices : new ushort[indexCount];
         var quad = 0;
         foreach (var point in points)
         {

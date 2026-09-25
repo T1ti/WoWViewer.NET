@@ -69,6 +69,9 @@ internal sealed class WorldLiquidRenderer(
     private ComPtr<ID3D11BlendState> _opaqueBlendState;
     private ComPtr<ID3D11ShaderResourceView> _missingTexture;
     private readonly List<VisibleBatch> _visibleBatches = new(256);
+    private readonly List<WorldLiquidSortKey> _visibleBatchOrder = new(256);
+    private static readonly Comparison<WorldLiquidSortKey> SortBatches =
+        WorldLiquidBatchOrdering.Compare;
     private ShaderManager? _shaderManager;
     private bool _initialized;
 
@@ -76,11 +79,7 @@ internal sealed class WorldLiquidRenderer(
         object Owner,
         WorldLiquidResources Liquid,
         Matrix4x4 Model,
-        int BatchIndex,
-        float ViewDepth,
-        int TileOrder,
-        int ChunkIndex,
-        int LayerIndex);
+        int BatchIndex);
 
     public void Initialize(ShaderManager shaderManager)
     {
@@ -203,9 +202,11 @@ internal sealed class WorldLiquidRenderer(
 
         var cullingStarted = Stopwatch.GetTimestamp();
         _visibleBatches.Clear();
+        _visibleBatchOrder.Clear();
         var view = camera.GetViewMatrix();
         var projection = camera.GetProjectionMatrix();
         var frustum = camera.GetFrustum();
+        var cameraPosition = camera.Position;
         var candidateCount = 0;
         var tileOrder = 0;
 
@@ -219,12 +220,15 @@ internal sealed class WorldLiquidRenderer(
             if (!liquid.HasGeometry)
                 continue;
 
-            for (var batchIndex = 0; batchIndex < liquid.batches.Length; batchIndex++)
+            var batches = liquid.batches;
+            candidateCount += batches.Length;
+            if (coarseCulledTileIndices.Contains(container.mapTile.PositionIndex))
+                continue;
+            var modelMatrix = default(Matrix4x4);
+            var hasModelMatrix = false;
+            for (var batchIndex = 0; batchIndex < batches.Length; batchIndex++)
             {
-                var batch = liquid.batches[batchIndex];
-                candidateCount++;
-                if (coarseCulledTileIndices.Contains(container.mapTile.PositionIndex))
-                    continue;
+                var batch = batches[batchIndex];
 
                 var bounds = batch.Bounds;
                 if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
@@ -233,19 +237,24 @@ internal sealed class WorldLiquidRenderer(
                 var sphere = new BoundingSphere(
                     bounds.Center,
                     Vector3.Distance(bounds.Center, bounds.Max));
-                if (!IsWithinRenderDistance(camera.Position, sphere.Center, sphere.Radius, renderDistance))
+                if (!IsWithinRenderDistance(cameraPosition, sphere.Center, sphere.Radius, renderDistance))
                     continue;
 
+                if (!hasModelMatrix)
+                {
+                    modelMatrix = container.GetModelMatrix();
+                    hasModelMatrix = true;
+                }
                 var viewCenter = Vector3.Transform(bounds.Center, view).Z;
+                var visibleIndex = _visibleBatches.Count;
                 _visibleBatches.Add(new VisibleBatch(
                     container,
                     liquid,
-                    container.GetModelMatrix(),
-                    batchIndex,
-                    viewCenter,
-                    tileOrder,
-                    batch.ChunkIndex,
-                    batch.LayerIndex));
+                    modelMatrix,
+                    batchIndex));
+                _visibleBatchOrder.Add(new WorldLiquidSortKey(
+                    visibleIndex, viewCenter, tileOrder,
+                    batch.ChunkIndex, batch.LayerIndex));
             }
         }
 
@@ -267,27 +276,20 @@ internal sealed class WorldLiquidRenderer(
                 if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
                     continue;
                 var radius = Vector3.Distance(bounds.Center, bounds.Max);
-                if (!IsWithinRenderDistance(camera.Position, bounds.Center, radius, wmoRenderDistance))
+                if (!IsWithinRenderDistance(cameraPosition, bounds.Center, radius, wmoRenderDistance))
                     continue;
+                var visibleIndex = _visibleBatches.Count;
                 _visibleBatches.Add(new VisibleBatch(
-                    liquid.batches, liquid, matrix, batchIndex,
-                    Vector3.Transform(bounds.Center, view).Z,
+                    liquid.batches, liquid, matrix, batchIndex));
+                _visibleBatchOrder.Add(new WorldLiquidSortKey(
+                    visibleIndex, Vector3.Transform(bounds.Center, view).Z,
                     tileOrder, wmoLiquid.GroupIndex, 0));
             }
         }
 
+        if (_visibleBatchOrder.Count > 1)
+            _visibleBatchOrder.Sort(SortBatches);
         var cullingMilliseconds = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
-        _visibleBatches.Sort(static (left, right) =>
-        {
-            var depth = right.ViewDepth.CompareTo(left.ViewDepth);
-            if (depth != 0)
-                return depth;
-            var tile = left.TileOrder.CompareTo(right.TileOrder);
-            if (tile != 0)
-                return tile;
-            var chunk = left.ChunkIndex.CompareTo(right.ChunkIndex);
-            return chunk != 0 ? chunk : left.LayerIndex.CompareTo(right.LayerIndex);
-        });
 
         if (_visibleBatches.Count == 0)
             return new WorldLiquidRenderStats(
@@ -326,6 +328,14 @@ internal sealed class WorldLiquidRenderer(
         var riverFarColor = useClientLiquidColors
             ? clientLighting.RiverFarColor
             : Vector3.Zero;
+        var lightingAmbient = new Vector4(ClampColor(ambientColor), 0f);
+        var lightingDiffuse = new Vector4(ClampColor(diffuseColor), 0f);
+        var clampedRiverCloseColor = ClampColor(riverCloseColor);
+        var oceanCloseLighting = new Vector4(ClampColor(oceanCloseColor), 1f);
+        var oceanFarLighting = new Vector4(ClampColor(oceanFarColor), 1f);
+        var riverCloseLighting = new Vector4(clampedRiverCloseColor, 1f);
+        var riverFarLighting = new Vector4(ClampColor(riverFarColor), 1f);
+        var normalizedLightDirection = new Vector4(NormalizeLightDirection(lightDirection), 0f);
         var oceanShallowAlpha = clientLighting.HasLiquidAlphaData
             ? clientLighting.OceanShallowAlpha
             : 1f;
@@ -344,8 +354,9 @@ internal sealed class WorldLiquidRenderer(
         var blendFactor = 1f;
         var currentBlend = -1;
 
-        foreach (var visible in _visibleBatches)
+        foreach (var sortKey in _visibleBatchOrder)
         {
+            var visible = _visibleBatches[sortKey.VisibleIndex];
             var liquid = visible.Liquid;
             var batch = liquid.batches[visible.BatchIndex];
             if (!ReferenceEquals(boundOwner, visible.Owner))
@@ -379,9 +390,9 @@ internal sealed class WorldLiquidRenderer(
             var blendState = isOpaque ? _opaqueBlendState : _alphaBlendState;
             var depthState = isOpaque ? _opaqueDepthStencilState : _depthStencilState;
             var blendKey = isOpaque ? 1 : 2;
-            _deviceContext.OMSetDepthStencilState(depthState, 0);
             if (currentBlend != blendKey)
             {
+                _deviceContext.OMSetDepthStencilState(depthState, 0);
                 _deviceContext.OMSetBlendState(blendState, ref blendFactor, uint.MaxValue);
                 currentBlend = blendKey;
             }
@@ -423,22 +434,22 @@ internal sealed class WorldLiquidRenderer(
                     material.Family == WorldLiquidMaterialFamily.Magma ? 1f : 0f,
                     hasLoadedTexture ? 1f : 0f,
                     batch.IsWmo ? 1f : 0f),
-                LightingAmbient = new Vector4(ClampColor(ambientColor), 0f),
-                LightingDiffuse = new Vector4(ClampColor(diffuseColor), 0f),
+                LightingAmbient = lightingAmbient,
+                LightingDiffuse = lightingDiffuse,
                 // Keep RGB and alpha as separate inputs. The simple pass uses
                 // standard source-alpha blending to approximate the reference
                 // shader's water-tint-over-scene/refraction mix.
-                OceanCloseColor = new Vector4(ClampColor(oceanCloseColor), 1f),
-                OceanFarColor = new Vector4(ClampColor(oceanFarColor), 1f),
-                RiverCloseColor = new Vector4(ClampColor(riverCloseColor), 1f),
-                RiverFarColor = new Vector4(ClampColor(riverFarColor), 1f),
+                OceanCloseColor = oceanCloseLighting,
+                OceanFarColor = oceanFarLighting,
+                RiverCloseColor = riverCloseLighting,
+                RiverFarColor = riverFarLighting,
                 LiquidColorParameters = new Vector4(
                     useClientLiquidColors && isWater && !batch.IsWmoInterior ? 1f : 0f,
                     UsesRiverLightingPalette(material.WaterType) ? 1f : 0f,
                     clientLighting.HasLiquidAlphaData && isWater ? 1f : 0f,
                     batch.IsWmoInterior ? 1f : 0f),
                 DepthCoefficients = material.DepthCoefficients,
-                LightDirection = new Vector4(NormalizeLightDirection(lightDirection), 0f),
+                LightDirection = normalizedLightDirection,
                 LiquidAlphaParameters = new Vector4(
                     oceanShallowAlpha,
                     oceanDeepAlpha,
@@ -448,7 +459,7 @@ internal sealed class WorldLiquidRenderer(
                     batch.IsWmoInterior
                         ? Vector3.One
                         : useClientLiquidColors
-                            ? ClampColor(riverCloseColor)
+                            ? clampedRiverCloseColor
                             : WorldLiquidColorDefaults.RiverClose,
                     0f),
                 WmoParameters = new Vector4(
@@ -505,6 +516,7 @@ internal sealed class WorldLiquidRenderer(
         _rasterizerState.Dispose();
         _constantBuffer.Dispose();
         _visibleBatches.Clear();
+        _visibleBatchOrder.Clear();
         _initialized = false;
     }
 
