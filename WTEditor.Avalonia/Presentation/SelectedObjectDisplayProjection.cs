@@ -14,7 +14,6 @@ internal sealed class SelectedObjectDisplayProjection
     private Container3D? _selectedObject;
     private EditorObjectId _selectedObjectId;
     private IEditorObjectData? _displayData;
-    private bool _displayDataUsesListfile;
 
     public EditorObjectSnapshot? CreateDisplaySnapshot(Container3D? selectedObject)
     {
@@ -22,7 +21,6 @@ internal sealed class SelectedObjectDisplayProjection
         {
             _selectedObject = null;
             _displayData = null;
-            _displayDataUsesListfile = false;
             return null;
         }
 
@@ -46,7 +44,6 @@ internal sealed class SelectedObjectDisplayProjection
             return;
 
         _displayData = CreateDisplayData(selectedObject);
-        _displayDataUsesListfile = WoWRenderLib.Listfile.IsLoaded;
     }
 
     private void RefreshDisplayDataWhenNeeded(Container3D selectedObject)
@@ -59,11 +56,7 @@ internal sealed class SelectedObjectDisplayProjection
             return;
         }
 
-        if (!_displayDataUsesListfile && WoWRenderLib.Listfile.IsLoaded)
-        {
-            RefreshDisplayData(selectedObject);
-        }
-        else if (selectedObject is WMOContainer selectedWmo &&
+        if (selectedObject is WMOContainer selectedWmo &&
                  _displayData is WorldModelObjectData { IsLoaded: false } &&
                  selectedWmo.IsLoaded)
         {
@@ -71,7 +64,8 @@ internal sealed class SelectedObjectDisplayProjection
         }
         else if (selectedObject is ADTContainer selectedAdt &&
                  _displayData is TerrainObjectData terrainData &&
-                 terrainData.IsModified != selectedAdt.IsModified)
+                 (terrainData.IsLoaded != selectedAdt.IsLoaded ||
+                  terrainData.IsModified != selectedAdt.IsModified))
         {
             RefreshDisplayData(selectedObject);
         }
@@ -83,11 +77,17 @@ internal sealed class SelectedObjectDisplayProjection
             M2Container m2 => M2SelectionDisplayDataFactory.Create(m2),
             WMOContainer wmo => WorldModelSelectionDisplayDataFactory.Create(wmo),
             ADTContainer adt => new TerrainObjectData(
-                adt.FileDataId,
+                adt.IsLoaded ? adt.Terrain.rootADTFileDataID : 0,
                 adt.mapTile.TileX,
                 adt.mapTile.TileY,
                 adt.IsLoaded,
-                adt.IsModified),
+                adt.IsModified,
+                WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+                    ? string.IsNullOrWhiteSpace(adt.mapTile.WdtPath)
+                        ? "Missing MPQ WDT path"
+                        : WoWRenderLib.Services.MapAssetPathResolver.GetLegacyAdtPath(
+                            adt.mapTile.WdtPath, adt.mapTile.TileX, adt.mapTile.TileY)
+                    : string.Empty),
             _ => null
         };
 
@@ -97,13 +97,19 @@ internal sealed class SelectedObjectDisplayProjection
         {
             M2ObjectData m2 => m2.FileName,
             WorldModelObjectData wmo => wmo.FileName,
-            TerrainObjectData adt => WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(adt.FileDataId),
+            TerrainObjectData adt => WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+                ? adt.FilePath
+                : adt.FileDataId == 0 ? $"ADT {adt.TileX}_{adt.TileY}"
+                : WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(adt.FileDataId),
             _ => string.Empty
         };
-        return string.IsNullOrWhiteSpace(fileName) ||
-               fileName.StartsWith("FDID ", StringComparison.Ordinal)
-            ? $"{selectedObject.GetType().Name.Replace("Container", string.Empty)} " +
-              selectedObject.FileDataId
+        if (string.IsNullOrWhiteSpace(fileName))
+            fileName = WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(selectedObject.FileDataId);
+
+        return fileName.StartsWith("FDID ", StringComparison.Ordinal) ||
+               fileName.StartsWith("Unknown", StringComparison.Ordinal) ||
+               fileName.StartsWith("Missing", StringComparison.Ordinal)
+            ? $"{selectedObject.GetType().Name.Replace("Container", string.Empty)} {fileName}"
             : Path.GetFileName(fileName);
     }
 

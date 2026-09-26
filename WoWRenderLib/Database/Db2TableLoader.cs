@@ -1,5 +1,6 @@
 using WoWLib;
 using WoWLib.Database;
+using WoWRenderLib.Diagnostics;
 using Fs = WoWLib.Filesystem;
 
 namespace WoWRenderLib.Database;
@@ -49,6 +50,7 @@ public static class Db2TableLoader
                 {
                     var bytes = fileSystem.ReadFile(requestedKey);
                     diagnostic = $"Read client database table '{tableName}' from '{path}' by path.";
+                    LoadDiagnostics.Info(diagnostic);
                     return bytes;
                 }
                 resolvedKey = fileSystem.Resolve(requestedKey);
@@ -59,22 +61,25 @@ public static class Db2TableLoader
                     fileDataIdKey = new FileKey(fileDataId);
                     var bytes = fileSystem.ReadFile(fileDataIdKey);
                     diagnostic =
-                        $"Read client database table '{tableName}' from '{path}' " +
-                        $"via FileDataID {id}.";
+                        $"Read client database table '{tableName}' from FDID {id}.";
+                    LoadDiagnostics.Info(diagnostic);
                     return bytes;
                 }
 
                 var pathBytes = fileSystem.ReadFile(resolvedKey);
                 diagnostic =
-                    $"Read client database table '{tableName}' from '{path}' by path.";
+                    $"Read client database table '{tableName}' by path.";
+                LoadDiagnostics.Info(diagnostic);
                 return pathBytes;
             }
             catch (Exception exception)
             {
                 var resolution = resolvedKey == null
                     ? string.Empty
-                    : $" Resolved key: path='{resolvedKey.Path ?? "<none>"}', " +
-                      $"FileDataID={resolvedKey.Fdid?.Value.ToString() ?? "<none>"}.";
+                    : $" Resolved key: path='{resolvedKey.Path ?? "<none>"}'" +
+                      (resolvedKey.Fdid?.Value is uint resolvedId && resolvedId != 0
+                          ? $" (FDID {resolvedId})."
+                          : ".");
                 attempts.Add(
                     $"'{path}':{resolution} {FormatException(exception)}");
             }
@@ -130,6 +135,7 @@ public static class Db2TableLoader
                 {
                     table.Read(fileSystem, requestedKey);
                     diagnostic = $"Loaded client database table '{tableName}' from '{path}' by path.";
+                    LoadDiagnostics.Info(diagnostic);
                     return table;
                 }
                 resolvedKey = fileSystem.Resolve(requestedKey);
@@ -151,15 +157,20 @@ public static class Db2TableLoader
                     table.Read(fileSystem, resolvedKey);
                 }
 
-                diagnostic = $"Loaded client database table '{tableName}'.";
+                diagnostic = resolvedFileDataId is uint loadedId && loadedId != 0
+                    ? $"Loaded client database table '{tableName}' from FDID {loadedId}."
+                    : $"Loaded client database table '{tableName}' by path.";
+                LoadDiagnostics.Info(diagnostic);
                 return table;
             }
             catch (Exception exception)
             {
                 var resolution = resolvedKey == null
                     ? string.Empty
-                    : $" Resolved key: path='{resolvedKey.Path ?? "<none>"}', " +
-                      $"FileDataID={resolvedKey.Fdid?.Value.ToString() ?? "<none>"}.";
+                    : $" Resolved key: path='{resolvedKey.Path ?? "<none>"}'" +
+                      (resolvedKey.Fdid?.Value is uint resolvedId && resolvedId != 0
+                          ? $" (FDID {resolvedId})."
+                          : ".");
                 attempts.Add(
                     $"'{path}':{resolution} {FormatException(exception)}");
                 table?.Dispose();

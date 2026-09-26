@@ -69,6 +69,7 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
 
     public void SetMap(WorldMapCatalogEntry? entry)
     {
+        var isMpq = WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq;
         HasSelectedMap = entry != null;
         SelectedMapName = entry?.Map.Name ?? "No map selected";
         SelectedMapSubtitle = entry == null
@@ -78,24 +79,26 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
         MapDbSettings = entry == null
             ? []
             : entry.Map.Settings
+                .Where(setting => !isMpq || !IsFileDataIdField(setting.Name))
                 .Select(setting => new MapSettingDisplayViewModel(
                     setting.Name,
                     setting.Value,
                     setting.TypeName))
                 .ToArray();
         if (entry != null && MapDbSettings.Count == 0)
-            MapDbSettings = CreateFallbackMapSettings(entry.Map);
+            MapDbSettings = CreateFallbackMapSettings(entry.Map, isMpq);
 
         WdtSettings = entry == null
             ? []
             : entry.Wdt.Settings
+                .Where(setting => !isMpq || !IsFileDataIdField(setting.Name))
                 .Select(setting => new MapSettingDisplayViewModel(setting.Name, setting.Value, "WDT"))
                 .ToArray();
         if (entry != null && WdtSettings.Count == 0)
-            WdtSettings = CreateFallbackWdtSettings(entry.Wdt);
+            WdtSettings = CreateFallbackWdtSettings(entry.Wdt, isMpq);
 
         WdtTiles = entry?.Wdt.Tiles
-            .Select(tile => CreateTile(tile, entry.Wdt.Path))
+            .Select(tile => CreateTile(tile, entry.Wdt.Path, isMpq))
             .ToArray() ?? [];
         WdtStatus = entry?.Wdt.Error ?? (entry == null
             ? string.Empty
@@ -112,30 +115,38 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
     }
 
     private static IReadOnlyList<MapSettingDisplayViewModel> CreateFallbackMapSettings(
-        WorldMapRecord map) =>
+        WorldMapRecord map, bool isMpq) =>
     [
         new("ID", map.Id.ToString(CultureInfo.InvariantCulture), "Int32"),
         new("Directory", map.Directory, "String"),
-        string.IsNullOrWhiteSpace(map.WdtPath)
+        !isMpq && string.IsNullOrWhiteSpace(map.WdtPath)
             ? new("WdtFileDataID", map.WdtFileDataId.ToString(CultureInfo.InvariantCulture), "UInt32")
-            : new("WDT path", map.WdtPath, "String"),
+            : new("WDT path", string.IsNullOrWhiteSpace(map.WdtPath)
+                ? "Missing MPQ WDT path"
+                : isMpq || map.WdtFileDataId == 0
+                    ? map.WdtPath
+                    : $"{map.WdtPath}({map.WdtFileDataId})", "String"),
         new("ExpansionID", map.ExpansionId.ToString(CultureInfo.InvariantCulture), "Int32"),
         new("InstanceType", map.InstanceType.ToString(CultureInfo.InvariantCulture), "Int32")
     ];
 
     private static IReadOnlyList<MapSettingDisplayViewModel> CreateFallbackWdtSettings(
-        WorldMapWdtMetadata wdt) =>
+        WorldMapWdtMetadata wdt, bool isMpq) =>
     [
-        string.IsNullOrWhiteSpace(wdt.Path)
+        !isMpq && string.IsNullOrWhiteSpace(wdt.Path)
             ? new("WDT.FileDataID", wdt.FileDataId.ToString(CultureInfo.InvariantCulture), "UInt32")
-            : new("WDT.Path", wdt.Path, "String"),
+            : new("WDT.Path", string.IsNullOrWhiteSpace(wdt.Path)
+                ? "Missing MPQ WDT path"
+                : isMpq || wdt.FileDataId == 0
+                    ? wdt.Path
+                    : $"{wdt.Path}({wdt.FileDataId})", "String"),
         new("WDT.Version", wdt.Version.ToString(CultureInfo.InvariantCulture), "UInt32"),
         new("MPHD.Flags", $"0x{wdt.Flags:X8}", "UInt32"),
         new("Terrain", wdt.HasTerrain ? "Yes" : "No", "Boolean"),
         new("MAIN.ActiveTerrainTiles", wdt.ActiveTiles.Count.ToString(CultureInfo.InvariantCulture), "Int32")
     ];
 
-    private static WdtTileDisplayViewModel CreateTile(WorldMapWdtTileData tile, string wdtPath)
+    private static WdtTileDisplayViewModel CreateTile(WorldMapWdtTileData tile, string wdtPath, bool isMpq)
     {
         if (!string.IsNullOrWhiteSpace(wdtPath))
         {
@@ -146,8 +157,16 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
             return new WdtTileDisplayViewModel(
                 $"({tile.Position.X}, {tile.Position.Y})",
                 $"0x{tile.Flags:X8}{(tile.IsActive ? " · active" : string.Empty)}",
-                adtPath);
+                isMpq || tile.RootAdtFileDataId == 0 || string.IsNullOrWhiteSpace(adtPath)
+                    ? adtPath
+                    : $"{adtPath}({tile.RootAdtFileDataId})");
         }
+
+        if (isMpq)
+            return new WdtTileDisplayViewModel(
+                $"({tile.Position.X}, {tile.Position.Y})",
+                $"0x{tile.Flags:X8}{(tile.IsActive ? " · active" : string.Empty)}",
+                "Missing MPQ WDT path");
 
         var fileDataIds = string.Join(
             " · ",
@@ -170,4 +189,10 @@ public sealed partial class MapSettingsViewModel : ViewModelBase
         value == 0
             ? "0"
             : $"{value.ToString(CultureInfo.InvariantCulture)} (0x{value:X8})";
+
+    private static bool IsFileDataIdField(string name) =>
+        name.Contains("FileDataID", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("FileDataId", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("file_data_id", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("Fdid", StringComparison.OrdinalIgnoreCase);
 }

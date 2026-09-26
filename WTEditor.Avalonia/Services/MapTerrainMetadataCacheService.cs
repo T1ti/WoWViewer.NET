@@ -158,8 +158,9 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         }
         catch (Exception exception)
         {
-            var error = $"Unable to read WDT {fileDataId}: {exception.Message}";
-            LoadDiagnostics.Error($"Reading WDT {fileDataId}", exception);
+            var source = LoadDiagnostics.Asset("WDT", fileDataId);
+            var error = $"Unable to read {source}: {exception.Message}";
+            LoadDiagnostics.Error($"Reading {source}", exception);
             return new WorldMapWdtMetadata(fileDataId, 0)
             {
                 Error = error,
@@ -251,6 +252,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
                 Path = path,
                 Version = root.Mver,
                 Settings = CreateWdtSettings(
+                    fileSystem.Kind,
                     fileDataId,
                     path,
                     bytes.Length,
@@ -386,6 +388,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
     }
 
     private static IReadOnlyList<WorldMapWdtSetting> CreateWdtSettings(
+        StorageKind storageKind,
         uint fileDataId,
         string path,
         int byteLength,
@@ -399,9 +402,11 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
         var maid = GetMapFileDataIds(root);
         var settings = new List<WorldMapWdtSetting>
         {
-            string.IsNullOrWhiteSpace(path)
-                ? new("WDT.FileDataID", FormatFileDataId(fileDataId))
-                : new("WDT.Path", path),
+            storageKind == StorageKind.Mpq
+                ? new("WDT.Path", string.IsNullOrWhiteSpace(path) ? "Missing MPQ WDT path" : path)
+                : string.IsNullOrWhiteSpace(path)
+                    ? new("WDT.FileDataID", FormatFileDataId(fileDataId))
+                    : new("WDT.Path", fileDataId == 0 ? path : $"{path}({fileDataId})"),
             new("WDT.ByteLength", byteLength.ToString(CultureInfo.InvariantCulture)),
             new("WDT.HasTerrain", (root.Header.Flags & 0x1) == 0 ? "Yes" : "No"),
             new("MVER.Version", root.Mver.ToString(CultureInfo.InvariantCulture)),
@@ -442,7 +447,7 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
 
         if (globalWmo is not null)
         {
-            if (string.IsNullOrWhiteSpace(path))
+            if (storageKind == StorageKind.Casc && string.IsNullOrWhiteSpace(path))
                 settings.Add(new("MODF.NameFileDataID", FormatFileDataId(globalWmo.NameFileDataId)));
             settings.Add(new("MODF.UniqueID", FormatUInt32(globalWmo.UniqueId)));
             settings.Add(new("MODF.Position", FormatVector(

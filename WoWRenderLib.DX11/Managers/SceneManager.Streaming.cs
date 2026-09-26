@@ -1023,9 +1023,15 @@ namespace WoWRenderLib.DX11.Managers
             }
 
             adtContainer.Unload();
+            var adtPath = MapAssetPathResolver.GetLegacyAdtPath(
+                adtContainer.mapTile.WdtPath,
+                adtContainer.mapTile.TileX,
+                adtContainer.mapTile.TileY);
+            var adtSource = WowlibFileSystem.ReadSourceDescription(
+                WowlibFileSystem.Current, adtPath, 0);
             ReportSceneLoadFailure(
                 $"Loading ADT {adtContainer.mapTile.TileX}, {adtContainer.mapTile.TileY} " +
-                $"for WDT '{adtContainer.mapTile.WdtPath}'",
+                $"from '{adtSource}' for WDT '{adtContainer.mapTile.WdtPath}'",
                 exception);
         }
 

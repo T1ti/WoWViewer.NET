@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using WoWRenderLib.Diagnostics;
 using WTEditor.Application.Models;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.Renderer;
@@ -28,9 +29,9 @@ internal static class WorldModelSelectionDisplayDataFactory
         catch (Exception exception)
         {
             Debug.WriteLine(
-                $"Unable to project loaded WMO {wmo.FileDataId} for display: {exception}");
+                $"Unable to project loaded {LoadDiagnostics.Asset("WMO", wmo.FileDataId)} for display: {exception}");
             Console.Error.WriteLine(
-                $"Unable to project loaded WMO {wmo.FileDataId} for display: {exception.Message}");
+                $"Unable to project loaded {LoadDiagnostics.Asset("WMO", wmo.FileDataId)} for display: {exception.Message}");
             return CreateUnloaded(wmo);
         }
     }

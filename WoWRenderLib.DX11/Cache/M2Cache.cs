@@ -91,7 +91,7 @@ namespace WoWRenderLib.DX11.Cache
                 var originalFileDataId = item.Request;
                 if (item.Error != null)
                 {
-                    LoadDiagnostics.Error($"Parsing M2 {originalFileDataId}", item.Error);
+                    LoadDiagnostics.Error($"Parsing {LoadDiagnostics.Asset("M2", originalFileDataId)}", item.Error);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),
@@ -131,7 +131,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    LoadDiagnostics.Error($"Uploading M2 {originalFileDataId}", e);
+                    LoadDiagnostics.Error($"Uploading {LoadDiagnostics.Asset("M2", originalFileDataId)}", e);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),

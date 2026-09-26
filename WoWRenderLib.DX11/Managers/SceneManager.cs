@@ -20,6 +20,7 @@ using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Persistence;
 using WoWRenderLib.Raycasting;
 using WoWRenderLib.Renderer;
+using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Managers
@@ -73,6 +74,8 @@ namespace WoWRenderLib.DX11.Managers
         public bool ShowBoundingSpheres { get; set; } = false;
         public bool ShowTerrainGrid { get; set; }
         public bool ShowTerrainWireframe { get; set; }
+        public bool ShowTerrainTexture { get; set; } = true;
+        public bool ShowTerrainVertexColor { get; set; } = true;
 
         public bool RenderADT { get; set; } = true;
         public bool RenderLiquid { get; set; } = true;
@@ -762,7 +765,8 @@ namespace WoWRenderLib.DX11.Managers
 
                 Console.WriteLine(
                     "WTEDITOR_WMO_TRACE " +
-                    $"root={wmo.rootWMOFileDataID} placement={instance.UniqueID} " +
+                    $"root={WowlibFileSystem.GetAssetDisplayName(wmo.rootWMOFileDataID)} " +
+                    $"placement={instance.UniqueID} " +
                     $"renderIndex={groupIndex} sourceIndex={group.sourceGroupIndex} " +
                     $"groupID={group.groupID} mogpName={group.groupName} mogiName={group.mogiGroupName} " +
                     $"mogpFlags=0x{group.flags:X8} mogiFlags=0x{group.mogiFlags:X8} " +
@@ -910,6 +914,7 @@ namespace WoWRenderLib.DX11.Managers
                 _worldLiquidRenderer.RefreshShader();
                 _glowRenderer.RefreshShader();
                 _skyRenderer.RefreshShaders();
+                _debugBoundsRenderer.RefreshShader(_shaderManager.GetOrCompileShader("boundingbox"));
             }
 #endif
 
@@ -1191,7 +1196,8 @@ namespace WoWRenderLib.DX11.Managers
                             0f),
                         renderTerrainWireframe = ShowTerrainWireframe ? 1u : 0u,
                         useLegacyLighting = adt.Terrain.usesLegacyLighting ? 1u : 0u,
-                        terrainWireframePadding = Vector2.Zero,
+                        showTerrainTexture = ShowTerrainTexture ? 1u : 0u,
+                        showTerrainVertexColor = ShowTerrainVertexColor ? 1u : 0u,
                         brushCenter = brushCenter,
                         brushOuterRadius = BrushRadius,
                         brushFalloffRadius = BrushRadius * BrushFalloff,
@@ -2000,6 +2006,30 @@ namespace WoWRenderLib.DX11.Managers
             _m2DepthStates.EndPass();
             ApplyBlendMode(0, ref currentBlendType);
 
+            // Draw bounds against opaque scene depth before the liquid pass.
+            // Liquid alpha then blends over lines behind its surface, while
+            // line depth keeps liquid behind a nearer line from covering it.
+            passStarted = Stopwatch.GetTimestamp();
+            gpuTimer?.BeginDebug();
+            if (ShowBoundingBoxes || ShowBoundingSpheres ||
+                (SelectionVisualsEnabled && SelectedObject != null))
+            {
+                lock (SceneObjectLock)
+                {
+                    DebugDrawCalls = _debugBoundsRenderer.Render(
+                        SceneObjects,
+                        ShowBoundingBoxes,
+                        ShowBoundingSpheres,
+                        SelectionVisualsEnabled && SelectedObject != null,
+                        projectionMatrix,
+                        cameraMatrix,
+                        rasterizerState);
+                }
+                drawCalls += DebugDrawCalls;
+            }
+            gpuTimer?.EndDebug();
+            DebugSubmissionTimeMs = Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds;
+
             gpuTimer?.BeginLiquids();
             if (RenderLiquid)
             {
@@ -2124,28 +2154,6 @@ namespace WoWRenderLib.DX11.Managers
             _m2DepthStates.EndPass();
 
             ApplyBlendMode(0, ref currentBlendType);
-
-            // Debug bounds rendering
-            passStarted = Stopwatch.GetTimestamp();
-            gpuTimer?.BeginDebug();
-            if (ShowBoundingBoxes || ShowBoundingSpheres ||
-                (SelectionVisualsEnabled && SelectedObject != null))
-            {
-                lock (SceneObjectLock)
-                {
-                    DebugDrawCalls = _debugBoundsRenderer.Render(
-                        SceneObjects,
-                        ShowBoundingBoxes,
-                        ShowBoundingSpheres,
-                        SelectionVisualsEnabled && SelectedObject != null,
-                        projectionMatrix,
-                        cameraMatrix,
-                        rasterizerState);
-                }
-                drawCalls += DebugDrawCalls;
-            }
-            gpuTimer?.EndDebug();
-            DebugSubmissionTimeMs = Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds;
 
             if (applyClientGlow)
             {

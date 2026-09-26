@@ -171,12 +171,12 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     if (item.Error is FileNotFoundException)
                     {
-                        LoadDiagnostics.Error($"Loading local BLP {item.Request}", item.Error);
+                        LoadDiagnostics.Error($"Loading local {LoadDiagnostics.Asset("BLP", item.Request)}", item.Error);
                         inFlight.TryRemove(item.Request, out _);
                         continue;
                     }
 
-                    LoadDiagnostics.Error($"Decoding BLP {item.Request}", item.Error);
+                    LoadDiagnostics.Error($"Decoding {LoadDiagnostics.Asset("BLP", item.Request)}", item.Error);
                     if (!failures.TryScheduleRetry(
                             item.Request,
                             Users.ContainsKey(item.Request),
@@ -279,7 +279,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    LoadDiagnostics.Error($"Uploading BLP {decoded.FileDataId}", e);
+                    LoadDiagnostics.Error($"Uploading {LoadDiagnostics.Asset("BLP", decoded.FileDataId)}", e);
                     if (failures.TryScheduleRetry(
                             decoded.FileDataId,
                             Users.ContainsKey(decoded.FileDataId),

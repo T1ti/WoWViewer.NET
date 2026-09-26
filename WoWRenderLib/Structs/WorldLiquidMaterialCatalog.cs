@@ -516,7 +516,6 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         var table = Db2TableLoader.TryLoad(fileSystem, tableName, out var diagnostic);
         if (table != null)
         {
-            Console.WriteLine(diagnostic);
             return table;
         }
 

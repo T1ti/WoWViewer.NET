@@ -16,7 +16,8 @@ cbuffer PerObject : register(b0)
     float4 terrainGridSettings;
     uint renderTerrainWireframe;
     uint useLegacyLighting;
-    float2 terrainWireframePadding;
+    uint showTerrainTexture;
+    uint showTerrainVertexColor;
     float3 brushCenter;
     float brushOuterRadius;
     float brushFalloffRadius;
@@ -139,8 +140,11 @@ VSOut VS_Main(VSIn input, uint vertexId : SV_VertexID)
     if (useLegacyLighting != 0)
     {
         float legacyDiffuse = max(dot(o.Normal, normalize(lightDirection)), 0.0f);
+        float3 vertexColor = showTerrainVertexColor != 0
+            ? input.color.rgb * 2.0f
+            : float3(1.0f, 1.0f, 1.0f);
         o.LegacyLighting = saturate(
-            (ambientColor + diffuseColor * legacyDiffuse) * input.color.rgb * 2.0f);
+            (ambientColor + diffuseColor * legacyDiffuse) * vertexColor);
     }
     o.ChunkIndex = vertexId / 145;
     o.TerrainPosition = posOffset;
@@ -384,6 +388,9 @@ float4 PS_Main(VSOut i) : SV_Target
     }
 #endif
 
+    if (showTerrainTexture == 0)
+        final_color = float3(1.0f, 1.0f, 1.0f);
+
     float3 shadedColor;
     if (useLegacyLighting != 0)
     {
@@ -395,7 +402,10 @@ float4 PS_Main(VSOut i) : SV_Target
     {
         float diffuse = max(dot(normalize(i.Normal), normalize(lightDirection)), 0.0f);
         float3 lighting = saturate(ambientColor + diffuseColor * diffuse);
-        shadedColor = final_color * in_vertexColor.rgb * 2.0f * lighting;
+        float3 vertexColor = showTerrainVertexColor != 0
+            ? in_vertexColor.rgb * 2.0f
+            : float3(1.0f, 1.0f, 1.0f);
+        shadedColor = final_color * vertexColor * lighting;
     }
     float chunkMask = 0.0f;
     float adtMask = 0.0f;

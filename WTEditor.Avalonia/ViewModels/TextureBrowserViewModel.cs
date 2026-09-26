@@ -28,6 +28,9 @@ public sealed class TextureBrowserFolderViewModel
 
     public string Name { get; }
     public string FullPath { get; }
+    public string Tooltip => WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+        ? FullPath
+        : $"Name hint: {FullPath}";
     public TextureBrowserFolderViewModel? Parent { get; }
     public bool HasDirectTextures => Textures.Count > 0;
     public ObservableCollection<TextureBrowserFolderViewModel> Children { get; } = [];
@@ -66,7 +69,16 @@ public partial class TextureBrowserViewModel : ViewModelBase, IDisposable
     public ObservableCollection<TexturePaletteItemViewModel> FolderResults { get; } = [];
     public ObservableCollection<object> CurrentEntries { get; } = [];
     public bool IsSimpleMode => !IsExplorerMode;
-    public string CurrentFolderPath => SelectedFolder?.FullPath ?? "tileset";
+    public string CurrentFolderPath
+    {
+        get
+        {
+            var path = SelectedFolder?.FullPath ?? "tileset";
+            return WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+                ? path
+                : $"Name hints: {path}";
+        }
+    }
     public bool CanNavigateToParent => SelectedFolder?.Parent != null;
 
     [ObservableProperty] private string _searchText = string.Empty;

@@ -9,9 +9,7 @@ namespace WTEditor.Avalonia.ViewModels;
 
 public sealed record FilePathViewModel(string Path, uint FileDataId)
 {
-    public string ToolTip => WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
-        ? Path
-        : $"File data ID: {FileDataId}";
+    public string ToolTip => Path;
 }
 
 public sealed record ModelDetailItemViewModel(

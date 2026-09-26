@@ -33,7 +33,6 @@ public static class WorldLightingDataLoader
             out var diagnostic);
         if (table != null)
         {
-            Console.WriteLine(diagnostic);
             var lighting = LoadFromWowLibTable(fileSystem, table, lightParamId, time);
             return lighting == null
                 ? null
@@ -225,7 +224,6 @@ public static class WorldLightingDataLoader
             return;
         }
 
-        Console.WriteLine(diagnostic);
         _ = Db2Schema.RequireColumn(table, "LightParams", "id");
         var alphaColumns = new (string Name, string Key)[]
         {

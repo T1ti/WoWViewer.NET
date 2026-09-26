@@ -163,8 +163,8 @@ public sealed class TerrainInspectorSectionProvider : IObjectInspectorSectionPro
         return new InspectorSectionViewModel("Terrain tile",
         [
             WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
-                ? new("File path", WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(data.FileDataId))
-                : new("File data ID", data.FileDataId.ToString()),
+                ? new("File path", data.FilePath)
+                : new("File data ID", data.FileDataId == 0 ? "Pending" : data.FileDataId.ToString()),
             new("Tile", $"{data.TileX}, {data.TileY}"),
             new("Asset state", data.IsLoaded ? "Loaded" : "Loading"),
             new("Save state", data.IsModified ? "Modified" : "Unchanged")

@@ -92,9 +92,7 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
                 ? new FileKey(new FileDataId(placement.NameId))
                 : new FileKey(path);
             if (string.IsNullOrWhiteSpace(path))
-                Listfile.TryGetFilename(placement.NameId, out path);
-            if (string.IsNullOrWhiteSpace(path))
-                throw new FileNotFoundException("The global WMO filename is unavailable in MWMO and the listfile.");
+                throw new FileNotFoundException("The global WMO filename is unavailable in the client's MWMO data.");
             root.Read(fs.ReadFile(key));
         }
 

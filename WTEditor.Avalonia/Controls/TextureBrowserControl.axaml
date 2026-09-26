@@ -122,7 +122,7 @@
           <TreeView.DataTemplates>
             <TreeDataTemplate DataType="vm:TextureBrowserFolderViewModel"
                               ItemsSource="{Binding Children}">
-              <StackPanel Orientation="Horizontal" Spacing="5" ToolTip.Tip="{Binding FullPath}">
+              <StackPanel Orientation="Horizontal" Spacing="5" ToolTip.Tip="{Binding Tooltip}">
                 <PathIcon Data="{x:Static icons:EditorIcons.Folder}"
                           Foreground="#E4B85C" Width="14" Height="14"/>
                 <TextBlock Text="{Binding Name}" Foreground="#DCE7ED" FontSize="10"
@@ -143,7 +143,7 @@
           </ListBox.ItemsPanel>
           <ListBox.DataTemplates>
             <DataTemplate DataType="vm:TextureBrowserFolderViewModel">
-              <Grid Classes="folder-card" RowDefinitions="92,*" ToolTip.Tip="{Binding FullPath}"
+              <Grid Classes="folder-card" RowDefinitions="92,*" ToolTip.Tip="{Binding Tooltip}"
                     PointerReleased="FolderEntry_OnPointerReleased">
                 <Border Background="#182028" ClipToBounds="True">
                   <PathIcon Data="{x:Static icons:EditorIcons.Folder}"

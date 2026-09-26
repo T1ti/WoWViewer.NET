@@ -28,11 +28,13 @@ public static class WowlibFileSystem
     public static string GetAssetDisplayName(uint id)
     {
         var fileSystem = TryGetCurrent();
-        if (fileSystem?.Kind == StorageKind.Mpq)
+        if (fileSystem == null)
+            return "Unknown asset";
+        if (fileSystem.Kind == StorageKind.Mpq)
             return id == 0 ? "No file path"
                 : LegacyAssetIds.TryGetPath(fileSystem, id, out var path) ? path
-                : $"Unknown MPQ asset {id}";
-        return Listfile.GetDisplayName(id);
+                : "Missing MPQ path registration";
+        return id == 0 ? "No asset" : $"FDID {id}";
     }
 
     public static Fs.FileSystem? TryGetCurrent()
@@ -90,11 +92,19 @@ public static class WowlibFileSystem
 
     public static string ReadSourceDescription(Fs.FileSystem fileSystem, string? path, uint fileDataId)
     {
+        if (string.IsNullOrWhiteSpace(path) && fileDataId != 0 && fileSystem.Kind == StorageKind.Mpq)
+            path = LegacyAssetIds.TryGetPath(fileSystem, fileDataId, out var legacyPath)
+                ? legacyPath
+                : null;
         if (fileSystem.Kind == StorageKind.Casc && fileDataId != 0)
-            return $"FileDataID {fileDataId}";
+            return string.IsNullOrWhiteSpace(path)
+                ? $"FDID {fileDataId}"
+                : $"{path}({fileDataId})";
         if (!string.IsNullOrWhiteSpace(path))
             return path!;
-        return fileDataId == 0 ? "unknown asset" : $"FileDataID {fileDataId}";
+        return fileSystem.Kind == StorageKind.Mpq
+            ? "missing MPQ path registration"
+            : "unknown asset";
     }
 
     private static string NormalizePath(string? path) =>

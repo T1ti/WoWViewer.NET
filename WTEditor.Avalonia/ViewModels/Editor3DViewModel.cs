@@ -111,6 +111,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _showBoundingSpheres;
     [ObservableProperty] private bool _showTerrainGrid;
     [ObservableProperty] private bool _showTerrainWireframe;
+    [ObservableProperty] private bool _showTerrainTexture;
+    [ObservableProperty] private bool _showTerrainVertexColor;
     [ObservableProperty] private bool _disableScreenGlow;
     [ObservableProperty] private bool _isProfilingPaused;
     [ObservableProperty] private IReadOnlyList<FrameProfileSnapshot> _performanceHistory = Array.Empty<FrameProfileSnapshot>();
@@ -204,6 +206,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _showBoundingSpheres = session.Current.Rendering.ShowBoundingSpheres;
         _showTerrainGrid = session.Current.Rendering.ShowTerrainGrid;
         _showTerrainWireframe = session.Current.Rendering.ShowTerrainWireframe;
+        _showTerrainTexture = session.Current.Rendering.ShowTerrainTexture;
+        _showTerrainVertexColor = session.Current.Rendering.ShowTerrainVertexColor;
         _disableScreenGlow = session.Current.Rendering.DisableScreenGlow;
         Lighting.SetPreferences(
             session.Current.Rendering.WorldLightingTime,
@@ -317,6 +321,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainGrid = value });
     partial void OnShowTerrainWireframeChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainWireframe = value });
+    partial void OnShowTerrainTextureChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainTexture = value });
+    partial void OnShowTerrainVertexColorChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainVertexColor = value });
     partial void OnDisableScreenGlowChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { DisableScreenGlow = value });
 
@@ -788,6 +796,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowBoundingSpheres = configuration.ShowBoundingSpheres;
             ShowTerrainGrid = configuration.ShowTerrainGrid;
             ShowTerrainWireframe = configuration.ShowTerrainWireframe;
+            ShowTerrainTexture = configuration.ShowTerrainTexture;
+            ShowTerrainVertexColor = configuration.ShowTerrainVertexColor;
             DisableScreenGlow = configuration.DisableScreenGlow;
             if (Lighting.IsDynamic != configuration.UseLocalWorldLightingTime ||
                 (!configuration.UseLocalWorldLightingTime &&

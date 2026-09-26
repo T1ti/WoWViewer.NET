@@ -102,7 +102,8 @@ public sealed class MinimapService : IMinimapService
                 {
                     missing++;
                     LoadDiagnostics.Error(
-                        $"Loading minimap tile {position.X}, {position.Y} ({minimapPath ?? $"FileDataID {minimapFileDataId}"})",
+                        $"Loading minimap tile {position.X}, {position.Y} " +
+                        $"({WowlibFileSystem.ReadSourceDescription(fileSystem, minimapPath, minimapFileDataId)})",
                         exception);
                 }
             }

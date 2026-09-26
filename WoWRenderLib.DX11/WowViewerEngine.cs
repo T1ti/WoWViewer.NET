@@ -1131,6 +1131,8 @@ namespace WoWRenderLib.DX11
                 sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
                 sceneManager.ShowTerrainGrid = Settings.ShowTerrainGrid;
                 sceneManager.ShowTerrainWireframe = Settings.ShowTerrainWireframe;
+                sceneManager.ShowTerrainTexture = Settings.ShowTerrainTexture;
+                sceneManager.ShowTerrainVertexColor = Settings.ShowTerrainVertexColor;
             }
         }
 

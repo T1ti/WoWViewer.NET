@@ -17,7 +17,8 @@ public static class WMOLoader
         var fileSystem = WowlibFileSystem.Current;
         WorldLiquidMaterialCatalog.Shared.Configure(fileSystem);
         if (!WowlibFileSystem.AssetExists(fileSystem, fileDataId))
-            throw new FileNotFoundException($"WMO {fileDataId} does not exist!");
+            throw new FileNotFoundException(
+                $"WMO {WowlibFileSystem.ReadSourceDescription(fileSystem, null, fileDataId)} does not exist!");
 
         using var wmo = Formats.WMO.WMO.ForVersion(fileSystem.Version);
         using var wmoKey = WowlibFileSystem.AssetKey(fileSystem, fileDataId);

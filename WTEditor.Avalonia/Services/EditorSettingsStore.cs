@@ -40,6 +40,8 @@ public sealed class PersistedRenderingSettings
     public bool ShowBoundingSpheres { get; set; }
     public bool ShowTerrainGrid { get; set; }
     public bool ShowTerrainWireframe { get; set; }
+    public bool ShowTerrainTexture { get; set; } = true;
+    public bool ShowTerrainVertexColor { get; set; } = true;
 
     public RenderingConfiguration ToModel() => new()
     {
@@ -71,7 +73,9 @@ public sealed class PersistedRenderingSettings
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres,
         ShowTerrainGrid = ShowTerrainGrid,
-        ShowTerrainWireframe = ShowTerrainWireframe
+        ShowTerrainWireframe = ShowTerrainWireframe,
+        ShowTerrainTexture = ShowTerrainTexture,
+        ShowTerrainVertexColor = ShowTerrainVertexColor
     };
 
     public static PersistedRenderingSettings From(RenderingConfiguration rendering) => new()
@@ -108,7 +112,9 @@ public sealed class PersistedRenderingSettings
         ShowBoundingBoxes = rendering.ShowBoundingBoxes,
         ShowBoundingSpheres = rendering.ShowBoundingSpheres,
         ShowTerrainGrid = rendering.ShowTerrainGrid,
-        ShowTerrainWireframe = rendering.ShowTerrainWireframe
+        ShowTerrainWireframe = rendering.ShowTerrainWireframe,
+        ShowTerrainTexture = rendering.ShowTerrainTexture,
+        ShowTerrainVertexColor = rendering.ShowTerrainVertexColor
     };
 }
 

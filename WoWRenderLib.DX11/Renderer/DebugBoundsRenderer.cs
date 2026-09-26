@@ -10,25 +10,30 @@ using WoWRenderLib.Structs;
 namespace WoWRenderLib.DX11.Renderer;
 
 /// <summary>
-/// Owns the GPU resources and transient pipeline state used to draw scene bounds.
+/// Draws all scene bounds with shared line geometry and one instance stream per frame.
 /// The scene manager supplies ordering and a stable object snapshot/lock boundary.
 /// </summary>
 internal sealed class DebugBoundsRenderer(
     ComPtr<ID3D11Device> device,
     ComPtr<ID3D11DeviceContext> deviceContext) : IDisposable
 {
+    private const int BoxVertexCount = 24;
     private const int SphereSegments = 32;
     private const int SphereVertexCount = 3 * SphereSegments * 2;
 
     private readonly ComPtr<ID3D11Device> _device = device;
     private readonly ComPtr<ID3D11DeviceContext> _deviceContext = deviceContext;
+    private readonly List<BoundsInstance> _boxInstances = [];
+    private readonly List<BoundsInstance> _sphereInstances = [];
     private CompiledShader _shader;
     private ComPtr<ID3D11Buffer> _constantBuffer;
     private ComPtr<ID3D11Buffer> _boxVertexBuffer;
     private ComPtr<ID3D11Buffer> _sphereVertexBuffer;
+    private ComPtr<ID3D11Buffer> _instanceBuffer;
     private ComPtr<ID3D11RasterizerState> _wireframeRasterizerState;
     private ComPtr<ID3D11DepthStencilState> _depthStencilState;
     private ComPtr<ID3D11ClassInstance> _nullClassInstance;
+    private int _instanceCapacity;
     private bool _initialized;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -36,8 +41,19 @@ internal sealed class DebugBoundsRenderer(
     {
         public Matrix4x4 Projection;
         public Matrix4x4 View;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BoundsInstance
+    {
         public Matrix4x4 Model;
         public Vector4 Color;
+
+        public BoundsInstance(Matrix4x4 model, Vector4 color)
+        {
+            Model = model;
+            Color = color;
+        }
     }
 
     public unsafe void Initialize(CompiledShader shader)
@@ -55,34 +71,10 @@ internal sealed class DebugBoundsRenderer(
             CPUAccessFlags = (uint)CpuAccessFlag.Write
         };
         SilkMarshal.ThrowHResult(_device.CreateBuffer(
-            in constantBufferDesc,
-            null,
-            ref _constantBuffer));
+            in constantBufferDesc, null, ref _constantBuffer));
 
-        var boxBufferDesc = new BufferDesc
-        {
-            ByteWidth = (uint)(24 * sizeof(Vector3)),
-            Usage = Usage.Dynamic,
-            BindFlags = (uint)BindFlag.VertexBuffer,
-            CPUAccessFlags = (uint)CpuAccessFlag.Write
-        };
-        SilkMarshal.ThrowHResult(_device.CreateBuffer(
-            in boxBufferDesc,
-            null,
-            ref _boxVertexBuffer));
-
-        var sphereBufferDesc = new BufferDesc
-        {
-            ByteWidth = (uint)(SphereVertexCount * sizeof(Vector3)),
-            Usage = Usage.Dynamic,
-            BindFlags = (uint)BindFlag.VertexBuffer,
-            CPUAccessFlags = (uint)CpuAccessFlag.Write
-        };
-        SilkMarshal.ThrowHResult(_device.CreateBuffer(
-            in sphereBufferDesc,
-            null,
-            ref _sphereVertexBuffer));
-        UploadUnitSphere();
+        CreateUnitBoxBuffer();
+        CreateUnitSphereBuffer();
 
         var wireframeDesc = new RasterizerDesc
         {
@@ -92,22 +84,25 @@ internal sealed class DebugBoundsRenderer(
             DepthClipEnable = true
         };
         SilkMarshal.ThrowHResult(_device.CreateRasterizerState(
-            in wireframeDesc,
-            ref _wireframeRasterizerState));
+            in wireframeDesc, ref _wireframeRasterizerState));
 
+        // Bounds are drawn after opaque meshes and before liquids. Writing depth
+        // at line pixels lets nearer lines stay in front of translucent water,
+        // while water can blend over lines that are behind its surface.
         var depthDesc = new DepthStencilDesc
         {
-            DepthEnable = false,
-            DepthWriteMask = DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunc.Always,
+            DepthEnable = true,
+            DepthWriteMask = DepthWriteMask.All,
+            DepthFunc = ComparisonFunc.LessEqual,
             StencilEnable = false
         };
         SilkMarshal.ThrowHResult(_device.CreateDepthStencilState(
-            in depthDesc,
-            ref _depthStencilState));
+            in depthDesc, ref _depthStencilState));
 
         _initialized = true;
     }
+
+    public void RefreshShader(CompiledShader shader) => _shader = shader;
 
     public uint Render(
         IReadOnlyList<Container3D> sceneObjects,
@@ -124,14 +119,8 @@ internal sealed class DebugBoundsRenderer(
         if (!showBoundingBoxes && !showBoundingSpheres && !showSelection)
             return 0;
 
-        _deviceContext.RSSetState(_wireframeRasterizerState);
-        _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
-        _deviceContext.IASetInputLayout(_shader.InputLayout);
-        _deviceContext.VSSetShader(_shader.VertexShader, ref _nullClassInstance, 0);
-        _deviceContext.PSSetShader(_shader.PixelShader, ref _nullClassInstance, 0);
-        _deviceContext.OMSetDepthStencilState(_depthStencilState, 0);
-
-        uint drawCalls = 0;
+        _boxInstances.Clear();
+        _sphereInstances.Clear();
         foreach (var sceneObject in sceneObjects)
         {
             if (sceneObject is ADTContainer)
@@ -141,41 +130,83 @@ internal sealed class DebugBoundsRenderer(
             if (!showBoundingBoxes && !showBoundingSpheres && !renderSelection)
                 continue;
 
-            var color = renderSelection
-                ? Vector4.One
-                : new Vector4(1, 1, 0, 1);
-
             if (showBoundingBoxes || renderSelection)
             {
-                var bounds = sceneObject.GetBoundingBox();
-                if (bounds.HasValue &&
-                    float.IsFinite(bounds.Value.Min.X) &&
-                    float.IsFinite(bounds.Value.Max.X) &&
-                    TryGetLocalBounds(sceneObject, out var localBounds, out var modelMatrix))
+                var worldBounds = sceneObject.GetBoundingBox();
+                if (worldBounds.HasValue && IsFinite(worldBounds.Value) &&
+                    TryGetLocalBounds(sceneObject, out var localBounds, out var objectMatrix) &&
+                    IsFinite(localBounds))
                 {
-                    DrawBoundingBox(localBounds, modelMatrix, color, projection, view);
-                    drawCalls++;
+                    // Unit box -> local bounds -> object transform. Preserve the
+                    // object's rotation, rather than drawing its world AABB.
+                    var size = localBounds.Max - localBounds.Min;
+                    var center = (localBounds.Min + localBounds.Max) * 0.5f;
+                    var model = Matrix4x4.CreateScale(size) *
+                        Matrix4x4.CreateTranslation(center) * objectMatrix;
+                    _boxInstances.Add(new BoundsInstance(model,
+                        renderSelection ? Vector4.One : new Vector4(1, 1, 0, 1)));
                 }
             }
 
             if (showBoundingSpheres && !renderSelection)
             {
                 var sphere = sceneObject.GetBoundingSphere();
-                if (sphere.HasValue)
+                if (sphere.HasValue && IsFinite(sphere.Value))
                 {
-                    DrawBoundingSphere(
-                        sphere.Value,
-                        new Vector4(0, 0.5f, 1, 1),
-                        projection,
-                        view);
-                    drawCalls++;
+                    var model = Matrix4x4.CreateScale(sphere.Value.Radius) *
+                        Matrix4x4.CreateTranslation(sphere.Value.Center);
+                    _sphereInstances.Add(new BoundsInstance(model,
+                        new Vector4(0, 0.5f, 1, 1)));
                 }
             }
+        }
+
+        if (_boxInstances.Count + _sphereInstances.Count == 0)
+            return 0;
+
+        UploadInstances();
+        UploadCamera(projection, view);
+
+        _deviceContext.RSSetState(_wireframeRasterizerState);
+        _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyLinelist);
+        _deviceContext.IASetInputLayout(_shader.InputLayout);
+        _deviceContext.VSSetShader(_shader.VertexShader, ref _nullClassInstance, 0);
+        _deviceContext.PSSetShader(_shader.PixelShader, ref _nullClassInstance, 0);
+        _deviceContext.OMSetDepthStencilState(_depthStencilState, 0);
+        _deviceContext.VSSetConstantBuffers(0, 1, ref _constantBuffer);
+
+        uint instanceStride = (uint)Marshal.SizeOf<BoundsInstance>();
+        uint offset = 0;
+        _deviceContext.IASetVertexBuffers(1, 1, ref _instanceBuffer,
+            in instanceStride, in offset);
+
+        uint drawCalls = 0;
+        if (_boxInstances.Count > 0)
+        {
+            DrawInstances(_boxVertexBuffer, BoxVertexCount,
+                (uint)_boxInstances.Count, 0);
+            drawCalls++;
+        }
+        if (_sphereInstances.Count > 0)
+        {
+            DrawInstances(_sphereVertexBuffer, SphereVertexCount,
+                (uint)_sphereInstances.Count, (uint)_boxInstances.Count);
+            drawCalls++;
         }
 
         RestorePipelineState(defaultRasterizerState);
         return drawCalls;
     }
+
+    private static bool IsFinite(BoundingBox box) =>
+        float.IsFinite(box.Min.X) && float.IsFinite(box.Min.Y) &&
+        float.IsFinite(box.Min.Z) && float.IsFinite(box.Max.X) &&
+        float.IsFinite(box.Max.Y) && float.IsFinite(box.Max.Z);
+
+    private static bool IsFinite(BoundingSphere sphere) =>
+        float.IsFinite(sphere.Center.X) && float.IsFinite(sphere.Center.Y) &&
+        float.IsFinite(sphere.Center.Z) && float.IsFinite(sphere.Radius) &&
+        sphere.Radius >= 0;
 
     private static bool TryGetLocalBounds(
         Container3D sceneObject,
@@ -199,18 +230,69 @@ internal sealed class DebugBoundsRenderer(
         }
     }
 
-    private unsafe void DrawBoundingBox(
-        BoundingBox bounds,
-        Matrix4x4 modelMatrix,
-        Vector4 color,
-        Matrix4x4 projection,
-        Matrix4x4 view)
+    private unsafe void UploadCamera(Matrix4x4 projection, Matrix4x4 view)
     {
-        var min = bounds.Min;
-        var max = bounds.Max;
-        Span<Vector3> vertices = stackalloc Vector3[24];
-        var index = 0;
+        MappedSubresource mapped = default;
+        SilkMarshal.ThrowHResult(_deviceContext.Map(
+            _constantBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+        *(BoundsConstantBuffer*)mapped.PData = new BoundsConstantBuffer
+        {
+            Projection = projection,
+            View = view
+        };
+        _deviceContext.Unmap(_constantBuffer, 0);
+    }
 
+    private unsafe void UploadInstances()
+    {
+        var count = checked(_boxInstances.Count + _sphereInstances.Count);
+        if (count > _instanceCapacity)
+        {
+            var capacity = 1;
+            while (capacity < count)
+                capacity = checked(capacity * 2);
+
+            _instanceBuffer.Dispose();
+            var description = new BufferDesc
+            {
+                ByteWidth = checked((uint)(capacity * sizeof(BoundsInstance))),
+                Usage = Usage.Dynamic,
+                BindFlags = (uint)BindFlag.VertexBuffer,
+                CPUAccessFlags = (uint)CpuAccessFlag.Write
+            };
+            SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                in description, null, ref _instanceBuffer));
+            _instanceCapacity = capacity;
+        }
+
+        MappedSubresource mapped = default;
+        SilkMarshal.ThrowHResult(_deviceContext.Map(
+            _instanceBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+        var destination = new Span<BoundsInstance>(mapped.PData, count);
+        CollectionsMarshal.AsSpan(_boxInstances).CopyTo(destination);
+        CollectionsMarshal.AsSpan(_sphereInstances).CopyTo(destination[_boxInstances.Count..]);
+        _deviceContext.Unmap(_instanceBuffer, 0);
+    }
+
+    private void DrawInstances(
+        ComPtr<ID3D11Buffer> vertexBuffer,
+        int vertexCount,
+        uint instanceCount,
+        uint firstInstance)
+    {
+        uint vertexStride = (uint)Marshal.SizeOf<Vector3>();
+        uint offset = 0;
+        _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer,
+            in vertexStride, in offset);
+        _deviceContext.DrawInstanced((uint)vertexCount, instanceCount, 0, firstInstance);
+    }
+
+    private unsafe void CreateUnitBoxBuffer()
+    {
+        Span<Vector3> vertices = stackalloc Vector3[BoxVertexCount];
+        var min = new Vector3(-0.5f);
+        var max = new Vector3(0.5f);
+        var index = 0;
         vertices[index++] = new(min.X, min.Y, min.Z); vertices[index++] = new(max.X, min.Y, min.Z);
         vertices[index++] = new(max.X, min.Y, min.Z); vertices[index++] = new(max.X, min.Y, max.Z);
         vertices[index++] = new(max.X, min.Y, max.Z); vertices[index++] = new(min.X, min.Y, max.Z);
@@ -224,76 +306,21 @@ internal sealed class DebugBoundsRenderer(
         vertices[index++] = new(max.X, min.Y, max.Z); vertices[index++] = new(max.X, max.Y, max.Z);
         vertices[index++] = new(min.X, min.Y, max.Z); vertices[index++] = new(min.X, max.Y, max.Z);
 
-        MappedSubresource mapped = default;
-        SilkMarshal.ThrowHResult(_deviceContext.Map(
-            _boxVertexBuffer,
-            0,
-            Map.WriteDiscard,
-            0,
-            ref mapped));
-        vertices.CopyTo(new Span<Vector3>(mapped.PData, vertices.Length));
-        _deviceContext.Unmap(_boxVertexBuffer, 0);
-
-        DrawVertices(_boxVertexBuffer, 24, modelMatrix, color, projection, view);
-    }
-
-    private void DrawBoundingSphere(
-        BoundingSphere sphere,
-        Vector4 color,
-        Matrix4x4 projection,
-        Matrix4x4 view)
-    {
-        var modelMatrix = Matrix4x4.CreateScale(sphere.Radius) *
-            Matrix4x4.CreateTranslation(sphere.Center);
-        DrawVertices(
-            _sphereVertexBuffer,
-            SphereVertexCount,
-            modelMatrix,
-            color,
-            projection,
-            view);
-    }
-
-    private unsafe void DrawVertices(
-        ComPtr<ID3D11Buffer> vertexBuffer,
-        int vertexCount,
-        Matrix4x4 modelMatrix,
-        Vector4 color,
-        Matrix4x4 projection,
-        Matrix4x4 view)
-    {
-        var constants = new BoundsConstantBuffer
+        var description = new BufferDesc
         {
-            Projection = projection,
-            View = view,
-            Model = modelMatrix,
-            Color = color
+            ByteWidth = (uint)(BoxVertexCount * sizeof(Vector3)),
+            Usage = Usage.Immutable,
+            BindFlags = (uint)BindFlag.VertexBuffer
         };
-
-        MappedSubresource mapped = default;
-        SilkMarshal.ThrowHResult(_deviceContext.Map(
-            _constantBuffer,
-            0,
-            Map.WriteDiscard,
-            0,
-            ref mapped));
-        *(BoundsConstantBuffer*)mapped.PData = constants;
-        _deviceContext.Unmap(_constantBuffer, 0);
-
-        uint stride = (uint)sizeof(Vector3);
-        uint offset = 0;
-        _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in stride, in offset);
-        _deviceContext.VSSetConstantBuffers(0, 1, ref _constantBuffer);
-        _deviceContext.PSSetConstantBuffers(0, 1, ref _constantBuffer);
-
-        ComPtr<ID3D11Buffer> nullBuffer = default;
-        uint nullStride = 0;
-        uint nullOffset = 0;
-        _deviceContext.IASetVertexBuffers(1, 1, ref nullBuffer, in nullStride, in nullOffset);
-        _deviceContext.Draw((uint)vertexCount, 0);
+        fixed (Vector3* data = vertices)
+        {
+            var initialData = new SubresourceData { PSysMem = data };
+            SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                in description, in initialData, ref _boxVertexBuffer));
+        }
     }
 
-    private unsafe void UploadUnitSphere()
+    private unsafe void CreateUnitSphereBuffer()
     {
         Span<Vector3> vertices = stackalloc Vector3[SphereVertexCount];
         var index = 0;
@@ -308,15 +335,18 @@ internal sealed class DebugBoundsRenderer(
             }
         }
 
-        MappedSubresource mapped = default;
-        SilkMarshal.ThrowHResult(_deviceContext.Map(
-            _sphereVertexBuffer,
-            0,
-            Map.WriteDiscard,
-            0,
-            ref mapped));
-        vertices.CopyTo(new Span<Vector3>(mapped.PData, vertices.Length));
-        _deviceContext.Unmap(_sphereVertexBuffer, 0);
+        var description = new BufferDesc
+        {
+            ByteWidth = (uint)(SphereVertexCount * sizeof(Vector3)),
+            Usage = Usage.Immutable,
+            BindFlags = (uint)BindFlag.VertexBuffer
+        };
+        fixed (Vector3* data = vertices)
+        {
+            var initialData = new SubresourceData { PSysMem = data };
+            SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                in description, in initialData, ref _sphereVertexBuffer));
+        }
     }
 
     private static Vector3 GetCirclePoint(int plane, float angle) => plane switch
@@ -332,12 +362,16 @@ internal sealed class DebugBoundsRenderer(
         _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
         ComPtr<ID3D11DepthStencilState> nullDepthStencilState = default;
         _deviceContext.OMSetDepthStencilState(nullDepthStencilState, 0);
+        ComPtr<ID3D11Buffer> nullBuffer = default;
+        uint zero = 0;
+        _deviceContext.IASetVertexBuffers(1, 1, ref nullBuffer, in zero, in zero);
     }
 
     public void Dispose()
     {
         _depthStencilState.Dispose();
         _wireframeRasterizerState.Dispose();
+        _instanceBuffer.Dispose();
         _sphereVertexBuffer.Dispose();
         _boxVertexBuffer.Dispose();
         _constantBuffer.Dispose();

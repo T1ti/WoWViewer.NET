@@ -375,7 +375,9 @@ public sealed class EditorSettingsSmokeTests
                 ShowBoundingBoxes = true,
                 ShowBoundingSpheres = true,
                 ShowTerrainGrid = true,
-                ShowTerrainWireframe = true
+                ShowTerrainWireframe = true,
+                ShowTerrainTexture = false,
+                ShowTerrainVertexColor = false
             },
             KeyboardLayout = KeyboardLayoutMode.Azerty,
             Camera = new CameraState(
@@ -448,6 +450,18 @@ public sealed class EditorSettingsSmokeTests
 
         Assert.AreEqual(275f, session.Current.Rendering.MovementSpeed);
         Assert.AreEqual(0.2f, session.Current.Rendering.MouseSensitivity);
+    }
+
+    [TestMethod]
+    public void LegacyRenderingSettings_DefaultTerrainLayersToVisible()
+    {
+        var restored = JsonSerializer.Deserialize<PersistedRenderingSettings>("{}");
+
+        Assert.IsNotNull(restored);
+        Assert.IsTrue(restored.ToModel().ShowTerrainTexture);
+        Assert.IsTrue(restored.ToModel().ShowTerrainVertexColor);
+        Assert.IsTrue(restored.ToModel().ToDx11().ShowTerrainTexture);
+        Assert.IsTrue(restored.ToModel().ToDx11().ShowTerrainVertexColor);
     }
 
     [TestMethod]
@@ -533,6 +547,8 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.ShowBoundingSpheres = true;
         firstViewport.ShowTerrainGrid = true;
         firstViewport.ShowTerrainWireframe = true;
+        firstViewport.ShowTerrainTexture = false;
+        firstViewport.ShowTerrainVertexColor = false;
 
         Assert.IsNotNull(published);
         Assert.IsFalse(published.RenderADT);
@@ -548,6 +564,10 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(published.EnableWmoPortalCulling);
         Assert.IsTrue(published.ShowTerrainGrid);
         Assert.IsTrue(published.ShowTerrainWireframe);
+        Assert.IsFalse(published.ShowTerrainTexture);
+        Assert.IsFalse(published.ShowTerrainVertexColor);
+        Assert.IsFalse(published.ToDx11().Clone().ShowTerrainTexture);
+        Assert.IsFalse(published.ToDx11().Clone().ShowTerrainVertexColor);
         Assert.IsFalse(secondViewport.RenderTerrain);
         Assert.IsFalse(secondViewport.RenderLiquid);
         Assert.IsFalse(secondViewport.RenderWorldModels);
@@ -560,12 +580,16 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsTrue(secondViewport.ShowBoundingSpheres);
         Assert.IsTrue(secondViewport.ShowTerrainGrid);
         Assert.IsTrue(secondViewport.ShowTerrainWireframe);
+        Assert.IsFalse(secondViewport.ShowTerrainTexture);
+        Assert.IsFalse(secondViewport.ShowTerrainVertexColor);
         Assert.IsFalse(session.Current.Rendering.RenderADT);
         Assert.IsFalse(session.Current.Rendering.RenderM2);
         Assert.IsFalse(session.Current.Rendering.RenderParticles);
         Assert.IsTrue(session.Current.Rendering.EnableWmoPortalCulling);
         Assert.IsTrue(session.Current.Rendering.ShowTerrainGrid);
         Assert.IsTrue(session.Current.Rendering.ShowTerrainWireframe);
+        Assert.IsFalse(session.Current.Rendering.ShowTerrainTexture);
+        Assert.IsFalse(session.Current.Rendering.ShowTerrainVertexColor);
         Assert.AreEqual(0, store.SaveCount);
         session.Save();
         Assert.AreEqual(session.Current.Rendering, new EditorSession(store).Current.Rendering);
@@ -1080,7 +1104,7 @@ public sealed class EditorSettingsSmokeTests
         Assert.AreEqual(10d, inspector.PositionX);
         Assert.IsTrue(inspector.ModelInformation.HasModel);
         Assert.AreEqual("world/model/dummy.m2", inspector.ModelInformation.ModelFile!.Path);
-        Assert.AreEqual("File data ID: 1234", inspector.ModelInformation.ModelFile.ToolTip);
+        Assert.AreEqual("world/model/dummy.m2", inspector.ModelInformation.ModelFile.ToolTip);
         Assert.AreEqual(0, inspector.ModelInformation.Properties.Count);
         Assert.AreEqual("Geosets (1)", inspector.ModelInformation.GeosetsHeader);
         Assert.AreEqual("Textures (1)", inspector.ModelInformation.TexturesHeader);

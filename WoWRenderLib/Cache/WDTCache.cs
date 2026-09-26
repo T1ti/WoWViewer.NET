@@ -152,8 +152,8 @@ public static class WDTCache
             if (unresolvedTileCount > 0)
             {
                 Diagnostics.LoadDiagnostics.Warning(
-                    $"WDT {fileDataId} has {unresolvedTileCount} active legacy tile(s) whose ADT paths " +
-                    $"could not be resolved. WDT path: '{wdtPath}'.");
+                    $"WDT '{WowlibFileSystem.ReadSourceDescription(fileSystem, wdtPath, fileDataId)}' has {unresolvedTileCount} " +
+                    "active legacy tile(s) whose ADT paths could not be resolved.");
             }
         }
 

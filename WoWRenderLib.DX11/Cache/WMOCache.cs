@@ -92,7 +92,7 @@ namespace WoWRenderLib.DX11.Cache
                 var originalFileDataId = item.Request;
                 if (item.Error != null)
                 {
-                    LoadDiagnostics.Error($"Parsing WMO {originalFileDataId}", item.Error);
+                    LoadDiagnostics.Error($"Parsing {LoadDiagnostics.Asset("WMO", originalFileDataId)}", item.Error);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),
@@ -129,7 +129,7 @@ namespace WoWRenderLib.DX11.Cache
                 }
                 catch (Exception e)
                 {
-                    LoadDiagnostics.Error($"Uploading WMO {originalFileDataId}", e);
+                    LoadDiagnostics.Error($"Uploading {LoadDiagnostics.Asset("WMO", originalFileDataId)}", e);
                     if (failures.TryScheduleRetry(
                             originalFileDataId,
                             Users.ContainsKey(originalFileDataId),

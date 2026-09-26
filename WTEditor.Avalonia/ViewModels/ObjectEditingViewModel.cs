@@ -21,6 +21,11 @@ public partial class ObjectBrowserItemViewModel : ViewModelBase
     public string Path { get; }
     public uint? FileDataId { get; }
     public string Kind { get; }
+    public string Tooltip => WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+        ? Path
+        : FileDataId is { } id
+            ? $"FDID {id}\nName hint: {Path}"
+            : $"Name hint: {Path}";
     [ObservableProperty] private bool _isFavorite;
 }
 
@@ -28,6 +33,9 @@ public sealed class ObjectBrowserFolderViewModel(ObjectAssetFolder folder, Objec
 {
     public string Name => Folder.Name;
     public string Path => Folder.Path;
+    public string Tooltip => WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+        ? Path
+        : $"Name hint: {Path}";
     public ObjectBrowserFolderViewModel? Parent { get; } = parent;
     public IReadOnlyList<ObjectBrowserFolderViewModel> Children { get; internal set; } = [];
     internal ObjectAssetFolder Folder { get; } = folder;
@@ -64,9 +72,16 @@ public partial class ObjectEditingViewModel : ViewModelBase, IDisposable
     public GridLength BrowserPanelWidth => IsBrowserVisible
         ? new GridLength(1, GridUnitType.Star)
         : new GridLength(0);
-    public string CurrentFolderPath => string.IsNullOrEmpty(SelectedFolder?.Path)
-        ? "Objects"
-        : SelectedFolder.Path;
+    public string CurrentFolderPath
+    {
+        get
+        {
+            var path = string.IsNullOrEmpty(SelectedFolder?.Path) ? "Objects" : SelectedFolder.Path;
+            return WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq
+                ? path
+                : $"Name hints: {path}";
+        }
+    }
     public string FavoritesTabLabel => $"Favorites ({_favorites.Count})";
 
     [ObservableProperty] private bool _isPanelVisible = true;

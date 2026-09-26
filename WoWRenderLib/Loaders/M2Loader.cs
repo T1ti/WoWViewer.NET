@@ -28,7 +28,8 @@ public static class M2Loader
     {
         var fileSystem = WowlibFileSystem.Current;
         if (!WowlibFileSystem.AssetExists(fileSystem, fileDataId))
-            throw new FileNotFoundException($"Model {fileDataId} does not exist!");
+            throw new FileNotFoundException(
+                $"Model {WowlibFileSystem.ReadSourceDescription(fileSystem, null, fileDataId)} does not exist!");
 
         using var model = Formats.M2.M2.ForVersion(fileSystem.Version);
         using var modelKey = WowlibFileSystem.AssetKey(fileSystem, fileDataId);
@@ -106,7 +107,8 @@ public static class M2Loader
                 (effects.Particles.Length > 0 || effects.Ribbons.Length > 0))
                 profile = new ProfileData([], [], [], []);
             else
-                throw new InvalidDataException($"Model {fileDataId} does not contain a skin profile.");
+                throw new InvalidDataException(
+                    $"Model {WowlibFileSystem.ReadSourceDescription(fileSystem, null, fileDataId)} does not contain a skin profile.");
         }
 
         parsed.vertexCount = profile.Vertices.Length;

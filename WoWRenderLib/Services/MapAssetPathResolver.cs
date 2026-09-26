@@ -43,17 +43,9 @@ public static class MapAssetPathResolver
             return false;
 
         var normalized = NormalizePath(path);
-        if (Listfile.TryGetFileDataID(normalized, out fileDataId)
-            && fileDataId != 0
-            && (!CASC.IsInitialized || CASC.FileExists(fileDataId)))
-        {
-            Remember(fileDataId, normalized);
-            return true;
-        }
-
-        // Some roots still retain filename lookup hashes even when the
-        // community listfile does not know the name. This is a useful second
-        // source and keeps compatibility independent of listfile freshness.
+        // CASC builds that still support filename lookup expose the mapping
+        // through their own root. The optional user listfile is never a source
+        // of asset identity.
         try
         {
             var root = CASC.IsInitialized ? CASC.buildInstance.Root : null;
@@ -80,13 +72,6 @@ public static class MapAssetPathResolver
     {
         if (ResolvedPaths.TryGetValue(fileDataId, out path!))
             return true;
-
-        if (Listfile.TryGetFilename(fileDataId, out path!))
-        {
-            path = NormalizePath(path);
-            Remember(fileDataId, path);
-            return true;
-        }
 
         path = string.Empty;
         return false;

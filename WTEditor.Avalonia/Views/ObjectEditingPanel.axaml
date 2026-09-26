@@ -59,7 +59,7 @@
     <DataTemplate x:Key="AllObjectCard" x:DataType="vm:ObjectBrowserItemViewModel">
       <Border Width="108" Height="108" Margin="0,0,6,6" Padding="7"
               Background="#11171C" BorderBrush="#394854"
-              BorderThickness="1" CornerRadius="4" ToolTip.Tip="{Binding Path}">
+              BorderThickness="1" CornerRadius="4" ToolTip.Tip="{Binding Tooltip}">
         <Grid RowDefinitions="*,Auto">
           <Button Background="Transparent" BorderThickness="0" Padding="0"
                   HorizontalContentAlignment="Stretch"
@@ -77,7 +77,7 @@
       </Border>
     </DataTemplate>
     <DataTemplate x:Key="FavoriteObjectCard" x:DataType="vm:ObjectBrowserItemViewModel">
-      <Grid ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Path}">
+      <Grid ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tooltip}">
         <Button Background="Transparent" BorderThickness="0" Padding="0"
                 HorizontalContentAlignment="Left"
                 Command="{Binding DataContext.ObjectEditor.ChooseObjectCommand, ElementName=Root}"
@@ -182,7 +182,7 @@
                           <Button Command="{Binding DataContext.ObjectEditor.NavigateFolderCommand, ElementName=Root}"
                                   CommandParameter="{Binding}" Width="108" Height="108"
                                   Margin="0,0,6,6" Background="#182028" Padding="7"
-                                  ToolTip.Tip="{Binding Path}">
+                                  ToolTip.Tip="{Binding Tooltip}">
                             <StackPanel Spacing="6" VerticalAlignment="Center">
                               <PathIcon Data="{x:Static icons:EditorIcons.Folder}" Foreground="#E4B85C"
                                         Width="24" Height="24"/>

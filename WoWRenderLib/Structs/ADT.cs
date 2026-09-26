@@ -15,7 +15,8 @@ namespace WoWRenderLib.Structs
         public Vector4 terrainGridSettings;
         public uint renderTerrainWireframe;
         public uint useLegacyLighting;
-        public Vector2 terrainWireframePadding;
+        public uint showTerrainTexture;
+        public uint showTerrainVertexColor;
         public Vector3 brushCenter;
         public float brushOuterRadius;
         public float brushFalloffRadius;

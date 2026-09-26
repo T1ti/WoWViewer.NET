@@ -37,6 +37,8 @@ internal static class Dx11ConfigurationMapper
         ShowBoundingBoxes = configuration.ShowBoundingBoxes,
         ShowBoundingSpheres = configuration.ShowBoundingSpheres,
         ShowTerrainGrid = configuration.ShowTerrainGrid,
-        ShowTerrainWireframe = configuration.ShowTerrainWireframe
+        ShowTerrainWireframe = configuration.ShowTerrainWireframe,
+        ShowTerrainTexture = configuration.ShowTerrainTexture,
+        ShowTerrainVertexColor = configuration.ShowTerrainVertexColor
     };
 }

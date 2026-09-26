@@ -49,7 +49,9 @@ public partial class TexturePaletteItemViewModel : ViewModelBase
             var name = string.IsNullOrWhiteSpace(FullPath) ? DisplayName : FullPath;
             if (WoWRenderLib.Services.WowlibFileSystem.TryGetCurrent()?.Kind == WoWLib.StorageKind.Mpq)
                 return name;
-            return FileDataId is { } id ? $"{name}\nFile data ID: {id}" : name;
+            return FileDataId is { } id
+                ? string.IsNullOrWhiteSpace(FullPath) ? $"FDID {id}" : $"FDID {id}\nName hint: {FullPath}"
+                : name;
         }
     }
 

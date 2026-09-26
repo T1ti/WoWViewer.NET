@@ -302,7 +302,8 @@ public partial class LightingViewModel : ViewModelBase
             : string.Join(
                 ", ",
                 runtime.Skyboxes.Select(static skybox =>
-                    $"{skybox.FileDataId} ({skybox.Opacity:P0}, flags 0x{skybox.Flags:X})"));
+                    $"{WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName(skybox.FileDataId)} " +
+                    $"({skybox.Opacity:P0}, flags 0x{skybox.Flags:X})"));
 
         return
         [
@@ -391,7 +392,9 @@ public partial class LightingViewModel : ViewModelBase
     private static LightingValueDisplayItem VectorValue(string label, Vector4 value) =>
         new(label, $"({FormatNumber(value.X)}, {FormatNumber(value.Y)}, {FormatNumber(value.Z)}, {FormatNumber(value.W)})");
 
-    private static string FormatId(long value) => value > 0 ? value.ToString(CultureInfo.InvariantCulture) : "None";
+    private static string FormatId(long value) => value is > 0 and <= uint.MaxValue
+        ? WoWRenderLib.Services.WowlibFileSystem.GetAssetDisplayName((uint)value)
+        : "None";
 
     private static string FormatNumber(float value) =>
         value.ToString("0.###", CultureInfo.InvariantCulture);

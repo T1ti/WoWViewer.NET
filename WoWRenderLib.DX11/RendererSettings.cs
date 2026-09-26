@@ -54,6 +54,8 @@ public sealed class RendererSettings
     public bool ShowBoundingSpheres { get; set; }
     public bool ShowTerrainGrid { get; set; }
     public bool ShowTerrainWireframe { get; set; }
+    public bool ShowTerrainTexture { get; set; } = true;
+    public bool ShowTerrainVertexColor { get; set; } = true;
 
     public RendererSettings Clone() => new()
     {
@@ -81,6 +83,8 @@ public sealed class RendererSettings
         ShowBoundingBoxes = ShowBoundingBoxes,
         ShowBoundingSpheres = ShowBoundingSpheres,
         ShowTerrainGrid = ShowTerrainGrid,
-        ShowTerrainWireframe = ShowTerrainWireframe
+        ShowTerrainWireframe = ShowTerrainWireframe,
+        ShowTerrainTexture = ShowTerrainTexture,
+        ShowTerrainVertexColor = ShowTerrainVertexColor
     };
 }

@@ -63,7 +63,7 @@ public sealed class TerrainTextureThumbnailService : ITerrainTextureThumbnailSer
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine(
-                $"Terrain texture thumbnail {fileDataId}: {exception.Message}");
+                $"Terrain texture thumbnail {WowlibFileSystem.GetAssetDisplayName(fileDataId)}: {exception.Message}");
             return null;
         }
     }

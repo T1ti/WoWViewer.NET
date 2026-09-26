@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using WoWRenderLib.Services;
+using WoWLib;
 
 namespace WoWRenderLib.Diagnostics;
 
@@ -9,6 +11,30 @@ namespace WoWRenderLib.Diagnostics;
 /// </summary>
 public static class LoadDiagnostics
 {
+    public static void Info(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+        var formatted = $"[INFO] {message}";
+        Console.WriteLine(formatted);
+        Trace.TraceInformation(formatted);
+    }
+
+    public static string Asset(string type, uint fileDataId)
+    {
+        var fileSystem = WowlibFileSystem.TryGetCurrent();
+        if (fileSystem?.Kind == StorageKind.Mpq)
+        {
+            return LegacyAssetIds.TryGetPath(fileSystem, fileDataId, out var path)
+                ? $"{type} '{path}'"
+                : $"{type} (missing MPQ path registration)";
+        }
+
+        return fileSystem?.Kind == StorageKind.Casc && fileDataId != 0
+            ? $"{type} FDID {fileDataId}"
+            : $"{type} (unknown source)";
+    }
+
     public static void Error(string operation, Exception exception)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);

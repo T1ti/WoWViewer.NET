@@ -90,10 +90,6 @@
                       ToolTip.Tip="Show or hide WMO buildings in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Wmo}"/>
         </ToggleButton>
-        <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowWmoCollisionMesh}"
-                      ToolTip.Tip="Show or hide invisible WMO collision triangles">
-          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.CollisionMesh}"/>
-        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderDoodads}"
                       ToolTip.Tip="Show or hide M2 doodads in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Doodad}"/>
@@ -119,9 +115,50 @@
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Settings}"/>
           <Button.Flyout>
             <Flyout>
-              <Border Padding="12" MinWidth="340" Background="#F21A2027"
+              <Border Padding="12" MinWidth="410" Background="#F21A2027"
                       BorderBrush="#526170" BorderThickness="1" CornerRadius="7">
-                <ScrollViewer MaxHeight="620" VerticalScrollBarVisibility="Auto">
+                <Grid ColumnDefinitions="46,*" ColumnSpacing="12">
+                  <Border Grid.Column="0" Padding="5" Background="#E61A2027"
+                          BorderBrush="#526170" BorderThickness="1" CornerRadius="7"
+                          VerticalAlignment="Top">
+                    <StackPanel Spacing="5">
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowBoundingBoxes}"
+                                    ToolTip.Tip="Show bounding boxes">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.BoundingBox}"/>
+                      </ToggleButton>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowBoundingSpheres}"
+                                    ToolTip.Tip="Show bounding spheres">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.BoundingSphere}"/>
+                      </ToggleButton>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowWmoCollisionMesh}"
+                                    ToolTip.Tip="Show invisible WMO collision mesh">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.CollisionMesh}"/>
+                      </ToggleButton>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding WmoPortalCullingEnabled}"
+                                    ToolTip.Tip="WMO portal culling (experimental for this client build)">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Portal}"/>
+                      </ToggleButton>
+                      <Border Height="1" Margin="3" Background="#526170"/>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainTexture}"
+                                    ToolTip.Tip="Show terrain texture; turn off to inspect vertex color">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Texture}"/>
+                      </ToggleButton>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainVertexColor}"
+                                    ToolTip.Tip="Show terrain vertex color; turn off to view unmodified terrain texture">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Colour}"/>
+                      </ToggleButton>
+                      <ToggleButton Classes="viewport-tool" IsChecked="{Binding DisableScreenGlow}"
+                                    ToolTip.Tip="Disable screen glow">
+                        <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Glow}"/>
+                      </ToggleButton>
+                      <Border Background="Transparent" ToolTip.Tip="Specular lighting (not yet available)">
+                        <ToggleButton Classes="viewport-tool" IsEnabled="False">
+                          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Lighting}"/>
+                        </ToggleButton>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <ScrollViewer Grid.Column="1" MaxHeight="620" VerticalScrollBarVisibility="Auto">
                   <StackPanel Spacing="10">
                     <TextBlock Text="ADVANCED RENDERING" Foreground="#FFFFFF" FontWeight="SemiBold"/>
                     <TextBlock Text="Navigation" Foreground="#9FB4C6" FontWeight="SemiBold"/>
@@ -172,22 +209,9 @@
                       <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding TerrainLodTransitionPixels}"
                                      Minimum="0" Maximum="256" Increment="4" FormatString="0"/>
                     </Grid>
-                    <Separator/>
-                    <TextBlock Text="Diagnostics" Foreground="#9FB4C6" FontWeight="SemiBold"/>
-                    <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" Foreground="#D7E2EC"/>
-                    <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" Foreground="#D7E2EC"/>
-                    <CheckBox Content="Show invisible WMO collision mesh" IsChecked="{Binding ShowWmoCollisionMesh}"
-                              ToolTip.Tip="Draw collision-only WMO triangles as opaque gray faces with dark triangle edges"
-                              Foreground="#D7E2EC"/>
-                    <CheckBox Content="WMO portal culling" IsChecked="{Binding WmoPortalCullingEnabled}" Foreground="#D7E2EC"/>
-                    <TextBlock Text="Portal culling is experimental for this client build."
-                               Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="310"/>
-                    <Separator/>
-                    <TextBlock Text="Rendering" Foreground="#9FB4C6" FontWeight="SemiBold"/>
-                    <CheckBox Content="Disable screen glow" IsChecked="{Binding DisableScreenGlow}" Foreground="#D7E2EC"/>
-                    <CheckBox Content="Specular lighting (placeholder)" IsEnabled="False" Foreground="#D7E2EC"/>
                   </StackPanel>
-                </ScrollViewer>
+                  </ScrollViewer>
+                </Grid>
               </Border>
             </Flyout>
           </Button.Flyout>

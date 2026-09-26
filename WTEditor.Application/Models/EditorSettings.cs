@@ -56,6 +56,8 @@ public sealed record RenderingConfiguration
     public bool ShowBoundingSpheres { get; init; }
     public bool ShowTerrainGrid { get; init; }
     public bool ShowTerrainWireframe { get; init; }
+    public bool ShowTerrainTexture { get; init; } = true;
+    public bool ShowTerrainVertexColor { get; init; } = true;
 
     public RenderingConfiguration Normalize()
     {
