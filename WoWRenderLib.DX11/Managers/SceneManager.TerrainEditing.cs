@@ -234,15 +234,38 @@ namespace WoWRenderLib.DX11.Managers
                         continue;
                     }
 
-                    if (!sceneObject.TryRaycastTriangles(
+                    if (sceneObject is M2Container particleContainer && RenderParticles &&
+                        _effectRenderer.TryGetRenderedParticleMeshes(
+                            particleContainer, out var cachedAnimation,
+                            out var particleMeshes) &&
+                        cachedAnimation is { } particleAnimation)
+                    {
+                        var particleModel = particleContainer.GetM2();
+                        if (particleModel.particleEmitterCount > 0 &&
+                            ReferenceEquals(particleModel.animation, particleAnimation))
+                        {
+                            if (particleContainer.TryRaycastSelection(
+                                    ray, closestDistance, particleModel,
+                                    particleMeshes,
+                                    particleAnimation.RenderableParticleIndices,
+                                    out var particleDistance))
+                            {
+                                closestDistance = particleDistance;
+                                closestObject = sceneObject;
+                            }
+                            continue;
+                        }
+                    }
+
+                    if (!sceneObject.TryRaycastSelection(
                             ray,
                             closestDistance,
-                            out var triangleDistance))
+                            out var selectionDistance))
                     {
                         continue;
                     }
 
-                    closestDistance = triangleDistance;
+                    closestDistance = selectionDistance;
                     closestObject = sceneObject;
                 }
             }

@@ -19,6 +19,16 @@ namespace WoWRenderLib.Structs
         public float _pad1;
         public Vector3 diffuseColor;
         public int useLegacyLighting;
+        public Vector3 sidnColor;
+        public float _pad2;
+        public Vector3 specularColor;
+        public int lightingMode;
+        public Vector3 rootAmbientColor;
+        public int unifiedMocv;
+        public Vector3 windowAmbientColor;
+        public float _pad3;
+        public Vector3 windowDiffuseColor;
+        public float _pad4;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -69,6 +79,8 @@ namespace WoWRenderLib.Structs
         public uint blendType;
         public uint shader;
         public int materialIndex;
+        public int lightingMode;
+        public byte category;
     }
 
 
@@ -114,6 +126,15 @@ namespace WoWRenderLib.Structs
         public readonly int SourceGroupCount { get; init; }
     }
 
+    // Expanded once per collision-only triangle so the pixel shader can draw
+    // all three edges with one opaque draw and no geometry shader.
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct WMOCollisionVertex
+    {
+        public Vector3 Position;
+        public Vector2 Barycentric;
+    }
+
     public readonly struct PreppedWMOPortal
     {
         public readonly ushort StartVertex { get; init; }
@@ -137,10 +158,12 @@ namespace WoWRenderLib.Structs
         public readonly float boundingRadius { get; init; }
         public readonly byte[] vertexBuffer { get; init; }
         public readonly byte[] indiceBuffer { get; init; }
+        public readonly byte[] collisionVertexBuffer { get; init; }
         public readonly PreppedWMOGroupBatch[] groupBatches { get; init; }
         public readonly int sourceGroupIndex { get; init; }
         public readonly uint groupID { get; init; }
         public readonly uint flags { get; init; }
+        public readonly bool hasPrimaryVertexColors { get; init; }
         public readonly uint mogiFlags { get; init; }
         public readonly ushort portalStart { get; init; }
         public readonly ushort portalCount { get; init; }
@@ -154,6 +177,7 @@ namespace WoWRenderLib.Structs
         public readonly int MaterialID { get; init; }
         public readonly uint FirstFace { get; init; }
         public readonly int NumFaces { get; init; }
+        public readonly byte Category { get; init; }
 
     }
 

@@ -55,11 +55,11 @@
             (WMOVertexShader.MapObjDiffuse_T1, WMOPixelShader.MapObjTwoLayerEnvMetal), // MapObjTwoLayerEnvMetal
             (WMOVertexShader.MapObjDiffuse_Comp_Terrain, WMOPixelShader.MapObjTwoLayerTerrain), // MapObjTwoLayerTerrain
             (WMOVertexShader.MapObjDiffuse_Comp, WMOPixelShader.MapObjDiffuseEmissive), // MapObjDiffuseEmissive
-            (WMOVertexShader.None, WMOPixelShader.None), // waterWindow
+            (WMOVertexShader.None, WMOPixelShader.None), // TODO(WMO): waterWindow program
             (WMOVertexShader.MapObjDiffuse_T1_Env_T2, WMOPixelShader.MapObjMaskedEnvMetal), // MapObjMaskedEnvMetal
             (WMOVertexShader.MapObjDiffuse_T1_Env_T2, WMOPixelShader.MapObjEnvMetalEmissive), // MapObjEnvMetalEmissive
             (WMOVertexShader.MapObjDiffuse_Comp, WMOPixelShader.MapObjTwoLayerDiffuseOpaque), // MapObjTwoLayerDiffuseOpaque
-            (WMOVertexShader.None, WMOPixelShader.None), // submarineWindow
+            (WMOVertexShader.None, WMOPixelShader.None), // TODO(WMO): submarineWindow program
             (WMOVertexShader.MapObjDiffuse_Comp, WMOPixelShader.MapObjTwoLayerDiffuseEmissive), // MapObjTwoLayerDiffuseEmissive
             (WMOVertexShader.MapObjDiffuse_T1, WMOPixelShader.MapObjDiffuse), // MapObjDiffuseTerrain
             (WMOVertexShader.MapObjDiffuse_T1_Env_T2, WMOPixelShader.MapObjAdditiveMaskedEnvMetal), // MapObjAdditiveMaskedEnvMetal

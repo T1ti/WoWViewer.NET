@@ -4,7 +4,7 @@ internal static class StreamingFrameBudget
 {
     private const double DefaultTargetFrameMilliseconds = 10d;
     private const double MaximumSynchronousWorkMilliseconds = 10d;
-    private const double MinimumProgressMilliseconds = 1d;
+    private const double MinimumProgressMilliseconds = 3d;
 
     public static double CalculateMilliseconds(
         double? frameIntervalSeconds,
@@ -39,7 +39,7 @@ internal static class StreamingFrameBudget
             return budget;
 
         // A consistently over-budget renderer must not reduce streaming to zero
-        // forever. One small progress slice keeps bounded result channels draining
+        // forever. A small progress slice keeps bounded result channels draining
         // and prevents expensive M2 submission from deadlocking world loading.
         return Math.Max(budget, Math.Min(MinimumProgressMilliseconds, maximumStreamingShare));
     }

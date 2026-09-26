@@ -1,8 +1,10 @@
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Loaders;
@@ -65,6 +67,13 @@ internal static class WorldLiquidLoader
             }
 
             result.batches = parsed.Batches;
+            result.batchSpheres = new BoundingSphere[parsed.Batches.Length];
+            for (var index = 0; index < parsed.Batches.Length; index++)
+            {
+                var bounds = parsed.Batches[index].Bounds;
+                result.batchSpheres[index] = new BoundingSphere(
+                    bounds.Center, Vector3.Distance(bounds.Center, bounds.Max));
+            }
             result.materials = parsed.Materials;
             result.textureFileDataIds = parsed.TextureFileDataIds;
             result.bounds = parsed.Bounds;

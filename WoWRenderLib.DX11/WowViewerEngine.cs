@@ -1116,6 +1116,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderADT = Settings.RenderADT;
                 sceneManager.RenderLiquid = Settings.RenderLiquid;
                 sceneManager.RenderWMO = Settings.RenderWMO;
+                sceneManager.ShowWmoCollisionMesh = Settings.ShowWmoCollisionMesh;
                 sceneManager.RenderM2 = Settings.RenderM2;
                 sceneManager.RenderParticles = Settings.RenderParticles;
                 sceneManager.DisableScreenGlow = Settings.DisableScreenGlow;

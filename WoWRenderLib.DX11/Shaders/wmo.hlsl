@@ -1,3 +1,7 @@
+// TODO(WMO): Recover the client's material-specific specular program. Wisp's
+// basic shader is an approximation; keep its reference path below disabled.
+#define WMO_SPECULAR_ENABLED 0
+
 cbuffer PerObject : register(b0)
 {
     float4x4 projection_matrix;
@@ -14,6 +18,16 @@ cbuffer PerObject : register(b0)
     float _pad1;
     float3 diffuseColor;
     int useLegacyLighting;
+    float3 sidnColor;
+    float _pad2;
+    float3 specularColor;
+    int lightingMode;
+    float3 rootAmbientColor;
+    int unifiedMocv;
+    float3 windowAmbientColor;
+    float _pad3;
+    float3 windowDiffuseColor;
+    float _pad4;
 }
 
 
@@ -61,6 +75,7 @@ struct VSOut
     float4 vColor2 : COLOR1;
     float4 vColor3 : COLOR2;
     float3 LitColor : TEXCOORD4;
+    float3 SpecularColor : TEXCOORD5;
 };
 
 float2 posToTexCoord(float3 vertexPosInView, float3 n)
@@ -113,19 +128,52 @@ VSOut VS_Main(VSIn input)
     o.Normal = normalize(mul(normalMatrix, input.normal));
     float3 viewNormal = normalize(mul((float3x3) view_matrix, o.Normal));
 
-    // Wisp's WMO basic vertex shader folds MOCV and directional lighting into
-    // the vertex colour, which the fragment combiner modulates by 2x. Models
-    // without MOCV use a neutral 0.5 colour rather than black.
+    // Missing primary MOCV was filled at load time; a genuine black MOCV
+    // remains black. Wisp's legacy MapObj programs combine per vertex.
     float3 mocv = input.color1.rgb;
-    if (dot(abs(mocv), float3(1.0f, 1.0f, 1.0f)) < 0.0001f)
-        mocv = float3(0.5f, 0.5f, 0.5f);
     float nDotL = max(dot(o.Normal, normalize(lightDirection)), 0.0f);
-    float3 lightTerm = saturate(ambientColor + diffuseColor * nDotL);
-    // WotLK clamps the vertex colour before the fragment's 2x modulation.
-    // Keep the established modern combine on its existing path.
-    o.LitColor = useLegacyLighting != 0
-        ? saturate(mocv * lightTerm)
-        : saturate(mocv * lightTerm * 2.0f);
+    if (useLegacyLighting != 0)
+    {
+        float3 bankAmbient = lightingMode == 3 ? rootAmbientColor
+            : lightingMode == 2 ? windowAmbientColor : ambientColor;
+        float3 bankDiffuse = lightingMode == 3 ? float3(0.0f, 0.0f, 0.0f)
+            : lightingMode == 2 ? windowDiffuseColor : diffuseColor;
+        float3 lightTerm = saturate(bankAmbient + bankDiffuse * nDotL);
+        // Wisp's c29 is already halved in byte space on the CPU. Combining it
+        // here lets the final 2x texture modulation tint the night glow.
+        // Noggit reference: add full SIDN RGB after texturing instead.
+        o.LitColor = lightingMode == 0 ? mocv
+            : unifiedMocv != 0 ? saturate(0.5f * lightTerm + mocv + sidnColor)
+            : saturate(mocv * lightTerm + sidnColor);
+    }
+    else
+    {
+        float3 lightTerm = saturate(ambientColor + diffuseColor * nDotL);
+        o.LitColor = saturate(mocv * lightTerm * 2.0f);
+    }
+
+    o.SpecularColor = float3(0.0f, 0.0f, 0.0f);
+#if WMO_SPECULAR_ENABLED
+    if (useLegacyLighting != 0 && (pixelShader == 1 || pixelShader == 2) && lightingMode != 0)
+    {
+        float3 viewDirection = length(viewPos.xyz) > 0.0f ? normalize(viewPos.xyz) : float3(0.0f, 0.0f, 0.0f);
+        // Intentional direction difference from Wisp's wmo_basic.vert:
+        // float3 viewLight = normalize(mul((float3x3)view_matrix, normalize(lightDirection))); // Wisp reference
+        // Our renderer reverses that vector for the requested specular source
+        // direction in its world axes.
+        float3 viewLight = normalize(mul((float3x3)view_matrix, -normalize(lightDirection)));
+        float3 halfDirection = viewDirection + viewLight;
+        if (dot(halfDirection, halfDirection) > 0.0f)
+        {
+            float specular = pow(max(dot(viewNormal, -normalize(halfDirection)), 0.0f), 14.0f);
+            // Wisp wmo_basic.vert: v_secondary.rgb = spec * u_specular.
+            // o.SpecularColor = specular * specularColor; // Wisp reference
+            // Intentional difference: reject back-facing highlights and lower
+            // their peak strength; Wisp's basic material shader leaves both out.
+            o.SpecularColor = specular * specularColor * nDotL * 0.35f;
+        }
+    }
+#endif
 
     o.vColor1 = input.color1;
     o.vColor2 = input.color2;
@@ -148,7 +196,13 @@ VSOut VS_Main(VSIn input)
     else if (vertexShader == 1) // MapObjDiffuse_T1_Refl
     {
         o.TexCoord = input.texCoord;
-        o.TexCoord2 = posToTexCoord(viewSpacePos, viewNormal);
+        // Wisp's legacy Env/EnvMetal shader samples reflect(view,norm).xy
+        // directly. Keep the later client's sphere-map UV path separate.
+        float3 viewVector = length(viewSpacePos) > 0.0f
+            ? normalize(viewSpacePos) : float3(0.0f, 0.0f, 0.0f);
+        o.TexCoord2 = useLegacyLighting != 0
+            ? reflect(viewVector, viewNormal).xy
+            : posToTexCoord(viewSpacePos, viewNormal);
         o.TexCoord3 = input.texCoord3;
     }
     else if (vertexShader == 2) // MapObjDiffuse_T1_T2
@@ -235,13 +289,24 @@ float4 PS_Main(VSOut i) : SV_Target
     else if (pixelShader == 1) // MapObjSpecular
     {
         matDiffuse = tex.rgb;
-        // spec = calcSpec(tex.a);  // TODO: implement specular
+#if WMO_SPECULAR_ENABLED
+        // Wisp wmo_basic.frag adds v_secondary.rgb without a texture mask.
+        // spec = i.SpecularColor; // Wisp reference
+        // Intentional difference: this material uses base-texture alpha to
+        // control where its highlight appears.
+        spec = i.SpecularColor * saturate(tex.a);
+#endif
         finalOpacity = tex.a;
     }
     else if (pixelShader == 2) // MapObjMetal
     {
         matDiffuse = tex.rgb;
-        // spec = calcSpec(((tex * 4.0) * tex.a).x);  // TODO
+#if WMO_SPECULAR_ENABLED
+        // spec = i.SpecularColor; // Wisp basic shader reference
+        // Intentional difference: MapObjMetal uses red * alpha * 4 as its
+        // material mask, matching this renderer's material-family mapping.
+        spec = i.SpecularColor * saturate(tex.r * tex.a * 4.0f);
+#endif
         finalOpacity = tex.a;
     }
     else if (pixelShader == 3) // MapObjEnv
@@ -263,10 +328,19 @@ float4 PS_Main(VSOut i) : SV_Target
     }
     else if (pixelShader == 6) // MapObjTwoLayerDiffuse
     {
-        float3 layer1 = tex.rgb;
-        float3 layer2 = lerp(layer1, tex2.rgb, tex2.a);
-        matDiffuse = lerp(layer2, layer1, i.vColor2.a);
-        finalOpacity = tex.a;
+        if (useLegacyLighting != 0)
+        {
+            // Wisp's legacy composite is mix(texture2, texture1, MOCV2.a).
+            // The later client path below also uses texture2.a as a layer mask.
+            matDiffuse = lerp(tex2.rgb, tex.rgb, i.vColor2.a);
+            finalOpacity = lerp(tex2.a, tex.a, i.vColor2.a);
+        }
+        else
+        {
+            float3 layer2 = lerp(tex.rgb, tex2.rgb, tex2.a);
+            matDiffuse = lerp(layer2, tex.rgb, i.vColor2.a);
+            finalOpacity = tex.a;
+        }
     }
     else if (pixelShader == 7) // MapObjTwoLayerEnvMetal
     {
@@ -354,13 +428,16 @@ float4 PS_Main(VSOut i) : SV_Target
         matDiffuse = tex.rgb;
         finalOpacity = tex.a;
     }
-    else if (pixelShader == 19) // MapObjParallax  (TODO: full implementation)
+    else if (pixelShader == 19) // MapObjParallax
     {
+        // TODO(WMO): Implement the version-specific parallax material program.
         matDiffuse = float3(0.0f, 0.0f, 0.0f);
         finalOpacity = 0.0f;
     }
     else if (pixelShader == 20) // MapObjUnkShader
     {
+        // TODO(WMO): Decode shader 23's complete multi-layer color and
+        // emissive formula. The first layer is currently a zero placeholder.
         float4 tex_1 = float4(0.0f, 0.0f, 0.0f, 0.0f);
         float4 tex_2 = texture2.Sample(linearWrap, i.TexCoord);
         float4 tex_3 = texture3.Sample(linearWrap, i.TexCoord2);
@@ -379,11 +456,13 @@ float4 PS_Main(VSOut i) : SV_Target
                           )
                         * float4(i.vColor3.bgr, 1.0f - saturate(secondColorSum));
 
-        float maxAlpha = max(alphaVec.r, max(alphaVec.g, max(alphaVec.r, alphaVec.a)));
+        float maxAlpha = max(max(alphaVec.r, alphaVec.g), max(alphaVec.b, alphaVec.a));
         float4 alphaVec2 = 1.0f - saturate(float4(maxAlpha, maxAlpha, maxAlpha, maxAlpha) - alphaVec);
         alphaVec2 *= alphaVec;
 
-        float4 alphaVec2Normalized = alphaVec2 * (1.0f / dot(alphaVec2, float4(1.0f, 1.0f, 1.0f, 1.0f)));
+        float alphaWeightSum = dot(alphaVec2, float4(1.0f, 1.0f, 1.0f, 1.0f));
+        float4 alphaVec2Normalized = alphaWeightSum > 0.0f
+            ? alphaVec2 / alphaWeightSum : float4(1.0f, 0.0f, 0.0f, 0.0f);
 
         float4 texMixed = tex_2 * alphaVec2Normalized.r
                         + tex_3 * alphaVec2Normalized.g
@@ -408,6 +487,15 @@ float4 PS_Main(VSOut i) : SV_Target
     else if (pixelShader == 0)
         lighting = float3(1.0f, 1.0f, 1.0f);
 
+    if (useLegacyLighting != 0)
+    {
+        // Wisp's alpha is texture alpha for diffuse/composite shaders and
+        // opaque for the other legacy families, always weighted by MOCV alpha.
+        if (pixelShader != 0 && pixelShader != 6)
+            finalOpacity = 1.0f;
+        finalOpacity *= i.vColor1.a;
+    }
+
     // Alpha-key WMO materials disable blending, so low-alpha texels must be
     // discarded before they can write their dark RGB or occlude the scene.
     if (alphaRef >= 0.0f && finalOpacity < alphaRef)
@@ -415,7 +503,15 @@ float4 PS_Main(VSOut i) : SV_Target
     if (alphaRef < 0.0f)
         finalOpacity = 1.0f;
 
-    float3 finalRgb = matDiffuse * lighting + emissive;
+    // TODO(WMO): Wisp applies directional shadow visibility before fog; this
+    // pass currently has neither a WMO shadow receiver nor the material's
+    // Unfogged (MOMT 0x2) fog selection. Add both with client-version scope.
+    float3 finalRgb = matDiffuse * lighting + spec + emissive;
+    // Noggit reference: finalRgb += sidnColor for every SIDN batch. Legacy
+    // 3.3.5 uses Wisp's texture-tinted vertex c29 above; modern rendering
+    // retains the existing final-color addition until its client is audited.
+    if (useLegacyLighting == 0)
+        finalRgb += sidnColor;
     if (useLegacyLighting != 0)
         finalRgb = saturate(finalRgb);
     return float4(finalRgb, finalOpacity);

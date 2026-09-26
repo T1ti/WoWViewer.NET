@@ -44,6 +44,7 @@ public sealed class RendererSettings
     public bool RenderADT { get; set; } = true;
     public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
+    public bool ShowWmoCollisionMesh { get; set; }
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
     public bool DisableScreenGlow { get; set; }
@@ -71,6 +72,7 @@ public sealed class RendererSettings
         RenderADT = RenderADT,
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
+        ShowWmoCollisionMesh = ShowWmoCollisionMesh,
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
         DisableScreenGlow = DisableScreenGlow,

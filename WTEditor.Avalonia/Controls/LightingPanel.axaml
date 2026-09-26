@@ -110,6 +110,12 @@
                 <ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Classes="lighting-color"
                              Color="{Binding Lighting.DiffuseColor, Mode=TwoWay}"/>
               </Grid>
+              <Grid ColumnDefinitions="105,*" RowDefinitions="Auto,Auto" ColumnSpacing="5" RowSpacing="2">
+                <TextBlock Text="WMO SIDN pulse" Classes="card-label"/>
+                <TextBlock Grid.Column="1" Text="{Binding Lighting.WmoSidnPulseDisplay}" Classes="card-label"/>
+                <TextBlock Grid.Row="1" Text="Sun specular RGB (inactive)" Classes="card-label"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Lighting.SpecularColorDisplay}" Classes="card-label"/>
+              </Grid>
             </StackPanel>
           </Border>
           </WrapPanel>

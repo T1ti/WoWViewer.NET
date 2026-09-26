@@ -142,7 +142,7 @@ internal sealed class DebugBoundsRenderer(
                 continue;
 
             var color = renderSelection
-                ? new Vector4(0, 1, 0, 1)
+                ? Vector4.One
                 : new Vector4(1, 1, 0, 1);
 
             if (showBoundingBoxes || renderSelection)
@@ -158,7 +158,7 @@ internal sealed class DebugBoundsRenderer(
                 }
             }
 
-            if (showBoundingSpheres || renderSelection)
+            if (showBoundingSpheres && !renderSelection)
             {
                 var sphere = sceneObject.GetBoundingSphere();
                 if (sphere.HasValue)

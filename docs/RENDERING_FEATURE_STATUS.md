@@ -21,6 +21,71 @@ repository smoke suite; it does not imply parity with every WoW client era.
 Other WoW builds are not yet assigned a rendering-parity status. The matrix
 records known coverage, not a claim that every feature below is era-correct.
 
+## WMO CPU/GPU audit (2026-09-25)
+
+The 3.3.5 path uses Wisp for group preprocessing and draw state. SIDN uses
+Wisp's halved byte-space c29 at the vertex, followed by 2x texture modulation;
+the Noggit night pulse timing is retained. The earlier Noggit full-strength
+final-color addition made pale SIDN materials clip to white at night. A
+same-scene client capture is still needed to settle visual parity. Wisp and Noggit
+also differ on shader 6: Wisp blends the two textures with the second MOCV
+alpha, while Noggit includes the second texture's alpha and the primary MOCV
+alpha. The active legacy shader 6 path follows Wisp pending a matched client
+capture. The modern shader path remains separate.
+
+Verified in code and smoke tests: primary/secondary MOCV decoding in BGRA
+order; size-based MOGP child traversal, including unaligned chunks; Wisp's
+transition vertex fix-up and portal attenuation; UV0 fallback when legacy UV1
+is absent; batch category, lighting bank, SIDN clock/cache, sampler addressing,
+two-sided culling, blend 9/7 transition passes, and depth test/write state.
+The viewport can display invisible MOPY/MPY2 collision faces as cached,
+two-sided opaque gray triangles with dark edges in one DX11 draw per group.
+The WMO vertex and constant-buffer byte offsets are checked against the HLSL
+declarations. Both shader stages compile with `fxc`. This is static and
+synthetic verification; a same-scene GPU capture against a 3.3.5 client is
+still needed for visual parity.
+
+TODO(WMO):
+
+1. The [WoWDev 3.3.5 WMO rendering page](https://wowdev.wiki/WMO/Rendering)
+   describes BSP/MOPY based barycentric
+   MOCV lighting queries for entities inside interior groups. Wisp implements
+   camera visibility and collision BSP queries but has no equivalent lighting
+   query for dynamic entities. The editor also has no interior MOCV lighting
+   query for its doodads. Add one when entity lighting inside WMOs is audited.
+   The page also lists detail/render/trans MOPY debug modes. Normal editor
+   rendering already consumes MOBA index ranges and the MOGP transition,
+   interior, and exterior batch counts. Its collision overlay reads MOPY/MPY2
+   `F_COLLISION` (0x08), `F_RENDER` (0x20), and the collision-only material
+   sentinel; other per-triangle MOPY flags are not consulted during standard
+   batch draws or exposed as overlays. A MOBA material ID of 0xFF is not yet
+   resolved through the first MOPY face as Wisp does. Wisp decodes all MOPY
+   records and uses `F_COLLISION`, `F_RENDER`, and `F_DETAIL` for viewer
+   collision queries, but has no equivalent detail/render/trans face-category
+   visualizers.
+2. Decode the client-specific programs for waterWindow, submarineWindow,
+   parallax, shader 23, and the other material families beyond Wisp's basic
+   diffuse combine. Shader 23 currently contains a zero first-layer placeholder;
+   its layer weights are guarded against a zero denominator but are not a
+   decoded client program.
+3. Apply Wisp's shader-0 opaque/alpha-texture promotion once BLP alpha metadata
+   is available during WMO material setup. The two-texture missing-stage
+   promotion for legacy shaders 3, 5, and 6 is implemented.
+4. Add WMO directional shadow receiving and material-specific fog, including
+   MOMT `Unfogged`. Fog/alpha refinement remains deferred per the current
+   rendering work order. WMO specular remains disabled until its material
+   program and intensity have a reliable reference.
+5. Replace the generic magenta fallback for absent optional material stages
+   with per-shader neutral textures or a decoded shader fallback. A missing
+   authored base texture should still remain visibly diagnostic.
+6. Validate modern group MOCV/MOTV presence and material semantics against
+   representative CASC assets from each supported version. Report group-byte
+   read failures instead of silently using neutral colors and zero UVs.
+7. Compare the same WMO, camera, world time, and portal view in the editor,
+   Wisp, Noggit, and the 3.3.5 client. In particular, adjudicate shader-6
+   alpha, Env/EnvMetal reflection coordinates, SIDN, and transition gradients
+   using captured pixels rather than static shader inspection alone.
+
 ## Open visual issues and next work
 
 1. Revisit the 3.3.5 Stormwind entrance and adjacent terrain in the editor:

@@ -152,6 +152,29 @@ namespace WoWRenderLib.DX11.Objects
                 out distance);
         }
 
+        public override bool TryRaycastSelection(
+            Ray ray,
+            float maximumDistance,
+            out float distance)
+            => TryRaycastSelection(ray, maximumDistance, GetM2(),
+                ReadOnlySpan<M2RibbonMesh>.Empty, ReadOnlySpan<int>.Empty,
+                out distance);
+
+        internal bool TryRaycastSelection(
+            Ray ray,
+            float maximumDistance,
+            in ParsedDoodadBatch model,
+            ReadOnlySpan<M2RibbonMesh> particleMeshes,
+            ReadOnlySpan<int> renderableParticleIndices,
+            out float distance)
+        {
+            distance = maximumDistance;
+            return model.fileDataID == FileDataId &&
+                M2SelectionRaycaster.TryIntersect(
+                    ray, model, GetModelMatrix(), maximumDistance,
+                    particleMeshes, renderableParticleIndices, out distance);
+        }
+
         public ParsedDoodadBatch GetM2(bool keepTrack = false)
         {
             return M2Cache.GetOrLoad(_device, FileDataId, ParentTileIndex, keepTrack);

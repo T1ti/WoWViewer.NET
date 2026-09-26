@@ -10,6 +10,8 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint vao { get; init; }
         public readonly ComPtr<ID3D11Buffer> vertexBuffer { get; init; }
         public readonly ComPtr<ID3D11Buffer> indiceBuffer { get; init; }
+        public readonly ComPtr<ID3D11Buffer> collisionVertexBuffer { get; init; }
+        public readonly uint collisionVertexCount { get; init; }
         public readonly Vector3[] raycastVertices { get; init; }
         public readonly ushort[] raycastIndices { get; init; }
         public readonly uint verticeCount { get; init; }
@@ -19,6 +21,7 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint groupID { get; init; }
         public readonly BoundingBox boundingBox { get; init; }
         public readonly uint flags { get; init; }
+        public readonly bool hasPrimaryVertexColors { get; init; }
         public readonly uint mogiFlags { get; init; }
         public readonly WmoPortalLink[] portalLinks { get; init; }
         public readonly ushort[] doodadReferences { get; init; }

@@ -21,10 +21,14 @@ namespace WoWRenderLib.DX11.Cache
 
         private static readonly Lock inFlightLock = new();
         private static readonly HashSet<MapTile> inFlight = [];
+        // The scene caps current-map requests at MaxRequestsInFlight, but a
+        // map switch can leave old request keys in the worker channel while
+        // the new scene fills that window again. Keep result buffering bounded
+        // (parsed ADTs are large); request keys are small and stale ones are
+        // skipped by shouldProcess instead of rejecting new map tiles.
         private static readonly BackgroundResourceQueue<MapTile, ParsedADT> loadQueue = new(
             WoWRenderLib.Loaders.ADTLoader.ParseADT,
             bufferedResultCount: 4,
-            bufferedRequestCount: MaxRequestsInFlight,
             shouldProcess: mapTile => Users.ContainsKey(mapTile));
 
         private readonly record struct ADTCallbacks(

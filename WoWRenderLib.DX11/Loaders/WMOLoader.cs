@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using WoWLib;
 using WoWRenderLib.DX11.Cache;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Services;
@@ -84,12 +85,32 @@ namespace WoWRenderLib.DX11.Loaders
                     SilkMarshal.ThrowHResult(device.CreateBuffer(in bufferDesc, in subresourceData, ref indiceBuffer));
                 }
 
+                ComPtr<ID3D11Buffer> collisionVertexBuffer = default;
+                var collisionBytes = preppedGroup.collisionVertexBuffer;
+                if (collisionBytes is { Length: > 0 })
+                {
+                    bufferDesc = new BufferDesc
+                    {
+                        ByteWidth = (uint)collisionBytes.Length,
+                        Usage = Usage.Default,
+                        BindFlags = (uint)BindFlag.VertexBuffer
+                    };
+                    fixed (byte* collisionData = collisionBytes)
+                    {
+                        var subresourceData = new SubresourceData { PSysMem = collisionData };
+                        SilkMarshal.ThrowHResult(device.CreateBuffer(
+                            in bufferDesc, in subresourceData, ref collisionVertexBuffer));
+                    }
+                }
+
                 wmoBatch.groupBatches[g] = new WorldModelGroupBatches()
                 {
                     groupName = preppedGroup.groupName,
                     mogiGroupName = preppedGroup.mogiGroupName,
                     vertexBuffer = vertexBuffer,
                     indiceBuffer = indiceBuffer,
+                    collisionVertexBuffer = collisionVertexBuffer,
+                    collisionVertexCount = (uint)(collisionBytes?.Length ?? 0) / (uint)sizeof(WMOCollisionVertex),
                     raycastVertices = raycastVertices,
                     raycastIndices = raycastIndices,
                     verticeCount = (uint)preppedGroup.vertexBuffer.Length / (uint)sizeof(WMOVertex),
@@ -97,6 +118,7 @@ namespace WoWRenderLib.DX11.Loaders
                     sourceGroupIndex = preppedGroup.sourceGroupIndex,
                     groupID = preppedGroup.groupID,
                     flags = preppedGroup.flags,
+                    hasPrimaryVertexColors = preppedGroup.hasPrimaryVertexColors,
                     mogiFlags = preppedGroup.mogiFlags,
                     portalLinks = BuildPortalLinks(preppedGroup, preppedWMO.PortalReferences, sourceGroupToRenderGroup),
                     doodadReferences = preppedGroup.doodadReferences ?? [],
@@ -124,8 +146,17 @@ namespace WoWRenderLib.DX11.Loaders
                         numFaces = (uint)groupBatch.NumFaces,
                         blendType = mat.BlendMode,
                         groupID = (uint)g,
-                        shader = (uint)mat.Shader,
+                        shader = (uint)WmoMaterialPolicy.ResolveShader(
+                            preppedWMO.LegacyLighting, mat.Shader, mat.TexFileDataID1 != 0),
                         materialIndex = groupBatch.MaterialID,
+                        lightingMode = WmoMaterialPolicy.ResolveLightingMode(
+                            preppedWMO.LegacyLighting,
+                            preppedWMO.Flags,
+                            group.flags,
+                            group.hasPrimaryVertexColors,
+                            groupBatch.Category,
+                            mat.Flags),
+                        category = groupBatch.Category,
                         materialFDIDs = [
                             mat.TexFileDataID0,
                             mat.TexFileDataID1,
@@ -294,6 +325,7 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 wmo.groupBatches[g].vertexBuffer.Dispose();
                 wmo.groupBatches[g].indiceBuffer.Dispose();
+                wmo.groupBatches[g].collisionVertexBuffer.Dispose();
                 var liquid = wmo.groupBatches[g].liquid;
                 WorldLiquidLoader.Unload(ref liquid, wmo.rootWMOFileDataID);
             }

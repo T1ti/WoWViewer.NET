@@ -5,6 +5,7 @@ using WoWLib;
 using WoWLib.Database;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Renderer;
+using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 using WoWRenderLib.Database;
@@ -50,6 +51,60 @@ public sealed class WorldLiquidSmokeTests
             transformed = BoundingBox.Transform(box, matrix);
         Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
         Assert.AreEqual(27f, transformed.Min.Z, 0.0001f);
+    }
+
+    [TestMethod]
+    public void LiquidCullBoundsMatchOriginalWorldBoxAndRadius()
+    {
+        var box = new BoundingBox(new Vector3(-1f, -2f, -3f),
+            new Vector3(2f, 4f, 5f));
+        var matrix = Matrix4x4.CreateRotationZ(MathF.PI / 2f) *
+            Matrix4x4.CreateTranslation(10f, 20f, 30f);
+
+        var local = WorldLiquidCullBounds.FromBox(box);
+        Assert.AreEqual(box.Center, local.Sphere.Center);
+        Assert.AreEqual(Vector3.Distance(box.Center, box.Max), local.Sphere.Radius);
+
+        var world = WorldLiquidCullBounds.Transform(box, matrix);
+        var expected = BoundingBox.Transform(box, matrix);
+        Assert.AreEqual(expected.Min, world.Box.Min);
+        Assert.AreEqual(expected.Max, world.Box.Max);
+        Assert.AreEqual(expected.Center, world.Sphere.Center);
+        Assert.AreEqual(Vector3.Distance(expected.Center, expected.Max), world.Sphere.Radius);
+    }
+
+    [TestMethod]
+    public void WmoLiquidBoundsCacheReusesAndInvalidatesTransformedBounds()
+    {
+        var cache = new WorldLiquidBoundsCache();
+        var owner = new object();
+        var local = new BoundingBox(Vector3.Zero, Vector3.One);
+        var batches = new[]
+        {
+            new ParsedWorldLiquidBatch(0, 0, 0, 6, 0, local, false, false)
+        };
+        var first = cache.GetOrUpdate(owner, 0, batches, Matrix4x4.Identity);
+        Assert.AreSame(first, cache.GetOrUpdate(owner, 0, batches, Matrix4x4.Identity));
+        Assert.AreEqual(local.Min, first[0].Box.Min);
+
+        var moved = cache.GetOrUpdate(owner, 0, batches,
+            Matrix4x4.CreateTranslation(10f, 0f, 0f));
+        Assert.AreSame(first, moved);
+        Assert.AreEqual(new Vector3(10f, 0f, 0f), moved[0].Box.Min);
+
+        var replacedBatches = new[]
+        {
+            batches[0] with { Bounds = new BoundingBox(Vector3.One, new Vector3(2f)) }
+        };
+        var replaced = cache.GetOrUpdate(owner, 0, replacedBatches,
+            Matrix4x4.CreateTranslation(10f, 0f, 0f));
+        Assert.AreSame(first, replaced);
+        Assert.AreEqual(new Vector3(11f, 1f, 1f), replaced[0].Box.Min);
+
+        var expandedBatches = new[] { batches[0], replacedBatches[0] };
+        var expanded = cache.GetOrUpdate(owner, 0, expandedBatches, Matrix4x4.Identity);
+        Assert.AreEqual(2, expanded.Length);
+        Assert.AreEqual(Vector3.One, expanded[1].Box.Min);
     }
 
     [TestMethod]

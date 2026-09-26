@@ -318,7 +318,7 @@ public sealed class EditorSettingsSmokeTests
                 estimatedRenderMilliseconds: 8d),
             0.001d);
         Assert.AreEqual(
-            1d,
+            3d,
             StreamingFrameBudget.CalculateMilliseconds(
                 frameIntervalSeconds: 0.01d,
                 elapsedBeforeRenderMilliseconds: 3d,
@@ -367,6 +367,7 @@ public sealed class EditorSettingsSmokeTests
                 RenderADT = false,
                 RenderLiquid = false,
                 RenderWMO = true,
+                ShowWmoCollisionMesh = true,
                 RenderM2 = false,
                 RenderParticles = false,
                 AnimateModels = false,
@@ -450,6 +451,25 @@ public sealed class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void LightingViewModel_ShowsWmoSidnPulseAndTimedSunSpecularColor()
+    {
+        var viewModel = new LightingViewModel();
+        Assert.AreEqual("0", viewModel.WmoSidnPulseDisplay);
+        Assert.AreEqual("(1, 0.969, 0.871)", viewModel.SpecularColorDisplay);
+
+        var sky = WorldSkyLighting.None with
+        {
+            SunColor = new Vector3(0.25f, 0.5f, 0.75f),
+            HasSunCloudData = true
+        };
+        viewModel.Update(LightingSettingsProjection.ToDisplay(
+            WorldLightingSettings.Defaults with { Time = 780 }, sky));
+
+        Assert.AreEqual("0.5", viewModel.WmoSidnPulseDisplay);
+        Assert.AreEqual("(0.125, 0.25, 0.375)", viewModel.SpecularColorDisplay);
+    }
+
+    [TestMethod]
     public void ViewportStreamingSettingsSurviveSessionSaveAndReload()
     {
         var store = new MemorySettingsStore(new EditorSettingsSnapshot());
@@ -504,6 +524,7 @@ public sealed class EditorSettingsSmokeTests
         firstViewport.RenderTerrain = false;
         firstViewport.RenderLiquid = false;
         firstViewport.RenderWorldModels = false;
+        firstViewport.ShowWmoCollisionMesh = true;
         firstViewport.RenderDoodads = false;
         firstViewport.RenderParticles = false;
         firstViewport.AnimateModels = false;
@@ -517,6 +538,8 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsFalse(published.RenderADT);
         Assert.IsFalse(published.RenderM2);
         Assert.IsFalse(published.RenderWMO);
+        Assert.IsTrue(published.ShowWmoCollisionMesh);
+        Assert.IsTrue(published.ToDx11().Clone().ShowWmoCollisionMesh);
         Assert.IsFalse(published.RenderLiquid);
         Assert.IsFalse(published.RenderParticles);
         Assert.IsFalse(published.ToDx11().RenderParticles);
@@ -528,6 +551,7 @@ public sealed class EditorSettingsSmokeTests
         Assert.IsFalse(secondViewport.RenderTerrain);
         Assert.IsFalse(secondViewport.RenderLiquid);
         Assert.IsFalse(secondViewport.RenderWorldModels);
+        Assert.IsTrue(secondViewport.ShowWmoCollisionMesh);
         Assert.IsFalse(secondViewport.RenderDoodads);
         Assert.IsFalse(secondViewport.RenderParticles);
         Assert.IsFalse(secondViewport.AnimateModels);
@@ -1344,6 +1368,110 @@ public sealed class EditorSettingsSmokeTests
             indices,
             float.MaxValue,
             out _));
+    }
+
+    [TestMethod]
+    public void M2SelectionRaycaster_UsesOrientedBoxForParticleModels()
+    {
+        var localBox = new BoundingBox(
+            new Vector3(-1f, -0.1f, -0.1f),
+            new Vector3(1f, 0.1f, 0.1f));
+        var model = new ParsedDoodadBatch
+        {
+            boundingBox = localBox,
+            particleEmitterCount = 1,
+            raycastVertices = [],
+            raycastIndices = []
+        };
+        var transform = Matrix4x4.CreateRotationZ(MathF.PI / 4f);
+        var hitRay = new Ray(new Vector3(0f, 0f, 5f), -Vector3.UnitZ);
+        Assert.IsTrue(M2SelectionRaycaster.TryIntersect(
+            hitRay, model, transform, float.MaxValue, out var hitDistance));
+        Assert.AreEqual(4.9f, hitDistance, 1e-4f);
+
+        var aabbOnlyRay = new Ray(new Vector3(0.7f, -0.7f, 5f), -Vector3.UnitZ);
+        Assert.IsTrue(IntersectionTests.RayIntersectsBox(
+            aabbOnlyRay, BoundingBox.Transform(localBox, transform), out _));
+        Assert.IsFalse(M2SelectionRaycaster.TryIntersect(
+            aabbOnlyRay, model, transform, float.MaxValue, out _));
+        Assert.IsFalse(M2SelectionRaycaster.TryIntersect(
+            hitRay, model, transform, 4.89f, out _));
+    }
+
+    [TestMethod]
+    public void M2SelectionRaycaster_UsesClickTimeParticleQuadBounds()
+    {
+        var model = new ParsedDoodadBatch
+        {
+            boundingBox = new BoundingBox(
+                new Vector3(-3f, -1f, -0.5f),
+                new Vector3(3f, 1f, 0.5f)),
+            particleEmitterCount = 1,
+            raycastVertices = [],
+            raycastIndices = []
+        };
+        var vertices = new M2RibbonVertex[8];
+        for (var quad = 0; quad < 2; quad++)
+        {
+            var x = quad == 0 ? -2f : 2f;
+            var start = quad * 4;
+            vertices[start] = new(new Vector3(x - 0.5f, -0.5f, 0f), default, default);
+            vertices[start + 1] = new(new Vector3(x + 0.5f, -0.5f, 0f), default, default);
+            vertices[start + 2] = new(new Vector3(x + 0.5f, 0.5f, 0f), default, default);
+            vertices[start + 3] = new(new Vector3(x - 0.5f, 0.5f, 0f), default, default);
+        }
+        M2RibbonMesh[] meshes =
+        [
+            new(vertices, [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+            // A stale cache entry at an index absent from the renderable set.
+            new(
+            [
+                new(new Vector3(-0.25f, -0.25f, 0f), default, default),
+                new(new Vector3(0.25f, -0.25f, 0f), default, default),
+                new(new Vector3(0.25f, 0.25f, 0f), default, default),
+                new(new Vector3(-0.25f, 0.25f, 0f), default, default)
+            ],
+            [0, 1, 2, 0, 2, 3])
+        ];
+        var transform = Matrix4x4.CreateRotationZ(MathF.PI / 4f);
+        var particleRay = new Ray(
+            Vector3.Transform(new Vector3(2f, 0f, 5f), transform), -Vector3.UnitZ);
+        Assert.IsTrue(M2SelectionRaycaster.TryIntersect(
+            particleRay, model, transform, float.MaxValue, meshes, [0], out var distance));
+        Assert.AreEqual(4.95f, distance, 1e-4f);
+        Assert.IsFalse(M2SelectionRaycaster.TryIntersect(
+            particleRay, model, transform, 4.94f, meshes, [0], out _));
+
+        // The ray crosses the authored model box, but the space between the
+        // two particle quads is empty.
+        var gapRay = new Ray(new Vector3(0f, 0f, 5f), -Vector3.UnitZ);
+        Assert.IsFalse(M2SelectionRaycaster.TryIntersect(
+            gapRay, model, transform, float.MaxValue, meshes, [0], out _));
+    }
+
+    [TestMethod]
+    public void M2SelectionRaycaster_StillRequiresTrianglesWithoutParticles()
+    {
+        var model = new ParsedDoodadBatch
+        {
+            boundingBox = new BoundingBox(Vector3.Zero, Vector3.One),
+            particleEmitterCount = 0,
+            raycastVertices =
+            [
+                Vector3.Zero,
+                Vector3.UnitX,
+                Vector3.UnitY
+            ],
+            raycastIndices = [0, 1, 2]
+        };
+        var triangleRay = new Ray(new Vector3(0.25f, 0.25f, 5f), -Vector3.UnitZ);
+        Assert.IsTrue(M2SelectionRaycaster.TryIntersect(
+            triangleRay, model, Matrix4x4.Identity, float.MaxValue, out var distance));
+        Assert.AreEqual(5f, distance, 1e-4f);
+
+        var boundsOnlyRay = new Ray(new Vector3(0.9f, 0.9f, 5f), -Vector3.UnitZ);
+        Assert.IsFalse(M2SelectionRaycaster.TryIntersect(
+            boundsOnlyRay, model, Matrix4x4.Identity, float.MaxValue, out _));
     }
 
     [TestMethod]

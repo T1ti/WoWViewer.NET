@@ -172,6 +172,36 @@ public sealed class WorldLightingCatalog
 {
     public const int GameDayLength = 2880;
     public const float ZoneTransitionDistance = 50f;
+    public static Vector3 DefaultNoonSpecularColor { get; } = new(1f, 0.969f, 0.871f);
+
+    // Wisp receives a time-resolved specular color from its caller. LightData
+    // supplies our sun tint; the inverse night-glow ramp keeps the noon fallback
+    // and sparse/bright sun bands from illuminating WMO highlights at night.
+    public static Vector3 ResolveWmoSpecularColor(WorldSkyLighting sky, long worldTime)
+    {
+        var sun = sky.HasSunCloudData ? sky.SunColor : DefaultNoonSpecularColor;
+        return Vector3.Clamp(sun, Vector3.Zero, Vector3.One) *
+            (1f - CalculateWmoSidnPulse(worldTime));
+    }
+
+    /// <summary>Night glow for WMO SIDN materials on the 0..2880 world clock.</summary>
+    public static float CalculateWmoSidnPulse(long worldTime)
+    {
+        var time = worldTime % GameDayLength;
+        if (time < 0)
+            time += GameDayLength;
+
+        var hours = time / 120f;
+        if (hours < 6f)
+            return 1f;
+        if (hours < 7f)
+            return 7f - hours;
+        if (hours < 20.5f)
+            return 0f;
+        if (hours < 21.5f)
+            return hours - 20.5f;
+        return 1f;
+    }
 
     private readonly WorldLightDefinition[] _lights;
     private readonly ZoneLightDefinition[] _zoneLights;

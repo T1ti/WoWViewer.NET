@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WTEditor.Application.Models;
+using WoWRenderLib.Structs;
 
 namespace WTEditor.Avalonia.ViewModels;
 
@@ -40,9 +41,9 @@ public partial class LightingViewModel : ViewModelBase
     [ObservableProperty] private IReadOnlyList<LightingGroupDisplayItem> _runtimeGroups =
         Array.Empty<LightingGroupDisplayItem>();
 
-    [ObservableProperty] private float _directionX = -0.5f;
-    [ObservableProperty] private float _directionY = -0.5f;
-    [ObservableProperty] private float _directionZ = 0.70710678f;
+    [ObservableProperty] private float _directionX = 0.5613f;
+    [ObservableProperty] private float _directionY = 0.5613f;
+    [ObservableProperty] private float _directionZ = 0.6082f;
     [ObservableProperty] private float _ambientR = 104f / 255f;
     [ObservableProperty] private float _ambientG = 130f / 255f;
     [ObservableProperty] private float _ambientB = 154f / 255f;
@@ -115,6 +116,22 @@ public partial class LightingViewModel : ViewModelBase
     public string ActiveLightsStatus => ActiveLights.Count > 0
         ? "Current contributors to the final blended values:"
         : "No active spatial light contributors reported.";
+
+    public string WmoSidnPulseDisplay =>
+        FormatNumber(WorldLightingCatalog.CalculateWmoSidnPulse(Time));
+
+    public string SpecularColorDisplay
+    {
+        get
+        {
+            var sun = _runtimeSnapshot is { HasSunCloudData: true } runtime
+                ? runtime.SunColor
+                : WorldLightingCatalog.DefaultNoonSpecularColor;
+            var color = Vector3.Clamp(sun, Vector3.Zero, Vector3.One) *
+                (1f - WorldLightingCatalog.CalculateWmoSidnPulse(Time));
+            return $"({FormatNumber(color.X)}, {FormatNumber(color.Y)}, {FormatNumber(color.Z)})";
+        }
+    }
 
     public void SetPreferences(int time, bool useLocalTime)
     {
@@ -264,6 +281,7 @@ public partial class LightingViewModel : ViewModelBase
     {
         _runtimeSnapshot = runtime;
         RuntimeGroups = CreateRuntimeGroups(runtime, lighting);
+        OnPropertyChanged(nameof(SpecularColorDisplay));
     }
 
     private static IReadOnlyList<LightingGroupDisplayItem> CreateRuntimeGroups(
@@ -484,6 +502,8 @@ public partial class LightingViewModel : ViewModelBase
     partial void OnTimeChanged(long value)
     {
         OnPropertyChanged(nameof(ProfileDescription));
+        OnPropertyChanged(nameof(WmoSidnPulseDisplay));
+        OnPropertyChanged(nameof(SpecularColorDisplay));
         // The disabled Avalonia slider can echo its tick-snapped display value
         // after a dynamic renderer snapshot has finished synchronizing. A time
         // write cannot be a manual edit while live time is enabled, so never

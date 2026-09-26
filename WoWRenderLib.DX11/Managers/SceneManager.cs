@@ -77,6 +77,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderADT { get; set; } = true;
         public bool RenderLiquid { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
+        public bool ShowWmoCollisionMesh { get; set; }
         public bool RenderM2 { get; set; } = true;
         public bool RenderParticles { get; set; } = true;
         public bool DisableScreenGlow { get; set; }
@@ -122,13 +123,13 @@ namespace WoWRenderLib.DX11.Managers
         private Dictionary<TerrainTileId, ADTVertex[]>? _activeTerrainStrokeBefore;
         private float? _flattenStrokeHeight;
 
-        // World-space vector toward the light at a 45° elevation.
-        // Keep this fallback aligned with the evaluated noon direction.
-        public Vector3 LightDirection { get; set; } = new(0.5f, 0.5f, 0.70710678f);
+        // World-space vector toward the light, opposite the client light ray.
+        public Vector3 LightDirection { get; set; } = WorldLightingSettings.Defaults.LightDirection;
         public Vector3 AmbientColor { get; set; } = new(104f / 255f, 130f / 255f, 154f / 255f);
         public Vector3 DiffuseColor { get; set; } = new(1f, 136f / 255f, 0f);
         public WorldLightingData? ClientWorldLighting { get; private set; }
         private WorldLightingSettings _activeWorldLighting = WorldLightingSettings.Defaults;
+        private readonly WmoSidnColorCache _wmoSidnColors = new();
         private IReadOnlyList<WorldLightingContribution> _activeWorldLightingContributions =
             Array.Empty<WorldLightingContribution>();
         private WorldSkyLighting _activeWorldSky = WorldSkyLighting.None;
@@ -259,6 +260,7 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> adtPerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> layerDataConstantBuffer = default;
         private ComPtr<ID3D11Buffer> wmoPerObjectConstantBuffer = default;
+        private ComPtr<ID3D11Buffer> wmoCollisionConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2BonePaletteConstantBuffer = default;
         private M2AnimationPose? _uploadedM2Pose;
@@ -279,6 +281,7 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11ShaderResourceView> missingTexture;
         private ComPtr<ID3D11ShaderResourceView> emptyTerrainTexture;
         private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
+        private ComPtr<ID3D11DepthStencilState> _wmoDepthState;
 
         private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch =
             new ComPtr<ID3D11ShaderResourceView>[ShaderResourceSlotCount];
@@ -576,6 +579,15 @@ namespace WoWRenderLib.DX11.Managers
                 _deviceContext.RSSetState(rastState);
 
                 CreateBlendStates();
+                var wmoDepthDescription = new DepthStencilDesc
+                {
+                    DepthEnable = true,
+                    DepthWriteMask = DepthWriteMask.All,
+                    DepthFunc = ComparisonFunc.LessEqual,
+                    StencilEnable = false
+                };
+                SilkMarshal.ThrowHResult(_device.CreateDepthStencilState(
+                    in wmoDepthDescription, ref _wmoDepthState));
             }
 
             _worldLiquidRenderer.Initialize(shaderManager);
@@ -1289,6 +1301,7 @@ namespace WoWRenderLib.DX11.Managers
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginWorldModels();
             _deviceContext.RSSetState(wmoRasterizerState);
+            _deviceContext.OMSetDepthStencilState(_wmoDepthState, 0);
             _deviceContext.IASetInputLayout(wmoShaderProgram.InputLayout);
             _deviceContext.VSSetShader(wmoShaderProgram.VertexShader, ref nullClassInstance, 0);
             _deviceContext.PSSetShader(wmoShaderProgram.PixelShader, ref nullClassInstance, 0);
@@ -1307,18 +1320,27 @@ namespace WoWRenderLib.DX11.Managers
                 lightDirection = LightDirection,
                 ambientColor = AmbientColor,
                 diffuseColor = DiffuseColor,
+                specularColor = WorldLightingCatalog.ResolveWmoSpecularColor(
+                    _activeWorldSky, _activeWorldLighting.Time),
                 alphaRef = 1.0f,
             };
+            (wmoConstantBuffer.windowAmbientColor, wmoConstantBuffer.windowDiffuseColor) =
+                WmoMaterialPolicy.WindowLighting(AmbientColor, DiffuseColor);
             var lastWmoVertexShader = int.MinValue;
             var lastWmoPixelShader = int.MinValue;
             var lastWmoAlphaRef = float.NaN;
             var lastWmoLegacyLighting = -1;
+            var lastWmoSidnColor = new Vector3(float.NaN);
+            var lastWmoLightingMode = int.MinValue;
+            var lastWmoUnifiedMocv = int.MinValue;
+            var lastWmoRootAmbientColor = new Vector3(float.NaN);
             var lastWmoSamplerIndex = 4; // The WMO pass starts with textureSampler bound.
+            var lastWmoTwoSided = false; // The WMO pass starts with back-face culling.
 
             var viewProjection = cameraMatrix * projectionMatrix;
             foreach (var (_, instances) in wmoInstances)
             {
-                if (!RenderWMO || instances.Count == 0)
+                if ((!RenderWMO && !ShowWmoCollisionMesh) || instances.Count == 0)
                     continue;
 
                 var firstInstance = instances[0];
@@ -1327,6 +1349,8 @@ namespace WoWRenderLib.DX11.Managers
 
                 var wmo = firstInstance.GetWMO();
                 wmoConstantBuffer.useLegacyLighting = wmo.legacyLighting ? 1 : 0;
+                wmoConstantBuffer.unifiedMocv = (wmo.flags & 0x2) != 0 ? 1 : 0;
+                wmoConstantBuffer.rootAmbientColor = WmoMaterialPolicy.PackedRgb(wmo.ambientColor);
                 candidateWMOs += instances.Count;
                 var cullingStarted = Stopwatch.GetTimestamp();
                 ResetWmoVisibilityBatches();
@@ -1412,116 +1436,172 @@ namespace WoWRenderLib.DX11.Managers
                 if (_activeWmoVisibilityBatchCount == 0)
                     continue;
 
-                for (var visibilityBatchIndex = 0;
-                     visibilityBatchIndex < _activeWmoVisibilityBatchCount;
-                     visibilityBatchIndex++)
+                if (RenderWMO)
                 {
-                    var visibilityBatch = _wmoVisibilityBatches[visibilityBatchIndex];
-                    var visibleInstanceIndices = visibilityBatch.InstanceIndices;
-                    var enabledGroups = visibilityBatch.GroupMask;
-                    if (RenderLiquid)
+                    // Wisp's 3.3.5 c29 is halved in byte space and combined at
+                    // the vertex before texture modulation. Noggit instead
+                    // adds full SIDN RGB after texturing, which washes pale
+                    // night-glow materials out to white in this renderer.
+                    // Keep the Noggit pulse timing for both client paths.
+                    var sidnColors = _wmoSidnColors.GetColors(
+                        wmo.preppedMats, _activeWorldLighting.Time,
+                        wispLegacy: wmo.legacyLighting);
+                    for (var visibilityBatchIndex = 0;
+                         visibilityBatchIndex < _activeWmoVisibilityBatchCount;
+                         visibilityBatchIndex++)
                     {
-                        for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+                        var visibilityBatch = _wmoVisibilityBatches[visibilityBatchIndex];
+                        var visibleInstanceIndices = visibilityBatch.InstanceIndices;
+                        var enabledGroups = visibilityBatch.GroupMask;
+                        if (RenderLiquid)
                         {
-                            if (!enabledGroups[groupIndex] || !wmo.groupBatches[groupIndex].liquid.HasGeometry)
-                                continue;
-                            foreach (var instanceIndex in visibleInstanceIndices)
-                                _visibleWmoLiquids.Add(new WmoLiquidInstance(instances[instanceIndex], groupIndex));
+                            for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+                            {
+                                if (!enabledGroups[groupIndex] || !wmo.groupBatches[groupIndex].liquid.HasGeometry)
+                                    continue;
+                                foreach (var instanceIndex in visibleInstanceIndices)
+                                    _visibleWmoLiquids.Add(new WmoLiquidInstance(instances[instanceIndex], groupIndex));
+                            }
                         }
-                    }
-                    for (int batchStart = 0; batchStart < visibleInstanceIndices.Count; batchStart += MaxInstancesPerBatch)
-                    {
-                        int batchSize = Math.Min(MaxInstancesPerBatch, visibleInstanceIndices.Count - batchStart);
-
-                        // the normal approach to do updatesubresource doesn't work for dynamic buffers, so we have to do the below block instead
-                        unsafe
+                        for (int batchStart = 0; batchStart < visibleInstanceIndices.Count; batchStart += MaxInstancesPerBatch)
                         {
-                            MappedSubresource mapped = default;
-                            SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+                            int batchSize = Math.Min(MaxInstancesPerBatch, visibleInstanceIndices.Count - batchStart);
 
-                            var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
-                            for (int i = 0; i < batchSize; i++)
-                                dest[i] = instances[visibleInstanceIndices[batchStart + i]].GetModelMatrix();
-
-                            _deviceContext.Unmap(instanceMatrixBuffer, 0);
-                            InstanceBufferMapCalls++;
-                        }
-
-                        _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
-                        VertexBufferBindings++;
-
-                        var currentGroupId = uint.MaxValue;
-
-                        for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
-                        {
-                            var batch = wmo.wmoRenderBatches[j];
-                            if (!enabledGroups[batch.groupID])
-                                continue;
-
-                            if (currentGroupId != batch.groupID)
+                            // the normal approach to do updatesubresource doesn't work for dynamic buffers, so we have to do the below block instead
+                            unsafe
                             {
-                                var group = wmo.groupBatches[batch.groupID];
-                                var vertexBuffer = group.vertexBuffer;
-                                var indiceBuffer = group.indiceBuffer;
-                                _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
-                                _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
-                                VertexBufferBindings++;
-                                IndexBufferBindings++;
-                                currentGroupId = batch.groupID;
+                                MappedSubresource mapped = default;
+                                SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
+
+                                var dest = new Span<Matrix4x4>(mapped.PData, batchSize);
+                                for (int i = 0; i < batchSize; i++)
+                                    dest[i] = instances[visibleInstanceIndices[batchStart + i]].GetModelMatrix();
+
+                                _deviceContext.Unmap(instanceMatrixBuffer, 0);
+                                InstanceBufferMapCalls++;
                             }
 
-                            wmoConstantBuffer.vertexShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].VertexShader;
-                            wmoConstantBuffer.pixelShader = (int)ShaderEnums.WMOShaders[(int)batch.shader].PixelShader;
-                            ApplyBlendMode((int)batch.blendType, ref currentBlendType);
-                            wmoConstantBuffer.alphaRef = WmoMaterialPolicy.AlphaReference(
-                                batch.blendType, wmo.legacyLighting);
+                            _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                            VertexBufferBindings++;
 
-                            if (wmoConstantBuffer.vertexShader != lastWmoVertexShader ||
-                                wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
-                                wmoConstantBuffer.alphaRef != lastWmoAlphaRef ||
-                                wmoConstantBuffer.useLegacyLighting != lastWmoLegacyLighting)
+                            var currentGroupId = uint.MaxValue;
+
+                            for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
                             {
-                                _deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
-                                ConstantBufferUpdates++;
-                                lastWmoVertexShader = wmoConstantBuffer.vertexShader;
-                                lastWmoPixelShader = wmoConstantBuffer.pixelShader;
-                                lastWmoAlphaRef = wmoConstantBuffer.alphaRef;
-                                lastWmoLegacyLighting = wmoConstantBuffer.useLegacyLighting;
+                                var batch = wmo.wmoRenderBatches[j];
+                                if (!enabledGroups[batch.groupID])
+                                    continue;
+
+                                if (currentGroupId != batch.groupID)
+                                {
+                                    var group = wmo.groupBatches[batch.groupID];
+                                    var vertexBuffer = group.vertexBuffer;
+                                    var indiceBuffer = group.indiceBuffer;
+                                    _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
+                                    _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
+                                    VertexBufferBindings++;
+                                    IndexBufferBindings++;
+                                    currentGroupId = batch.groupID;
+                                }
+
+                                // Unknown modern shader IDs have no decoded program.
+                                // TODO(WMO): add version-specific programs rather than
+                                // using the generic fallback for unsupported IDs.
+                                if (batch.shader < (uint)ShaderEnums.WMOShaders.Count)
+                                {
+                                    var shaderPair = ShaderEnums.WMOShaders[(int)batch.shader];
+                                    wmoConstantBuffer.vertexShader = (int)shaderPair.VertexShader;
+                                    wmoConstantBuffer.pixelShader = (int)shaderPair.PixelShader;
+                                }
+                                else
+                                {
+                                    wmoConstantBuffer.vertexShader = -1;
+                                    wmoConstantBuffer.pixelShader = -1;
+                                }
+
+                                // MOMT flag 0x4 disables culling for this material.
+                                // Transition walls frequently rely on both faces being drawn.
+                                var twoSided = (wmo.preppedMats[batch.materialIndex].Flags & 0x4) != 0;
+                                if (twoSided != lastWmoTwoSided)
+                                {
+                                    _deviceContext.RSSetState(twoSided
+                                        ? m2TwoSidedRasterizerState : wmoRasterizerState);
+                                    lastWmoTwoSided = twoSided;
+                                }
+
+                                for (int s = 0; s < batch.materialFDIDs.Length; s++)
+                                    _srvScratch[s] = ResolveFrameTexture(batch.materialFDIDs[s]);
+                                if (batch.materialFDIDs.Length > 0)
+                                {
+                                    _deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
+                                    TextureBindingCalls++;
+                                }
+
+                                var samplerIndex = wmo.legacyLighting
+                                    ? WmoMaterialPolicy.SamplerIndex(wmo.preppedMats[batch.materialIndex].Flags)
+                                    : 4;
+                                if (samplerIndex != lastWmoSamplerIndex)
+                                {
+                                    var materialSampler = samplerIndex == 4
+                                        ? textureSampler
+                                        : m2TextureSamplers[samplerIndex];
+                                    _deviceContext.PSSetSamplers(0, 1, ref materialSampler);
+                                    lastWmoSamplerIndex = samplerIndex;
+                                }
+
+                                var passCount = wmo.legacyLighting && batch.category == 0 ? 2 : 1;
+                                for (var pass = 0; pass < passCount; pass++)
+                                {
+                                    var blendMode = passCount == 2 ? (pass == 0 ? 9u : 7u) : batch.blendType;
+                                    ApplyBlendMode((int)blendMode, ref currentBlendType);
+                                    wmoConstantBuffer.alphaRef = WmoMaterialPolicy.AlphaReference(
+                                        blendMode, wmo.legacyLighting);
+                                    wmoConstantBuffer.sidnColor = sidnColors[batch.materialIndex];
+                                    wmoConstantBuffer.lightingMode = pass == 0 ? batch.lightingMode
+                                        : wmoConstantBuffer.unifiedMocv != 0 ? 3 : 0;
+
+                                    if (wmoConstantBuffer.vertexShader != lastWmoVertexShader ||
+                                        wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
+                                        wmoConstantBuffer.alphaRef != lastWmoAlphaRef ||
+                                        wmoConstantBuffer.useLegacyLighting != lastWmoLegacyLighting ||
+                                        wmoConstantBuffer.sidnColor != lastWmoSidnColor ||
+                                        wmoConstantBuffer.lightingMode != lastWmoLightingMode ||
+                                        wmoConstantBuffer.unifiedMocv != lastWmoUnifiedMocv ||
+                                        wmoConstantBuffer.rootAmbientColor != lastWmoRootAmbientColor)
+                                    {
+                                        _deviceContext.UpdateSubresource(wmoPerObjectConstantBuffer, 0,
+                                            ref Unsafe.NullRef<Box>(), ref wmoConstantBuffer, 0, 0);
+                                        ConstantBufferUpdates++;
+                                        lastWmoVertexShader = wmoConstantBuffer.vertexShader;
+                                        lastWmoPixelShader = wmoConstantBuffer.pixelShader;
+                                        lastWmoAlphaRef = wmoConstantBuffer.alphaRef;
+                                        lastWmoLegacyLighting = wmoConstantBuffer.useLegacyLighting;
+                                        lastWmoSidnColor = wmoConstantBuffer.sidnColor;
+                                        lastWmoLightingMode = wmoConstantBuffer.lightingMode;
+                                        lastWmoUnifiedMocv = wmoConstantBuffer.unifiedMocv;
+                                        lastWmoRootAmbientColor = wmoConstantBuffer.rootAmbientColor;
+                                    }
+
+                                    _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
+                                    drawCalls++;
+                                    WmoDrawCalls++;
+                                    WmoSubmittedInstances += (uint)batchSize;
+                                    var submittedIndices = (ulong)batch.numFaces * (uint)batchSize;
+                                    submittedIndexCount += submittedIndices;
+                                    WmoSubmittedIndices += submittedIndices;
+                                }
                             }
-
-                            for (int s = 0; s < batch.materialFDIDs.Length; s++)
-                                _srvScratch[s] = ResolveFrameTexture(batch.materialFDIDs[s]);
-                            if (batch.materialFDIDs.Length > 0)
-                            {
-                                _deviceContext.PSSetShaderResources(0, (uint)batch.materialFDIDs.Length, ref _srvScratch[0]);
-                                TextureBindingCalls++;
-                            }
-
-                            var samplerIndex = wmo.legacyLighting
-                                ? WmoMaterialPolicy.SamplerIndex(wmo.preppedMats[batch.materialIndex].Flags)
-                                : 4;
-                            if (samplerIndex != lastWmoSamplerIndex)
-                            {
-                                var materialSampler = samplerIndex == 4
-                                    ? textureSampler
-                                    : m2TextureSamplers[samplerIndex];
-                                _deviceContext.PSSetSamplers(0, 1, ref materialSampler);
-                                lastWmoSamplerIndex = samplerIndex;
-                            }
-
-                            _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchSize, batch.firstFace, 0, 0);
-
-                            drawCalls++;
-                            WmoDrawCalls++;
-                            WmoSubmittedInstances += (uint)batchSize;
-                            var submittedIndices = (ulong)batch.numFaces * (uint)batchSize;
-                            submittedIndexCount += submittedIndices;
-                            WmoSubmittedIndices += submittedIndices;
                         }
                     }
                 }
+                if (ShowWmoCollisionMesh)
+                    DrawWmoCollisionMesh(wmo, instances, projectionMatrix, cameraMatrix,
+                        instanceStride, instanceOffset, lastWmoTwoSided,
+                        ref currentBlendType, ref drawCalls, ref submittedIndexCount);
             }
             gpuTimer?.EndWorldModels();
+            ComPtr<ID3D11DepthStencilState> defaultWmoDepthState = default;
+            _deviceContext.OMSetDepthStencilState(defaultWmoDepthState, 0);
             WmoSubmissionTimeMs = Math.Max(
                 0,
                 Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - WmoCullingTimeMs);
@@ -1605,9 +1685,16 @@ namespace WoWRenderLib.DX11.Managers
                 for (int i = 0; i < instances.Count; i++)
                 {
                     var instance = instances[i];
+                    // The tile aggregate contains every owned M2. A tile wholly
+                    // outside the frustum needs no per-placement spatial checks.
+                    var tileIndex = (int)instance.ParentTileIndex;
+                    if (coarseCulledTileIndices.Count > 0 &&
+                        coarseCulledTileIndices.Contains(tileIndex))
+                        continue;
+
                     var parentWmo = instance.ParentWMO;
-                    if (RenderWMO && parentWmo is not null &&
-                        !parentWmo.IsCameraVisibleForFrame(_renderFrameNumber))
+                    if (parentWmo is not null &&
+                        (!RenderWMO || !parentWmo.IsCameraVisibleForFrame(_renderFrameNumber)))
                         continue;
 
                     if (EnableWmoPortalCulling && parentWmo is not null &&
@@ -1617,13 +1704,6 @@ namespace WoWRenderLib.DX11.Managers
                         portalCulledM2s++;
                         continue;
                     }
-                    // The tile aggregate contains every owned M2. A tile wholly
-                    // outside the frustum needs no per-placement spatial checks.
-                    var tileIndex = (int)instance.ParentTileIndex;
-                    if (coarseCulledTileIndices.Count > 0 &&
-                        coarseCulledTileIndices.Contains(tileIndex))
-                        continue;
-
                     packet.RefreshSpatialData(i, instance, m2);
                     var sphere = packet.WorldBounds[i];
                     var cameraToSphere = sphere.Center - m2CameraPosition;
@@ -2139,11 +2219,13 @@ namespace WoWRenderLib.DX11.Managers
                 m2PerObjectConstantBuffer.Dispose();
                 m2BonePaletteConstantBuffer.Dispose();
                 wmoPerObjectConstantBuffer.Dispose();
+                wmoCollisionConstantBuffer.Dispose();
                 instanceMatrixBuffer.Dispose();
                 emptyTerrainTexture.Dispose();
                 missingTexture.Dispose();
                 rasterizerState.Dispose();
                 wmoRasterizerState.Dispose();
+                _wmoDepthState.Dispose();
                 m2TwoSidedRasterizerState.Dispose();
                 foreach (var bs in _blendStates)
                     bs.Dispose();

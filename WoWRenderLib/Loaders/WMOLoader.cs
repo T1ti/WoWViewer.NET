@@ -30,6 +30,10 @@ public static class WMOLoader
         var preppedGroups = new List<PreppedWMOGroup>();
         var materials = ReadMaterials(fileSystem, rootData);
         var rootFlags = root.Header.Flags;
+        var portalVertices = ReadVector3Array(root.PortalVertices);
+        var portals = ReadPortals(root.Portals);
+        var portalReferences = ReadPortalReferences(root.PortalRefs);
+        var groupFlags = groupInfos.ToArray().Select(static info => info.Flags).ToArray();
 
         for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
@@ -48,29 +52,65 @@ public static class WMOLoader
             var bodyNormals = body.Normals.AsDataSpan();
             var bodyColors = body.VertexColors2.AsDataSpan();
             var vertices = new WMOVertex[bodyVertices.Length];
-            var textureCoordinates = ReadTextureCoordinates(
+            var groupBytes = ReadGroupBytes(
                 fileSystem,
                 fileDataId,
                 groupIndex,
-                groupIndex < rootData.GroupFileDataIds.Length ? rootData.GroupFileDataIds[groupIndex] : 0,
-                vertices.Length);
+                groupIndex < rootData.GroupFileDataIds.Length ? rootData.GroupFileDataIds[groupIndex] : 0);
+            var textureCoordinates = ReadTextureCoordinateChunks(groupBytes, vertices.Length);
+            var colorSets = ReadVertexColorChunks(groupBytes, vertices.Length);
+            var hasPrimaryColors = colorSets[0] is { Length: > 0 };
+            if (fileSystem.Kind == StorageKind.Mpq && hasPrimaryColors)
+            {
+                var firstNonTransition = 0;
+                for (var batchIndex = 0; batchIndex < Math.Min(header.TransBatchCount, body.Batches.Count); batchIndex++)
+                    firstNonTransition = Math.Max(firstNonTransition, body.Batches[batchIndex].MaxIndex + 1);
+                firstNonTransition = Math.Min(firstNonTransition, bodyVertices.Length);
+                LegacyFixColorVertexAlpha(colorSets[0], firstNonTransition, rootFlags);
+                var positions = new Vector3[firstNonTransition];
+                for (var i = 0; i < positions.Length && i < bodyVertices.Length; i++)
+                    positions[i] = ToVector3(bodyVertices[i]);
+                AttenuateTransitionColors(colorSets[0], positions, rootFlags,
+                    header.PortalStart, header.PortalCount,
+                    portalVertices, portals, portalReferences, groupFlags);
+            }
+            var neutralColor = (rootFlags & 0x2) != 0
+                ? new Vector4(0f, 0f, 0f, 1f)
+                : new Vector4(0.5f, 0.5f, 0.5f, 1f);
             for (var i = 0; i < vertices.Length; i++)
             {
+                var primaryUv = GetTextureCoordinate(textureCoordinates, 0, i);
                 vertices[i] = new WMOVertex
                 {
                     Position = ToVector3(bodyVertices[i]),
                     Normal = i < bodyNormals.Length ? ToVector3(bodyNormals[i]) : Vector3.UnitZ,
-                    TexCoord = GetTextureCoordinate(textureCoordinates, 0, i),
-                    TexCoord2 = GetTextureCoordinate(textureCoordinates, 1, i),
+                    TexCoord = primaryUv,
+                    // Wisp forwards UV0 when a legacy group has no second
+                    // MOTV stream; zero UVs would sample one texel everywhere.
+                    TexCoord2 = GetTextureCoordinate(textureCoordinates, 1, i,
+                        fileSystem.Kind == StorageKind.Mpq ? primaryUv : Vector2.Zero),
                     TexCoord3 = GetTextureCoordinate(textureCoordinates, 2, i),
                     TexCoord4 = GetTextureCoordinate(textureCoordinates, 3, i),
-                    Color = Vector4.Zero,
-                    Color2 = i < bodyColors.Length ? ColorVector(bodyColors[i]) : Vector4.Zero,
+                    Color = hasPrimaryColors ? colorSets[0][i] : neutralColor,
+                    Color2 = colorSets[1] is { Length: > 0 } secondColors
+                        ? secondColors[i]
+                        : i < bodyColors.Length ? ColorVector(bodyColors[i]) : Vector4.Zero,
                     Color3 = Vector4.Zero
                 };
             }
 
             var indices = body.Indices.AsSpan().ToArray();
+            var collisionVertices = ReadCollisionVertexBuffer(groupBytes, vertices, indices);
+            if (groupBytes.Length == 0)
+            {
+                if (body is Formats.WMO.Group.WMOGroupBodyDragonflightPlus modernBody &&
+                    modernBody.Polys2.Count != 0)
+                    collisionVertices = BuildCollisionVertexBuffer(
+                        MemoryMarshal.AsBytes(modernBody.Polys2.AsDataSpan()), true, vertices, indices);
+                else if (body.Polys.Count != 0)
+                    collisionVertices = BuildCollisionVertexBuffer(
+                        MemoryMarshal.AsBytes(body.Polys.AsDataSpan()), false, vertices, indices);
+            }
             var renderBatches = new List<PreppedWMOGroupBatch>(body.Batches.Count);
             for (var batchIndex = 0; batchIndex < body.Batches.Count; batchIndex++)
             {
@@ -82,6 +122,8 @@ public static class WMOLoader
                 {
                     FirstFace = batch.StartIndex,
                     NumFaces = batch.Count,
+                    Category = (byte)(batchIndex < header.TransBatchCount ? 0
+                        : batchIndex < header.TransBatchCount + header.IntBatchCount ? 1 : 2),
                     MaterialID = materialId
                 });
             }
@@ -123,6 +165,7 @@ public static class WMOLoader
                 mogiGroupName = groupName,
                 mogiFlags = groupInfo.Flags,
                 flags = header.Flags,
+                hasPrimaryVertexColors = hasPrimaryColors,
                 portalStart = header.PortalStart,
                 portalCount = header.PortalCount,
                 doodadReferences = doodadRefs,
@@ -130,6 +173,7 @@ public static class WMOLoader
                 boundingBox = new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
                 vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(),
                 indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray(),
+                collisionVertexBuffer = collisionVertices,
                 groupBatches = [.. renderBatches]
             });
         }
@@ -150,9 +194,9 @@ public static class WMOLoader
             DoodadSets = doodadSets,
             Materials = materials,
             PreppedWMOGroups = [.. preppedGroups],
-            PortalVertices = ReadVector3Array(root.PortalVertices),
-            Portals = ReadPortals(root.Portals),
-            PortalReferences = ReadPortalReferences(root.PortalRefs),
+            PortalVertices = portalVertices,
+            Portals = portals,
+            PortalReferences = portalReferences,
             SourceGroupCount = groups.Count
         };
     }
@@ -290,12 +334,11 @@ public static class WMOLoader
         };
     }
 
-    private static Vector2[][] ReadTextureCoordinates(
+    private static byte[] ReadGroupBytes(
         Fs.FileSystem fileSystem,
         uint rootFileDataId,
         int groupIndex,
-        uint groupFileDataId,
-        int vertexCount)
+        uint groupFileDataId)
     {
         if (fileSystem.Kind == StorageKind.Mpq &&
             LegacyAssetIds.TryGetPath(fileSystem, rootFileDataId, out var rootPath) &&
@@ -305,20 +348,164 @@ public static class WMOLoader
             groupFileDataId = WowlibFileSystem.ResolveAssetId(fileSystem, groupPath);
         }
 
-        if (groupFileDataId == 0 || vertexCount == 0)
-            return [[], [], [], []];
+        if (groupFileDataId == 0)
+            // TODO(WMO): Surface missing group bytes in diagnostics. Falling
+            // back to neutral MOCV and zero UVs can hide an asset-path error.
+            return [];
 
         try
         {
-            var bytes = WowlibFileSystem.ReadAsset(fileSystem, groupFileDataId);
-            return ReadTextureCoordinateChunks(bytes, vertexCount);
+            return WowlibFileSystem.ReadAsset(fileSystem, groupFileDataId);
         }
         catch
         {
-            // Some older WMO lineages do not expose group FileDataIDs. Keep
-            // geometry usable and use the shader's zero-UV fallback.
-            return [[], [], [], []];
+            // TODO(WMO): Report this group read failure with the source path.
+            // Some WMO lineages do not expose group FileDataIDs. Keep geometry
+            // usable with neutral colors and the shader's zero-UV fallback.
+            return [];
         }
+    }
+
+    // Wowlib 0.0.9 exposes MOC2 but omits the primary (and second) MOCV
+    // chunk, so decode those from the same group bytes used for MOTV.
+    internal static Vector4[][] ReadVertexColorChunks(ReadOnlySpan<byte> bytes, int vertexCount)
+    {
+        var result = new Vector4[2][];
+        if (vertexCount <= 0)
+            return result;
+
+        var chunkSize = checked(vertexCount * 4);
+        const uint mocv = ('M' << 24) | ('O' << 16) | ('C' << 8) | 'V';
+        var offsets = FindGroupChunkPayloads(bytes, mocv, chunkSize, 4);
+        for (var colorSet = 0; colorSet < Math.Min(offsets.Count, result.Length); colorSet++)
+        {
+            var colors = new Vector4[vertexCount];
+            for (var i = 0; i < vertexCount; i++)
+            {
+                var pixel = bytes.Slice(offsets[colorSet] + i * 4, 4);
+                colors[i] = new Vector4(pixel[2] / 255f, pixel[1] / 255f,
+                    pixel[0] / 255f, pixel[3] / 255f);
+            }
+            result[colorSet] = colors;
+        }
+        return result;
+    }
+
+    // for old clients, In 3.3.5a this function is called ONLY when MOHD flag 0x8 ("flag_do_not_fix_vertex_color_alpha") is NOT set.
+    // TODO : This changed in Build 18179
+    internal static void LegacyFixColorVertexAlpha(Vector4[] colors, int firstNonTransition, ushort rootFlags)
+    {
+        if ((rootFlags & 0x8) != 0)
+            return;
+
+        for (var i = 0; i < colors.Length; i++)
+        {
+            var color = colors[i];
+            var alpha = (uint)Math.Clamp((int)MathF.Round(color.W * 255f), 0, 255);
+            static float Fix(float channel, uint alpha, bool transition)
+            {
+                var value = (uint)Math.Clamp((int)MathF.Round(channel * 255f), 0, 255);
+                var fixedValue = transition ? value >> 1 : Math.Min(255u, (value + ((alpha * value) >> 6)) >> 1);
+                return fixedValue / 255f;
+            }
+            var transition = i < firstNonTransition;
+            colors[i] = new Vector4(
+                Fix(color.X, alpha, transition), Fix(color.Y, alpha, transition),
+                Fix(color.Z, alpha, transition), transition ? color.W : 1f);
+        }
+    }
+
+    // The client's AttenTransVerts rewrites transition MOCV near portals.
+    // Its alpha drives the two-pass blend; RGB approaches the neutral 0x7f.
+    internal static void AttenuateTransitionColors(Vector4[] colors, ReadOnlySpan<Vector3> positions,
+        ushort rootFlags, ushort portalStart, ushort portalCount, ReadOnlySpan<Vector3> portalVertices,
+        ReadOnlySpan<PreppedWMOPortal> portals, ReadOnlySpan<PreppedWMOPortalReference> references,
+        ReadOnlySpan<uint> groupFlags)
+    {
+        if ((rootFlags & 0x1) != 0)
+            return;
+
+        for (var vertexIndex = 0; vertexIndex < Math.Min(colors.Length, positions.Length); vertexIndex++)
+        {
+            var position = positions[vertexIndex];
+            var weight = 0f;
+            var forcedInterior = false;
+            for (var referenceIndex = (int)portalStart;
+                 referenceIndex < (int)portalStart + portalCount && referenceIndex < references.Length;
+                 referenceIndex++)
+            {
+                var reference = references[referenceIndex];
+                if (reference.PortalIndex >= portals.Length || reference.GroupIndex >= groupFlags.Length)
+                    continue;
+                var portal = portals[reference.PortalIndex];
+                if (portal.VertexCount < 3 || portal.StartVertex + portal.VertexCount > portalVertices.Length)
+                    continue;
+                var polygon = portalVertices.Slice(portal.StartVertex, portal.VertexCount);
+                var signedDistance = Vector3.Dot(portal.Normal, position) + portal.Distance;
+                var projected = position - portal.Normal * signedDistance;
+                float distance;
+                if (PointInPortal(projected, polygon, portal.Normal))
+                {
+                    distance = reference.Side == 1 ? signedDistance : -signedDistance;
+                }
+                else
+                {
+                    distance = float.PositiveInfinity;
+                    for (var edge = 0; edge < polygon.Length; edge++)
+                        distance = Math.Min(distance,
+                            DistanceToSegment(position, polygon[edge], polygon[(edge + 1) % polygon.Length]));
+                }
+
+                if ((groupFlags[reference.GroupIndex] & 0x48) != 0)
+                {
+                    var contribution = 1f - 0.15f * Math.Max(distance, 0f);
+                    if (contribution > 0.001f)
+                        weight += contribution;
+                }
+                else if (distance > -1f && distance < 1f)
+                {
+                    forcedInterior = true;
+                    break;
+                }
+            }
+
+            weight = forcedInterior || weight <= 0.001f ? 0f : Math.Min(weight, 1f);
+            var source = colors[vertexIndex];
+            static float BlendChannel(float channel, float amount)
+            {
+                var value = (int)MathF.Round(channel * 255f);
+                return (int)(value + amount * (127 - value)) / 255f;
+            }
+            colors[vertexIndex] = new Vector4(
+                BlendChannel(source.X, weight), BlendChannel(source.Y, weight),
+                BlendChannel(source.Z, weight), (int)(weight * 255f) / 255f);
+        }
+    }
+
+    private static bool PointInPortal(Vector3 point, ReadOnlySpan<Vector3> polygon, Vector3 normal)
+    {
+        var positive = false;
+        var negative = false;
+        for (var i = 0; i < polygon.Length; i++)
+        {
+            var side = Vector3.Dot(Vector3.Cross(
+                polygon[(i + 1) % polygon.Length] - polygon[i], point - polygon[i]), normal);
+            positive |= side > 0f;
+            negative |= side < 0f;
+            if (positive && negative)
+                return false;
+        }
+        return true;
+    }
+
+    private static float DistanceToSegment(Vector3 point, Vector3 start, Vector3 end)
+    {
+        var segment = end - start;
+        var lengthSquared = segment.LengthSquared();
+        var along = lengthSquared > 0f
+            ? Math.Clamp(Vector3.Dot(point - start, segment) / lengthSquared, 0f, 1f)
+            : 0f;
+        return Vector3.Distance(point, start + along * segment);
     }
 
     internal static Vector2[][] ReadTextureCoordinateChunks(ReadOnlySpan<byte> bytes, int vertexCount)
@@ -328,36 +515,160 @@ public static class WMOLoader
             return result;
 
         var chunkSize = checked(vertexCount * sizeof(float) * 2);
-        var coordinateSet = 0;
         const uint motv = ('M' << 24) | ('O' << 16) | ('T' << 8) | 'V';
-        for (var offset = 0; offset + 8 <= bytes.Length && coordinateSet < result.Length; offset += 4)
+        var offsets = FindGroupChunkPayloads(bytes, motv, chunkSize, 1);
+        for (var coordinateSet = 0; coordinateSet < Math.Min(offsets.Count, result.Length); coordinateSet++)
         {
-            if (BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4)) != motv)
-                continue;
-
-            var size = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(offset + 4, 4));
-            if (size != chunkSize || size < 0 || offset + 8 + size > bytes.Length)
-                continue;
-
             var coordinates = new Vector2[vertexCount];
             for (var i = 0; i < coordinates.Length; i++)
             {
-                var coordinateOffset = offset + 8 + i * 8;
+                var coordinateOffset = offsets[coordinateSet] + i * 8;
                 coordinates[i] = new Vector2(
                     BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset, 4))),
                     BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset + 4, 4))));
             }
 
-            result[coordinateSet++] = coordinates;
+            result[coordinateSet] = coordinates;
         }
 
         return result;
     }
 
-    private static Vector2 GetTextureCoordinate(Vector2[][] coordinateSets, int set, int vertex) =>
+    // WMO child chunks follow their declared sizes, not 4-byte alignment.
+    // In particular, an odd number of MOPY triangles puts later MOCV/MOTV
+    // headers two bytes off a 4-byte boundary.
+    private static List<int> FindGroupChunkPayloads(ReadOnlySpan<byte> bytes, uint chunkId,
+        int minimumSize, int sizeMultiple)
+    {
+        const uint mogp = ('M' << 24) | ('O' << 16) | ('G' << 8) | 'P';
+        const int mogpHeaderSize = 68;
+        var offsets = new List<int>();
+
+        static void Walk(ReadOnlySpan<byte> data, int start, int end,
+            uint desiredId, int minimumSize, int sizeMultiple,
+            List<int> found, bool enterGroup)
+        {
+            for (var offset = start; offset <= end - 8;)
+            {
+                var size = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset + 4, 4));
+                var payload = offset + 8;
+                if (size < 0 || size > end - payload)
+                    break;
+
+                var id = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, 4));
+                if (id == desiredId && size >= minimumSize && size % sizeMultiple == 0)
+                    found.Add(payload);
+                else if (enterGroup && id == mogp && size >= mogpHeaderSize)
+                    Walk(data, payload + mogpHeaderSize, payload + size,
+                        desiredId, minimumSize, sizeMultiple, found, false);
+
+                offset = payload + size;
+            }
+        }
+
+        Walk(bytes, 0, bytes.Length, chunkId, minimumSize, sizeMultiple, offsets, true);
+        return offsets;
+    }
+
+    internal static byte[] ReadCollisionVertexBuffer(
+        ReadOnlySpan<byte> groupBytes,
+        ReadOnlySpan<WMOVertex> vertices,
+        ReadOnlySpan<ushort> indices)
+    {
+        var triangleCount = indices.Length / 3;
+        if (triangleCount == 0 || vertices.IsEmpty)
+            return [];
+
+        const uint mopy = ('M' << 24) | ('O' << 16) | ('P' << 8) | 'Y';
+        const uint mpy2 = ('M' << 24) | ('P' << 16) | ('Y' << 8) | '2';
+        // MPY2 replaces MOPY from 10.0 onward. Read the on-disk face records
+        // so this diagnostic works across Wowlib's versioned group wrappers.
+        var modernOffsets = FindGroupChunkPayloads(groupBytes, mpy2, triangleCount * 4, 4);
+        var modern = modernOffsets.Count != 0;
+        var offsets = modern ? modernOffsets
+            : FindGroupChunkPayloads(groupBytes, mopy, triangleCount * 2, 2);
+        if (offsets.Count == 0)
+            return [];
+
+        var records = groupBytes.Slice(offsets[0], triangleCount * (modern ? 4 : 2));
+        return BuildCollisionVertexBuffer(records, modern, vertices, indices);
+    }
+
+    private static byte[] BuildCollisionVertexBuffer(
+        ReadOnlySpan<byte> records,
+        bool modern,
+        ReadOnlySpan<WMOVertex> vertices,
+        ReadOnlySpan<ushort> indices)
+    {
+        var triangleCount = Math.Min(indices.Length / 3, records.Length / (modern ? 4 : 2));
+        var visibleTriangleCount = 0;
+        for (var triangle = 0; triangle < triangleCount; triangle++)
+        {
+            if (IsInvisibleCollisionFace(records, triangle, modern) &&
+                indices[triangle * 3] < vertices.Length &&
+                indices[triangle * 3 + 1] < vertices.Length &&
+                indices[triangle * 3 + 2] < vertices.Length)
+                visibleTriangleCount++;
+        }
+
+        if (visibleTriangleCount == 0)
+            return [];
+
+        var result = new WMOCollisionVertex[visibleTriangleCount * 3];
+        var destination = 0;
+        for (var triangle = 0; triangle < triangleCount; triangle++)
+        {
+            if (!IsInvisibleCollisionFace(records, triangle, modern))
+                continue;
+
+            var firstIndex = indices[triangle * 3];
+            var secondIndex = indices[triangle * 3 + 1];
+            var thirdIndex = indices[triangle * 3 + 2];
+            if (firstIndex >= vertices.Length || secondIndex >= vertices.Length || thirdIndex >= vertices.Length)
+                continue;
+
+            result[destination++] = new WMOCollisionVertex
+            {
+                Position = vertices[firstIndex].Position,
+                Barycentric = new Vector2(1f, 0f)
+            };
+            result[destination++] = new WMOCollisionVertex
+            {
+                Position = vertices[secondIndex].Position,
+                Barycentric = new Vector2(0f, 1f)
+            };
+            result[destination++] = new WMOCollisionVertex
+            {
+                Position = vertices[thirdIndex].Position,
+                Barycentric = Vector2.Zero
+            };
+        }
+
+        return MemoryMarshal.AsBytes(result.AsSpan()).ToArray();
+    }
+
+    private static bool IsInvisibleCollisionFace(ReadOnlySpan<byte> records, int triangle, bool modern)
+    {
+        var recordOffset = triangle * (modern ? 4 : 2);
+        var flags = modern
+            ? BinaryPrimitives.ReadUInt16LittleEndian(records.Slice(recordOffset, 2))
+            : records[recordOffset];
+        var materialId = modern
+            ? BinaryPrimitives.ReadUInt16LittleEndian(records.Slice(recordOffset + 2, 2))
+            : records[recordOffset + 1];
+
+        // MOPY's 0xFF material is Wisp's collision/no-draw sentinel. Flag 0x08
+        // also marks a collision face; only show it here when 0x20 (render) is
+        // clear, so the overlay does not repaint normal visible geometry.
+        return materialId == (modern ? 0xFFFF : 0xFF) ||
+               (flags & 0x08) != 0 && (flags & 0x20) == 0;
+    }
+
+    internal static Vector2 GetTextureCoordinate(Vector2[][] coordinateSets, int set,
+        int vertex, Vector2 fallback = default) =>
         set < coordinateSets.Length && coordinateSets[set] is { Length: > 0 } coordinates && vertex < coordinates.Length
             ? coordinates[vertex]
-            : Vector2.Zero;
+            : fallback;
 
     private static PreppedWMOMaterial[] ReadMaterials(Fs.FileSystem fileSystem, RootData root)
     {

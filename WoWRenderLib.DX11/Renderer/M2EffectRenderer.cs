@@ -23,6 +23,7 @@ internal sealed class M2EffectRenderer(
     private ComPtr<ID3D11Buffer> _constantBuffer;
     private int _vertexCursor;
     private int _indexCursor;
+    private ulong _effectFrameNumber;
     private readonly ConditionalWeakTable<M2Container, RibbonCacheEntry> _ribbonCache = new();
     private readonly ConditionalWeakTable<M2Container, ParticleCacheEntry> _particleCache = new();
 
@@ -41,6 +42,7 @@ internal sealed class M2EffectRenderer(
         public uint Seed;
         public M2RibbonMesh[] Meshes = [];
         public bool[] Built = [];
+        public ulong LastRenderedFrame;
     }
 
     private struct RibbonConstants
@@ -107,6 +109,7 @@ internal sealed class M2EffectRenderer(
         Matrix4x4 modelToView)
     {
         var entry = _particleCache.GetValue(instance, static _ => new ParticleCacheEntry());
+        entry.LastRenderedFrame = _effectFrameNumber;
         var seed = instance.UniqueID ^ (uint)instance.WmoDoodadIndex * 0x9E3779B9u;
         if (!ReferenceEquals(entry.Animation, animation) ||
             entry.Frame != frame || entry.ModelToView != modelToView ||
@@ -148,6 +151,7 @@ internal sealed class M2EffectRenderer(
         Matrix4x4 modelToView)
     {
         var entry = _particleCache.GetValue(instance, static _ => new ParticleCacheEntry());
+        entry.LastRenderedFrame = _effectFrameNumber;
         var seed = instance.UniqueID ^ (uint)instance.WmoDoodadIndex * 0x9E3779B9u;
         if (!ReferenceEquals(entry.Animation, animation) || entry.Seed != seed ||
             entry.Meshes.Length != animation.Particles.Length)
@@ -173,6 +177,27 @@ internal sealed class M2EffectRenderer(
         return entry.Meshes[particleIndex];
     }
 
+    /// <summary>Read only meshes drawn in the latest effect pass.</summary>
+    public bool TryGetRenderedParticleMeshes(
+        M2Container instance,
+        out M2Animation? animation,
+        out M2RibbonMesh[] meshes)
+    {
+        animation = null;
+        meshes = [];
+        if (_effectFrameNumber == 0 ||
+            !_particleCache.TryGetValue(instance, out var entry) ||
+            entry.LastRenderedFrame != _effectFrameNumber ||
+            entry.Animation is null)
+        {
+            return false;
+        }
+
+        animation = entry.Animation;
+        meshes = entry.Meshes;
+        return true;
+    }
+
     public unsafe void Begin()
     {
         if (_shaderManager is null)
@@ -194,6 +219,7 @@ internal sealed class M2EffectRenderer(
 
     public void BeginFrame()
     {
+        _effectFrameNumber++;
         _vertexCursor = 0;
         _indexCursor = 0;
     }

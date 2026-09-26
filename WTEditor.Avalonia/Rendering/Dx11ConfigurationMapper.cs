@@ -28,6 +28,7 @@ internal static class Dx11ConfigurationMapper
         RenderADT = configuration.RenderADT,
         RenderLiquid = configuration.RenderLiquid,
         RenderWMO = configuration.RenderWMO,
+        ShowWmoCollisionMesh = configuration.ShowWmoCollisionMesh,
         RenderM2 = configuration.RenderM2,
         RenderParticles = configuration.RenderParticles,
         DisableScreenGlow = configuration.DisableScreenGlow,

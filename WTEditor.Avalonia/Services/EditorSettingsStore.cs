@@ -30,6 +30,7 @@ public sealed class PersistedRenderingSettings
     public bool RenderADT { get; set; } = true;
     public bool RenderLiquid { get; set; } = true;
     public bool RenderWMO { get; set; } = true;
+    public bool ShowWmoCollisionMesh { get; set; }
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
     public bool DisableScreenGlow { get; set; }
@@ -61,6 +62,7 @@ public sealed class PersistedRenderingSettings
         RenderADT = RenderADT,
         RenderLiquid = RenderLiquid,
         RenderWMO = RenderWMO,
+        ShowWmoCollisionMesh = ShowWmoCollisionMesh,
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
         DisableScreenGlow = DisableScreenGlow,
@@ -97,6 +99,7 @@ public sealed class PersistedRenderingSettings
         RenderADT = rendering.RenderADT,
         RenderLiquid = rendering.RenderLiquid,
         RenderWMO = rendering.RenderWMO,
+        ShowWmoCollisionMesh = rendering.ShowWmoCollisionMesh,
         RenderM2 = rendering.RenderM2,
         RenderParticles = rendering.RenderParticles,
         DisableScreenGlow = rendering.DisableScreenGlow,

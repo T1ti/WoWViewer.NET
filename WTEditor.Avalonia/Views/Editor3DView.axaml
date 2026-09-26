@@ -90,6 +90,10 @@
                       ToolTip.Tip="Show or hide WMO buildings in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Wmo}"/>
         </ToggleButton>
+        <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowWmoCollisionMesh}"
+                      ToolTip.Tip="Show or hide invisible WMO collision triangles">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.CollisionMesh}"/>
+        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderDoodads}"
                       ToolTip.Tip="Show or hide M2 doodads in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Doodad}"/>
@@ -172,6 +176,9 @@
                     <TextBlock Text="Diagnostics" Foreground="#9FB4C6" FontWeight="SemiBold"/>
                     <CheckBox Content="Show bounding boxes" IsChecked="{Binding ShowBoundingBoxes}" Foreground="#D7E2EC"/>
                     <CheckBox Content="Show bounding spheres" IsChecked="{Binding ShowBoundingSpheres}" Foreground="#D7E2EC"/>
+                    <CheckBox Content="Show invisible WMO collision mesh" IsChecked="{Binding ShowWmoCollisionMesh}"
+                              ToolTip.Tip="Draw collision-only WMO triangles as opaque gray faces with dark triangle edges"
+                              Foreground="#D7E2EC"/>
                     <CheckBox Content="WMO portal culling" IsChecked="{Binding WmoPortalCullingEnabled}" Foreground="#D7E2EC"/>
                     <TextBlock Text="Portal culling is experimental for this client build."
                                Foreground="#9FB4C6" FontSize="11" TextWrapping="Wrap" MaxWidth="310"/>

@@ -12,6 +12,29 @@ namespace WTEditor.Avalonia.Tests;
 public sealed class M2ParticleSmokeTests
 {
     [TestMethod]
+    public void SelectionReadsOnlyParticleMeshesDrawnInLatestFrame()
+    {
+        var animation = CreateAnimation();
+        animation.Particles = [CreateEmitter()];
+        var renderer = new M2EffectRenderer(default, default);
+        var instance = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+
+        Assert.IsFalse(renderer.TryGetRenderedParticleMeshes(instance, out _, out _));
+        renderer.BeginFrame();
+        Assert.IsFalse(renderer.TryGetRenderedParticleMeshes(instance, out _, out _));
+
+        var drawn = renderer.GetParticleMesh(instance, animation, 0,
+            new M2AnimationFrameKey(0, 750), Matrix4x4.Identity);
+        Assert.IsTrue(renderer.TryGetRenderedParticleMeshes(
+            instance, out var cachedAnimation, out var meshes));
+        Assert.AreSame(animation, cachedAnimation);
+        Assert.AreSame(drawn.Vertices, meshes[0].Vertices);
+
+        renderer.BeginFrame();
+        Assert.IsFalse(renderer.TryGetRenderedParticleMeshes(instance, out _, out _));
+    }
+
+    [TestMethod]
     public void PausedParticlesReuseLastMeshAcrossFramesAndCameraChanges()
     {
         static M2Container Placement() =>

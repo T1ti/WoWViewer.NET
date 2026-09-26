@@ -95,6 +95,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _renderTerrain;
     [ObservableProperty] private bool _renderLiquid;
     [ObservableProperty] private bool _renderWorldModels;
+    [ObservableProperty] private bool _showWmoCollisionMesh;
     [ObservableProperty] private bool _renderDoodads;
     [ObservableProperty] private bool _renderParticles;
     [ObservableProperty] private bool _animateModels;
@@ -187,6 +188,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _renderTerrain = session.Current.Rendering.RenderADT;
         _renderLiquid = session.Current.Rendering.RenderLiquid;
         _renderWorldModels = session.Current.Rendering.RenderWMO;
+        _showWmoCollisionMesh = session.Current.Rendering.ShowWmoCollisionMesh;
         _renderDoodads = session.Current.Rendering.RenderM2;
         _renderParticles = session.Current.Rendering.RenderParticles;
         _animateModels = session.Current.Rendering.AnimateModels;
@@ -265,6 +267,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderLiquid = value });
     partial void OnRenderWorldModelsChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderWMO = value });
+    partial void OnShowWmoCollisionMeshChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowWmoCollisionMesh = value });
     partial void OnRenderDoodadsChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderM2 = value });
     partial void OnRenderParticlesChanged(bool value) =>
@@ -767,6 +771,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             MouseSensitivity = configuration.MouseSensitivity;
             RenderTerrain = configuration.RenderADT;
             RenderWorldModels = configuration.RenderWMO;
+            ShowWmoCollisionMesh = configuration.ShowWmoCollisionMesh;
             RenderDoodads = configuration.RenderM2;
             RenderParticles = configuration.RenderParticles;
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;

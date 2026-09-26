@@ -130,6 +130,8 @@ namespace WoWRenderLib.DX11.Managers
                             GetOrCompileAdtShader(layerCount, true, true);
                         }
                     }
+                    else if (Path.GetFileNameWithoutExtension(file) == "wmo_collision")
+                        GetOrCompileShader("wmo_collision", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
                         GetOrCompileShader("wmo", true);
                     else if (Path.GetFileNameWithoutExtension(file) == "m2_effect")
@@ -667,6 +669,48 @@ namespace WoWRenderLib.DX11.Managers
                             ref inputLayout
                         )
                     );
+                }
+            }
+            else if (type == "wmo_collision")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
+                {
+                    var inputElements = new InputElementDesc[6];
+                    inputElements[0] = new InputElementDesc
+                    {
+                        SemanticName = posName,
+                        Format = Format.FormatR32G32B32Float,
+                        InputSlot = 0,
+                        AlignedByteOffset = 0,
+                        InputSlotClass = InputClassification.PerVertexData
+                    };
+                    inputElements[1] = new InputElementDesc
+                    {
+                        SemanticName = texCoordName,
+                        SemanticIndex = 0,
+                        Format = Format.FormatR32G32Float,
+                        InputSlot = 0,
+                        AlignedByteOffset = 12,
+                        InputSlotClass = InputClassification.PerVertexData
+                    };
+                    for (uint row = 0; row < 4; row++)
+                    {
+                        inputElements[row + 2] = new InputElementDesc
+                        {
+                            SemanticName = texCoordName,
+                            SemanticIndex = row + 1,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1,
+                            AlignedByteOffset = row * 16,
+                            InputSlotClass = InputClassification.PerInstanceData,
+                            InstanceDataStepRate = 1
+                        };
+                    }
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(
+                        in inputElements[0], (uint)inputElements.Length,
+                        vertexCode.GetBufferPointer(), vertexCode.GetBufferSize(),
+                        ref inputLayout));
                 }
             }
             else if (type == "boundingbox")

@@ -18,6 +18,7 @@ public static class EditorIcons
     public static Geometry Paint { get; } = Geometry.Parse("M4,16 L15,5 L19,9 L8,20 L3,21 Z M16,4 L18,2 L22,6 L20,8 Z");
     public static Geometry Colour { get; } = Geometry.Parse("M12,2 C9,7 5,11 5,16 A7,7 0 0 0 19,16 C19,11 15,7 12,2 Z");
     public static Geometry Wmo { get; } = Geometry.Parse("M3,21 L3,9 L6,9 L6,5 L9,5 L9,9 L15,9 L15,5 L18,5 L18,9 L21,9 L21,21 L15,21 L15,15 L9,15 L9,21 Z");
+    public static Geometry CollisionMesh { get; } = Geometry.Parse("M12,2 L22,20 H2 Z M11,5 H13 V12 H11 Z M3,18 L10.5,12 L11.7,13.5 L5,20 Z M21,18 L13.5,12 L12.3,13.5 L19,20 Z");
     public static Geometry Doodad { get; } = Geometry.Parse("M12,2 L21,7 L21,17 L12,22 L3,17 L3,7 Z M5,8 L11,11.3 L11,19.5 L5,16 Z M13,11.3 L19,8 L19,16 L13,19.5 Z");
     public static Geometry Animation { get; } = Geometry.Parse("M5,3 L20,12 L5,21 Z");
     public static Geometry Particles { get; } = Geometry.Parse("M12,1 L13.8,9.2 L22,11 L13.8,12.8 L12,21 L10.2,12.8 L2,11 L10.2,9.2 Z M19,2 L19.8,4.2 L22,5 L19.8,5.8 L19,8 L18.2,5.8 L16,5 L18.2,4.2 Z");

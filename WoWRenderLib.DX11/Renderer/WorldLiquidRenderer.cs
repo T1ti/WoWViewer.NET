@@ -11,7 +11,6 @@ using WoWRenderLib.DX11.Loaders;
 using WoWRenderLib.DX11.Managers;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Structs;
-using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Renderer;
@@ -70,6 +69,7 @@ internal sealed class WorldLiquidRenderer(
     private ComPtr<ID3D11ShaderResourceView> _missingTexture;
     private readonly List<VisibleBatch> _visibleBatches = new(256);
     private readonly List<WorldLiquidSortKey> _visibleBatchOrder = new(256);
+    private readonly WorldLiquidBoundsCache _wmoBoundsCache = new();
     private static readonly Comparison<WorldLiquidSortKey> SortBatches =
         WorldLiquidBatchOrdering.Compare;
     private ShaderManager? _shaderManager;
@@ -221,6 +221,7 @@ internal sealed class WorldLiquidRenderer(
                 continue;
 
             var batches = liquid.batches;
+            var batchSpheres = liquid.batchSpheres;
             candidateCount += batches.Length;
             if (coarseCulledTileIndices.Contains(container.mapTile.PositionIndex))
                 continue;
@@ -230,14 +231,11 @@ internal sealed class WorldLiquidRenderer(
             {
                 var batch = batches[batchIndex];
 
+                var sphere = batchSpheres[batchIndex];
+                if (!IsWithinRenderDistance(cameraPosition, sphere.Center, sphere.Radius, renderDistance))
+                    continue;
                 var bounds = batch.Bounds;
                 if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
-                    continue;
-
-                var sphere = new BoundingSphere(
-                    bounds.Center,
-                    Vector3.Distance(bounds.Center, bounds.Max));
-                if (!IsWithinRenderDistance(cameraPosition, sphere.Center, sphere.Radius, renderDistance))
                     continue;
 
                 if (!hasModelMatrix)
@@ -267,16 +265,19 @@ internal sealed class WorldLiquidRenderer(
             if (!liquid.HasGeometry)
                 continue;
             var matrix = wmoLiquid.Instance.GetModelMatrix();
+            var transformedBounds = _wmoBoundsCache.GetOrUpdate(
+                wmoLiquid.Instance, wmoLiquid.GroupIndex, liquid.batches, matrix);
             tileOrder++;
             for (var batchIndex = 0; batchIndex < liquid.batches.Length; batchIndex++)
             {
                 var batch = liquid.batches[batchIndex];
                 candidateCount++;
-                var bounds = BoundingBox.Transform(batch.Bounds, matrix);
-                if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
+                var cullBounds = transformedBounds[batchIndex];
+                var sphere = cullBounds.Sphere;
+                if (!IsWithinRenderDistance(cameraPosition, sphere.Center, sphere.Radius, wmoRenderDistance))
                     continue;
-                var radius = Vector3.Distance(bounds.Center, bounds.Max);
-                if (!IsWithinRenderDistance(cameraPosition, bounds.Center, radius, wmoRenderDistance))
+                var bounds = cullBounds.Box;
+                if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
                     continue;
                 var visibleIndex = _visibleBatches.Count;
                 _visibleBatches.Add(new VisibleBatch(
