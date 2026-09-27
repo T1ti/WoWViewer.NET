@@ -30,8 +30,3 @@ project.
 - Preserve renderer hot-path behavior: avoid per-frame allocations unless the
   resulting data is consumed that frame, and keep low-frequency UI publication
   throttled independently from rendering.
-
-## Verification
-
-- Follow the root `AGENTS.md` smoke-test command after every code, project, or
-  configuration change.

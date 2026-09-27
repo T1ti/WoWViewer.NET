@@ -5,7 +5,7 @@ using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.DX11.Tests;
 
 [TestClass]
 public sealed class WorldLightingSmokeTests

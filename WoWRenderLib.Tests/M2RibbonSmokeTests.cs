@@ -2,7 +2,7 @@ using System.Numerics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.Structs;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.Tests;
 
 [TestClass]
 public sealed class M2RibbonSmokeTests

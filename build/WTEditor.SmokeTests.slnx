@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="../CascLib/CascLib/CascLib.csproj" />
+  <Project Path="../DBCD/DBCD.IO/DBCD.IO.csproj" />
+  <Project Path="../DBCD/DBCD/DBCD.csproj" />
+  <Project Path="../TACTSharp/TACTSharp/TACTSharp.csproj" />
+  <Project Path="../WoWRenderLib.DX11.Tests/WoWRenderLib.DX11.Tests.csproj" />
+  <Project Path="../WoWRenderLib.DX11/WoWRenderLib.DX11.csproj" />
+  <Project Path="../WoWRenderLib.Tests/WoWRenderLib.Tests.csproj" />
+  <Project Path="../WoWRenderLib/WoWRenderLib.csproj" />
+  <Project Path="../WTEditor.Application/WTEditor.Application.csproj" />
+  <Project Path="../WTEditor.Avalonia.Tests/WTEditor.Avalonia.Tests.csproj" />
+  <Project Path="../WTEditor.Avalonia/WTEditor.Avalonia.csproj" />
+</Solution>

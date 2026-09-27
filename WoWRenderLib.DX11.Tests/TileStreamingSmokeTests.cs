@@ -8,7 +8,7 @@ using WoWRenderLib.Structs;
 using WoWRenderLib.Services;
 using CoreADTLoader = WoWRenderLib.Loaders.ADTLoader;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.DX11.Tests;
 
 [TestClass]
 public sealed class TileStreamingSmokeTests

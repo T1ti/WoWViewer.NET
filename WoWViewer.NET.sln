@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWRenderLib.DX11", "WoWRen
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWRenderLib", "WoWRenderLib\WoWRenderLib.csproj", "{37581702-C44E-4D63-B13D-1200443E9F09}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWRenderLib.Tests", "WoWRenderLib.Tests\WoWRenderLib.Tests.csproj", "{EF735E62-386E-44CB-B498-9AF46AB2E904}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WoWRenderLib.DX11.Tests", "WoWRenderLib.DX11.Tests\WoWRenderLib.DX11.Tests.csproj", "{901DBBEA-E3AD-4FD6-847A-5BD94FE57065}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -63,6 +67,14 @@ Global
 		{37581702-C44E-4D63-B13D-1200443E9F09}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{37581702-C44E-4D63-B13D-1200443E9F09}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{37581702-C44E-4D63-B13D-1200443E9F09}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF735E62-386E-44CB-B498-9AF46AB2E904}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF735E62-386E-44CB-B498-9AF46AB2E904}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF735E62-386E-44CB-B498-9AF46AB2E904}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF735E62-386E-44CB-B498-9AF46AB2E904}.Release|Any CPU.Build.0 = Release|Any CPU
+		{901DBBEA-E3AD-4FD6-847A-5BD94FE57065}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{901DBBEA-E3AD-4FD6-847A-5BD94FE57065}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{901DBBEA-E3AD-4FD6-847A-5BD94FE57065}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{901DBBEA-E3AD-4FD6-847A-5BD94FE57065}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

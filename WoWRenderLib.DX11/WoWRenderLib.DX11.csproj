@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WTEditor.Avalonia.Tests" />
+    <InternalsVisibleTo Include="WoWRenderLib.DX11.Tests" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,7 +4,7 @@ using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.DX11.Tests;
 
 [TestClass]
 public sealed class WmoLiquidSmokeTests

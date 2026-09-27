@@ -1,3 +1,8 @@
+param(
+    [ValidateSet('All', 'Render', 'DX11', 'Avalonia')]
+    [string]$Scope = 'All'
+)
+
 $ErrorActionPreference = 'Stop'
 
 # Smoke runs are short-lived and must not leave Avalonia's background telemetry
@@ -5,17 +10,19 @@ $ErrorActionPreference = 'Stop'
 $env:AVALONIA_TELEMETRY_OPTOUT = '1'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$testProject = Join-Path $repoRoot 'WTEditor.Avalonia.Tests\WTEditor.Avalonia.Tests.csproj'
-$editorProject = Join-Path $repoRoot 'WTEditor.Avalonia\WTEditor.Avalonia.csproj'
+$smokeSolution = Join-Path $PSScriptRoot 'WTEditor.SmokeTests.slnx'
+$testProjects = @{
+    Render = Join-Path $repoRoot 'WoWRenderLib.Tests\WoWRenderLib.Tests.csproj'
+    DX11 = Join-Path $repoRoot 'WoWRenderLib.DX11.Tests\WoWRenderLib.DX11.Tests.csproj'
+    Avalonia = Join-Path $repoRoot 'WTEditor.Avalonia.Tests\WTEditor.Avalonia.Tests.csproj'
+}
+$target = if ($Scope -eq 'All') { $smokeSolution } else { $testProjects[$Scope] }
 
-Write-Host 'Restoring smoke-test dependencies...'
-dotnet restore $testProject --disable-build-servers
+Write-Host "Restoring $Scope smoke-test dependencies..."
+dotnet restore $target --disable-build-servers --verbosity quiet
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host 'Building WTEditor.Avalonia...'
-dotnet build $editorProject --no-restore --disable-build-servers -p:BaseOutputPath=bin\SmokeBuild\
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host 'Running WTEditor.Avalonia smoke tests...'
-dotnet test $testProject --no-restore --disable-build-servers --verbosity normal -p:BaseOutputPath=bin\SmokeTests\
+Write-Host "Running $Scope smoke tests..."
+# Build the editor and selected tests while keeping routine output concise.
+dotnet test $target --no-restore --disable-build-servers --verbosity quiet --logger 'console;verbosity=minimal' -p:BaseOutputPath=bin\SmokeTests\
 exit $LASTEXITCODE

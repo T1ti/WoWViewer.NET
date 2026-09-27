@@ -4,7 +4,7 @@ using WoWRenderLib.Loaders;
 using WoWRenderLib.Persistence;
 using WoWRenderLib.Structs;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.Tests;
 
 [TestClass]
 [DoNotParallelize]

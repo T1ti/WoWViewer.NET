@@ -1,58 +1,46 @@
 # Repository instructions
 
-## Relevant projects
+## Scope and architecture
 
-For WTEditor work, only `WTEditor.Avalonia`, `WoWRenderLib.DX11`, and their
-transitive dependencies are relevant. Build `WTEditor.Avalonia` and its smoke
-tests. The legacy `WoWViewer.NET`, `WoWViewer.NET.DX11`, `WoWRenderLib.OpenGL`,
-and `WTEditor.WPF` projects can be ignored unless a task explicitly targets
-them.
+For WTEditor work, use `WTEditor.Avalonia`, `WoWRenderLib.DX11`, and their
+dependencies. Tests are in `WTEditor.Avalonia.Tests`, `WoWRenderLib.DX11.Tests`,
+and `WoWRenderLib.Tests`. Ignore the legacy viewer, OpenGL, and WPF projects
+unless targeted explicitly.
 
-## Avalonia architecture
+Keep Avalonia views in XAML and view-specific wiring, state and commands in view
+models, and application logic in services. Scope version-specific WoW behavior
+to the affected clients and verify shared behavior elsewhere.
 
-Respect the MVVM pattern in `WTEditor.Avalonia`: keep presentation state and
-commands in view models, keep views focused on XAML and view-specific wiring,
-and keep application logic in services or other non-view classes. Avoid
-placing business logic in Avalonia code-behind.
+## Asset identity
 
-## WoW version compatibility
+- MPQ assets use the path supplied at load time; a missing path is a bug. Never
+  show an MPQ FileDataID or call a synthetic cache ID a FileDataID.
+- CASC FileDataIDs are authoritative when available. Show a source path only if
+  it came from the client, never from an external listfile.
+- Display a client path and CASC ID as `path/to/file.ext(56474)`, or the sole
+  available value. MPQ displays its path alone.
+- The optional user listfile provides hints only; asset existence, loading, and
+  indexing must work without it.
+- CASC 6.0 through build 21796 used `FileDataComplete.db2` for ID-to-name
+  mappings. Filename loading continued through 8.2 (build 30080); after that,
+  load by FileDataID only. Apply each rule only to supporting clients.
 
-The editor aims to support multiple versions of World of Warcraft. When
-implementing a feature or fix for a specific version, preserve compatibility
-with other supported versions. Keep version-specific behavior scoped to the
-versions that need it, and verify that shared behavior still works elsewhere.
+## Tests
 
-## Asset identity, loading, and display
-
-- MPQ clients are path based. Use the filepath supplied when the asset was
-  loaded. Every loaded MPQ asset has a filepath because MPQ assets can only be
-  read by path; a missing path is a caller or bookkeeping error, not a normal
-  asset state. Never describe a synthetic in-process cache ID as a FileDataID,
-  and never show a FileDataID for an MPQ client.
-- CASC clients use FileDataIDs as the authoritative identity when available.
-  Show a filepath as the asset's source only when that path came from the
-  client's own data. Do not infer a source path from an external listfile.
-- In UI and console messages, display a client-provided path and CASC
-  FileDataID together as `path/to/file.ext(56474)`. If only one is available,
-  show only that value. The parenthesized ID is only for CASC clients; an MPQ
-  path appears alone.
-- The external listfile is optional, user supplied metadata. It may provide
-  clearly identified informational hints or quality-of-life features, but
-  must never determine whether an asset exists, how it is loaded, or how
-  client assets are indexed. Loading must work without the listfile.
-- Account for the format transitions: from the introduction of CASC in 6.0
-  through build 21796, `FileDataComplete.db2` supplied FileDataID-to-name
-  mappings. Through 8.2 (build 30080), CASC could still load many assets by
-  filename as well as by FileDataID. After that build, load CASC assets by
-  FileDataID only. Keep these version-specific paths scoped to the clients
-  that support them.
-
-## Required smoke verification
-
-After every code, project, configuration, or shader change, run the repository smoke-test runner from the repository root:
+After each completed batch of code, project, configuration, shader, or test
+edits, run the full smoke check from the repository root:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\run-smoke-tests.ps1
 ```
 
-The runner restores the smoke-test dependencies, builds `WTEditor.Avalonia`, and executes the `WTEditor.Avalonia.Tests` smoke suite. A non-zero result is a blocking failure and must be investigated before considering the change complete.
+The default runner restores, builds `WTEditor.Avalonia`, and runs all three
+suites; a non-zero exit blocks completion. During development, use `-Scope Render`,
+`-Scope DX11`, or `-Scope Avalonia` for relevant tests. Do not rerun an unchanged
+state or run a duplicate build; documentation-only edits need no run.
+
+Find tests with narrow `rg` searches. Add focused behavioral coverage, not
+duplicate or implementation-only assertions. Capture full test output in a
+temporary log; report exit code and test totals, reading failure sections only
+as needed. Await command completion inside one tool orchestration without
+exposing progress polls; use verbose output only to diagnose failures.

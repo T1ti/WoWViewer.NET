@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.Tests;
 
 [TestClass]
 public sealed class WmoCollisionMeshSmokeTests

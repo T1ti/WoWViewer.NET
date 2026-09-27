@@ -10,7 +10,7 @@ using WoWRenderLib.Loaders;
 using WoWRenderLib.Structs;
 using WoWRenderLib.Database;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.DX11.Tests;
 
 [TestClass]
 public sealed class WorldLiquidSmokeTests

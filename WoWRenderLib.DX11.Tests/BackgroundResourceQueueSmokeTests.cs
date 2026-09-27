@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.DX11.Streaming;
 
-namespace WTEditor.Avalonia.Tests;
+namespace WoWRenderLib.DX11.Tests;
 
 [TestClass]
 public sealed class BackgroundResourceQueueSmokeTests

@@ -45,6 +45,3 @@ repository-level instructions.
 - Treat resource ownership as part of the API: the type that creates a COM/GPU
   resource disposes it, while borrowed render targets or shared cache resources
   must be documented and not disposed by the borrower.
-- After any code, project, configuration, or shader change, run the root smoke-test
-  command required by the repository `AGENTS.md`. A failing runner blocks
-  completion.
