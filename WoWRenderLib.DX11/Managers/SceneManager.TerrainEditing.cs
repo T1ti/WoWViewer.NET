@@ -181,7 +181,7 @@ namespace WoWRenderLib.DX11.Managers
             }
         }
 
-        public void PerformRaycast(float mouseX, float mouseY, Camera camera, int windowWidth, int windowHeight)
+        public void PerformRaycast(float mouseX, float mouseY, Camera camera, int windowWidth, int windowHeight, bool additive = false, bool toggle = false)
         {
             var ray = camera.GetRayFromScreen(mouseX, mouseY, windowWidth, windowHeight);
 
@@ -270,9 +270,7 @@ namespace WoWRenderLib.DX11.Managers
                 }
             }
 
-            SelectedObject?.IsSelected = false;
-            SelectedObject = closestObject;
-            SelectedObject?.IsSelected = true;
+            Selection.Select(closestObject, additive, toggle);
         }
 
         public void ClearBrushPreview()

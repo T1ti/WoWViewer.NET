@@ -5,6 +5,7 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.VisualTree;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.Rendering;
 using WTEditor.Avalonia.ViewModels;
@@ -242,6 +243,12 @@ public partial class Editor3DView : UserControl
         if (viewModel == null)
             return;
 
+        if (e.Source is Visual source &&
+            (source == ObjectGizmoToolbar || source is ComboBox or Button ||
+             source.GetVisualAncestors().Any(visual => visual == ObjectGizmoToolbar || visual is ComboBox or Button)))
+            return;
+        viewModel.Shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        viewModel.Ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         var props = e.GetCurrentPoint(this).Properties;
 
         var pos = e.GetPosition(this);
@@ -300,6 +307,10 @@ public partial class Editor3DView : UserControl
         if (viewModel == null)
             return;
 
+        var position = e.GetPosition(this);
+        viewModel.MousePosition = new System.Numerics.Vector2((float)position.X, (float)position.Y);
+        viewModel.Shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        viewModel.Ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         var props = e.GetCurrentPoint(this).Properties;
         switch (props.PointerUpdateKind)
         {
@@ -321,6 +332,17 @@ public partial class Editor3DView : UserControl
         base.OnPointerReleased(e);
     }
 
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        if (ViewModel is { } vm && (vm.LeftMouseDown || vm.RightMouseDown))
+        {
+            vm.CancelObjectManipulation = true;
+            vm.LeftMouseDown = false;
+            vm.RightMouseDown = false;
+        }
+        base.OnPointerCaptureLost(e);
+    }
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         if (DataContext is not Editor3DViewModel vm)
@@ -340,6 +362,13 @@ public partial class Editor3DView : UserControl
         var vm = ViewModel;
         if (vm == null) return;
 
+        if (e.Key == Key.Escape)
+        {
+            vm.CancelObjectManipulation = true;
+            e.Handled = true;
+            return;
+        }
+
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && e.Key == Key.C)
         {
             vm.RequestCopySelection();
@@ -350,10 +379,7 @@ public partial class Editor3DView : UserControl
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && (e.Key == Key.Z || e.Key == Key.Y))
         {
             vm.Forward = false;
-            if (e.Key == Key.Y || (e.KeyModifiers & KeyModifiers.Shift) != 0)
-                vm.UndoService.Redo();
-            else
-                vm.UndoService.Undo();
+            vm.RequestHistoryAction(e.Key == Key.Y || (e.KeyModifiers & KeyModifiers.Shift) != 0);
             e.Handled = true;
             return;
         }
@@ -398,9 +424,16 @@ public partial class Editor3DView : UserControl
     {
         base.OnLostFocus(e);
 
+        // A toolbar child losing focus to the viewport is not a viewport focus loss.
+        // In particular, it must not cancel the first drag after choosing a gizmo mode.
+        if (e.Source != this)
+            return;
+
         var vm = ViewModel;
         if (vm == null) return;
 
+        // Losing focus during a gesture restores the placements before releasing input.
+        vm.CancelObjectManipulation = true;
         // reset inputs
         vm.Forward = false;
         vm.Backward = false;

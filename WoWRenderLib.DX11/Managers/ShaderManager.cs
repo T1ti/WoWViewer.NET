@@ -1,4 +1,4 @@
-﻿using Silk.NET.Core.Native;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D.Compilers;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
@@ -132,6 +132,8 @@ namespace WoWRenderLib.DX11.Managers
                     }
                     else if (Path.GetFileNameWithoutExtension(file) == "wmo_collision")
                         GetOrCompileShader("wmo_collision", true);
+                    else if (Path.GetFileNameWithoutExtension(file) == "object_gizmo")
+                        GetOrCompileShader("object_gizmo", true);
                     else if (Path.GetFileNameWithoutExtension(file) == "boundingbox")
                         GetOrCompileShader("boundingbox", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("wmo"))
@@ -816,6 +818,19 @@ namespace WoWRenderLib.DX11.Managers
                             ref inputLayout
                         )
                     );
+                }
+            }
+            else if (type == "object_gizmo")
+            {
+                fixed (byte* name = "POSITION\0"u8)
+                {
+                    var element = new InputElementDesc
+                    {
+                        SemanticName = name, Format = Format.FormatR32G32B32A32Float,
+                        InputSlotClass = InputClassification.PerVertexData
+                    };
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(in element, 1,
+                        vertexCode.GetBufferPointer(), vertexCode.GetBufferSize(), ref inputLayout));
                 }
             }
             else if (type is "sky" or "glow")

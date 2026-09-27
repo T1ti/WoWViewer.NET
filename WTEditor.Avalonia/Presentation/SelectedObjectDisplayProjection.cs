@@ -14,6 +14,8 @@ internal sealed class SelectedObjectDisplayProjection
     private Container3D? _selectedObject;
     private EditorObjectId _selectedObjectId;
     private IEditorObjectData? _displayData;
+    private EditorObjectSnapshot? _snapshot;
+    private Vector3 _snapshotRotation;
 
     public EditorObjectSnapshot? CreateDisplaySnapshot(Container3D? selectedObject)
     {
@@ -26,8 +28,13 @@ internal sealed class SelectedObjectDisplayProjection
 
         RefreshDisplayDataWhenNeeded(selectedObject);
 
+        if (_snapshot != null && _snapshot.Id == _selectedObjectId &&
+            _snapshot.Transform.Position == selectedObject.Position && _snapshotRotation == selectedObject.Rotation &&
+            _snapshot.Transform.Scale.X == selectedObject.Scale && ReferenceEquals(_snapshot.Data, _displayData))
+            return _snapshot;
+        _snapshotRotation = selectedObject.Rotation;
         var rotation = selectedObject.Rotation * (MathF.PI / 180f);
-        return new EditorObjectSnapshot(
+        return _snapshot = new EditorObjectSnapshot(
             _selectedObjectId,
             GetDisplayName(selectedObject, _displayData),
             GetDisplayKind(selectedObject),

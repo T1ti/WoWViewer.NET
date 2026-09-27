@@ -138,6 +138,36 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         "Choose a visibility preset, keep the camera still, then capture.";
     [ObservableProperty] private string? _performanceCaptureFilePath;
     [ObservableProperty] private EditorObjectSnapshot? _selectedObject;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ObjectSelectionLabel))]
+    private IReadOnlyList<EditorObjectSnapshot> _selectedObjects = [];
+    public string ObjectSelectionLabel => $"{SelectedObjects.Count} selected";
+    public IReadOnlyList<ObjectGizmoMode> GizmoModes { get; } = Enum.GetValues<ObjectGizmoMode>();
+    public IReadOnlyList<ObjectGizmoOrientation> GizmoOrientations { get; } = Enum.GetValues<ObjectGizmoOrientation>();
+    [ObservableProperty] private ObjectGizmoMode _gizmoMode;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasGizmoFeedback))]
+    private string _gizmoFeedbackText = string.Empty;
+    [ObservableProperty] private double _gizmoFeedbackX;
+    [ObservableProperty] private double _gizmoFeedbackY;
+    public bool HasGizmoFeedback => !string.IsNullOrEmpty(GizmoFeedbackText);
+    [ObservableProperty] private ObjectGizmoOrientation _gizmoOrientation;
+    public bool IsObjectGizmoToolbarVisible => EditorMode == EditorModeId.Selection;
+    public bool CancelObjectManipulation { get; set; }
+    public event EventHandler<bool>? HistoryActionRequested;
+    public void RequestHistoryAction(bool redo) => HistoryActionRequested?.Invoke(this, redo);
+    public bool ConsumeObjectManipulationCancellation()
+    {
+        var cancel = CancelObjectManipulation;
+        CancelObjectManipulation = false;
+        return cancel;
+    }
+    public void UpdateSelectedObjects(IReadOnlyList<EditorObjectSnapshot> selection)
+    {
+        if (!ReferenceEquals(SelectedObjects, selection))
+            SelectedObjects = selection;
+        UpdateSelectedObject(selection.Count > 0 ? selection[^1] : null);
+    }
     [ObservableProperty] private bool _hasUnsavedTerrainChanges;
     [ObservableProperty] private IReadOnlyList<ModifiedTerrainTile> _modifiedTerrainTiles = [];
 
@@ -159,7 +189,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _rightMouseDown;
     [ObservableProperty] private float _mouseWheel;
     [ObservableProperty] private Vector2 _mousePosition;
-    [ObservableProperty] private EditorModeId _editorMode = EditorModeId.Selection;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsObjectGizmoToolbarVisible))]
+    private EditorModeId _editorMode = EditorModeId.Selection;
     [ObservableProperty] private double _brushSize = 10;
     [ObservableProperty] private double _brushFalloff = 0.35;
     [ObservableProperty] private bool _brushHasFalloff = true;

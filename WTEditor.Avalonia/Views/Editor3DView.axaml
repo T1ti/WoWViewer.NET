@@ -55,6 +55,28 @@
       </StackPanel>
     </Border>
 
+    <Border x:Name="ObjectGizmoToolbar" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
+            Padding="8" CornerRadius="5" Background="#E61A2027" ZIndex="30"
+            IsVisible="{Binding IsObjectGizmoToolbarVisible}">
+      <StackPanel Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <ComboBox ItemsSource="{Binding GizmoModes}" SelectedItem="{Binding GizmoMode}"
+                    MinWidth="100" ToolTip.Tip="Move, rotate, uniformly scale, or use all handles together in Transform mode"/>
+          <ComboBox ItemsSource="{Binding GizmoOrientations}" SelectedItem="{Binding GizmoOrientation}"
+                    MinWidth="100" ToolTip.Tip="Global axes, last-selected object's local axes, or camera view axes"/>
+          <TextBlock Text="{Binding ObjectSelectionLabel}" VerticalAlignment="Center" Foreground="White"/>
+        </StackPanel>
+        <TextBlock Text="Shift: add · Ctrl: toggle · Esc: cancel drag" Foreground="#C1CDD8" FontSize="11"/>
+      </StackPanel>
+    </Border>
+
+    <Canvas IsHitTestVisible="False" ZIndex="40">
+      <Border Canvas.Left="{Binding GizmoFeedbackX}" Canvas.Top="{Binding GizmoFeedbackY}"
+              IsVisible="{Binding HasGizmoFeedback}" Background="#D91A2027" Padding="7,4" CornerRadius="3">
+        <TextBlock Text="{Binding GizmoFeedbackText}" Foreground="White" FontSize="12"/>
+      </Border>
+    </Canvas>
+
     <!-- Overlay UI -->
     <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
             Padding="8" Background="#99000000" ZIndex="10"

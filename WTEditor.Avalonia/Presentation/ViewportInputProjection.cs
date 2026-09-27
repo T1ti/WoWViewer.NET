@@ -11,7 +11,7 @@ namespace WTEditor.Avalonia.Presentation;
 /// </summary>
 internal static class ViewportInputProjection
 {
-    public static InputFrame Create(Editor3DViewModel? viewModel)
+    public static InputFrame Create(Editor3DViewModel? viewModel, float pixelScale = 1)
     {
         var keysDown = new HashSet<Silk.NET.Input.Key>();
         if (viewModel != null)
@@ -29,7 +29,11 @@ internal static class ViewportInputProjection
 
         return new InputFrame
         {
-            MousePosition = viewModel?.MousePosition ?? Vector2.Zero,
+            MousePosition = (viewModel?.MousePosition ?? Vector2.Zero) * pixelScale,
+            PixelScale = pixelScale,
+            GizmoMode = viewModel?.GizmoMode ?? ObjectGizmoMode.Move,
+            GizmoOrientation = viewModel?.GizmoOrientation ?? ObjectGizmoOrientation.Global,
+            CancelObjectManipulation = viewModel?.ConsumeObjectManipulationCancellation() ?? false,
             LeftMouseDown = viewModel?.LeftMouseDown ?? false,
             RightMouseDown = viewModel?.RightMouseDown ?? false,
             Mode = viewModel?.EditorMode ?? EditorModeId.Selection,

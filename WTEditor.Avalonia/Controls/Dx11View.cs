@@ -80,7 +80,7 @@ namespace WTEditor.Avalonia.Controls
         private ClientConfiguration _clientConfiguration = new();
         private readonly AutomatedBenchmarkOptions _benchmarkOptions = AutomatedBenchmarkOptions.Current;
         private readonly AutomatedBenchmarkCoordinator? _benchmarkCoordinator;
-        private readonly SelectedObjectDisplayProjection _selectionDisplayProjection = new();
+        private readonly ObjectSelectionDisplayProjection _selectionDisplayProjection = new();
         private int _lastBenchmarkStatusSecond = -1;
         private bool _terrainStrokeActive;
         private IUndoTransaction? _terrainStrokeTransaction;
@@ -107,6 +107,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.RenderingConfigurationChanged -= OnRenderingConfigurationChanged;
                 _vm.LightingSettingsChanged -= OnLightingSettingsChanged;
                 _vm.SelectedObjectTransformRequested -= OnSelectedObjectTransformRequested;
+                _vm.HistoryActionRequested -= OnHistoryActionRequested;
                 _vm.SelectedWmoPlacementRequested -= OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested -= OnWorldNavigationRequested;
                 _vm.TerrainChunkTexturesRequested -= OnTerrainChunkTexturesRequested;
@@ -125,6 +126,7 @@ namespace WTEditor.Avalonia.Controls
                 _vm.RenderingConfigurationChanged += OnRenderingConfigurationChanged;
                 _vm.LightingSettingsChanged += OnLightingSettingsChanged;
                 _vm.SelectedObjectTransformRequested += OnSelectedObjectTransformRequested;
+                _vm.HistoryActionRequested += OnHistoryActionRequested;
                 _vm.SelectedWmoPlacementRequested += OnSelectedWmoPlacementRequested;
                 _vm.WorldNavigationRequested += OnWorldNavigationRequested;
                 _vm.TerrainChunkTexturesRequested += OnTerrainChunkTexturesRequested;
@@ -675,7 +677,7 @@ namespace WTEditor.Avalonia.Controls
             _last = now;
 
             var inputStarted = Stopwatch.GetTimestamp();
-            var inputFrame = ViewportInputProjection.Create(_vm);
+            var inputFrame = ViewportInputProjection.Create(_vm, (float)(TopLevel.GetTopLevel(this)?.RenderScaling ?? 1));
             var inputMilliseconds = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
             var terrainStrokeRequested = inputFrame.Mode == EditorModeId.Terrain &&
                                          inputFrame.LeftMouseDown &&
@@ -693,7 +695,8 @@ namespace WTEditor.Avalonia.Controls
             if (_terrainStrokeActive && !terrainStrokeRequested)
                 CompleteTerrainStroke(engine);
 
-            PublishSelection(engine.SelectedObject);
+            ObjectGizmoEditBridge.Publish(engine, _vm);
+            PublishSelection(engine.SelectedObjects);
             PublishTerrainDirtyState(engine, includeSnapshots: false);
             engine.DetailedGpuProfilingEnabled = _vm?.IsDetailedGpuProfilingEnabled == true;
             var elapsedBeforeRenderMilliseconds = inputMilliseconds +
@@ -815,13 +818,16 @@ namespace WTEditor.Avalonia.Controls
             RequestRenderFrame();
         }
 
-        private void PublishSelection(Container3D? selectedObject)
+        private void OnHistoryActionRequested(object? sender, bool redo) =>
+            ObjectGizmoEditBridge.ApplyHistoryAction(_rendererSession.Engine, _vm, redo);
+
+        private void PublishSelection(IReadOnlyList<Container3D> selectedObjects)
         {
             if (_vm == null)
                 return;
 
-            _vm.UpdateSelectedObject(
-                _selectionDisplayProjection.CreateDisplaySnapshot(selectedObject));
+            _vm.UpdateSelectedObjects(
+                _selectionDisplayProjection.CreateDisplaySnapshots(selectedObjects));
         }
 
         private void OnSelectedObjectTransformRequested(object? sender, ObjectTransform transform)

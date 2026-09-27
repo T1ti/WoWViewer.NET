@@ -85,7 +85,8 @@ namespace WoWRenderLib.DX11.Managers
                 wmoInstances.Clear();
                 m2Instances.Clear();
                 m2InstancePackets.Clear();
-                SelectedObject = null;
+                ObjectGizmo.Cancel();
+                Selection.Clear();
 
                 CurrentMapId = mapId;
                 CurrentWdtPath = normalizedPath;
@@ -276,7 +277,7 @@ namespace WoWRenderLib.DX11.Managers
                     adt.IsUnloadDue(streamingClock, TileUnloadDelay));
                 if (adtToRemove != null)
                 {
-                    if (adtToRemove.IsModified)
+                    if (adtToRemove.IsModified || Selection.Objects.Any(item => item.ParentTileIndex == (uint)adtToRemove.mapTile.PositionIndex))
                     {
                         adtToRemove.CancelUnload();
                     }

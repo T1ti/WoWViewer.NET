@@ -68,7 +68,6 @@ namespace WoWRenderLib.DX11.Managers
         private uint wdtFileDataIdForRead = 775971;
         public uint CurrentWdtFileDataId => currentWDT?.FileDataId ?? 0;
         public uint CurrentMapHighestUniqueId { get; private set; }
-        public Container3D? SelectedObject { get; set; } = null;
         public bool SelectionVisualsEnabled { get; set; } = true;
         public bool ShowBoundingBoxes { get; set; } = false;
         public bool ShowBoundingSpheres { get; set; } = false;
@@ -169,6 +168,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly List<WmoLiquidInstance> _visibleWmoLiquids = [];
         private readonly SkyRenderer _skyRenderer;
         private readonly DebugBoundsRenderer _debugBoundsRenderer;
+        private readonly ObjectGizmoRenderer _objectGizmoRenderer;
         private readonly M2DepthStateController _m2DepthStates;
         private readonly M2EffectRenderer _effectRenderer;
 
@@ -215,6 +215,8 @@ namespace WoWRenderLib.DX11.Managers
             _glowRenderer = new SceneGlowRenderer(device, deviceContext);
             _skyRenderer = new SkyRenderer(device, deviceContext);
             _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
+            _objectGizmoRenderer = new ObjectGizmoRenderer(device, deviceContext);
+            ObjectGizmo = new ObjectGizmoController(ApplyObjectTransform);
             _m2DepthStates = new M2DepthStateController(device, deviceContext);
             _effectRenderer = new M2EffectRenderer(device, deviceContext);
         }
@@ -599,6 +601,7 @@ namespace WoWRenderLib.DX11.Managers
             _skyRenderer.Initialize(shaderManager, m2Shader);
             _effectRenderer.Initialize(shaderManager);
             _debugBoundsRenderer.Initialize(bboxShader);
+            _objectGizmoRenderer.Initialize(shaderManager);
         }
 
         private unsafe void CreateBlendStates()
@@ -914,6 +917,7 @@ namespace WoWRenderLib.DX11.Managers
                 m2ShaderProgram = _shaderManager.GetOrCompileShader("m2");
                 _worldLiquidRenderer.RefreshShader();
                 _glowRenderer.RefreshShader();
+                _objectGizmoRenderer.RefreshShader(_shaderManager);
                 _skyRenderer.RefreshShaders();
                 _debugBoundsRenderer.RefreshShader(_shaderManager.GetOrCompileShader("boundingbox"));
             }
@@ -2163,10 +2167,13 @@ namespace WoWRenderLib.DX11.Managers
                 drawCalls += 4;
             }
 
-            //swapchain.Present(1, 0);
-
-            gizmoWasUsing = false;
-            gizmoWasOver = false;
+            var gizmoStats = _objectGizmoRenderer.Render(ObjectGizmo, cameraMatrix * projectionMatrix);
+            drawCalls += gizmoStats.DrawCalls;
+            submittedIndexCount += gizmoStats.SubmittedVertices;
+            DebugDrawCalls += gizmoStats.DrawCalls;
+            DebugSubmissionTimeMs += gizmoStats.SubmissionMilliseconds;
+            gizmoWasUsing = ObjectGizmo.IsDragging;
+            gizmoWasOver = ObjectGizmo.Handle != GizmoHandle.None;
 
             return (drawCalls, submittedIndexCount);
         }
@@ -2207,6 +2214,8 @@ namespace WoWRenderLib.DX11.Managers
         {
             if (disposing)
             {
+                ObjectGizmo.Cancel();
+                _objectGizmoRenderer.Dispose();
                 _debugBoundsRenderer.Dispose();
                 _m2DepthStates.Dispose();
                 _effectRenderer.Dispose();

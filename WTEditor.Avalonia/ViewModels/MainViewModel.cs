@@ -84,7 +84,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ViewportVM.EditorMode = EditorModeId.Selection;
         Inspector.SetBuildProfile(ClientBuildProfile.From(ViewportVM.ClientConfiguration));
         Inspector.Inspect(ViewportVM.SelectedObject);
-        PublishWorldSelection(ViewportVM.SelectedObject);
+        PublishWorldSelection();
         _lastInspectorTransform = ViewportVM.SelectedObject?.Transform;
     }
 
@@ -214,17 +214,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private void OnViewportPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(Editor3DViewModel.SelectedObjects))
+            PublishWorldSelection();
         if (e.PropertyName == nameof(Editor3DViewModel.SelectedObject))
         {
             Inspector.Inspect(ViewportVM.SelectedObject);
-            PublishWorldSelection(ViewportVM.SelectedObject);
             _lastInspectorTransform = ViewportVM.SelectedObject?.Transform;
         }
     }
 
-    private void PublishWorldSelection(EditorObjectSnapshot? selection)
+    private void PublishWorldSelection()
     {
-        ObjectEditor.SetWorldSelection(selection is null ? [] : [selection]);
+        ObjectEditor.SetWorldSelection(ViewportVM.SelectedObjects);
         CopyWorldSelectionCommand.NotifyCanExecuteChanged();
     }
 

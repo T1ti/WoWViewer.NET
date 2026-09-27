@@ -1,4 +1,4 @@
-﻿using Silk.NET.Core.Native;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using Silk.NET.Input;
@@ -67,6 +67,10 @@ namespace WoWRenderLib.DX11
         public TerrainBrushInput TerrainBrush;
         public TextureBrushInput TextureBrush;
         public InputModifiers Modifiers;
+        public ObjectGizmoMode GizmoMode;
+        public ObjectGizmoOrientation GizmoOrientation;
+        public bool CancelObjectManipulation;
+        public float PixelScale;
 
         public float MouseWheel;
 
@@ -281,6 +285,15 @@ namespace WoWRenderLib.DX11
         private ShaderManager shaderManager = null!;
         private SceneManager sceneManager = null!;
         public Container3D? SelectedObject => sceneManager?.SelectedObject;
+        public IReadOnlyList<Container3D> SelectedObjects => sceneManager?.Selection.Objects ?? [];
+        public ObjectGizmoFeedback ObjectGizmoFeedback => sceneManager?.ObjectGizmo.Feedback ?? default;
+        public ObjectTransformEdit? TakeCompletedObjectEdit() => sceneManager?.TakeCompletedObjectEdit();
+        public void CancelObjectManipulation() => sceneManager?.CancelObjectManipulation();
+        public void ApplyObjectEdit(ObjectTransformEdit edit, bool useAfter)
+        {
+            if (!_disposed)
+                sceneManager?.ApplyObjectEdit(edit, useAfter);
+        }
         public bool HasUnsavedTerrainChanges => sceneManager?.HasUnsavedTerrainChanges == true;
         public IReadOnlyList<ModifiedTerrainTile> ModifiedTerrainTiles =>
             sceneManager?.GetModifiedTerrainTiles() ?? [];
@@ -550,7 +563,10 @@ namespace WoWRenderLib.DX11
         public void Update(double deltaTime, InputFrame input)
         {
             var started = Stopwatch.GetTimestamp();
-            HandleMouseLook(input, false, (float)deltaTime);
+            ProcessPendingWorldNavigation();
+            var gizmoOwnsInput = sceneManager.UpdateObjectGizmo(input, activeCamera, viewportWidth, viewportHeight,
+                _wowConfig.wowProduct.StartsWith("wow_classic", StringComparison.OrdinalIgnoreCase));
+            HandleMouseLook(input, gizmoOwnsInput, (float)deltaTime);
             if (input.Mode == EditorModeId.Terrain)
             {
                 var terrainBrush = input.TerrainBrush;
@@ -582,9 +598,9 @@ namespace WoWRenderLib.DX11
 
             sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;
 
-            ProcessPendingWorldNavigation();
-            HandleClickSelection(input, false);
-            HandleKeyboardMovement(input, (float)deltaTime);
+            HandleClickSelection(input, gizmoOwnsInput);
+            if (!gizmoOwnsInput)
+                HandleKeyboardMovement(input, (float)deltaTime);
             UpdateDynamicWorldLighting(force: false);
 
 
@@ -1343,7 +1359,7 @@ namespace WoWRenderLib.DX11
                 }
                 else
                 {
-                    var lookSensitivity = Settings.MouseSensitivity;
+                    var lookSensitivity = Settings.MouseSensitivity / Math.Max(1, input.PixelScale);
                     var xOffset = (currentMousePos.X - LastMousePosition.X) * lookSensitivity;
                     var yOffset = (currentMousePos.Y - LastMousePosition.Y) * lookSensitivity;
                     LastMousePosition = currentMousePos;
@@ -1360,7 +1376,7 @@ namespace WoWRenderLib.DX11
         {
             bool mouseDownThisFrame = input.LeftMouseDown;
 
-            if (input.Mode != EditorModeId.Selection)
+            if (input.Mode != EditorModeId.Selection || gizmoInUse || input.CancelObjectManipulation || input.RightMouseDown)
             {
                 wasMouseDown = mouseDownThisFrame;
                 MouseDownPosition = null;
@@ -1378,14 +1394,16 @@ namespace WoWRenderLib.DX11
                 {
                     var dragDistance = Vector2.Distance(MouseDownPosition.Value, input.MousePosition);
 
-                    if (dragDistance < 5.0f)
+                    if (dragDistance < 5.0f * Math.Max(1, input.PixelScale))
                     {
                         sceneManager.PerformRaycast(
                             input.MousePosition.X,
                             input.MousePosition.Y,
                             activeCamera,
                             viewportWidth,
-                            viewportHeight
+                            viewportHeight,
+                            additive: (input.Modifiers & InputModifiers.Shift) != 0,
+                            toggle: (input.Modifiers & InputModifiers.Control) != 0
                         );
                     }
                 }
