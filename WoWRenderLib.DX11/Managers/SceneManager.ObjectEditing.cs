@@ -1,3 +1,4 @@
+using System.Numerics;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
 
@@ -18,6 +19,13 @@ public partial class SceneManager
 
     public ObjectTransformEdit? TakeCompletedObjectEdit() => ObjectGizmo.TakeCompletedEdit();
     public void CancelObjectManipulation() => ObjectGizmo.Cancel();
+
+    internal void SelectObjectsInScreenRectangle(ScreenSelectionRequest request, Camera camera, Vector2 viewport)
+    {
+        lock (SceneObjectLock)
+            ScreenObjectSelection.Apply(SceneObjects, Selection, request, camera, viewport,
+                RenderM2, RenderWMO, ModelRenderDistance);
+    }
 
     public void ApplyObjectEdit(ObjectTransformEdit edit, bool useAfter)
     {

@@ -66,11 +66,15 @@
                     MinWidth="100" ToolTip.Tip="Global axes, last-selected object's local axes, or camera view axes"/>
           <TextBlock Text="{Binding ObjectSelectionLabel}" VerticalAlignment="Center" Foreground="White"/>
         </StackPanel>
-        <TextBlock Text="Shift: add · Ctrl: toggle · Esc: cancel drag" Foreground="#C1CDD8" FontSize="11"/>
+        <TextBlock Text="Drag: box select · Shift: add · Ctrl: toggle · Esc: cancel" Foreground="#C1CDD8" FontSize="11"/>
       </StackPanel>
     </Border>
 
     <Canvas IsHitTestVisible="False" ZIndex="40">
+      <Border Canvas.Left="{Binding ScreenSelectionX}" Canvas.Top="{Binding ScreenSelectionY}"
+              Width="{Binding ScreenSelectionWidth}" Height="{Binding ScreenSelectionHeight}"
+              IsVisible="{Binding IsScreenSelectionVisible}" BorderBrush="#FF66BFFF"
+              BorderThickness="1" Background="#2866BFFF"/>
       <Border Canvas.Left="{Binding GizmoFeedbackX}" Canvas.Top="{Binding GizmoFeedbackY}"
               IsVisible="{Binding HasGizmoFeedback}" Background="#D91A2027" Padding="7,4" CornerRadius="3">
         <TextBlock Text="{Binding GizmoFeedbackText}" Foreground="White" FontSize="12"/>

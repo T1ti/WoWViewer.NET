@@ -21,6 +21,7 @@ internal static class ObjectGizmoEditBridge
     public static void Publish(WowViewerEngine engine, Editor3DViewModel? viewModel)
     {
         Presentation.ObjectGizmoFeedbackDisplayProjection.Publish(engine.ObjectGizmoFeedback, viewModel);
+        Presentation.ScreenSelectionDisplayProjection.Publish(engine.SelectionRectangle, viewModel);
         while (engine.TakeCompletedObjectEdit() is { } edit)
             viewModel?.RecordAppliedEdit(new DelegateEditorCommand(edit.Description,
                 () => engine.ApplyObjectEdit(edit, useAfter: true),

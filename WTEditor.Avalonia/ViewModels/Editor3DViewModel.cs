@@ -151,6 +151,12 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _gizmoFeedbackX;
     [ObservableProperty] private double _gizmoFeedbackY;
     public bool HasGizmoFeedback => !string.IsNullOrEmpty(GizmoFeedbackText);
+
+    [ObservableProperty] private bool _isScreenSelectionVisible;
+    [ObservableProperty] private double _screenSelectionX;
+    [ObservableProperty] private double _screenSelectionY;
+    [ObservableProperty] private double _screenSelectionWidth;
+    [ObservableProperty] private double _screenSelectionHeight;
     [ObservableProperty] private ObjectGizmoOrientation _gizmoOrientation;
     public bool IsObjectGizmoToolbarVisible => EditorMode == EditorModeId.Selection;
     public bool CancelObjectManipulation { get; set; }

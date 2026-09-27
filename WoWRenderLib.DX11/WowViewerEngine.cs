@@ -1,4 +1,4 @@
-using Silk.NET.Core.Native;
+﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using Silk.NET.Input;
@@ -267,8 +267,7 @@ namespace WoWRenderLib.DX11
         private bool hasFocus = true;
 
         private Vector2 LastMousePosition;
-        private Vector2? MouseDownPosition;
-        private bool wasMouseDown = false;
+        private readonly ScreenSelectionGesture _screenSelection = new();
 
         public Camera activeCamera { get; private set; } = null!;
 
@@ -288,7 +287,12 @@ namespace WoWRenderLib.DX11
         public IReadOnlyList<Container3D> SelectedObjects => sceneManager?.Selection.Objects ?? [];
         public ObjectGizmoFeedback ObjectGizmoFeedback => sceneManager?.ObjectGizmo.Feedback ?? default;
         public ObjectTransformEdit? TakeCompletedObjectEdit() => sceneManager?.TakeCompletedObjectEdit();
-        public void CancelObjectManipulation() => sceneManager?.CancelObjectManipulation();
+        public ScreenSelectionRectangle SelectionRectangle => _screenSelection.Rectangle;
+        public void CancelObjectManipulation()
+        {
+            _screenSelection.Cancel();
+            sceneManager?.CancelObjectManipulation();
+        }
         public void ApplyObjectEdit(ObjectTransformEdit edit, bool useAfter)
         {
             if (!_disposed)
@@ -599,7 +603,7 @@ namespace WoWRenderLib.DX11
             sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;
 
             HandleClickSelection(input, gizmoOwnsInput);
-            if (!gizmoOwnsInput)
+            if (!gizmoOwnsInput && !_screenSelection.HasPointerGesture)
                 HandleKeyboardMovement(input, (float)deltaTime);
             UpdateDynamicWorldLighting(force: false);
 
@@ -1194,6 +1198,7 @@ namespace WoWRenderLib.DX11
 
         private void ApplyWorldNavigation(WorldNavigationTarget navigation)
         {
+            _screenSelection.Cancel();
             sceneManager.LoadWDT(
                 navigation.MapId,
                 navigation.WdtPath,
@@ -1374,44 +1379,17 @@ namespace WoWRenderLib.DX11
 
         private void HandleClickSelection(InputFrame input, bool gizmoInUse)
         {
-            bool mouseDownThisFrame = input.LeftMouseDown;
-
-            if (input.Mode != EditorModeId.Selection || gizmoInUse || input.CancelObjectManipulation || input.RightMouseDown)
-            {
-                wasMouseDown = mouseDownThisFrame;
-                MouseDownPosition = null;
+            var viewport = new Vector2(viewportWidth, viewportHeight);
+            if (_screenSelection.Update(input, gizmoInUse, viewport) is not { } request)
                 return;
-            }
 
-            if (mouseDownThisFrame && !wasMouseDown && !gizmoInUse)
-            {
-                MouseDownPosition = input.MousePosition;
-            }
-
-            if (!mouseDownThisFrame && wasMouseDown)
-            {
-                if (MouseDownPosition.HasValue)
-                {
-                    var dragDistance = Vector2.Distance(MouseDownPosition.Value, input.MousePosition);
-
-                    if (dragDistance < 5.0f * Math.Max(1, input.PixelScale))
-                    {
-                        sceneManager.PerformRaycast(
-                            input.MousePosition.X,
-                            input.MousePosition.Y,
-                            activeCamera,
-                            viewportWidth,
-                            viewportHeight,
-                            additive: (input.Modifiers & InputModifiers.Shift) != 0,
-                            toggle: (input.Modifiers & InputModifiers.Control) != 0
-                        );
-                    }
-                }
-
-                MouseDownPosition = null;
-            }
-
-            wasMouseDown = mouseDownThisFrame;
+            if (request.IsMarquee)
+                sceneManager.SelectObjectsInScreenRectangle(request, activeCamera, viewport);
+            else
+                sceneManager.PerformRaycast(request.End.X, request.End.Y, activeCamera,
+                    viewportWidth, viewportHeight,
+                    additive: (request.Modifiers & InputModifiers.Shift) != 0,
+                    toggle: (request.Modifiers & InputModifiers.Control) != 0);
         }
 
         private void HandleKeyboardMovement(InputFrame input, float deltaTime)
