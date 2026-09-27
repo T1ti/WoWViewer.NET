@@ -55,7 +55,7 @@ internal sealed class ObjectGizmoController(Action<Container3D, PlacementTransfo
         var consumed = IsDragging;
         var pressed = input.LeftMouseDown && !_wasDown;
         _wasDown = input.LeftMouseDown;
-        if (IsDragging && (input.CancelObjectManipulation || input.RightMouseDown ||
+        if (IsDragging && (input.DisableObjectGizmos || input.CancelObjectManipulation || input.RightMouseDown ||
             input.Mode != EditorModeId.Selection || selection.Revision != _selectionRevision ||
             input.GizmoMode != Mode || input.GizmoOrientation != _orientation))
             Cancel();
@@ -75,7 +75,7 @@ internal sealed class ObjectGizmoController(Action<Container3D, PlacementTransfo
             _scaleLocked |= lockWmoScale && selection.Objects[index] is WMOContainer;
         }
         var hasFrame = ObjectGizmoMath.TryCreateFrame(selection.Objects, _orientation, camera, height, PixelScale, out var frame);
-        IsVisible = input.Mode == EditorModeId.Selection && editable && hasFrame && !(Mode == ObjectGizmoMode.Scale && _scaleLocked);
+        IsVisible = !input.DisableObjectGizmos && input.Mode == EditorModeId.Selection && editable && hasFrame && !(Mode == ObjectGizmoMode.Scale && _scaleLocked);
         Handle = GizmoHandle.None;
         if (!IsVisible) return consumed;
         Frame = frame;

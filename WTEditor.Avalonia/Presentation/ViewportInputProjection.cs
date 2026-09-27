@@ -33,6 +33,7 @@ internal static class ViewportInputProjection
             PixelScale = pixelScale,
             GizmoMode = viewModel?.GizmoMode ?? ObjectGizmoMode.Move,
             GizmoOrientation = viewModel?.GizmoOrientation ?? ObjectGizmoOrientation.Global,
+            DisableObjectGizmos = viewModel?.AreObjectGizmosEnabled == false,
             CancelObjectManipulation = viewModel?.ConsumeObjectManipulationCancellation() ?? false,
             LeftMouseDown = viewModel?.LeftMouseDown ?? false,
             RightMouseDown = viewModel?.RightMouseDown ?? false,

@@ -292,6 +292,23 @@ namespace WoWRenderLib.DX11.Objects
             return hit;
         }
 
+        internal override bool IntersectsScreenSelection(in Editing.ScreenSelectionVolume localVolume)
+        {
+            if (!IsLoaded) return false;
+            var groups = GetWMO().groupBatches;
+            var enabled = EnabledGroups;
+            for (var index = 0; index < groups.Length; index++)
+            {
+                var group = groups[index];
+                if (index < enabled.Length && enabled[index] && localVolume.Intersects(group.boundingBox) &&
+                    group.raycastVertices is { Length: > 0 } vertices &&
+                    group.raycastIndices is { Length: > 2 } indices &&
+                    Editing.ScreenSelectionMesh.Get(vertices, indices).Intersects(localVolume))
+                    return true;
+            }
+            return false;
+        }
+
         public static string CreateEnabledGroupSignature(ReadOnlySpan<bool> groups)
         {
             var packed = new byte[(groups.Length + 7) / 8];

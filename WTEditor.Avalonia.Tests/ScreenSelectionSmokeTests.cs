@@ -129,9 +129,20 @@ public sealed class ScreenSelectionSmokeTests
 
     private static M2Container Model(Vector3 center)
     {
-        var item = (M2Container)RuntimeHelpers.GetUninitializedObject(typeof(M2Container));
+        var item = (SelectionModel)RuntimeHelpers.GetUninitializedObject(typeof(SelectionModel));
+        item.ModelMatrix = Matrix4x4.Identity;
+        item.Center = center;
         item.CachedBoundingBox = Box(center - Vector3.One * .5f, center + Vector3.One * .5f);
         item.CachedBoundingSphere = new BoundingSphere(center, 1);
         return item;
+    }
+
+    private sealed class SelectionModel : M2Container
+    {
+        public Vector3 Center;
+        private SelectionModel() : base(default, 0, 0) { }
+        internal override bool IntersectsScreenSelection(in ScreenSelectionVolume volume) =>
+            volume.IntersectsTriangle(Center + new Vector3(0, -.5f, -.5f),
+                Center + new Vector3(0, .5f, -.5f), Center + new Vector3(0, 0, .5f));
     }
 }

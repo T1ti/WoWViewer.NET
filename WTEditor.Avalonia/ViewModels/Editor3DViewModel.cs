@@ -142,9 +142,17 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(ObjectSelectionLabel))]
     private IReadOnlyList<EditorObjectSnapshot> _selectedObjects = [];
     public string ObjectSelectionLabel => $"{SelectedObjects.Count} selected";
-    public IReadOnlyList<ObjectGizmoMode> GizmoModes { get; } = Enum.GetValues<ObjectGizmoMode>();
-    public IReadOnlyList<ObjectGizmoOrientation> GizmoOrientations { get; } = Enum.GetValues<ObjectGizmoOrientation>();
-    [ObservableProperty] private ObjectGizmoMode _gizmoMode;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMoveGizmoMode))]
+    [NotifyPropertyChangedFor(nameof(IsRotateGizmoMode))]
+    [NotifyPropertyChangedFor(nameof(IsScaleGizmoMode))]
+    [NotifyPropertyChangedFor(nameof(IsTransformGizmoMode))]
+    private ObjectGizmoMode _gizmoMode;
+    public bool IsMoveGizmoMode => GizmoMode == ObjectGizmoMode.Move;
+    public bool IsRotateGizmoMode => GizmoMode == ObjectGizmoMode.Rotate;
+    public bool IsScaleGizmoMode => GizmoMode == ObjectGizmoMode.Scale;
+    public bool IsTransformGizmoMode => GizmoMode == ObjectGizmoMode.Transform;
+    [ObservableProperty] private bool _areObjectGizmosEnabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasGizmoFeedback))]
     private string _gizmoFeedbackText = string.Empty;
@@ -157,8 +165,42 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private double _screenSelectionY;
     [ObservableProperty] private double _screenSelectionWidth;
     [ObservableProperty] private double _screenSelectionHeight;
-    [ObservableProperty] private ObjectGizmoOrientation _gizmoOrientation;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GizmoOrientationLabel))]
+    [NotifyPropertyChangedFor(nameof(GizmoOrientationToolTip))]
+    private ObjectGizmoOrientation _gizmoOrientation;
+    public string GizmoOrientationLabel => GizmoOrientation switch
+    {
+        ObjectGizmoOrientation.Local => "L",
+        ObjectGizmoOrientation.View => "V",
+        _ => "G"
+    };
+    public string GizmoOrientationToolTip => $"Orientation: {GizmoOrientation} (click to cycle Global, Local, View)";
     public bool IsObjectGizmoToolbarVisible => EditorMode == EditorModeId.Selection;
+
+    [RelayCommand] private void SelectMoveGizmo() => SelectGizmoMode(ObjectGizmoMode.Move);
+    [RelayCommand] private void SelectRotateGizmo() => SelectGizmoMode(ObjectGizmoMode.Rotate);
+    [RelayCommand] private void SelectScaleGizmo() => SelectGizmoMode(ObjectGizmoMode.Scale);
+    [RelayCommand] private void SelectTransformGizmo() => SelectGizmoMode(ObjectGizmoMode.Transform);
+    [RelayCommand] private void CycleGizmoOrientation() => GizmoOrientation = GizmoOrientation switch
+    {
+        ObjectGizmoOrientation.Global => ObjectGizmoOrientation.Local,
+        ObjectGizmoOrientation.Local => ObjectGizmoOrientation.View,
+        _ => ObjectGizmoOrientation.Global
+    };
+
+    private void SelectGizmoMode(ObjectGizmoMode mode)
+    {
+        GizmoMode = mode;
+        // Restore the checked state when the active mode is clicked again.
+        OnPropertyChanged(mode switch
+        {
+            ObjectGizmoMode.Rotate => nameof(IsRotateGizmoMode),
+            ObjectGizmoMode.Scale => nameof(IsScaleGizmoMode),
+            ObjectGizmoMode.Transform => nameof(IsTransformGizmoMode),
+            _ => nameof(IsMoveGizmoMode)
+        });
+    }
     public bool CancelObjectManipulation { get; set; }
     public event EventHandler<bool>? HistoryActionRequested;
     public void RequestHistoryAction(bool redo) => HistoryActionRequested?.Invoke(this, redo);

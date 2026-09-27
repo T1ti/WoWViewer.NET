@@ -175,6 +175,14 @@ namespace WoWRenderLib.DX11.Objects
                     particleMeshes, renderableParticleIndices, out distance);
         }
 
+        internal override bool IntersectsScreenSelection(in Editing.ScreenSelectionVolume localVolume)
+        {
+            var model = GetM2();
+            return model.raycastVertices is { Length: > 0 } vertices &&
+                model.raycastIndices is { Length: > 2 } indices &&
+                Editing.ScreenSelectionMesh.Get(vertices, indices).Intersects(localVolume);
+        }
+
         public ParsedDoodadBatch GetM2(bool keepTrack = false)
         {
             return M2Cache.GetOrLoad(_device, FileDataId, ParentTileIndex, keepTrack);

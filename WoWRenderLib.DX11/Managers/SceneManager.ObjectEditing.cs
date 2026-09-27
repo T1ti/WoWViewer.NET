@@ -24,7 +24,7 @@ public partial class SceneManager
     {
         lock (SceneObjectLock)
             ScreenObjectSelection.Apply(SceneObjects, Selection, request, camera, viewport,
-                RenderM2, RenderWMO, ModelRenderDistance);
+                RenderM2, RenderWMO, ModelRenderDistance, RenderParticles ? _effectRenderer : null);
     }
 
     public void ApplyObjectEdit(ObjectTransformEdit edit, bool useAfter)

@@ -35,6 +35,40 @@ internal readonly struct ScreenSelectionVolume
         Inside(_left, box) && Inside(_right, box) && Inside(_bottom, box) &&
         Inside(_top, box) && Inside(_near, box) && Inside(_far, box);
 
+    // Clip in model space: no perspective division and no transformed vertex buffer.
+    // A triangle clipped by six planes has at most nine vertices.
+    public bool IntersectsTriangle(Vector3 a, Vector3 b, Vector3 c)
+    {
+        if (!Finite(a) || !Finite(b) || !Finite(c)) return false;
+        Span<Vector3> first = stackalloc Vector3[12];
+        Span<Vector3> second = stackalloc Vector3[12];
+        first[0] = a; first[1] = b; first[2] = c;
+        var count = 3;
+        for (var planeIndex = 0; planeIndex < 6; planeIndex++)
+        {
+            var plane = planeIndex switch { 0 => _left, 1 => _right, 2 => _bottom,
+                3 => _top, 4 => _near, _ => _far };
+            var outputCount = 0;
+            var previous = first[count - 1];
+            var previousDistance = Vector4.Dot(new(previous, 1), plane);
+            for (var index = 0; index < count; index++)
+            {
+                var current = first[index];
+                var distance = Vector4.Dot(new(current, 1), plane);
+                if ((distance >= 0) != (previousDistance >= 0))
+                    second[outputCount++] = Vector3.Lerp(previous, current,
+                        previousDistance / (previousDistance - distance));
+                if (distance >= 0) second[outputCount++] = current;
+                previous = current;
+                previousDistance = distance;
+            }
+            if (outputCount == 0) return false;
+            var swap = first; first = second; second = swap;
+            count = outputCount;
+        }
+        return true;
+    }
+
     private static bool Finite(Vector3 value) => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
     private static bool Inside(Vector4 plane, BoundingBox box)
     {

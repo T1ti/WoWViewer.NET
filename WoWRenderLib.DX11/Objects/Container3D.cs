@@ -98,6 +98,8 @@ namespace WoWRenderLib.DX11.Objects
             return null;
         }
 
+        internal virtual bool IntersectsScreenSelection(in Editing.ScreenSelectionVolume localVolume) => false;
+
         public virtual bool TryRaycastTriangles(
             Ray ray,
             float maximumDistance,

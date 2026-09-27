@@ -69,6 +69,7 @@ namespace WoWRenderLib.DX11
         public InputModifiers Modifiers;
         public ObjectGizmoMode GizmoMode;
         public ObjectGizmoOrientation GizmoOrientation;
+        public bool DisableObjectGizmos;
         public bool CancelObjectManipulation;
         public float PixelScale;
 
@@ -603,7 +604,7 @@ namespace WoWRenderLib.DX11
             sceneManager.SelectionVisualsEnabled = input.Mode == EditorModeId.Selection;
 
             HandleClickSelection(input, gizmoOwnsInput);
-            if (!gizmoOwnsInput && !_screenSelection.HasPointerGesture)
+            if (!gizmoOwnsInput && !_screenSelection.Rectangle.IsVisible)
                 HandleKeyboardMovement(input, (float)deltaTime);
             UpdateDynamicWorldLighting(force: false);
 

@@ -4,6 +4,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WoWRenderLib.DX11;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Objects;
+using WTEditor.Application;
+using WTEditor.Application.Models;
+using WTEditor.Application.Services;
+using WTEditor.Avalonia.Presentation;
+using WTEditor.Avalonia.ViewModels;
 
 namespace WTEditor.Avalonia.Tests;
 
@@ -214,6 +219,41 @@ public sealed class ObjectGizmoSmokeTests
         Assert.IsFalse(controller.IsVisible);
     }
 
+    [TestMethod]
+    public void GizmoVisibilityCanBeTurnedOffAndBackOn()
+    {
+        var (selection, controller, camera) = CreateGesture();
+        var input = Input(new Vector2(-100));
+        controller.Update(input, selection, camera, 1000, 1000, false);
+        Assert.IsTrue(controller.IsVisible);
+
+        input.DisableObjectGizmos = true;
+        controller.Update(input, selection, camera, 1000, 1000, false);
+        Assert.IsFalse(controller.IsVisible);
+        Assert.AreEqual(GizmoHandle.None, controller.Handle);
+
+        input.DisableObjectGizmos = false;
+        controller.Update(input, selection, camera, 1000, 1000, false);
+        Assert.IsTrue(controller.IsVisible);
+    }
+
+    [TestMethod]
+    public void ToolbarCommandsReachTheRendererInputFrame()
+    {
+        using var viewport = new Editor3DViewModel(new EditorSession(new MemorySettingsStore()));
+        viewport.SelectTransformGizmoCommand.Execute(null);
+        viewport.CycleGizmoOrientationCommand.Execute(null);
+        viewport.AreObjectGizmosEnabled = false;
+
+        var input = ViewportInputProjection.Create(viewport);
+        Assert.AreEqual(ObjectGizmoMode.Transform, input.GizmoMode);
+        Assert.AreEqual(ObjectGizmoOrientation.Local, input.GizmoOrientation);
+        Assert.IsTrue(input.DisableObjectGizmos);
+
+        viewport.AreObjectGizmosEnabled = true;
+        Assert.IsFalse(ViewportInputProjection.Create(viewport).DisableObjectGizmos);
+    }
+
     internal static (ObjectSelection Selection, ObjectGizmoController Controller, Camera Camera) CreateGesture()
     {
         var selection = new ObjectSelection();
@@ -243,4 +283,10 @@ public sealed class ObjectGizmoSmokeTests
 
     private static void Near(Vector3 expected, Vector3 actual) =>
         Assert.IsTrue(Vector3.Distance(expected, actual) < .002f, $"Expected {expected}, got {actual}");
+
+    private sealed class MemorySettingsStore : IEditorSettingsStore
+    {
+        public EditorSettingsSnapshot Load() => new();
+        public void Save(EditorSettingsSnapshot settings) { }
+    }
 }

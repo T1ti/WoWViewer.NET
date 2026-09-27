@@ -55,15 +55,41 @@
       </StackPanel>
     </Border>
 
-    <Border x:Name="ObjectGizmoToolbar" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
+    <Border x:Name="ObjectGizmoToolbar" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
             Padding="8" CornerRadius="5" Background="#E61A2027" ZIndex="30"
             IsVisible="{Binding IsObjectGizmoToolbarVisible}">
       <StackPanel Spacing="6">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <ComboBox ItemsSource="{Binding GizmoModes}" SelectedItem="{Binding GizmoMode}"
-                    MinWidth="100" ToolTip.Tip="Move, rotate, uniformly scale, or use all handles together in Transform mode"/>
-          <ComboBox ItemsSource="{Binding GizmoOrientations}" SelectedItem="{Binding GizmoOrientation}"
-                    MinWidth="100" ToolTip.Tip="Global axes, last-selected object's local axes, or camera view axes"/>
+        <StackPanel Orientation="Horizontal" Spacing="5">
+          <ToggleButton Classes="viewport-tool" IsChecked="{Binding AreObjectGizmosEnabled}"
+                        ToolTip.Tip="Show or hide object gizmos">
+            <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoVisibility}"/>
+          </ToggleButton>
+          <Border Width="1" Margin="3,3" Background="#526170"/>
+          <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsMoveGizmoMode, Mode=OneWay}"
+                        Command="{Binding SelectMoveGizmoCommand}" ToolTip.Tip="Move objects">
+            <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoMove}"/>
+          </ToggleButton>
+          <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsRotateGizmoMode, Mode=OneWay}"
+                        Command="{Binding SelectRotateGizmoCommand}" ToolTip.Tip="Rotate objects">
+            <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoRotate}"/>
+          </ToggleButton>
+          <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsScaleGizmoMode, Mode=OneWay}"
+                        Command="{Binding SelectScaleGizmoCommand}" ToolTip.Tip="Scale objects uniformly">
+            <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoScale}"/>
+          </ToggleButton>
+          <ToggleButton Classes="viewport-tool" IsChecked="{Binding IsTransformGizmoMode, Mode=OneWay}"
+                        Command="{Binding SelectTransformGizmoCommand}" ToolTip.Tip="Transform with all handles">
+            <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoTransform}"/>
+          </ToggleButton>
+          <Border Width="1" Margin="3,3" Background="#526170"/>
+          <Button Classes="viewport-tool" Command="{Binding CycleGizmoOrientationCommand}"
+                  ToolTip.Tip="{Binding GizmoOrientationToolTip}">
+            <Grid>
+              <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.GizmoOrientation}"/>
+              <TextBlock Text="{Binding GizmoOrientationLabel}" FontSize="8" FontWeight="Bold"
+                         Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+          </Button>
           <TextBlock Text="{Binding ObjectSelectionLabel}" VerticalAlignment="Center" Foreground="White"/>
         </StackPanel>
         <TextBlock Text="Drag: box select · Shift: add · Ctrl: toggle · Esc: cancel" Foreground="#C1CDD8" FontSize="11"/>
@@ -82,7 +108,7 @@
     </Canvas>
 
     <!-- Overlay UI -->
-    <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
+    <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,0,64"
             Padding="8" Background="#99000000" ZIndex="10"
             IsHitTestVisible="False">
       <StackPanel Spacing="2">

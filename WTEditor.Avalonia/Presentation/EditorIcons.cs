@@ -10,6 +10,12 @@ public static class EditorIcons
     public static Geometry World { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z M11,4 C8,6 8,18 11,20 L13,20 C16,18 16,6 13,4 Z M3,11 L21,11 L21,13 L3,13 Z");
     public static Geometry Data { get; } = Geometry.Parse("M4,5 C4,2.5 20,2.5 20,5 C20,7.5 4,7.5 4,5 Z M4,8 C8,10 16,10 20,8 L20,12 C16,14 8,14 4,12 Z M4,15 C8,17 16,17 20,15 L20,19 C20,21.5 4,21.5 4,19 Z");
     public static Geometry Select { get; } = Geometry.Parse("M5,2 L20,13 L13.2,14.2 L17,21 L13.5,23 L9.7,16 L5,20 Z");
+    public static Geometry GizmoMove { get; } = Geometry.Parse("M11,2 L13,2 L13,17 L17,13 L18.5,14.5 L12,21 L5.5,14.5 L7,13 L11,17 Z M2,11 L7,6 L8.5,7.5 L6,10 L18,10 L15.5,7.5 L17,6 L22,11 L17,16 L15.5,14.5 L18,12 L6,12 L8.5,14.5 L7,16 Z");
+    public static Geometry GizmoRotate { get; } = Geometry.Parse("M12,3 A9,9 0 0 1 21,12 H18.5 A6.5,6.5 0 0 0 7.4,7.4 L10,10 H3 V3 L5.6,5.6 A9,9 0 0 1 12,3 Z M21,14 V21 H14 L16.6,18.4 A6.5,6.5 0 0 1 5.5,12 H3 A9,9 0 0 0 18.4,20.4 Z");
+    public static Geometry GizmoScale { get; } = Geometry.Parse("M3,3 H10 L7.5,5.5 L11,9 L9,11 L5.5,7.5 L3,10 Z M21,21 H14 L16.5,18.5 L13,15 L15,13 L18.5,16.5 L21,14 Z M11,11 L13,13 L11.5,14.5 L9.5,12.5 Z");
+    public static Geometry GizmoTransform { get; } = Geometry.Parse("M11,2 H13 V8 H11 Z M8,5 L12,1 L16,5 L14.5,6.5 L12,4 L9.5,6.5 Z M2,11 H8 V13 H2 Z M5,8 L1,12 L5,16 L6.5,14.5 L4,12 L6.5,9.5 Z M12,9 A3,3 0 1 0 12,15 A3,3 0 1 0 12,9 Z M16,16 H21 V21 H16 Z M14,14 L17,17 L15.5,18.5 L12.5,15.5 Z");
+    public static Geometry GizmoOrientation { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z M12,5 L16,16 L12,14 L8,16 Z M11,9 L10,13 L12,12 Z");
+    public static Geometry GizmoVisibility { get; } = Geometry.Parse("M2,12 C5,7 8,5 12,5 C16,5 19,7 22,12 C19,17 16,19 12,19 C8,19 5,17 2,12 Z M12,8 A4,4 0 1 0 12,16 A4,4 0 1 0 12,8 Z M12,10 A2,2 0 1 0 12,14 A2,2 0 1 0 12,10 Z");
     public static Geometry Terrain { get; } = Geometry.Parse("M2,20 L8.5,8 L12,13 L15.5,7 L22,20 Z");
     public static Geometry Texture { get; } = Geometry.Parse("M4,3 H17 A4,4 0 0 1 21,7 V15 A4,4 0 0 1 17,19 H13 V22 H9 V19 H4 A2,2 0 0 1 2,17 V5 A2,2 0 0 1 4,3 Z M6,7 H17 V11 H6 Z");
     public static Geometry Sculpt { get; } = Geometry.Parse("M3,18 H21 V21 H3 Z M11,3 H13 V13 L16,10 L18,12 L12,18 L6,12 L8,10 L11,13 Z");
