@@ -34,7 +34,10 @@ public readonly record struct WorldLightParams(
     float OceanDeepAlpha,
     bool HasLiquidAlphaData,
     int LightSkyboxId = 0,
-    bool HighlightSky = false);
+    bool HighlightSky = false)
+{
+    public float HighlightSkyStrength { get; init; } = HighlightSky ? 1f : 0f;
+}
 
 public enum WorldLightingSourceKind
 {
@@ -76,6 +79,7 @@ public readonly record struct WorldSkyLighting(
     IReadOnlyList<WorldSkyboxLayer> Skyboxes,
     bool HighlightSky)
 {
+    public float HighlightSkyStrength { get; init; } = HighlightSky ? 1f : 0f;
     public Vector3 SunColor { get; init; }
     public Vector3 CloudSunColor { get; init; }
     public Vector3 CloudEmissiveColor { get; init; }
@@ -170,38 +174,7 @@ public readonly record struct WorldLightingSample(
 /// </summary>
 public sealed class WorldLightingCatalog
 {
-    public const int GameDayLength = 2880;
     public const float ZoneTransitionDistance = 50f;
-    public static Vector3 DefaultNoonSpecularColor { get; } = new(1f, 0.969f, 0.871f);
-
-    // Wisp receives a time-resolved specular color from its caller. LightData
-    // supplies our sun tint; the inverse night-glow ramp keeps the noon fallback
-    // and sparse/bright sun bands from illuminating WMO highlights at night.
-    public static Vector3 ResolveWmoSpecularColor(WorldSkyLighting sky, long worldTime)
-    {
-        var sun = sky.HasSunCloudData ? sky.SunColor : DefaultNoonSpecularColor;
-        return Vector3.Clamp(sun, Vector3.Zero, Vector3.One) *
-            (1f - CalculateWmoSidnPulse(worldTime));
-    }
-
-    /// <summary>Night glow for WMO SIDN materials on the 0..2880 world clock.</summary>
-    public static float CalculateWmoSidnPulse(long worldTime)
-    {
-        var time = worldTime % GameDayLength;
-        if (time < 0)
-            time += GameDayLength;
-
-        var hours = time / 120f;
-        if (hours < 6f)
-            return 1f;
-        if (hours < 7f)
-            return 7f - hours;
-        if (hours < 20.5f)
-            return 0f;
-        if (hours < 21.5f)
-            return hours - 20.5f;
-        return 1f;
-    }
 
     private readonly WorldLightDefinition[] _lights;
     private readonly ZoneLightDefinition[] _zoneLights;
@@ -240,7 +213,7 @@ public sealed class WorldLightingCatalog
 
     public WorldLightingSample? Evaluate(int mapId, Vector3 worldPosition, int time)
     {
-        var normalizedTime = NormalizeTime(time);
+        var normalizedTime = DayNight.NormalizeTime(time);
         WorldLightingSample? result = null;
         var activeLights = new List<WorldLightingContribution>();
 
@@ -336,46 +309,6 @@ public sealed class WorldLightingCatalog
             : null;
     }
 
-    public static int NormalizeTime(int time)
-    {
-        var normalized = time % GameDayLength;
-        return normalized < 0 ? normalized + GameDayLength : normalized;
-    }
-
-    /// <summary>Maps local wall-clock time onto WoW's 0..2880 day.</summary>
-    public static int FromLocalTime(TimeSpan timeOfDay) => NormalizeTime(
-        (timeOfDay.Hours * 120) +
-        (timeOfDay.Minutes * 2) +
-        (timeOfDay.Seconds / 30));
-
-    /// <summary>
-    /// Reproduces the directional-light polar curve used by the reference
-    /// renderer. The reference vector follows the light ray; the DX11 shaders
-    /// use a vector toward the light, so all three components are inverted.
-    /// </summary>
-    public static Vector3 CalculateLightDirection(int time)
-    {
-        var dayProgress = NormalizeTime(time) / (float)GameDayLength;
-        ReadOnlySpan<Vector2> phiTable =
-        [
-            new(0f, 2.2165682f),
-            new(0.25f, 1.9198622f),
-            new(0.5f, 2.2165682f),
-            new(0.75f, 1.9198622f)
-        ];
-        const float theta = 3.9269907f;
-        var phi = InterpolateCircularTable(phiTable, dayProgress);
-        var sinPhi = MathF.Sin(phi);
-        var clientDirection = new Vector3(
-            sinPhi * MathF.Cos(theta),
-            sinPhi * MathF.Sin(theta),
-            MathF.Cos(phi));
-        return Vector3.Normalize(new Vector3(
-            -clientDirection.X,
-            -clientDirection.Y,
-            -clientDirection.Z));
-    }
-
     private bool TryEvaluateParam(int lightParamId, int time, out WorldLightingSample sample)
     {
         if (lightParamId <= 0 ||
@@ -397,9 +330,9 @@ public sealed class WorldLightingCatalog
         var nextTime = checked((int)next.Time);
         var adjustedTime = time;
         if (nextIndex == 0)
-            nextTime += GameDayLength;
+            nextTime += DayNight.GameDayLength;
         if (adjustedTime < previousTime)
-            adjustedTime += GameDayLength;
+            adjustedTime += DayNight.GameDayLength;
         var duration = nextTime - previousTime;
         var alpha = duration <= 0
             ? 0f
@@ -413,7 +346,7 @@ public sealed class WorldLightingCatalog
         {
             LightParamId = lightParamId,
             Time = time,
-            LightDirection = CalculateLightDirection(time)
+            LightDirection = DayNight.CalculateLightDirection(time)
         };
         return true;
     }
@@ -445,7 +378,7 @@ public sealed class WorldLightingCatalog
         return new WorldLightingSample(
             data.LightParamId,
             time,
-            CalculateLightDirection(time),
+            DayNight.CalculateLightDirection(time),
             data.AmbientColor,
             data.DirectColor,
             oceanClose,
@@ -471,6 +404,7 @@ public sealed class WorldLightingCatalog
                     : Array.Empty<WorldSkyboxLayer>(),
                 parameters.HighlightSky)
             {
+                HighlightSkyStrength = parameters.HighlightSkyStrength,
                 SunColor = data.SunColor,
                 CloudSunColor = data.CloudSunColor,
                 CloudEmissiveColor = data.CloudEmissiveColor,
@@ -590,8 +524,9 @@ public sealed class WorldLightingCatalog
             Vector3.Lerp(current.FogColor, incoming.FogColor, alpha),
             current.HasColorData || incoming.HasColorData,
             BlendSkyboxes(current.Skyboxes, incoming.Skyboxes, alpha),
-            alpha >= 0.5f ? incoming.HighlightSky : current.HighlightSky)
+            Lerp(current.HighlightSkyStrength, incoming.HighlightSkyStrength, alpha) > 0f)
         {
+            HighlightSkyStrength = Lerp(current.HighlightSkyStrength, incoming.HighlightSkyStrength, alpha),
             SunColor = Vector3.Lerp(current.SunColor, incoming.SunColor, alpha),
             CloudSunColor = Vector3.Lerp(current.CloudSunColor, incoming.CloudSunColor, alpha),
             CloudEmissiveColor = Vector3.Lerp(current.CloudEmissiveColor, incoming.CloudEmissiveColor, alpha),
@@ -793,24 +728,6 @@ public sealed class WorldLightingCatalog
             return Vector2.Distance(point, start);
         var amount = Math.Clamp(Vector2.Dot(point - start, segment) / lengthSquared, 0f, 1f);
         return Vector2.Distance(point, start + (segment * amount));
-    }
-
-    private static float InterpolateCircularTable(ReadOnlySpan<Vector2> table, float time)
-    {
-        var next = 0;
-        while (next < table.Length && time > table[next].X)
-            next++;
-        if (next == table.Length)
-            next = 0;
-        var previous = next == 0 ? table.Length - 1 : next - 1;
-        var startTime = table[previous].X;
-        var endTime = table[next].X;
-        if (next == 0)
-            endTime += 1f;
-        if (time < startTime)
-            time += 1f;
-        var alpha = (time - startTime) / (endTime - startTime);
-        return Lerp(table[previous].Y, table[next].Y, alpha);
     }
 
     private static float Lerp(float start, float end, float amount) =>

@@ -176,11 +176,11 @@ public sealed class WmoLightingSmokeTests
             SunColor = new Vector3(0.25f, 0.5f, 0.75f),
             HasSunCloudData = true
         };
-        Assert.AreEqual(sky.SunColor, WorldLightingCatalog.ResolveWmoSpecularColor(sky, 1440));
+        Assert.AreEqual(sky.SunColor, DayNight.ResolveWmoSpecularColor(sky, 1440));
         Assert.AreEqual(sky.SunColor * 0.5f,
-            WorldLightingCatalog.ResolveWmoSpecularColor(sky, 780));
-        Assert.AreEqual(Vector3.Zero, WorldLightingCatalog.ResolveWmoSpecularColor(sky, 0));
+            DayNight.ResolveWmoSpecularColor(sky, 780));
+        Assert.AreEqual(Vector3.Zero, DayNight.ResolveWmoSpecularColor(sky, 0));
         Assert.AreEqual(Vector3.Zero,
-            WorldLightingCatalog.ResolveWmoSpecularColor(WorldSkyLighting.None, 0));
+            DayNight.ResolveWmoSpecularColor(WorldSkyLighting.None, 0));
     }
 }

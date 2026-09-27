@@ -147,12 +147,12 @@ internal static class LegacyLightBandLoader
             for (var index = 0; index < row.Num; index++)
             {
                 var time = row.Time[index];
-                if (time is < 0 or > WorldLightingCatalog.GameDayLength ||
+                if (time is < 0 or > DayNight.GameDayLength ||
                     !double.IsFinite(row.Data[index]))
                 {
                     throw new InvalidDataException($"Light band row {row.Id} has an invalid time or value.");
                 }
-                samples[time % WorldLightingCatalog.GameDayLength] = row.Data[index];
+                samples[time % DayNight.GameDayLength] = row.Data[index];
             }
             destination.Add((keys[band], color, samples.Select(static pair => (pair.Key, pair.Value)).ToArray()));
         }
@@ -174,8 +174,8 @@ internal static class LegacyLightBandLoader
             next = 0;
         var previous = next == 0 ? keys.Length - 1 : next - 1;
         var start = keys[previous].Time;
-        var end = keys[next].Time + (next == 0 ? WorldLightingCatalog.GameDayLength : 0);
-        var adjustedTime = time < start ? time + WorldLightingCatalog.GameDayLength : time;
+        var end = keys[next].Time + (next == 0 ? DayNight.GameDayLength : 0);
+        var adjustedTime = time < start ? time + DayNight.GameDayLength : time;
         var alpha = (adjustedTime - start) / (double)(end - start);
         return (previous, next, alpha);
     }

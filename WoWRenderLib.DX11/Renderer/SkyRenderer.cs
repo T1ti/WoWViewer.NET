@@ -32,6 +32,7 @@ internal struct SkyGradientCB
     public Vector4 CameraRight;
     public Vector4 CameraUp;
     public Vector4 ProjectionScale;
+    public Vector4 SkyGlowParameters;
 }
 
 /// <summary>
@@ -185,7 +186,8 @@ internal sealed class SkyRenderer(
     }
 
     public unsafe SkyRenderStats Render(
-        Camera camera, bool animateModels, long sceneTimeMilliseconds, long lightTime)
+        Camera camera, bool animateModels, long sceneTimeMilliseconds, long lightTime,
+        Vector3 lightDirection, bool enableDayNightSkyColors)
     {
         if (!_initialized || (!_lighting.HasColorData && !_lighting.HasSkyboxes))
             return default;
@@ -218,7 +220,16 @@ internal sealed class SkyRenderer(
                 CameraFront = new Vector4(camera.Front, 0f),
                 CameraRight = new Vector4(camera.Right, 0f),
                 CameraUp = new Vector4(camera.Up, 0f),
-                ProjectionScale = new Vector4(1f / projection.M11, 1f / projection.M22, 0f, 0f)
+                ProjectionScale = new Vector4(1f / projection.M11, 1f / projection.M22, 0f, 0f),
+                SkyGlowParameters = new Vector4(
+                    enableDayNightSkyColors && !overrideWithFog
+                        ? DayNight.CalculateSkyGlowStrength(
+                            (int)(lightTime % DayNight.GameDayLength),
+                            _lighting.HighlightSkyStrength)
+                        : 0f,
+                    MathF.Atan2(lightDirection.Y, lightDirection.X),
+                    0f,
+                    0f)
             };
             _deviceContext.UpdateSubresource(
                 _gradientConstantBuffer,

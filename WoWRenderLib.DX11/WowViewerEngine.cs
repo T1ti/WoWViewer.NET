@@ -922,6 +922,7 @@ namespace WoWRenderLib.DX11
                         fileSystem.Version.Major == 3 &&
                         fileSystem.Version.Minor == 3 &&
                         fileSystem.Version.Patch == 5;
+                    sceneManager.EnableDayNightSkyColors = sceneManager.EnableClientGlow;
 
                     try
                     {
@@ -1007,6 +1008,7 @@ namespace WoWRenderLib.DX11
                         return;
 
                     sceneManager.EnableClientGlow = false;
+                    sceneManager.EnableDayNightSkyColors = false;
 
                     try
                     {
@@ -1246,7 +1248,7 @@ namespace WoWRenderLib.DX11
             _worldLightingUpdateTimer.Restart();
 
             var time = _dynamicWorldLightingEnabled
-                ? WorldLightingCatalog.FromLocalTime(DateTime.Now.TimeOfDay)
+                ? DayNight.FromLocalTime(DateTime.Now.TimeOfDay)
                 : _fixedWorldLightingTime;
             var worldPosition = RendererToWorldLightingPosition(activeCamera.Position);
             if (!force &&

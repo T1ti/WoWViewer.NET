@@ -85,6 +85,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderParticles { get; set; } = true;
         public bool DisableScreenGlow { get; set; }
         public bool EnableClientGlow { get; set; }
+        public bool EnableDayNightSkyColors { get; set; }
 
         private static uint NextSceneOwnerId() =>
             unchecked(Interlocked.Increment(ref nextSceneOwnerId));
@@ -979,7 +980,8 @@ namespace WoWRenderLib.DX11.Managers
                 animationTimeCaptured = true;
             }
             var skyStats = _skyRenderer.Render(
-                camera, AnimateModels, animationTime, _activeWorldLighting.Time);
+                camera, AnimateModels, animationTime, _activeWorldLighting.Time,
+                LightDirection, EnableDayNightSkyColors);
             SkyDrawCalls = skyStats.DrawCalls;
             SkySubmittedIndices = skyStats.SubmittedIndices;
             SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
@@ -1326,7 +1328,7 @@ namespace WoWRenderLib.DX11.Managers
                 lightDirection = LightDirection,
                 ambientColor = AmbientColor,
                 diffuseColor = DiffuseColor,
-                specularColor = WorldLightingCatalog.ResolveWmoSpecularColor(
+                specularColor = DayNight.ResolveWmoSpecularColor(
                     _activeWorldSky, _activeWorldLighting.Time),
                 alphaRef = 1.0f,
             };

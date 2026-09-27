@@ -4,7 +4,7 @@ namespace WoWRenderLib.DX11.Renderer;
 
 internal static class SkyboxAnimationClock
 {
-    private const long LightDayUnits = 2880;
+    private const long LightDayUnits = DayNight.GameDayLength;
 
     public static long GetTimeMilliseconds(
         M2Animation animation, int skyboxFlags, long sceneTimeMilliseconds, long lightTime)

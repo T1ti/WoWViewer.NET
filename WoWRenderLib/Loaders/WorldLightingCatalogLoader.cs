@@ -196,7 +196,10 @@ public static class WorldLightingCatalogLoader
                 Math.Clamp(columns.ReadFloat(row, "OceanDeepAlpha"), 0f, 1f),
                 true,
                 columns.ReadInt(row, "LightSkyboxID"),
-                columns.ReadInt(row, "HighlightSky") != 0));
+                columns.ReadFloat(row, "HighlightSky") > 0f)
+            {
+                HighlightSkyStrength = columns.ReadFloat(row, "HighlightSky")
+            });
     }
 
     private static IReadOnlyDictionary<int, WorldSkyboxDefinition> ReadLightSkyboxes(

@@ -63,7 +63,7 @@ internal static class WmoMaterialPolicy
 
     // World lighting and the WMO night-glow curve share the 0..2880 clock.
     internal static float SidnPulse(long worldTime) =>
-        WorldLightingCatalog.CalculateWmoSidnPulse(worldTime);
+        DayNight.CalculateWmoSidnPulse(worldTime);
 
     internal static Vector3 SidnColor(in PreppedWMOMaterial material, float pulse)
     {

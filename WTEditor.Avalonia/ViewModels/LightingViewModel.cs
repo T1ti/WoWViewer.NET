@@ -118,7 +118,7 @@ public partial class LightingViewModel : ViewModelBase
         : "No active spatial light contributors reported.";
 
     public string WmoSidnPulseDisplay =>
-        FormatNumber(WorldLightingCatalog.CalculateWmoSidnPulse(Time));
+        FormatNumber(DayNight.CalculateWmoSidnPulse(Time));
 
     public string SpecularColorDisplay
     {
@@ -126,9 +126,9 @@ public partial class LightingViewModel : ViewModelBase
         {
             var sun = _runtimeSnapshot is { HasSunCloudData: true } runtime
                 ? runtime.SunColor
-                : WorldLightingCatalog.DefaultNoonSpecularColor;
+                : DayNight.DefaultNoonSpecularColor;
             var color = Vector3.Clamp(sun, Vector3.Zero, Vector3.One) *
-                (1f - WorldLightingCatalog.CalculateWmoSidnPulse(Time));
+                (1f - DayNight.CalculateWmoSidnPulse(Time));
             return $"({FormatNumber(color.X)}, {FormatNumber(color.Y)}, {FormatNumber(color.Z)})";
         }
     }

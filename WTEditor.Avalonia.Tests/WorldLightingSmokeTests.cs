@@ -266,7 +266,7 @@ public sealed class WorldLightingSmokeTests
     [TestMethod]
     public void NoonSunDirectionPointsTowardLightInRendererAxes()
     {
-        var noon = WorldLightingCatalog.CalculateLightDirection(1440);
+        var noon = DayNight.CalculateLightDirection(1440);
 
         Assert.AreEqual(0.5613f, noon.X, 0.01f);
         Assert.AreEqual(0.5613f, noon.Y, 0.01f);
@@ -281,6 +281,19 @@ public sealed class WorldLightingSmokeTests
         var sample = catalog.Evaluate(42, Vector3.Zero, 1440);
         Assert.IsTrue(sample.HasValue);
         Assert.AreEqual(noon, sample.Value.LightDirection);
+    }
+
+    [TestMethod]
+    public void WrathSkyGlowUsesTimedCurveAndHighlightStrength()
+    {
+        Assert.AreEqual(0f, DayNight.CalculateSkyGlowStrength(360, 0.4f), 0.0001f);
+        Assert.AreEqual(0.4f, DayNight.CalculateSkyGlowStrength(780, 0.4f), 0.0001f);
+        Assert.AreEqual(0f, DayNight.CalculateSkyGlowStrength(840, 0.4f), 0.0001f);
+        Assert.AreEqual(0.4f, DayNight.CalculateSkyGlowStrength(2580, 0.4f), 0.0001f);
+        Assert.AreEqual(
+            DayNight.CalculateSkyGlowStrength(780, 0.4f),
+            DayNight.CalculateSkyGlowStrength(780 + DayNight.GameDayLength, 0.4f),
+            0.0001f);
     }
 
     [TestMethod]
@@ -372,9 +385,9 @@ public sealed class WorldLightingSmokeTests
     [TestMethod]
     public void LocalClockMapsToWowDayUnits()
     {
-        Assert.AreEqual(0, WorldLightingCatalog.FromLocalTime(TimeSpan.Zero));
-        Assert.AreEqual(720, WorldLightingCatalog.FromLocalTime(TimeSpan.FromHours(6)));
-        Assert.AreEqual(2879, WorldLightingCatalog.FromLocalTime(
+        Assert.AreEqual(0, DayNight.FromLocalTime(TimeSpan.Zero));
+        Assert.AreEqual(720, DayNight.FromLocalTime(TimeSpan.FromHours(6)));
+        Assert.AreEqual(2879, DayNight.FromLocalTime(
             new TimeSpan(23, 59, 30)));
     }
 
@@ -428,7 +441,8 @@ public sealed class WorldLightingSmokeTests
             new Dictionary<int, WorldLightParams>
             {
                 [1] = new(1, 1, 1, 1, true),
-                [2] = new(1, 1, 1, 1, true, LightSkyboxId: 9)
+                [2] = new WorldLightParams(1, 1, 1, 1, true, LightSkyboxId: 9,
+                    HighlightSky: true) { HighlightSkyStrength = 0.4f }
             },
             new Dictionary<int, WorldSkyboxDefinition>
             {
@@ -441,6 +455,7 @@ public sealed class WorldLightingSmokeTests
         Assert.AreEqual(1, sample.Value.Sky.Skyboxes.Count);
         Assert.AreEqual(123456u, sample.Value.Sky.Skyboxes[0].FileDataId);
         Assert.AreEqual(0.5f, sample.Value.Sky.Skyboxes[0].Opacity, 0.0001f);
+        Assert.AreEqual(0.2f, sample.Value.Sky.HighlightSkyStrength, 0.0001f);
     }
 
     [TestMethod]
