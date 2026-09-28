@@ -19,6 +19,9 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private float _diffuseColorG;
     [ObservableProperty] private float _diffuseColorB;
     [ObservableProperty] private bool _disableScreenGlow;
+    [ObservableProperty] private int _skyCloudLod;
+    [ObservableProperty] private float _wrathFarClip;
+    [ObservableProperty] private bool _wrathFarClipOverride;
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
@@ -34,6 +37,9 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _diffuseColorG = rendererSettings.DiffuseColor.Y;
         _diffuseColorB = rendererSettings.DiffuseColor.Z;
         _disableScreenGlow = rendererSettings.DisableScreenGlow;
+        _skyCloudLod = rendererSettings.SkyCloudLod;
+        _wrathFarClip = rendererSettings.WrathFarClip;
+        _wrathFarClipOverride = rendererSettings.WrathFarClipOverride;
     }
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
@@ -45,6 +51,9 @@ public partial class ClientSettingsViewModel : ViewModelBase
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
             DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
             DisableScreenGlow = DisableScreenGlow,
+            SkyCloudLod = SkyCloudLod,
+            WrathFarClip = WrathFarClip,
+            WrathFarClipOverride = WrathFarClipOverride,
             MouseSensitivity = MouseSensitivity,
         },
         KeyboardLayout = ParseKeyboardLayout(KeyboardLayout)

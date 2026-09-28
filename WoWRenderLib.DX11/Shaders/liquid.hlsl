@@ -21,6 +21,12 @@ cbuffer PerObject : register(b0)
     float4 wmoParameters; // basic class, texture rotation, shallow/deep alpha
 };
 
+cbuffer WrathFog : register(b4)
+{
+    float4 fogParameters;
+    float4 fogColor;
+};
+
 Texture2D liquidTexture : register(t0);
 SamplerState linearWrap : register(s0);
 
@@ -39,6 +45,7 @@ struct VSOut
     float2 texCoord : TEXCOORD1;
     float2 cellCoord : TEXCOORD2;
     float3 normal : NORMAL;
+    float fogVisibility : TEXCOORD3;
 };
 
 VSOut VS_Main(VSIn input)
@@ -47,6 +54,9 @@ VSOut VS_Main(VSIn input)
     float4 worldPosition = mul(model_matrix, float4(input.position, 1.0f));
     float4 viewPosition = mul(view_matrix, worldPosition);
     output.position = mul(projection_matrix, viewPosition);
+    float linearVisibility = max(viewPosition.z * fogParameters.x + fogParameters.y, 0.0f);
+    output.fogVisibility = fogParameters.w > 0.5f
+        ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
     output.depth = saturate(input.depth);
     output.cellCoord = input.cellCoord;
 
@@ -82,10 +92,13 @@ float4 PS_Main(VSOut input) : SV_Target
     if (familyParameters.w > 0.5f)
     {
         if (familyParameters.z < 0.5f)
-            return float4(shallowColor.rgb, 1.0f);
+            return float4(lerp(fogColor.rgb, shallowColor.rgb, input.fogVisibility), 1.0f);
         if (wmoParameters.x >= 2.0f)
-            return float4(shallowColor.rgb * sampled.rgb, 1.0f);
-        return float4(sampled.rgb + shallowColor.rgb * wmoWaterColor.rgb,
+            return float4(lerp(fogColor.rgb, shallowColor.rgb * sampled.rgb,
+                input.fogVisibility), 1.0f);
+        return float4(lerp(fogColor.rgb,
+            sampled.rgb + shallowColor.rgb * wmoWaterColor.rgb,
+            input.fogVisibility),
             lerp(wmoParameters.z, wmoParameters.w, saturate(input.depth)));
     }
     bool isWater = familyParameters.x > 0.5f;
@@ -147,7 +160,7 @@ float4 PS_Main(VSOut input) : SV_Target
         // this first pass; specialized client material permutations are a
         // later phase.
         litSurface += surface.rgb * 0.35f;
-        return float4(litSurface, 1.0f);
+        return float4(lerp(fogColor.rgb, litSurface, input.fogVisibility), 1.0f);
     }
 
     // Source-alpha blending is the simple-pass equivalent of mixing the water
@@ -155,6 +168,6 @@ float4 PS_Main(VSOut input) : SV_Target
     // wave mask caused the transparency regression.
     float finalCoverage = saturate(surface.a);
     return float4(
-        litSurface,
+        lerp(fogColor.rgb, litSurface, input.fogVisibility),
         finalCoverage);
 }

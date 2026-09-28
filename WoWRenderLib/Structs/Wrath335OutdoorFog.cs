@@ -13,6 +13,7 @@ public readonly record struct Wrath335OutdoorFog(
 /// </summary>
 public static class Wrath335OutdoorFogEvaluator
 {
+    public const float MinimumShaderFogWidth = 0.0001f;
     public const float MinimumBandEndDistance = 10f;
     public const float ExpansionBandThreshold = 27.777779f;
     public const float RateFarClipCap = 700f;
@@ -64,5 +65,19 @@ public static class Wrath335OutdoorFogEvaluator
         return fogWidth <= rateRange
             ? (1f - fogWidth / rateRange) * RateScale + MinimumExpansionRate
             : MinimumExpansionRate;
+    }
+
+    /// <summary>
+    /// Visibility emitted by Terrain.bls and MapObjDiffuse_T1.bls vertex
+    /// programs after CShaderEffect::SetFogParams sets scale, bias and rate.
+    /// The fixed-function fog stage blends this factor with the fog color.
+    /// </summary>
+    public static float Visibility(float viewSpaceDepth, Wrath335OutdoorFog fog)
+    {
+        var width = fog.EndDistance - fog.StartDistance;
+        if (width <= MinimumShaderFogWidth)
+            return viewSpaceDepth < fog.EndDistance ? 1f : 0f;
+        var linear = MathF.Max((fog.EndDistance - viewSpaceDepth) / width, 0f);
+        return MathF.Min(MathF.Pow(linear, fog.Rate), 1f);
     }
 }

@@ -12,7 +12,8 @@ namespace WoWRenderLib.Structs
         public Matrix4x4 model_matrix;
         public int vertexShader;
         public int pixelShader;
-        public Vector2 _pad0;
+        public int unfogged;
+        public float _pad0;
         public Vector3 lightDirection;
         public float alphaRef;
         public Vector3 ambientColor;
@@ -81,6 +82,8 @@ namespace WoWRenderLib.Structs
         public int materialIndex;
         public int lightingMode;
         public byte category;
+        public BoundingBox bounds;
+        public bool hasBounds;
     }
 
 
@@ -116,6 +119,7 @@ namespace WoWRenderLib.Structs
         public readonly uint AmbientColor { get; init; }
         public readonly ushort Flags { get; init; }
         public readonly BoundingBox BoundingBox { get; init; }
+        public readonly WmoFogVolume[] Fogs { get; init; }
         public readonly WMODoodad[] Doodads { get; init; }
         public readonly string[] DoodadSets { get; init; }
         public readonly PreppedWMOMaterial[] Materials { get; init; }
@@ -165,6 +169,8 @@ namespace WoWRenderLib.Structs
         public readonly uint flags { get; init; }
         public readonly bool hasPrimaryVertexColors { get; init; }
         public readonly uint mogiFlags { get; init; }
+        public readonly byte[] fogIds { get; init; }
+        public readonly BoundingBox mogiBoundingBox { get; init; }
         public readonly ushort portalStart { get; init; }
         public readonly ushort portalCount { get; init; }
         public readonly ushort[] doodadReferences { get; init; }
@@ -178,6 +184,8 @@ namespace WoWRenderLib.Structs
         public readonly uint FirstFace { get; init; }
         public readonly int NumFaces { get; init; }
         public readonly byte Category { get; init; }
+        public readonly BoundingBox Bounds { get; init; }
+        public readonly bool HasBounds { get; init; }
 
     }
 

@@ -15,6 +15,7 @@ namespace WoWRenderLib.DX11.Objects
         private bool[]? enabledDoodadSets;
         private bool[]? _portalVisibleGroups;
         private bool[]? _portalVisibleDoodads;
+        private bool[]? _portalVisibleBatches;
         private readonly WmoPortalVisibilityScratch _portalVisibilityScratch = new();
         private long _portalVisibilityFrame = -1;
         private long _cameraVisibilityFrame = -1;
@@ -170,14 +171,18 @@ namespace WoWRenderLib.DX11.Objects
             in Structs.WorldModel wmo,
             out bool[] visibleGroups,
             out bool[] visibleDoodads,
+            out bool[] visibleBatches,
             out WmoPortalVisibilityScratch scratch)
         {
             if (_portalVisibleGroups == null || _portalVisibleGroups.Length != wmo.groupBatches.Length)
                 _portalVisibleGroups = new bool[wmo.groupBatches.Length];
             if (_portalVisibleDoodads == null || _portalVisibleDoodads.Length != wmo.doodads.Length)
                 _portalVisibleDoodads = new bool[wmo.doodads.Length];
+            if (_portalVisibleBatches == null || _portalVisibleBatches.Length != wmo.wmoRenderBatches.Length)
+                _portalVisibleBatches = new bool[wmo.wmoRenderBatches.Length];
             visibleGroups = _portalVisibleGroups;
             visibleDoodads = _portalVisibleDoodads;
+            visibleBatches = _portalVisibleBatches;
             scratch = _portalVisibilityScratch;
         }
 

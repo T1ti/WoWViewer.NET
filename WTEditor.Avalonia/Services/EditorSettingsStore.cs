@@ -34,6 +34,9 @@ public sealed class PersistedRenderingSettings
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
     public bool DisableScreenGlow { get; set; }
+    public int SkyCloudLod { get; set; }
+    public float WrathFarClip { get; set; } = RenderingConfiguration.DefaultWrathFarClip;
+    public bool WrathFarClipOverride { get; set; }
     public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
@@ -68,6 +71,9 @@ public sealed class PersistedRenderingSettings
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
         DisableScreenGlow = DisableScreenGlow,
+        SkyCloudLod = SkyCloudLod,
+        WrathFarClip = WrathFarClip,
+        WrathFarClipOverride = WrathFarClipOverride,
         AnimateModels = AnimateModels,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,
@@ -107,6 +113,9 @@ public sealed class PersistedRenderingSettings
         RenderM2 = rendering.RenderM2,
         RenderParticles = rendering.RenderParticles,
         DisableScreenGlow = rendering.DisableScreenGlow,
+        SkyCloudLod = rendering.SkyCloudLod,
+        WrathFarClip = rendering.WrathFarClip,
+        WrathFarClipOverride = rendering.WrathFarClipOverride,
         AnimateModels = rendering.AnimateModels,
         EnableWmoPortalCulling = rendering.EnableWmoPortalCulling,
         ShowBoundingBoxes = rendering.ShowBoundingBoxes,

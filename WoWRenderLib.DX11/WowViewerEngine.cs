@@ -181,6 +181,38 @@ namespace WoWRenderLib.DX11
     public class WowViewerEngine : IDisposable, IAsyncDisposable
     {
         private static readonly SemaphoreSlim ContentInitializationGate = new(1, 1);
+        private const ulong ClientExpandedMemoryThresholdBytes = 1024UL * 1024UL * 1024UL;
+        private static readonly bool ClientExpandedMemoryAvailable = CheckClientPhysicalMemory();
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MemoryStatusEx
+        {
+            public uint Length;
+            public uint MemoryLoad;
+            public ulong TotalPhysical;
+            public ulong AvailablePhysical;
+            public ulong TotalPageFile;
+            public ulong AvailablePageFile;
+            public ulong TotalVirtual;
+            public ulong AvailableVirtual;
+            public ulong AvailableExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx status);
+
+        private static bool CheckClientPhysicalMemory()
+        {
+            if (!OperatingSystem.IsWindows())
+                return true;
+            var status = new MemoryStatusEx
+            {
+                Length = (uint)Marshal.SizeOf<MemoryStatusEx>()
+            };
+            return !GlobalMemoryStatusEx(ref status) ||
+                   status.TotalPhysical > ClientExpandedMemoryThresholdBytes;
+        }
         private static long _activeGeneration;
 
         private WowClientConfig _wowConfig;
@@ -607,6 +639,7 @@ namespace WoWRenderLib.DX11
             if (!gizmoOwnsInput && !_screenSelection.Rectangle.IsVisible)
                 HandleKeyboardMovement(input, (float)deltaTime);
             UpdateDynamicWorldLighting(force: false);
+            ApplyClientViewDistance();
 
 
             /*
@@ -949,6 +982,11 @@ namespace WoWRenderLib.DX11
                         sceneManager.ConfigureWrathStarModel(
                             WowlibFileSystem.ResolveAssetId(
                                 fileSystem, Wrath335StarEvaluator.ModelPath));
+                        sceneManager.ConfigureWrathGlareTextures(
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335GlareEvaluator.SunTexturePath),
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335GlareEvaluator.MoonTexturePath));
                         sceneManager.ConfigureWrathCelestialTextures(
                             WowlibFileSystem.ResolveAssetId(
                                 fileSystem, Wrath335CelestialEvaluator.SunTexturePath),
@@ -960,6 +998,7 @@ namespace WoWRenderLib.DX11
                     else
                     {
                         sceneManager.ConfigureWrathStarModel(0);
+                        sceneManager.ConfigureWrathGlareTextures(0, 0);
                         sceneManager.ConfigureWrathCelestialTextures(0, 0, 0);
                     }
 
@@ -1049,6 +1088,7 @@ namespace WoWRenderLib.DX11
                     sceneManager.EnableClientGlow = false;
                     sceneManager.EnableDayNightSkyColors = false;
                     sceneManager.ConfigureWrathStarModel(0);
+                    sceneManager.ConfigureWrathGlareTextures(0, 0);
                     sceneManager.ConfigureWrathCelestialTextures(0, 0, 0);
 
                     try
@@ -1163,6 +1203,7 @@ namespace WoWRenderLib.DX11
                 sceneManager.RenderM2 = Settings.RenderM2;
                 sceneManager.RenderParticles = Settings.RenderParticles;
                 sceneManager.DisableScreenGlow = Settings.DisableScreenGlow;
+                sceneManager.SkyCloudLod = Settings.SkyCloudLod;
                 sceneManager.AnimateModels = Settings.AnimateModels;
                 sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;
                 if (Settings.UseConfiguredLighting)
@@ -1176,6 +1217,35 @@ namespace WoWRenderLib.DX11
                 sceneManager.ShowTerrainWireframe = Settings.ShowTerrainWireframe;
                 sceneManager.ShowTerrainTexture = Settings.ShowTerrainTexture;
                 sceneManager.ShowTerrainVertexColor = Settings.ShowTerrainVertexColor;
+            }
+            ApplyClientViewDistance();
+        }
+
+        private void ApplyClientViewDistance()
+        {
+            if (activeCamera == null || sceneManager == null)
+                return;
+
+            if (sceneManager.EnableDayNightSkyColors)
+            {
+                var farClip = Wrath335FarClip.Validate(
+                    Settings.WrathFarClip, _currentMapId,
+                    Settings.WrathFarClipOverride,
+                    ClientExpandedMemoryAvailable);
+                activeCamera.NearPlane = Wrath335FarClip.FixedNearClip;
+                activeCamera.FarPlane = farClip;
+                sceneManager.TerrainRenderDistance = MathF.Min(
+                    Settings.TerrainRenderDistance, farClip);
+                sceneManager.ModelRenderDistance = MathF.Min(
+                    Settings.ModelRenderDistance, farClip);
+            }
+            else
+            {
+                activeCamera.NearPlane = 1f;
+                activeCamera.FarPlane = MathF.Max(
+                    Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
+                sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
+                sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
             }
         }
 

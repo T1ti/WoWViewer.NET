@@ -48,6 +48,9 @@ public sealed class RendererSettings
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
     public bool DisableScreenGlow { get; set; }
+    public int SkyCloudLod { get; set; }
+    public float WrathFarClip { get; set; } = WoWRenderLib.Structs.Wrath335FarClip.Default;
+    public bool WrathFarClipOverride { get; set; }
     public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
     public bool ShowBoundingBoxes { get; set; }
@@ -78,6 +81,9 @@ public sealed class RendererSettings
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
         DisableScreenGlow = DisableScreenGlow,
+        SkyCloudLod = SkyCloudLod,
+        WrathFarClip = WrathFarClip,
+        WrathFarClipOverride = WrathFarClipOverride,
         AnimateModels = AnimateModels,
         EnableWmoPortalCulling = EnableWmoPortalCulling,
         ShowBoundingBoxes = ShowBoundingBoxes,

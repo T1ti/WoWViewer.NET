@@ -76,6 +76,7 @@ public sealed partial class EditorSettingsSmokeTests
                 ShowWmoCollisionMesh = true,
                 RenderM2 = false,
                 RenderParticles = false,
+                SkyCloudLod = 2,
                 AnimateModels = false,
                 EnableWmoPortalCulling = true,
                 ShowBoundingBoxes = true,
@@ -173,6 +174,44 @@ public sealed partial class EditorSettingsSmokeTests
         Assert.IsFalse(changed.Rendering.DisableScreenGlow);
         Assert.AreEqual(original.Rendering.TerrainRenderDistance,
             changed.Rendering.TerrainRenderDistance);
+    }
+
+    [TestMethod]
+    public void SkyCloudLodCVarFlowsFromSettingsDialogToDx11AndClamps()
+    {
+        var original = new EditorSettingsSnapshot();
+        var viewModel = new ClientSettingsViewModel(original)
+        {
+            SkyCloudLod = 2
+        };
+        var changed = viewModel.ApplyTo(original).Normalize();
+
+        Assert.AreEqual(2, changed.Rendering.SkyCloudLod);
+        Assert.AreEqual(2, changed.Rendering.ToDx11().SkyCloudLod);
+        Assert.AreEqual(3, (changed.Rendering with { SkyCloudLod = 9 })
+            .Normalize().SkyCloudLod);
+    }
+
+    [TestMethod]
+    public void WrathFarClipCVarsFlowThroughSettingsAndPersistence()
+    {
+        var original = new EditorSettingsSnapshot();
+        var viewModel = new ClientSettingsViewModel(original)
+        {
+            WrathFarClip = 1200f,
+            WrathFarClipOverride = true
+        };
+        var changed = viewModel.ApplyTo(original).Normalize();
+        var persisted = PersistedRenderingSettings.From(changed.Rendering);
+        var restored = persisted.ToModel().Normalize();
+
+        Assert.AreEqual(1200f, restored.WrathFarClip, 0.0001f);
+        Assert.IsTrue(restored.WrathFarClipOverride);
+        Assert.AreEqual(1200f, restored.ToDx11().WrathFarClip, 0.0001f);
+        Assert.IsTrue(restored.ToDx11().WrathFarClipOverride);
+        Assert.AreEqual(RenderingConfiguration.MaximumWrathFarClip,
+            (restored with { WrathFarClip = 5000f }).Normalize().WrathFarClip,
+            0.0001f);
     }
 
     [TestMethod]

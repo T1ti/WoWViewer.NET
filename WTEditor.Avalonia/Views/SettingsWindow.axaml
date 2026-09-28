@@ -35,6 +35,22 @@
           <CheckBox Content="Disable full-screen glow (3.3.5 ffxGlow)"
                     IsChecked="{Binding DisableScreenGlow}"
                     ToolTip.Tip="The 3.3.5 client exposes this effect through the ffxGlow CVar. The viewport toggle uses the same saved setting." />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock VerticalAlignment="Center" Text="3.3.5 cloud detail (SkyCloudLOD)" />
+            <NumericUpDown Width="80" Value="{Binding SkyCloudLod}"
+                           Minimum="0" Maximum="3" Increment="1" FormatString="0"
+                           ToolTip.Tip="Client SkyCloudLOD CVar: 0 to 3 selects 128 to 1024 pixel procedural cloud textures. Only affects the 3.3.5 renderer." />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock VerticalAlignment="Center" Text="3.3.5 view distance (farclip)" />
+            <NumericUpDown Width="110" Value="{Binding WrathFarClip}"
+                           Minimum="183.33333" Maximum="1583.3334" Increment="25"
+                           FormatString="0.###"
+                           ToolTip.Tip="Client farclip CVar in world units. The client applies a map-dependent upper limit." />
+            <CheckBox VerticalAlignment="Center" Content="farClipOverride"
+                      IsChecked="{Binding WrathFarClipOverride}"
+                      ToolTip.Tip="Client farClipOverride CVar permits the extended farclip range on older maps." />
+          </StackPanel>
         </StackPanel>
       </TabItem>
       <TabItem Header="General">

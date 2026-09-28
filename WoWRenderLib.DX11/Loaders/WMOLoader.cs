@@ -23,6 +23,7 @@ namespace WoWRenderLib.DX11.Loaders
                 legacyLighting = preppedWMO.LegacyLighting,
                 ambientColor = preppedWMO.AmbientColor,
                 flags = preppedWMO.Flags,
+                fogs = preppedWMO.Fogs,
                 boundingBox = preppedWMO.BoundingBox,
                 boundingRadius = CalculateBoundingRadius(preppedWMO.BoundingBox.Min, preppedWMO.BoundingBox.Max)
             };
@@ -120,6 +121,8 @@ namespace WoWRenderLib.DX11.Loaders
                     flags = preppedGroup.flags,
                     hasPrimaryVertexColors = preppedGroup.hasPrimaryVertexColors,
                     mogiFlags = preppedGroup.mogiFlags,
+                    fogIds = preppedGroup.fogIds,
+                    mogiBoundingBox = preppedGroup.mogiBoundingBox,
                     portalLinks = BuildPortalLinks(preppedGroup, preppedWMO.PortalReferences, sourceGroupToRenderGroup),
                     doodadReferences = preppedGroup.doodadReferences ?? [],
                     liquid = WorldLiquidLoader.Upload(device,
@@ -130,10 +133,13 @@ namespace WoWRenderLib.DX11.Loaders
 
             var renderBatches = new List<WMORenderBatch>();
             var textureReferences = new List<uint>();
+            wmoBatch.firstRenderBatchByGroup = new int[preppedWMO.PreppedWMOGroups.Length];
+            wmoBatch.renderBatchCountByGroup = new int[preppedWMO.PreppedWMOGroups.Length];
 
             for (var g = 0; g < preppedWMO.PreppedWMOGroups.Length; g++)
             {
                 var group = preppedWMO.PreppedWMOGroups[g];
+                wmoBatch.firstRenderBatchByGroup[g] = renderBatches.Count;
                 if (group.groupBatches == null) continue;
                 for (var i = 0; i < group.groupBatches.Length; i++)
                 {
@@ -157,6 +163,8 @@ namespace WoWRenderLib.DX11.Loaders
                             groupBatch.Category,
                             mat.Flags),
                         category = groupBatch.Category,
+                        bounds = groupBatch.Bounds,
+                        hasBounds = groupBatch.HasBounds,
                         materialFDIDs = [
                             mat.TexFileDataID0,
                             mat.TexFileDataID1,
@@ -182,6 +190,7 @@ namespace WoWRenderLib.DX11.Loaders
 
                     renderBatches.Add(renderBatch);
                 }
+                wmoBatch.renderBatchCountByGroup[g] = renderBatches.Count - wmoBatch.firstRenderBatchByGroup[g];
             }
 
             wmoBatch.doodadSets = preppedWMO.DoodadSets;
@@ -235,14 +244,15 @@ namespace WoWRenderLib.DX11.Loaders
                     max = Vector3.Max(max, vertex);
                 }
 
-                var normal = source.Normal.LengthSquared() > 0.000001f
-                    ? Vector3.Normalize(source.Normal)
+                var normalLength = source.Normal.Length();
+                var normal = normalLength > 0.000001f
+                    ? source.Normal / normalLength
                     : Vector3.Zero;
                 result[portalIndex] = new WmoPortal
                 {
                     Vertices = vertices,
                     Normal = normal,
-                    Distance = normal == Vector3.Zero ? 0f : -Vector3.Dot(normal, vertices[0]),
+                    Distance = normal == Vector3.Zero ? 0f : source.Distance / normalLength,
                     Bounds = new BoundingBox(min, max)
                 };
             }

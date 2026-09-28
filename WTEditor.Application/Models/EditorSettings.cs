@@ -27,6 +27,10 @@ public sealed record ClientConfiguration
 
 public sealed record RenderingConfiguration
 {
+    public const int MaximumSkyCloudLod = 3;
+    public const float DefaultWrathFarClip = 350f;
+    public const float MinimumWrathFarClip = 183.33333f;
+    public const float MaximumWrathFarClip = 1583.3334f;
     public bool IsForegroundFrameRateLimitEnabled { get; init; }
     public bool IsForegroundFrameRateLimitInitialized { get; init; }
     public int ViewportFrameRateLimit { get; init; } = 60;
@@ -50,6 +54,9 @@ public sealed record RenderingConfiguration
     public bool RenderM2 { get; init; } = true;
     public bool RenderParticles { get; init; } = true;
     public bool DisableScreenGlow { get; init; }
+    public int SkyCloudLod { get; init; }
+    public float WrathFarClip { get; init; } = DefaultWrathFarClip;
+    public bool WrathFarClipOverride { get; init; }
     public bool AnimateModels { get; init; } = true;
     public bool EnableWmoPortalCulling { get; init; }
     public bool ShowBoundingBoxes { get; init; }
@@ -80,6 +87,9 @@ public sealed record RenderingConfiguration
             TerrainLodTransitionPixels = ClampFinite(
                 TerrainLodTransitionPixels, 0f, 256f, defaults.TerrainLodTransitionPixels),
             TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
+            SkyCloudLod = Math.Clamp(SkyCloudLod, 0, MaximumSkyCloudLod),
+            WrathFarClip = ClampFinite(WrathFarClip, MinimumWrathFarClip,
+                MaximumWrathFarClip, DefaultWrathFarClip),
             WorldLightingTime = Math.Clamp(WorldLightingTime, 0, 2879),
             MovementSpeed = ClampFinite(MovementSpeed, 1f, 10_000f, defaults.MovementSpeed),
             MouseSensitivity = ClampFinite(

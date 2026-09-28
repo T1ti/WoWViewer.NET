@@ -52,4 +52,14 @@ public sealed class Wrath335OutdoorFogTests
         Assert.AreEqual(20f, shortRange.EndDistance, 0.0001f);
         Assert.AreEqual(1f, shortRange.Rate, 0.0001f);
     }
+
+    [TestMethod]
+    public void CompiledShaderVisibilityUsesViewDepthAndClientRate()
+    {
+        var fog = new Wrath335OutdoorFog(100f, 300f, 2f);
+        Assert.AreEqual(1f, Wrath335OutdoorFogEvaluator.Visibility(50f, fog), 0.0001f);
+        Assert.AreEqual(1f, Wrath335OutdoorFogEvaluator.Visibility(100f, fog), 0.0001f);
+        Assert.AreEqual(0.25f, Wrath335OutdoorFogEvaluator.Visibility(200f, fog), 0.0001f);
+        Assert.AreEqual(0f, Wrath335OutdoorFogEvaluator.Visibility(300f, fog), 0.0001f);
+    }
 }

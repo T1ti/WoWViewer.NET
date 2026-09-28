@@ -10,7 +10,8 @@ cbuffer PerObject : register(b0)
 
     int vertexShader;
     int pixelShader;
-    float2 _pad0;
+    int unfogged;
+    float _pad0;
 
     float3 lightDirection;
     float alphaRef;
@@ -28,6 +29,12 @@ cbuffer PerObject : register(b0)
     float _pad3;
     float3 windowDiffuseColor;
     float _pad4;
+}
+
+cbuffer WrathFog : register(b4)
+{
+    float4 fogParameters;
+    float4 fogColor;
 }
 
 
@@ -76,6 +83,7 @@ struct VSOut
     float4 vColor3 : COLOR2;
     float3 LitColor : TEXCOORD4;
     float3 SpecularColor : TEXCOORD5;
+    float FogVisibility : TEXCOORD8;
 };
 
 float2 posToTexCoord(float3 vertexPosInView, float3 n)
@@ -103,6 +111,9 @@ VSOut VS_Main(VSIn input)
     
     float4 viewPos = mul(view_matrix, worldPos);
     o.pos = mul(projection_matrix, viewPos);
+    float linearVisibility = max(viewPos.z * fogParameters.x + fogParameters.y, 0.0f);
+    o.FogVisibility = fogParameters.w > 0.5f
+        ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
 
     // The sun direction is in world space. Keep the normal in that space for
     // lighting; only the reflection lookup needs a view-space normal.
@@ -514,5 +525,6 @@ float4 PS_Main(VSOut i) : SV_Target
         finalRgb += sidnColor;
     if (useLegacyLighting != 0)
         finalRgb = saturate(finalRgb);
-    return float4(finalRgb, finalOpacity);
+    return float4(unfogged != 0 ? finalRgb
+        : lerp(fogColor.rgb, finalRgb, i.FogVisibility), finalOpacity);
 }

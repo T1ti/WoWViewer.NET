@@ -60,6 +60,12 @@ cbuffer ChunkLayerDataBuffer : register(b3)
     ChunkLayerData chunkLayerData[256];
 }
 
+cbuffer WrathFog : register(b4)
+{
+    float4 fogParameters; // -1/width, end/width, rate, enabled
+    float4 fogColor;
+}
+
 Texture2D diffuseLayers[8] : register(t0); // t0..t7
 Texture2D heightLayers[8] : register(t8); // t8..t15
 Texture2DArray alphaLayers : register(t16);
@@ -92,6 +98,7 @@ struct VSOut
     float3 TerrainPosition : TEXCOORD2;
     noperspective float3 Barycentric : TEXCOORD3;
     float3 LegacyLighting : TEXCOORD4;
+    float FogVisibility : TEXCOORD5;
 };
 
 float2 TerrainTexCoordFromVertexId(uint vertexId)
@@ -129,9 +136,12 @@ VSOut VS_Main(VSIn input, uint vertexId : SV_VertexID)
     float2 texCoord = TerrainTexCoordFromVertexId(vertexId);
     float2 terrainPosition = TerrainPositionFromVertexId(vertexId, texCoord);
     float3 posOffset = float3(terrainPosition, input.height);
-    float4 worldPos = mul(rotation_matrix, float4(posOffset, 1.0f));
-    worldPos = mul(model_matrix, worldPos);
-    o.pos = mul(projection_matrix, worldPos);
+    float4 worldPos = mul(model_matrix, float4(posOffset, 1.0f));
+    float4 viewPos = mul(rotation_matrix, worldPos);
+    o.pos = mul(projection_matrix, viewPos);
+    float linearVisibility = max(viewPos.z * fogParameters.x + fogParameters.y, 0.0f);
+    o.FogVisibility = fogParameters.w > 0.5f
+        ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
     o.TexCoord = texCoord;
     float3x3 normalMatrix = (float3x3) model_matrix;
     o.Normal = normalize(mul(normalMatrix, input.normal));
@@ -407,6 +417,7 @@ float4 PS_Main(VSOut i) : SV_Target
             : float3(1.0f, 1.0f, 1.0f);
         shadedColor = final_color * vertexColor * lighting;
     }
+    shadedColor = lerp(fogColor.rgb, shadedColor, i.FogVisibility);
     float chunkMask = 0.0f;
     float adtMask = 0.0f;
     if (renderTerrainGrid != 0)

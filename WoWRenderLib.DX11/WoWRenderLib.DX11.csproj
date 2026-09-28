@@ -56,6 +56,12 @@
     <None Update="Shaders\sky_celestial.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Shaders\sky_cloud.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Shaders\sky_glare_query.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Shaders\liquid.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

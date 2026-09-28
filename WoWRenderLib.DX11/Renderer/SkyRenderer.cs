@@ -57,7 +57,10 @@ internal sealed class SkyRenderer(
     ComPtr<ID3D11DeviceContext> deviceContext) : IDisposable
 {
     private const uint CacheOwnerId = 0xFFFF_FFFEu;
+    private const float ClearWeatherBlend = 0f;
     private static readonly Matrix4x4 SkyboxTransform = Matrix4x4.CreateRotationZ(MathF.PI);
+    private static readonly Wrath335CloudNoise ProcessCloudNoise =
+        Wrath335CloudNoise.CreateProcessRandom();
     private readonly ComPtr<ID3D11Device> _device = device;
     private readonly ComPtr<ID3D11DeviceContext> _deviceContext = deviceContext;
     private readonly ComPtr<ID3D11BlendState>[] _blendStates = new ComPtr<ID3D11BlendState>[14];
@@ -65,6 +68,8 @@ internal sealed class SkyRenderer(
     private CompiledShader _gradientShader;
     private CompiledShader _wrathDomeShader;
     private CompiledShader _celestialShader;
+    private CompiledShader _cloudShader;
+    private CompiledShader _glareQueryShader;
     private CompiledShader _m2Shader;
     private ComPtr<ID3D11Buffer> _gradientConstantBuffer;
     private ComPtr<ID3D11Buffer> _celestialConstantBuffer;
@@ -72,10 +77,24 @@ internal sealed class SkyRenderer(
     private ComPtr<ID3D11Buffer> _celestialIndexBuffer;
     private ComPtr<ID3D11Buffer> _domeVertexBuffer;
     private ComPtr<ID3D11Buffer> _domeIndexBuffer;
+    private ComPtr<ID3D11Buffer> _cloudVertexBuffer;
+    private ComPtr<ID3D11Buffer> _cloudIndexBuffer;
+    private readonly ComPtr<ID3D11Texture2D>[] _cloudTextures = new ComPtr<ID3D11Texture2D>[2];
+    private readonly ComPtr<ID3D11ShaderResourceView>[] _cloudResources =
+        new ComPtr<ID3D11ShaderResourceView>[2];
+    private Wrath335CloudTextureGenerator _cloudGenerator =
+        new(Wrath335CloudTextureGenerator.DefaultLod, ProcessCloudNoise);
+    private Task<Wrath335CloudTextureGenerator>? _pendingCloudGenerator;
+    private int _pendingCloudLod = -1;
+    private int _requestedCloudLod;
+    private int _failedCloudLod = -1;
+    private long _lastCloudTimestamp;
     private ComPtr<ID3D11Buffer> _m2ConstantBuffer;
     private ComPtr<ID3D11Buffer> _bonePaletteConstantBuffer;
     private ComPtr<ID3D11Buffer> _instanceBuffer;
     private ComPtr<ID3D11DepthStencilState> _depthDisabledState;
+    private ComPtr<ID3D11DepthStencilState> _glareQueryDepthState;
+    private ComPtr<ID3D11BlendState> _glareQueryBlendState;
     private ComPtr<ID3D11RasterizerState> _cullState;
     private ComPtr<ID3D11RasterizerState> _twoSidedState;
     private ComPtr<ID3D11ShaderResourceView> _missingTexture;
@@ -89,6 +108,16 @@ internal sealed class SkyRenderer(
     private CelestialTextureIds _requestedCelestialTextures = EmptyCelestialTextures;
     private CelestialTextureIds _activeCelestialTextures = EmptyCelestialTextures;
     private readonly HashSet<uint> _trackedCelestialTextureIds = [];
+    private sealed record GlareTextureIds(uint Sun, uint Moon);
+    private static readonly GlareTextureIds EmptyGlareTextures = new(0, 0);
+    private GlareTextureIds _requestedGlareTextures = EmptyGlareTextures;
+    private GlareTextureIds _activeGlareTextures = EmptyGlareTextures;
+    private readonly HashSet<uint> _trackedGlareTextureIds = [];
+    private readonly Wrath335GlareEvaluator _sunGlare = new(moon: false);
+    private readonly Wrath335GlareEvaluator _moonGlare = new(moon: true);
+    private readonly GlareOcclusion _sunOcclusion = new();
+    private readonly GlareOcclusion _moonOcclusion = new();
+    private long _lastGlareTimestamp;
     private uint _requestedStarModelId;
     private uint _activeStarModelId;
     private bool _domeColorsDirty = true;
@@ -101,6 +130,20 @@ internal sealed class SkyRenderer(
     private long _uploadedPoseVersion;
     private bool _initialized;
 
+    private sealed class GlareOcclusion : IDisposable
+    {
+        public readonly ComPtr<ID3D11Query>[] Queries = new ComPtr<ID3D11Query>[2];
+        public readonly bool[] Pending = new bool[2];
+        public readonly float[] ProjectedAreas = new float[2];
+        public float LastVisibility;
+
+        public void Dispose()
+        {
+            foreach (var query in Queries)
+                query.Dispose();
+        }
+    }
+
     public void Initialize(ShaderManager shaderManager, CompiledShader m2Shader)
     {
         ArgumentNullException.ThrowIfNull(shaderManager);
@@ -111,6 +154,8 @@ internal sealed class SkyRenderer(
         _gradientShader = shaderManager.GetOrCompileShader("sky");
         _wrathDomeShader = shaderManager.GetOrCompileShader("sky_wrath");
         _celestialShader = shaderManager.GetOrCompileShader("sky_celestial");
+        _cloudShader = shaderManager.GetOrCompileShader("sky_cloud");
+        _glareQueryShader = shaderManager.GetOrCompileShader("sky_glare_query");
         _m2Shader = m2Shader;
         _missingTexture = BLPLoader.CreatePlaceholderTexture(_device);
 
@@ -185,6 +230,37 @@ internal sealed class SkyRenderer(
                     in bufferDesc, in domeData, ref _domeIndexBuffer));
             }
 
+            var cloudVertices = Wrath335CloudMesh.CreateVertices();
+            bufferDesc = new BufferDesc
+            {
+                ByteWidth = (uint)(cloudVertices.Length *
+                    Marshal.SizeOf<Wrath335CloudVertex>()),
+                Usage = Usage.Immutable,
+                BindFlags = (uint)BindFlag.VertexBuffer
+            };
+            fixed (Wrath335CloudVertex* vertexData = cloudVertices)
+            {
+                var cloudData = new SubresourceData { PSysMem = vertexData };
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                    in bufferDesc, in cloudData, ref _cloudVertexBuffer));
+            }
+
+            var cloudIndices = Wrath335CloudMesh.CreateStripIndices();
+            bufferDesc = new BufferDesc
+            {
+                ByteWidth = (uint)(cloudIndices.Length * sizeof(ushort)),
+                Usage = Usage.Immutable,
+                BindFlags = (uint)BindFlag.IndexBuffer
+            };
+            fixed (ushort* indexData = cloudIndices)
+            {
+                var cloudData = new SubresourceData { PSysMem = indexData };
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(
+                    in bufferDesc, in cloudData, ref _cloudIndexBuffer));
+            }
+
+            RecreateCloudTextures(_cloudGenerator.Size);
+
             bufferDesc = new BufferDesc
             {
                 ByteWidth = (uint)(_celestialVertices.Length *
@@ -219,6 +295,36 @@ internal sealed class SkyRenderer(
             SilkMarshal.ThrowHResult(_device.CreateDepthStencilState(
                 in depthDesc,
                 ref _depthDisabledState));
+            depthDesc.DepthEnable = true;
+            depthDesc.DepthFunc = ComparisonFunc.LessEqual;
+            SilkMarshal.ThrowHResult(_device.CreateDepthStencilState(
+                in depthDesc, ref _glareQueryDepthState));
+
+            var queryBlendDesc = new BlendDesc
+            {
+                AlphaToCoverageEnable = 0,
+                IndependentBlendEnable = 0
+            };
+            queryBlendDesc.RenderTarget[0] = new RenderTargetBlendDesc
+            {
+                BlendEnable = 0,
+                SrcBlend = Blend.One,
+                DestBlend = Blend.Zero,
+                BlendOp = BlendOp.Add,
+                SrcBlendAlpha = Blend.One,
+                DestBlendAlpha = Blend.Zero,
+                BlendOpAlpha = BlendOp.Add,
+                RenderTargetWriteMask = 0
+            };
+            SilkMarshal.ThrowHResult(_device.CreateBlendState(
+                in queryBlendDesc, ref _glareQueryBlendState));
+            var occlusionDescription = new QueryDesc(Query.Occlusion, 0);
+            foreach (var occlusion in new[] { _sunOcclusion, _moonOcclusion })
+            {
+                for (var index = 0; index < occlusion.Queries.Length; index++)
+                    SilkMarshal.ThrowHResult(_device.CreateQuery<ID3D11Query>(
+                        in occlusionDescription, ref occlusion.Queries[index]));
+            }
 
             var rasterizerDesc = new RasterizerDesc
             {
@@ -242,6 +348,93 @@ internal sealed class SkyRenderer(
         _initialized = true;
     }
 
+    /// <summary>SkyCloudLOD is a 3.3.5 CVar clamped to integer levels 0..3.</summary>
+    public void SetCloudLod(int lod)
+    {
+        var clamped = Math.Clamp(lod, 0, Wrath335CloudNoise.MaximumCloudLod);
+        if (clamped == _requestedCloudLod)
+            return;
+        _requestedCloudLod = clamped;
+        _failedCloudLod = -1;
+    }
+
+    private unsafe void RecreateCloudTextures(int size)
+    {
+        var description = new Texture2DDesc
+        {
+            Width = (uint)size,
+            Height = (uint)size,
+            MipLevels = Wrath335CloudTextureGenerator.ClientMipCount,
+            ArraySize = 1,
+            Format = Format.FormatB8G8R8A8Unorm,
+            SampleDesc = new SampleDesc(1, 0),
+            Usage = Usage.Default,
+            BindFlags = (uint)BindFlag.ShaderResource
+        };
+        for (var index = 0; index < _cloudTextures.Length; index++)
+        {
+            _cloudResources[index].Dispose();
+            _cloudTextures[index].Dispose();
+            _cloudResources[index] = default;
+            _cloudTextures[index] = default;
+            SilkMarshal.ThrowHResult(_device.CreateTexture2D(
+                in description, null, ref _cloudTextures[index]));
+            SilkMarshal.ThrowHResult(_device.CreateShaderResourceView(
+                _cloudTextures[index], null, ref _cloudResources[index]));
+        }
+    }
+
+    private void RefreshCloudLod(long lightTime)
+    {
+        var pending = _pendingCloudGenerator;
+        if (pending is { IsCompleted: true })
+        {
+            _pendingCloudGenerator = null;
+            var completedLod = _pendingCloudLod;
+            _pendingCloudLod = -1;
+            if (pending.IsCompletedSuccessfully &&
+                pending.Result.Lod == _requestedCloudLod)
+            {
+                _cloudGenerator = pending.Result;
+                RecreateCloudTextures(_cloudGenerator.Size);
+                for (var index = 0; index < _cloudTextures.Length; index++)
+                {
+                    UploadCloudRows(index, 0, _cloudGenerator.Size);
+                    UploadCloudMip(index);
+                }
+                _lastCloudTimestamp = 0;
+            }
+            else if (pending.IsFaulted && completedLod == _requestedCloudLod)
+            {
+                _failedCloudLod = _requestedCloudLod;
+                Console.WriteLine($"SkyCloudLOD update failed: {pending.Exception}");
+            }
+        }
+
+        if (_pendingCloudGenerator != null ||
+            _cloudGenerator.Lod == _requestedCloudLod ||
+            _failedCloudLod == _requestedCloudLod)
+            return;
+
+        var lod = _requestedCloudLod;
+        _pendingCloudLod = lod;
+        var density = _lighting.CloudDensity;
+        var body = _lighting.LegacyCloudBodyColor;
+        var emissive = _lighting.LegacyCloudEmissiveColor;
+        var ambient = _lighting.LegacyCloudAmbientColor;
+        var celestial = Wrath335CelestialEvaluator.Evaluate((int)lightTime);
+        var light = Wrath335CloudTextureGenerator.UseMoon(lightTime)
+            ? celestial.Moon1.CameraRelativeCenter
+            : celestial.Sun.CameraRelativeCenter;
+        _pendingCloudGenerator = Task.Run(() =>
+        {
+            var generated = new Wrath335CloudTextureGenerator(lod, ProcessCloudNoise);
+            generated.Update(0f, density, body, emissive, ambient,
+                light, ClearWeatherBlend);
+            return generated;
+        });
+    }
+
     public void RefreshShaders()
     {
         if (!_initialized || _shaderManager == null)
@@ -249,6 +442,8 @@ internal sealed class SkyRenderer(
         _gradientShader = _shaderManager.GetOrCompileShader("sky");
         _wrathDomeShader = _shaderManager.GetOrCompileShader("sky_wrath");
         _celestialShader = _shaderManager.GetOrCompileShader("sky_celestial");
+        _cloudShader = _shaderManager.GetOrCompileShader("sky_cloud");
+        _glareQueryShader = _shaderManager.GetOrCompileShader("sky_glare_query");
         _m2Shader = _shaderManager.GetOrCompileShader("m2");
     }
 
@@ -260,6 +455,32 @@ internal sealed class SkyRenderer(
     /// <summary>Publish the wowlib-resolved stars M2 cache key once per client.</summary>
     public void ConfigureWrathStarModel(uint modelId) =>
         Volatile.Write(ref _requestedStarModelId, modelId);
+
+    public void ConfigureWrathGlareTextures(uint sun, uint moon) =>
+        Volatile.Write(ref _requestedGlareTextures, new GlareTextureIds(sun, moon));
+
+    private void SynchronizeGlareTextures()
+    {
+        var requested = Volatile.Read(ref _requestedGlareTextures);
+        if (ReferenceEquals(requested, _activeGlareTextures))
+            return;
+        foreach (var id in _trackedGlareTextureIds.ToArray())
+        {
+            if (id == requested.Sun || id == requested.Moon)
+                continue;
+            BLPCache.Release(id, CacheOwnerId);
+            _trackedGlareTextureIds.Remove(id);
+        }
+        Track(requested.Sun);
+        Track(requested.Moon);
+        _activeGlareTextures = requested;
+
+        void Track(uint id)
+        {
+            if (id != 0 && _trackedGlareTextureIds.Add(id))
+                BLPCache.GetOrLoad(_device, id, CacheOwnerId);
+        }
+    }
 
     private void SynchronizeStarModel()
     {
@@ -339,6 +560,7 @@ internal sealed class SkyRenderer(
         if (!_initialized)
             return default;
         SynchronizeCelestialTextures();
+        SynchronizeGlareTextures();
         SynchronizeStarModel();
         if (!_lighting.HasColorData && !_lighting.HasSkyboxes)
             return default;
@@ -467,6 +689,7 @@ internal sealed class SkyRenderer(
                 _deviceContext.VSSetConstantBuffers(0, 1, ref _gradientConstantBuffer);
                 _deviceContext.DrawIndexed(SkyDomeMesh.TriangleIndexCount, 0, 0);
                 submittedIndices += SkyDomeMesh.TriangleIndexCount;
+                RenderWrathClouds(lightTime, ref drawCalls, ref submittedIndices);
             }
             else
             {
@@ -542,6 +765,378 @@ internal sealed class SkyRenderer(
         RenderSkyboxModel(camera, model, flags: 0, opacity,
             animateModels, sceneTimeMilliseconds, lightTime,
             ref drawCalls, ref submittedIndices);
+    }
+
+    private unsafe void RenderWrathClouds(
+        long lightTime, ref uint drawCalls, ref ulong submittedIndices)
+    {
+        if (!_lighting.HasLegacyCloudData)
+            return;
+
+        RefreshCloudLod(lightTime);
+
+        var now = Stopwatch.GetTimestamp();
+        var elapsedSeconds = _lastCloudTimestamp == 0
+            ? 0f
+            : (float)Stopwatch.GetElapsedTime(_lastCloudTimestamp, now).TotalSeconds;
+        _lastCloudTimestamp = now;
+        var celestialFrame = Wrath335CelestialEvaluator.Evaluate((int)lightTime);
+        var lightDirection = Wrath335CloudTextureGenerator.UseMoon(lightTime)
+            ? celestialFrame.Moon1.CameraRelativeCenter
+            : celestialFrame.Sun.CameraRelativeCenter;
+        var update = _cloudGenerator.Update(
+            elapsedSeconds, _lighting.CloudDensity,
+            _lighting.LegacyCloudBodyColor,
+            _lighting.LegacyCloudEmissiveColor,
+            _lighting.LegacyCloudAmbientColor,
+            lightDirection, ClearWeatherBlend);
+        if (update.InitializeBoth)
+        {
+            for (var index = 0; index < _cloudTextures.Length; index++)
+            {
+                UploadCloudRows(index, 0, _cloudGenerator.Size);
+                UploadCloudMip(index);
+            }
+        }
+        else
+        {
+            UploadCloudRows(update.TextureIndex, update.FirstRow, update.RowCount);
+            if (update.FirstRow + update.RowCount == _cloudGenerator.Size)
+                UploadCloudMip(update.TextureIndex);
+        }
+
+        ComPtr<ID3D11ClassInstance> nullClassInstance = default;
+        var vertexStride = (uint)Marshal.SizeOf<Wrath335CloudVertex>();
+        var vertexOffset = 0u;
+        _deviceContext.IASetPrimitiveTopology(
+            D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglestrip);
+        _deviceContext.IASetInputLayout(_cloudShader.InputLayout);
+        _deviceContext.IASetVertexBuffers(
+            0, 1, ref _cloudVertexBuffer, in vertexStride, in vertexOffset);
+        _deviceContext.IASetIndexBuffer(_cloudIndexBuffer, Format.FormatR16Uint, 0);
+        _deviceContext.VSSetShader(_cloudShader.VertexShader, ref nullClassInstance, 0);
+        _deviceContext.PSSetShader(_cloudShader.PixelShader, ref nullClassInstance, 0);
+        _deviceContext.VSSetConstantBuffers(0, 1, ref _gradientConstantBuffer);
+        _deviceContext.PSSetSamplers(0, 1, ref _samplers[0]);
+        var activeResource = _cloudResources[_cloudGenerator.ActiveTextureIndex];
+        _deviceContext.PSSetShaderResources(0, 1, ref activeResource);
+        _deviceContext.RSSetState(_twoSidedState);
+        ApplyBlendMode(2);
+        _deviceContext.DrawIndexed(Wrath335CloudMesh.StripIndexCount, 0, 0);
+        drawCalls++;
+        submittedIndices += Wrath335CloudMesh.StripIndexCount;
+
+        ComPtr<ID3D11ShaderResourceView> nullResource = default;
+        _deviceContext.PSSetShaderResources(0, 1, ref nullResource);
+        _deviceContext.IASetPrimitiveTopology(
+            D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+    }
+
+    private unsafe void UploadCloudRows(int index, int firstRow, int rowCount)
+    {
+        var size = _cloudGenerator.Size;
+        var rowPitch = checked((uint)(size * sizeof(uint)));
+        var pixels = _cloudGenerator.GetPixels(index);
+        var region = new Box
+        {
+            Left = 0,
+            Top = checked((uint)firstRow),
+            Front = 0,
+            Right = checked((uint)size),
+            Bottom = checked((uint)(firstRow + rowCount)),
+            Back = 1
+        };
+        fixed (byte* source = pixels)
+            _deviceContext.UpdateSubresource(
+                _cloudTextures[index], 0, ref region,
+                source + firstRow * size * sizeof(uint), rowPitch, 0);
+    }
+
+    private unsafe void UploadCloudMip(int index)
+    {
+        var pixels = _cloudGenerator.CreateFirstMip(index);
+        var rowPitch = checked((uint)(_cloudGenerator.Size / 2 * sizeof(uint)));
+        fixed (byte* source = pixels)
+            _deviceContext.UpdateSubresource(
+                _cloudTextures[index], 1, ref Unsafe.NullRef<Box>(),
+                source, rowPitch, 0);
+    }
+
+    /// <summary>
+    /// DNGlare draws after world geometry and particle effects, before the
+    /// FFX glow composite. Occlusion results are read without flushing or
+    /// stalling the GPU; the previous completed result drives this frame.
+    /// </summary>
+    public unsafe SkyRenderStats RenderWrathGlare(
+        Camera camera, long lightTime, Vector3 lightDirection,
+        uint viewportWidth, uint viewportHeight)
+    {
+        if (!_initialized || !_lighting.HasColorData ||
+            viewportWidth == 0 || viewportHeight == 0)
+            return default;
+        var started = Stopwatch.GetTimestamp();
+        ComPtr<ID3D11ClassInstance> nullGeometryClassInstance = default;
+        ComPtr<ID3D11GeometryShader> nullGeometryShader = default;
+        _deviceContext.GSSetShader(nullGeometryShader,
+            ref nullGeometryClassInstance, 0);
+        var now = Stopwatch.GetTimestamp();
+        var elapsedSeconds = _lastGlareTimestamp == 0
+            ? 0f
+            : (float)Stopwatch.GetElapsedTime(_lastGlareTimestamp, now).TotalSeconds;
+        _lastGlareTimestamp = now;
+
+        var celestial = Wrath335CelestialEvaluator.Evaluate((int)lightTime);
+        var view = camera.GetViewMatrix();
+        var projection = camera.GetProjectionMatrix();
+        Wrath335CelestialQuad.BuildCameraFacingBasis(
+            camera.Front, out var horizontal, out var vertical);
+        var constants = new SkyCelestialCB
+        {
+            BillboardHorizontal = new Vector4(horizontal, 0f),
+            BillboardVertical = new Vector4(vertical, 0f),
+            CameraRight = new Vector4(view.M11, view.M21, view.M31, 0f),
+            CameraUp = new Vector4(view.M12, view.M22, view.M32, 0f),
+            CameraFront = new Vector4(view.M13, view.M23, view.M33, 0f),
+            ProjectionTerms = new Vector4(
+                projection.M11, projection.M22,
+                Wrath335SkyReference.MinimumSkyDepth, 0f)
+        };
+        var skyboxWeight = _lighting.Skyboxes.Count == 0
+            ? 0f
+            : _lighting.Skyboxes.Max(static skybox => skybox.Opacity);
+        var sunAlignment = Vector3.Dot(
+            Vector3.Normalize(celestial.Sun.CameraRelativeCenter),
+            Vector3.Normalize(lightDirection));
+        var moonAlignment = Vector3.Dot(
+            Vector3.Normalize(celestial.Moon1.CameraRelativeCenter),
+            Vector3.Normalize(lightDirection));
+        uint drawCalls = 0;
+        ulong submittedIndices = 0;
+
+        RenderOneGlare(celestial.Sun, _activeGlareTextures.Sun,
+            _sunOcclusion, _sunGlare, sunAlignment,
+            camera, projection, viewportWidth, viewportHeight,
+            elapsedSeconds, lightTime, skyboxWeight,
+            ref constants, ref drawCalls, ref submittedIndices);
+        RenderOneGlare(celestial.Moon1, _activeGlareTextures.Moon,
+            _moonOcclusion, _moonGlare, moonAlignment,
+            camera, projection, viewportWidth, viewportHeight,
+            elapsedSeconds, lightTime, skyboxWeight,
+            ref constants, ref drawCalls, ref submittedIndices);
+
+        ComPtr<ID3D11BlendState> defaultBlend = default;
+        var blendFactor = 1f;
+        _deviceContext.OMSetBlendState(defaultBlend, ref blendFactor, uint.MaxValue);
+        ComPtr<ID3D11DepthStencilState> defaultDepth = default;
+        _deviceContext.OMSetDepthStencilState(defaultDepth, 0);
+        ComPtr<ID3D11ShaderResourceView> nullResource = default;
+        _deviceContext.PSSetShaderResources(0, 1, ref nullResource);
+        return new SkyRenderStats(drawCalls, submittedIndices,
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+
+    private unsafe void RenderOneGlare(
+        Wrath335CelestialBody body, uint textureId,
+        GlareOcclusion occlusion, Wrath335GlareEvaluator evaluator,
+        float alignment, Camera camera, Matrix4x4 projection,
+        uint viewportWidth, uint viewportHeight,
+        float elapsedSeconds, long lightTime, float skyboxWeight,
+        ref SkyCelestialCB constants,
+        ref uint drawCalls, ref ulong submittedIndices)
+    {
+        if (textureId == 0 || !BLPCache.TryGetLoaded(textureId, out var texture))
+            return;
+
+        PollGlareOcclusion(occlusion);
+        var bodyCenter = body.CameraRelativeCenter;
+        constants.BodyCenter = new Vector4(bodyCenter, 0f);
+        IssueGlareOcclusion(body, occlusion, camera, projection,
+            viewportWidth, viewportHeight, ref constants,
+            ref drawCalls, ref submittedIndices);
+
+        var density = _cloudGenerator.SampleDensity(bodyCenter) /
+            (float)byte.MaxValue;
+        var glare = evaluator.Evaluate(
+            lightTime, elapsedSeconds, occlusion.LastVisibility,
+            density, skyboxWeight, alignment, 1f);
+        if (glare.Opacity <= 0f)
+            return;
+
+        var halfSize = glare.Size * Wrath335CelestialQuad.HalfSizeScale;
+        var tint = new Vector4(_lighting.SunColor, glare.Opacity);
+        _celestialVertices[0] = new Wrath335CelestialVertex
+        {
+            LocalPosition = new Vector3(0f, -halfSize, halfSize),
+            TextureCoordinate = new Vector2(0f, 0f),
+            Color = tint
+        };
+        _celestialVertices[1] = new Wrath335CelestialVertex
+        {
+            LocalPosition = new Vector3(0f, halfSize, halfSize),
+            TextureCoordinate = new Vector2(1f, 0f),
+            Color = tint
+        };
+        _celestialVertices[2] = new Wrath335CelestialVertex
+        {
+            LocalPosition = new Vector3(0f, -halfSize, -halfSize),
+            TextureCoordinate = new Vector2(0f, 1f),
+            Color = tint
+        };
+        _celestialVertices[3] = new Wrath335CelestialVertex
+        {
+            LocalPosition = new Vector3(0f, halfSize, -halfSize),
+            TextureCoordinate = new Vector2(1f, 1f),
+            Color = tint
+        };
+        _deviceContext.UpdateSubresource(_celestialVertexBuffer, 0,
+            ref Unsafe.NullRef<Box>(), ref _celestialVertices[0], 0, 0);
+        constants.ProjectionTerms = new Vector4(
+            projection.M11, projection.M22, projection.M33, projection.M43);
+        _deviceContext.UpdateSubresource(_celestialConstantBuffer, 0,
+            ref Unsafe.NullRef<Box>(), ref constants, 0, 0);
+        ComPtr<ID3D11ClassInstance> nullClassInstance = default;
+        _deviceContext.OMSetDepthStencilState(_depthDisabledState, 0);
+        ApplyBlendMode(3);
+        var vertexStride = (uint)Marshal.SizeOf<Wrath335CelestialVertex>();
+        var vertexOffset = 0u;
+        _deviceContext.IASetPrimitiveTopology(
+            D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+        _deviceContext.IASetInputLayout(_celestialShader.InputLayout);
+        _deviceContext.IASetVertexBuffers(
+            0, 1, ref _celestialVertexBuffer, in vertexStride, in vertexOffset);
+        _deviceContext.IASetIndexBuffer(
+            _celestialIndexBuffer, Format.FormatR16Uint, 0);
+        _deviceContext.VSSetShader(_celestialShader.VertexShader,
+            ref nullClassInstance, 0);
+        _deviceContext.PSSetShader(_celestialShader.PixelShader,
+            ref nullClassInstance, 0);
+        _deviceContext.VSSetConstantBuffers(0, 1, ref _celestialConstantBuffer);
+        _deviceContext.PSSetSamplers(0, 1, ref _samplers[0]);
+        _deviceContext.PSSetShaderResources(0, 1, ref texture);
+        _deviceContext.DrawIndexed(
+            (uint)Wrath335CelestialQuad.FourVertexIndices.Length, 0, 0);
+        drawCalls++;
+        submittedIndices += (uint)Wrath335CelestialQuad.FourVertexIndices.Length;
+    }
+
+    private unsafe void PollGlareOcclusion(GlareOcclusion occlusion)
+    {
+        for (var index = 0; index < occlusion.Queries.Length; index++)
+        {
+            if (!occlusion.Pending[index])
+                continue;
+            ulong visibleSamples = 0;
+            var result = _deviceContext.GetData(
+                occlusion.Queries[index], &visibleSamples, sizeof(ulong), 1);
+            if (result != 0)
+                continue;
+            occlusion.Pending[index] = false;
+            occlusion.LastVisibility = Math.Clamp(
+                visibleSamples / Math.Max(occlusion.ProjectedAreas[index], 1f),
+                0f, 1f);
+        }
+    }
+
+    private unsafe void IssueGlareOcclusion(
+        Wrath335CelestialBody body, GlareOcclusion occlusion,
+        Camera camera, Matrix4x4 projection,
+        uint viewportWidth, uint viewportHeight,
+        ref SkyCelestialCB constants,
+        ref uint drawCalls, ref ulong submittedIndices)
+    {
+        var freeIndex = Array.FindIndex(occlusion.Pending, static pending => !pending);
+        if (freeIndex < 0)
+            return;
+        var vertexCount = Wrath335CelestialQuad.Build(
+            _celestialVertices, body.CameraRelativeCenter.Z,
+            body.Size, Vector4.One);
+        if (vertexCount == 0)
+        {
+            occlusion.LastVisibility = 0f;
+            return;
+        }
+        var area = CalculateProjectedGlareArea(
+            _celestialVertices.AsSpan(0, vertexCount),
+            body.CameraRelativeCenter, camera, projection,
+            viewportWidth, viewportHeight);
+        if (area <= 1f)
+        {
+            occlusion.LastVisibility = 0f;
+            return;
+        }
+
+        _deviceContext.UpdateSubresource(_celestialVertexBuffer, 0,
+            ref Unsafe.NullRef<Box>(), ref _celestialVertices[0], 0, 0);
+        constants.ProjectionTerms = new Vector4(
+            projection.M11, projection.M22,
+            Wrath335SkyReference.MinimumSkyDepth, 0f);
+        _deviceContext.UpdateSubresource(_celestialConstantBuffer, 0,
+            ref Unsafe.NullRef<Box>(), ref constants, 0, 0);
+        ComPtr<ID3D11ClassInstance> nullClassInstance = default;
+        var vertexStride = (uint)Marshal.SizeOf<Wrath335CelestialVertex>();
+        var vertexOffset = 0u;
+        _deviceContext.IASetPrimitiveTopology(
+            D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+        _deviceContext.IASetInputLayout(_glareQueryShader.InputLayout);
+        _deviceContext.IASetVertexBuffers(
+            0, 1, ref _celestialVertexBuffer, in vertexStride, in vertexOffset);
+        _deviceContext.IASetIndexBuffer(
+            _celestialIndexBuffer, Format.FormatR16Uint, 0);
+        _deviceContext.VSSetShader(_glareQueryShader.VertexShader,
+            ref nullClassInstance, 0);
+        _deviceContext.PSSetShader(_glareQueryShader.PixelShader,
+            ref nullClassInstance, 0);
+        _deviceContext.VSSetConstantBuffers(0, 1, ref _celestialConstantBuffer);
+        _deviceContext.RSSetState(_twoSidedState);
+        _deviceContext.OMSetDepthStencilState(_glareQueryDepthState, 0);
+        var blendFactor = 1f;
+        _deviceContext.OMSetBlendState(
+            _glareQueryBlendState, ref blendFactor, uint.MaxValue);
+        _deviceContext.Begin(occlusion.Queries[freeIndex]);
+        var indexCount = vertexCount == Wrath335CelestialQuad.MaxVertices
+            ? (uint)Wrath335CelestialQuad.SixVertexIndices.Length
+            : (uint)Wrath335CelestialQuad.FourVertexIndices.Length;
+        _deviceContext.DrawIndexed(indexCount, 0, 0);
+        _deviceContext.End(occlusion.Queries[freeIndex]);
+        occlusion.ProjectedAreas[freeIndex] = area;
+        occlusion.Pending[freeIndex] = true;
+        drawCalls++;
+        submittedIndices += indexCount;
+    }
+
+    internal static float CalculateProjectedGlareArea(
+        ReadOnlySpan<Wrath335CelestialVertex> vertices,
+        Vector3 center, Camera camera, Matrix4x4 projection,
+        uint viewportWidth, uint viewportHeight)
+    {
+        Wrath335CelestialQuad.BuildCameraFacingBasis(
+            camera.Front, out var horizontal, out var vertical);
+        var view = camera.GetViewMatrix();
+        var right = new Vector3(view.M11, view.M21, view.M31);
+        var up = new Vector3(view.M12, view.M22, view.M32);
+        var front = new Vector3(view.M13, view.M23, view.M33);
+        var minX = float.MaxValue;
+        var minY = float.MaxValue;
+        var maxX = float.MinValue;
+        var maxY = float.MinValue;
+        foreach (var vertex in vertices)
+        {
+            var position = center +
+                horizontal * vertex.LocalPosition.Y +
+                vertical * vertex.LocalPosition.Z;
+            var depth = Vector3.Dot(position, front);
+            if (depth <= 0f)
+                return 0f;
+            var x = Vector3.Dot(position, right) * projection.M11 /
+                depth * viewportWidth * 0.5f;
+            var y = Vector3.Dot(position, up) * projection.M22 /
+                depth * viewportHeight * 0.5f;
+            minX = Math.Min(minX, x);
+            maxX = Math.Max(maxX, x);
+            minY = Math.Min(minY, y);
+            maxY = Math.Max(maxY, y);
+        }
+        return (maxX - minX) * (maxY - minY);
     }
 
     private unsafe void RenderWrathCelestials(
@@ -649,6 +1244,7 @@ internal sealed class SkyRenderer(
             ambientColor = Vector3.One,
             diffuseColor = Vector3.Zero,
             materialColor = Vector4.One,
+            unfogged = 1,
             globalOpacity = opacity
         };
 
@@ -910,6 +1506,11 @@ internal sealed class SkyRenderer(
         foreach (var id in _trackedCelestialTextureIds)
             BLPCache.Release(id, CacheOwnerId);
         _trackedCelestialTextureIds.Clear();
+        foreach (var id in _trackedGlareTextureIds)
+            BLPCache.Release(id, CacheOwnerId);
+        _trackedGlareTextureIds.Clear();
+        _sunOcclusion.Dispose();
+        _moonOcclusion.Dispose();
         foreach (var fileDataId in _trackedSkyboxFileDataIds)
             M2Cache.Release(fileDataId, CacheOwnerId);
         _trackedSkyboxFileDataIds.Clear();
@@ -920,8 +1521,16 @@ internal sealed class SkyRenderer(
         foreach (var sampler in _samplers)
             sampler.Dispose();
         _missingTexture.Dispose();
+        foreach (var resource in _cloudResources)
+            resource.Dispose();
+        foreach (var texture in _cloudTextures)
+            texture.Dispose();
+        _cloudIndexBuffer.Dispose();
+        _cloudVertexBuffer.Dispose();
         _twoSidedState.Dispose();
         _cullState.Dispose();
+        _glareQueryBlendState.Dispose();
+        _glareQueryDepthState.Dispose();
         _depthDisabledState.Dispose();
         _instanceBuffer.Dispose();
         _bonePaletteConstantBuffer.Dispose();

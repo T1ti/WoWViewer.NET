@@ -34,6 +34,7 @@ public static class WMOLoader
         var portalVertices = ReadVector3Array(root.PortalVertices);
         var portals = ReadPortals(root.Portals);
         var portalReferences = ReadPortalReferences(root.PortalRefs);
+        var fogs = ReadFogs(root.Fogs);
         var groupFlags = groupInfos.ToArray().Select(static info => info.Flags).ToArray();
 
         for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
@@ -119,13 +120,16 @@ public static class WMOLoader
                 var materialId = batch is Formats.WMO.Group.Chunks.WMOBatchLegionPlus modern && (batch.Flags & 2) != 0
                     ? modern.MaterialIdLarge
                     : batch.MaterialId;
+                var hasBounds = TryGetBatchBounds(indices, vertices, batch.StartIndex, batch.Count, out var batchBounds);
                 renderBatches.Add(new PreppedWMOGroupBatch
                 {
                     FirstFace = batch.StartIndex,
                     NumFaces = batch.Count,
                     Category = (byte)(batchIndex < header.TransBatchCount ? 0
                         : batchIndex < header.TransBatchCount + header.IntBatchCount ? 1 : 2),
-                    MaterialID = materialId
+                    MaterialID = materialId,
+                    Bounds = batchBounds,
+                    HasBounds = hasBounds
                 });
             }
 
@@ -165,6 +169,12 @@ public static class WMOLoader
                 groupName = groupName,
                 mogiGroupName = groupName,
                 mogiFlags = groupInfo.Flags,
+                fogIds = header.FogIds.ToArray(),
+                mogiBoundingBox = groupIndex < groupInfos.Length
+                    ? new BoundingBox(
+                        ToVector3(groupInfo.BoundingBox.Min),
+                        ToVector3(groupInfo.BoundingBox.Max))
+                    : new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
                 flags = header.Flags,
                 hasPrimaryVertexColors = hasPrimaryColors,
                 portalStart = header.PortalStart,
@@ -190,6 +200,7 @@ public static class WMOLoader
             LegacyLighting = fileSystem.Kind == StorageKind.Mpq,
             AmbientColor = PackColor(rootHeader.AmbientColor),
             Flags = rootHeader.Flags,
+            Fogs = fogs,
             BoundingBox = new BoundingBox(ToVector3(rootBounds.Min), ToVector3(rootBounds.Max)),
             Doodads = doodads,
             DoodadSets = doodadSets,
@@ -774,6 +785,31 @@ public static class WMOLoader
         return result;
     }
 
+    private static bool TryGetBatchBounds(ReadOnlySpan<ushort> indices, ReadOnlySpan<WMOVertex> vertices,
+        uint firstIndex, int indexCount, out BoundingBox bounds)
+    {
+        bounds = default;
+        if (indexCount <= 0 || firstIndex > indices.Length || indexCount > indices.Length - firstIndex)
+            return false;
+
+        var firstVertex = indices[(int)firstIndex];
+        if (firstVertex >= vertices.Length)
+            return false;
+        var min = vertices[firstVertex].Position;
+        var max = min;
+        for (var offset = 1; offset < indexCount; offset++)
+        {
+            var vertexIndex = indices[(int)firstIndex + offset];
+            if (vertexIndex >= vertices.Length)
+                return false;
+            var position = vertices[vertexIndex].Position;
+            min = Vector3.Min(min, position);
+            max = Vector3.Max(max, position);
+        }
+        bounds = new BoundingBox(min, max);
+        return true;
+    }
+
     private static Vector3[] ReadVector3Array(WoWLib.Vector<Formats.Common.C3Vector> source)
     {
         var sourceData = source.AsDataSpan();
@@ -865,6 +901,31 @@ public static class WMOLoader
     }
 
     private static Vector3 ToVector3(Formats.Common.C3Vector value) => new(value.X, value.Y, value.Z);
+
+    private static WmoFogVolume[] ReadFogs(
+        WoWLib.Vector<Formats.WMO.Root.Chunks.SmoFog> source)
+    {
+        var records = source.AsDataSpan();
+        var result = new WmoFogVolume[records.Length];
+        for (var i = 0; i < records.Length; i++)
+        {
+            var fog = records[i];
+            result[i] = new WmoFogVolume(
+                fog.Flags,
+                ToVector3(fog.Position),
+                fog.SmallerRadius,
+                fog.LargerRadius,
+                new WmoFogBand(fog.Fog.End, fog.Fog.StartScalar,
+                    PackFogColor(fog.Fog.Color)),
+                new WmoFogBand(fog.UnderWaterFog.End,
+                    fog.UnderWaterFog.StartScalar,
+                    PackFogColor(fog.UnderWaterFog.Color)));
+        }
+        return result;
+    }
+
+    private static uint PackFogColor(Formats.Common.CImVector.Data color) =>
+        (uint)(color.A << 24 | color.R << 16 | color.G << 8 | color.B);
 
     private static Vector3 ToVector3(Formats.Common.C3Vector.Data value) => new(value.X, value.Y, value.Z);
 

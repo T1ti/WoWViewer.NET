@@ -12,7 +12,8 @@ cbuffer PerObject : register(b0)
     float3 lightDirection;
     float alphaRef;
     float blendMode;
-    float3 _pad;
+    int unfogged;
+    float2 _pad;
     float3 ambientColor;
     float globalOpacity;
     float3 diffuseColor;
@@ -23,6 +24,12 @@ cbuffer PerObject : register(b0)
 cbuffer M2Bones : register(b1)
 {
     float4x4 boneMatrices[256];
+};
+
+cbuffer WrathFog : register(b4)
+{
+    float4 fogParameters;
+    float4 fogColor;
 };
 
 Texture2D texture1 : register(t0);
@@ -60,6 +67,7 @@ struct VSOutput
     float3 Normal : TEXCOORD3;
     float EdgeFade : TEXCOORD4;
     float3 LitColor : TEXCOORD5;
+    float FogVisibility : TEXCOORD6;
 };
 
 // Environment-map coordinates used by the Wisp/WebWowViewer shader family.
@@ -114,7 +122,11 @@ VSOutput VS_Main(VSInput input)
     }
 
     float4 worldPos = mul(instanceMatrix, float4(modelPosition, 1.0));
-    output.position = mul(projection_matrix, mul(view_matrix, worldPos));
+    float4 viewPosition = mul(view_matrix, worldPos);
+    output.position = mul(projection_matrix, viewPosition);
+    float linearVisibility = max(viewPosition.z * fogParameters.x + fogParameters.y, 0.0f);
+    output.FogVisibility = fogParameters.w > 0.5f
+        ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
 
     // M2 instances carry the model transform in the second vertex stream.
     // Use it for normals as well as positions; using model_matrix (identity)
@@ -558,5 +570,7 @@ float4 PS_Main(VSOutput input) : SV_TARGET
     float3 lit_color = mat_diffuse * input.LitColor;
     // lit_color += specular; // uncomment when ready
 
-    return float4(lit_color, final_opacity * globalOpacity);
+    return float4(unfogged != 0 ? lit_color
+        : lerp(fogColor.rgb, lit_color, input.FogVisibility),
+        final_opacity * globalOpacity);
 }

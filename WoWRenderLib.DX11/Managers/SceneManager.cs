@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MapObjDefFlags = WoWLib.Formats.Common.MapObjDefFlags;
 using M2MaterialFlags = WoWLib.Formats.M2.Root.Record.MaterialFlags;
+using WmoMaterialFlags = WoWLib.Formats.WMO.Root.Chunks.MaterialFlags;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11;
@@ -25,6 +26,13 @@ using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Managers
 {
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WrathFogCB
+    {
+        public Vector4 Parameters; // scale, bias, rate, enabled
+        public Vector4 Color;
+    }
+
     public partial class SceneManager : IDisposable
     {
         private readonly ComPtr<ID3D11Device> _device;
@@ -85,6 +93,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool DisableScreenGlow { get; set; }
         public bool EnableClientGlow { get; set; }
         public bool EnableDayNightSkyColors { get; set; }
+        public int SkyCloudLod { get; set; }
 
         private static uint NextSceneOwnerId() =>
             unchecked(Interlocked.Increment(ref nextSceneOwnerId));
@@ -269,6 +278,7 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> wmoCollisionConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> m2BonePaletteConstantBuffer = default;
+        private ComPtr<ID3D11Buffer> wrathFogConstantBuffer = default;
         private M2AnimationPose? _uploadedM2Pose;
         private long _uploadedM2PoseVersion;
         private readonly long m2AnimationEpoch = Stopwatch.GetTimestamp();
@@ -426,6 +436,9 @@ namespace WoWRenderLib.DX11.Managers
         public void ConfigureWrathStarModel(uint modelId) =>
             _skyRenderer.ConfigureWrathStarModel(modelId);
 
+        public void ConfigureWrathGlareTextures(uint sun, uint moon) =>
+            _skyRenderer.ConfigureWrathGlareTextures(sun, moon);
+
         private static Vector3 ClampLightingColor(Vector3 color) => new(
             Math.Clamp(color.X, 0f, 4f),
             Math.Clamp(color.Y, 0f, 4f),
@@ -530,6 +543,9 @@ namespace WoWRenderLib.DX11.Managers
                 };
 
                 SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref m2PerObjectConstantBuffer));
+
+                bufferDesc.ByteWidth = (uint)sizeof(WrathFogCB);
+                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref wrathFogConstantBuffer));
 
                 bufferDesc.ByteWidth = (uint)(M2Animation.MaxGpuBones * sizeof(Matrix4x4));
                 SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref m2BonePaletteConstantBuffer));
@@ -719,11 +735,12 @@ namespace WoWRenderLib.DX11.Managers
             _activeWmoVisibilityBatchCount = 0;
         }
 
-        private WmoVisibilityBatch GetWmoVisibilityBatch(ReadOnlySpan<bool> groupMask)
+        private WmoVisibilityBatch GetWmoVisibilityBatch(
+            ReadOnlySpan<bool> groupMask, ReadOnlySpan<bool> batchMask)
         {
             for (var index = 0; index < _activeWmoVisibilityBatchCount; index++)
             {
-                if (_wmoVisibilityBatches[index].Matches(groupMask))
+                if (_wmoVisibilityBatches[index].Matches(groupMask, batchMask))
                     return _wmoVisibilityBatches[index];
             }
 
@@ -738,7 +755,7 @@ namespace WoWRenderLib.DX11.Managers
                 batch = _wmoVisibilityBatches[_activeWmoVisibilityBatchCount];
             }
             _activeWmoVisibilityBatchCount++;
-            batch.Begin(groupMask);
+            batch.Begin(groupMask, batchMask);
             return batch;
         }
 
@@ -981,7 +998,8 @@ namespace WoWRenderLib.DX11.Managers
 
             var animationTime = _lastRenderedAnimationTimeMilliseconds;
             var animationTimeCaptured = false;
-            if (AnimateModels && _activeWorldSky.HasSkyboxes)
+            if (AnimateModels && (_activeWorldSky.HasSkyboxes ||
+                                  EnableDayNightSkyColors))
             {
                 animationTime = Math.Max(0,
                     (long)(Stopwatch.GetElapsedTime(m2AnimationEpoch).TotalMilliseconds
@@ -989,6 +1007,18 @@ namespace WoWRenderLib.DX11.Managers
                 _lastRenderedAnimationTimeMilliseconds = animationTime;
                 animationTimeCaptured = true;
             }
+            var fogCB = new WrathFogCB
+            {
+                Parameters = new Vector4(0f, 0f, 1f, 0f),
+                Color = Vector4.Zero
+            };
+            _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
+                ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
+            ConstantBufferUpdates++;
+            _deviceContext.VSSetConstantBuffers(4, 1, ref wrathFogConstantBuffer);
+            _deviceContext.PSSetConstantBuffers(4, 1, ref wrathFogConstantBuffer);
+
+            _skyRenderer.SetCloudLod(SkyCloudLod);
             var skyStats = _skyRenderer.Render(
                 camera, AnimateModels, animationTime, _activeWorldLighting.Time,
                 LightDirection, EnableDayNightSkyColors);
@@ -997,6 +1027,22 @@ namespace WoWRenderLib.DX11.Managers
             SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
             drawCalls += skyStats.DrawCalls;
             submittedIndexCount += skyStats.SubmittedIndices;
+
+            if (EnableDayNightSkyColors && _activeWorldSky.HasFogData)
+            {
+                var fog = Wrath335OutdoorFogEvaluator.Evaluate(
+                    _activeWorldSky.FogEnd, _activeWorldSky.FogScaler,
+                    camera.FarPlane,
+                    CurrentMapId >= Wrath335FarClip.ExpansionMapId);
+                var width = MathF.Max(fog.EndDistance - fog.StartDistance,
+                    Wrath335OutdoorFogEvaluator.MinimumShaderFogWidth);
+                fogCB.Parameters = new Vector4(-1f / width,
+                    fog.EndDistance / width, fog.Rate, 1f);
+                fogCB.Color = new Vector4(_activeWorldSky.FogColor, 1f);
+                _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
+                    ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
+                ConstantBufferUpdates++;
+            }
 
             var adtVertexStride = (uint)Marshal.SizeOf<ADTGpuVertex>();
             var adtVertexOffset = 0U;
@@ -1334,7 +1380,7 @@ namespace WoWRenderLib.DX11.Managers
                 model_matrix = Matrix4x4.Identity,
                 vertexShader = 0,
                 pixelShader = 0,
-                _pad0 = Vector2.Zero,
+                _pad0 = 0f,
                 lightDirection = LightDirection,
                 ambientColor = AmbientColor,
                 diffuseColor = DiffuseColor,
@@ -1348,6 +1394,7 @@ namespace WoWRenderLib.DX11.Managers
             var lastWmoPixelShader = int.MinValue;
             var lastWmoAlphaRef = float.NaN;
             var lastWmoLegacyLighting = -1;
+            var lastWmoUnfogged = -1;
             var lastWmoSidnColor = new Vector3(float.NaN);
             var lastWmoLightingMode = int.MinValue;
             var lastWmoUnifiedMocv = int.MinValue;
@@ -1401,7 +1448,7 @@ namespace WoWRenderLib.DX11.Managers
                         var enabledGroups = instance.EnabledGroups;
                         if (!EnableWmoPortalCulling)
                         {
-                            GetWmoVisibilityBatch(enabledGroups).InstanceIndices.Add(i);
+                            GetWmoVisibilityBatch(enabledGroups, ReadOnlySpan<bool>.Empty).InstanceIndices.Add(i);
                             continue;
                         }
 
@@ -1409,6 +1456,7 @@ namespace WoWRenderLib.DX11.Managers
                             wmo,
                             out var portalVisibleGroups,
                             out var portalVisibleDoodads,
+                            out var portalVisibleBatches,
                             out var portalVisibilityScratch);
                         var traversedPortalReferences = 0;
                         var portalApplied = EnableWmoPortalCulling &&
@@ -1420,6 +1468,7 @@ namespace WoWRenderLib.DX11.Managers
                                 enabledGroups,
                                 portalVisibleGroups,
                                 portalVisibleDoodads,
+                                portalVisibleBatches,
                                 portalVisibilityScratch,
                                 out traversedPortalReferences);
                         if (portalApplied)
@@ -1435,6 +1484,7 @@ namespace WoWRenderLib.DX11.Managers
                         {
                             enabledGroups.CopyTo(portalVisibleGroups, 0);
                             portalVisibleDoodads.AsSpan().Fill(true);
+                            portalVisibleBatches.AsSpan().Fill(true);
                         }
                         TraceWmoGroupVisibility(
                             wmo,
@@ -1444,7 +1494,7 @@ namespace WoWRenderLib.DX11.Managers
                             portalApplied,
                             camera.Position);
                         instance.SetPortalVisibilityFrame(_renderFrameNumber);
-                        GetWmoVisibilityBatch(portalVisibleGroups).InstanceIndices.Add(i);
+                        GetWmoVisibilityBatch(portalVisibleGroups, portalVisibleBatches).InstanceIndices.Add(i);
                     }
                 }
                 var cullingElapsed = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
@@ -1471,6 +1521,7 @@ namespace WoWRenderLib.DX11.Managers
                         var visibilityBatch = _wmoVisibilityBatches[visibilityBatchIndex];
                         var visibleInstanceIndices = visibilityBatch.InstanceIndices;
                         var enabledGroups = visibilityBatch.GroupMask;
+                        var visibleRenderBatches = visibilityBatch.BatchMask;
                         if (RenderLiquid)
                         {
                             for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
@@ -1507,7 +1558,8 @@ namespace WoWRenderLib.DX11.Managers
                             for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
                             {
                                 var batch = wmo.wmoRenderBatches[j];
-                                if (!enabledGroups[batch.groupID])
+                                if (!enabledGroups[batch.groupID] ||
+                                    (visibleRenderBatches.Length != 0 && !visibleRenderBatches[j]))
                                     continue;
 
                                 if (currentGroupId != batch.groupID)
@@ -1539,7 +1591,8 @@ namespace WoWRenderLib.DX11.Managers
 
                                 // MOMT flag 0x4 disables culling for this material.
                                 // Transition walls frequently rely on both faces being drawn.
-                                var twoSided = (wmo.preppedMats[batch.materialIndex].Flags & 0x4) != 0;
+                                var materialFlags = wmo.preppedMats[batch.materialIndex].Flags;
+                                var twoSided = (materialFlags & (uint)WmoMaterialFlags.two_sided) != 0;
                                 if (twoSided != lastWmoTwoSided)
                                 {
                                     _deviceContext.RSSetState(twoSided
@@ -1575,6 +1628,8 @@ namespace WoWRenderLib.DX11.Managers
                                     wmoConstantBuffer.alphaRef = WmoMaterialPolicy.AlphaReference(
                                         blendMode, wmo.legacyLighting);
                                     wmoConstantBuffer.sidnColor = sidnColors[batch.materialIndex];
+                                    wmoConstantBuffer.unfogged = (materialFlags &
+                                        (uint)WmoMaterialFlags.unfogged) != 0 ? 1 : 0;
                                     wmoConstantBuffer.lightingMode = pass == 0 ? batch.lightingMode
                                         : wmoConstantBuffer.unifiedMocv != 0 ? 3 : 0;
 
@@ -1582,6 +1637,7 @@ namespace WoWRenderLib.DX11.Managers
                                         wmoConstantBuffer.pixelShader != lastWmoPixelShader ||
                                         wmoConstantBuffer.alphaRef != lastWmoAlphaRef ||
                                         wmoConstantBuffer.useLegacyLighting != lastWmoLegacyLighting ||
+                                        wmoConstantBuffer.unfogged != lastWmoUnfogged ||
                                         wmoConstantBuffer.sidnColor != lastWmoSidnColor ||
                                         wmoConstantBuffer.lightingMode != lastWmoLightingMode ||
                                         wmoConstantBuffer.unifiedMocv != lastWmoUnifiedMocv ||
@@ -1594,6 +1650,7 @@ namespace WoWRenderLib.DX11.Managers
                                         lastWmoPixelShader = wmoConstantBuffer.pixelShader;
                                         lastWmoAlphaRef = wmoConstantBuffer.alphaRef;
                                         lastWmoLegacyLighting = wmoConstantBuffer.useLegacyLighting;
+                                        lastWmoUnfogged = wmoConstantBuffer.unfogged;
                                         lastWmoSidnColor = wmoConstantBuffer.sidnColor;
                                         lastWmoLightingMode = wmoConstantBuffer.lightingMode;
                                         lastWmoUnifiedMocv = wmoConstantBuffer.unifiedMocv;
@@ -1654,13 +1711,14 @@ namespace WoWRenderLib.DX11.Managers
                 diffuseColor = DiffuseColor,
                 alphaRef = 1.0f,
                 blendMode = 0,
-                _pad = Vector3.Zero
+                _pad = Vector2.Zero
             };
             var lastM2BlendMode = float.NaN;
             var lastM2VertexShader = int.MinValue;
             var lastM2PixelShader = int.MinValue;
             var lastM2AlphaRef = float.NaN;
             var lastM2HasSkinning = -1;
+            var lastM2Unfogged = -1;
             var lastM2HasAnimation = false;
             var lastM2MaterialColor = Vector4.Zero;
             var lastM2TexMatrix1 = Matrix4x4.Identity;
@@ -1934,6 +1992,8 @@ namespace WoWRenderLib.DX11.Managers
                                     GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
                                 m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
                                 m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
+                                m2ConstantBuffer.unfogged = (batch.renderFlags &
+                                    (ushort)M2MaterialFlags.Unfogged) != 0 ? 1 : 0;
                                 if (pose is not null)
                                 {
                                     var material = pose.Materials[j];
@@ -1956,6 +2016,7 @@ namespace WoWRenderLib.DX11.Managers
                                     m2ConstantBuffer.vertexShader != lastM2VertexShader ||
                                     m2ConstantBuffer.pixelShader != lastM2PixelShader ||
                                     m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
+                                    m2ConstantBuffer.unfogged != lastM2Unfogged ||
                                     m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
                                     lastM2HasAnimation != (pose is not null) ||
                                     m2ConstantBuffer.materialColor != lastM2MaterialColor ||
@@ -1970,6 +2031,7 @@ namespace WoWRenderLib.DX11.Managers
                                     lastM2VertexShader = m2ConstantBuffer.vertexShader;
                                     lastM2PixelShader = m2ConstantBuffer.pixelShader;
                                     lastM2AlphaRef = m2ConstantBuffer.alphaRef;
+                                    lastM2Unfogged = m2ConstantBuffer.unfogged;
                                     lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
                                     lastM2HasAnimation = pose is not null;
                                     lastM2MaterialColor = m2ConstantBuffer.materialColor;
@@ -2166,6 +2228,17 @@ namespace WoWRenderLib.DX11.Managers
             _m2DepthStates.EndPass();
 
             ApplyBlendMode(0, ref currentBlendType);
+            if (EnableDayNightSkyColors)
+            {
+                var glareStats = _skyRenderer.RenderWrathGlare(
+                    camera, _activeWorldLighting.Time, LightDirection,
+                    _renderWidth, _renderHeight);
+                drawCalls += glareStats.DrawCalls;
+                submittedIndexCount += glareStats.SubmittedIndices;
+                SkyDrawCalls += glareStats.DrawCalls;
+                SkySubmittedIndices += glareStats.SubmittedIndices;
+                SkySubmissionTimeMs += glareStats.SubmissionMilliseconds;
+            }
 
             if (applyClientGlow)
             {
@@ -2243,6 +2316,7 @@ namespace WoWRenderLib.DX11.Managers
                 layerDataConstantBuffer.Dispose();
                 m2PerObjectConstantBuffer.Dispose();
                 m2BonePaletteConstantBuffer.Dispose();
+                wrathFogConstantBuffer.Dispose();
                 wmoPerObjectConstantBuffer.Dispose();
                 wmoCollisionConstantBuffer.Dispose();
                 instanceMatrixBuffer.Dispose();

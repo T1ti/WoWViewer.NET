@@ -313,7 +313,7 @@ namespace WoWRenderLib.DX11.Managers
             ComPtr<ID3D11InputLayout> inputLayout = default;
 
             // TODO: I don't think this is a good way of doing this
-            if (type == "sky_celestial")
+            if (type is "sky_celestial" or "sky_cloud")
             {
                 fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
                 fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
@@ -352,6 +352,27 @@ namespace WoWRenderLib.DX11.Managers
                     SilkMarshal.ThrowHResult(device.CreateInputLayout(
                         in inputElements[0],
                         (uint)inputElements.Length,
+                        vertexCode.GetBufferPointer(),
+                        vertexCode.GetBufferSize(),
+                        ref inputLayout));
+                }
+            }
+            else if (type == "sky_glare_query")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                {
+                    var inputElement = new InputElementDesc
+                    {
+                        SemanticName = posName,
+                        SemanticIndex = 0,
+                        Format = Format.FormatR32G32B32Float,
+                        InputSlot = 0,
+                        AlignedByteOffset = 0,
+                        InputSlotClass = InputClassification.PerVertexData
+                    };
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(
+                        in inputElement,
+                        1,
                         vertexCode.GetBufferPointer(),
                         vertexCode.GetBufferSize(),
                         ref inputLayout));

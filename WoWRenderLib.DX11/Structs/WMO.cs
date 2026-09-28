@@ -23,6 +23,8 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint flags { get; init; }
         public readonly bool hasPrimaryVertexColors { get; init; }
         public readonly uint mogiFlags { get; init; }
+        public readonly byte[] fogIds { get; init; }
+        public readonly BoundingBox mogiBoundingBox { get; init; }
         public readonly WmoPortalLink[] portalLinks { get; init; }
         public readonly ushort[] doodadReferences { get; init; }
         public readonly WorldLiquidResources liquid { get; init; }
@@ -47,6 +49,7 @@ namespace WoWRenderLib.DX11.Structs
     {
         public uint rootWMOFileDataID;
         public bool legacyLighting;
+        public WmoFogVolume[] fogs;
         public uint ambientColor;
         public ushort flags;
         public WorldModelGroupBatches[] groupBatches;
@@ -60,5 +63,7 @@ namespace WoWRenderLib.DX11.Structs
         public WmoPortal[] portals;
         public bool portalGraphValid;
         public bool[] doodadsReferencedByGroups;
+        public int[] firstRenderBatchByGroup;
+        public int[] renderBatchCountByGroup;
     }
 }
