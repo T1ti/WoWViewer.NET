@@ -46,6 +46,18 @@ public enum WorldLightingSourceKind
     Local
 }
 
+/// <summary>Client-specific light selection rules used by the catalogue.</summary>
+public enum WorldLightingClientProfile
+{
+    Standard,
+    Wrath335
+}
+
+internal interface IWorldLightingTimeSampler
+{
+    WorldLightingData Sample(int time);
+}
+
 /// <summary>One light source and its current contribution to the final blend.</summary>
 public readonly record struct WorldLightingContribution(
     WorldLightingSourceKind Kind,
@@ -66,7 +78,10 @@ public sealed record WorldSkyboxDefinition(
 public readonly record struct WorldSkyboxLayer(
     uint FileDataId,
     int Flags,
-    float Opacity);
+    float Opacity)
+{
+    public const int ColorOverrideFlag = 0x4;
+}
 
 public readonly record struct WorldSkyLighting(
     Vector3 TopColor,
@@ -85,6 +100,10 @@ public readonly record struct WorldSkyLighting(
     public Vector3 CloudEmissiveColor { get; init; }
     public Vector3 CloudLayer1AmbientColor { get; init; }
     public Vector3 CloudLayer2AmbientColor { get; init; }
+    public Vector3 LegacyCloudEmissiveColor { get; init; }
+    public Vector3 LegacyCloudBodyColor { get; init; }
+    public Vector3 LegacyCloudAmbientColor { get; init; }
+    public bool HasLegacyCloudData { get; init; }
     public bool HasSunCloudData { get; init; }
 
     public float ShadowOpacity { get; init; }
@@ -126,7 +145,8 @@ public readonly record struct WorldSkyLighting(
 
             foreach (var skybox in Skyboxes)
             {
-                if (skybox.Opacity > 0f && (skybox.Flags & 0x4) != 0)
+                if (skybox.Opacity > 0f &&
+                    (skybox.Flags & WorldSkyboxLayer.ColorOverrideFlag) != 0)
                     return true;
             }
 
@@ -182,13 +202,48 @@ public sealed class WorldLightingCatalog
     private readonly IReadOnlyDictionary<int, WorldLightingData[]> _dataByParamId;
     private readonly IReadOnlyDictionary<int, WorldLightParams> _paramsById;
     private readonly IReadOnlyDictionary<int, WorldSkyboxDefinition> _skyboxesById;
+    private readonly WorldLightingClientProfile _profile;
+    private readonly IReadOnlyDictionary<int, IWorldLightingTimeSampler>? _timeSamplers;
+
+    private readonly record struct LocalLightCandidate(
+        WorldLightDefinition Light,
+        float Alpha,
+        float DistanceSquared,
+        int SourceIndex);
+
+    private static readonly IComparer<LocalLightCandidate> WrathLocalLightComparer =
+        Comparer<LocalLightCandidate>.Create(static (left, right) =>
+        {
+            // DayNight__CompareAreaLightPriority (3.3.5, 0x7ED0A0):
+            // a farthest-first heap, except nearly coincident light positions
+            // use their inner falloff radii as the priority key.
+            const float positionEpsilonSquared = (1f / 3f) * (1f / 3f);
+            var priority = Vector3.DistanceSquared(
+                    left.Light.WorldPosition, right.Light.WorldPosition) <= positionEpsilonSquared
+                ? right.Light.FalloffStart.CompareTo(left.Light.FalloffStart)
+                : right.DistanceSquared.CompareTo(left.DistanceSquared);
+            return priority != 0 ? priority : right.SourceIndex.CompareTo(left.SourceIndex);
+        });
 
     public WorldLightingCatalog(
         IEnumerable<WorldLightDefinition> lights,
         IEnumerable<ZoneLightDefinition> zoneLights,
         IEnumerable<WorldLightingData> timedData,
         IReadOnlyDictionary<int, WorldLightParams> lightParams,
-        IReadOnlyDictionary<int, WorldSkyboxDefinition>? skyboxes = null)
+        IReadOnlyDictionary<int, WorldSkyboxDefinition>? skyboxes = null,
+        WorldLightingClientProfile profile = WorldLightingClientProfile.Standard)
+        : this(lights, zoneLights, timedData, lightParams, skyboxes, profile, null)
+    {
+    }
+
+    internal WorldLightingCatalog(
+        IEnumerable<WorldLightDefinition> lights,
+        IEnumerable<ZoneLightDefinition> zoneLights,
+        IEnumerable<WorldLightingData> timedData,
+        IReadOnlyDictionary<int, WorldLightParams> lightParams,
+        IReadOnlyDictionary<int, WorldSkyboxDefinition>? skyboxes,
+        WorldLightingClientProfile profile,
+        IReadOnlyDictionary<int, IWorldLightingTimeSampler>? timeSamplers)
     {
         ArgumentNullException.ThrowIfNull(lights);
         ArgumentNullException.ThrowIfNull(zoneLights);
@@ -205,6 +260,8 @@ public sealed class WorldLightingCatalog
                 static group => group.OrderBy(static row => row.Time).ToArray());
         _paramsById = lightParams;
         _skyboxesById = skyboxes ?? new Dictionary<int, WorldSkyboxDefinition>();
+        _profile = profile;
+        _timeSamplers = timeSamplers;
     }
 
     public int LightCount => _lights.Length;
@@ -217,11 +274,7 @@ public sealed class WorldLightingCatalog
         WorldLightingSample? result = null;
         var activeLights = new List<WorldLightingContribution>();
 
-        var defaultLight = _lights
-            .Where(light => light.IsDefault && (light.MapId == mapId || light.MapId == 0))
-            .OrderByDescending(light => light.MapId == mapId)
-            .ThenByDescending(static light => light.Id)
-            .FirstOrDefault();
+        var defaultLight = SelectDefaultLight(mapId);
         if (defaultLight != null &&
             TryEvaluateParam(defaultLight.ExteriorLightParamId, normalizedTime, out var defaultSample))
         {
@@ -272,12 +325,21 @@ public sealed class WorldLightingCatalog
             }
         }
 
-        foreach (var local in _lights
-                     .Where(light => light.MapId == mapId && !light.IsDefault)
-                     .Select(light => (Light: light, Alpha: CalculateRadialBlend(light, worldPosition)))
-                     .Where(static candidate => candidate.Alpha > 0f)
-                     .OrderByDescending(static candidate => candidate.Alpha)
-                     .ThenByDescending(static candidate => candidate.Light.Id))
+        var localCandidates = _lights
+            .Select((light, index) => (Light: light, Index: index))
+            .Where(candidate => candidate.Light.MapId == mapId &&
+                !IsDefaultLight(candidate.Light))
+            .Select(candidate => new LocalLightCandidate(
+                candidate.Light,
+                CalculateRadialBlend(candidate.Light, worldPosition),
+                Vector3.DistanceSquared(candidate.Light.WorldPosition, worldPosition),
+                candidate.Index))
+            .Where(static candidate => candidate.Alpha > 0f);
+        var orderedLocals = _profile == WorldLightingClientProfile.Wrath335
+            ? localCandidates.OrderBy(static candidate => candidate, WrathLocalLightComparer)
+            : localCandidates.OrderByDescending(static candidate => candidate.Alpha)
+                .ThenByDescending(static candidate => candidate.Light.Id);
+        foreach (var local in orderedLocals)
         {
             if (!TryEvaluateParam(local.Light.ExteriorLightParamId, normalizedTime, out var sample))
                 continue;
@@ -309,6 +371,33 @@ public sealed class WorldLightingCatalog
             : null;
     }
 
+    private WorldLightDefinition? SelectDefaultLight(int mapId)
+    {
+        if (_profile == WorldLightingClientProfile.Wrath335)
+        {
+            // DayNight_BuildLightRefsForContinent (0x7ECB30) overwrites the
+            // default as it scans matching map rows, then falls back to ID 1.
+            for (var index = _lights.Length - 1; index >= 0; index--)
+            {
+                var light = _lights[index];
+                if (light.MapId == mapId && light.WorldPosition == Vector3.Zero)
+                    return light;
+            }
+            return _lightsById.TryGetValue(1, out var fallback) ? fallback : null;
+        }
+
+        return _lights
+            .Where(light => light.IsDefault && (light.MapId == mapId || light.MapId == 0))
+            .OrderByDescending(light => light.MapId == mapId)
+            .ThenByDescending(static light => light.Id)
+            .FirstOrDefault();
+    }
+
+    private bool IsDefaultLight(WorldLightDefinition light) =>
+        _profile == WorldLightingClientProfile.Wrath335
+            ? light.WorldPosition == Vector3.Zero
+            : light.IsDefault;
+
     private bool TryEvaluateParam(int lightParamId, int time, out WorldLightingSample sample)
     {
         if (lightParamId <= 0 ||
@@ -317,6 +406,17 @@ public sealed class WorldLightingCatalog
         {
             sample = default;
             return false;
+        }
+
+        _paramsById.TryGetValue(lightParamId, out var parameters);
+        _skyboxesById.TryGetValue(parameters.LightSkyboxId, out var skybox);
+        if (_profile == WorldLightingClientProfile.Wrath335 &&
+            _timeSamplers?.TryGetValue(lightParamId, out var sampler) == true)
+        {
+            // Sample every independent client band at the requested game time.
+            // Blending union-key snapshots would leave fractional color bytes.
+            sample = ToSample(sampler.Sample(time), parameters, skybox, time);
+            return true;
         }
 
         var nextIndex = Array.FindIndex(rows, row => row.Time > time);
@@ -338,20 +438,23 @@ public sealed class WorldLightingCatalog
             ? 0f
             : Math.Clamp((adjustedTime - previousTime) / (float)duration, 0f, 1f);
 
-        _paramsById.TryGetValue(lightParamId, out var parameters);
-        _skyboxesById.TryGetValue(parameters.LightSkyboxId, out var skybox);
         var previousSample = ToSample(previous, parameters, skybox, time);
         var nextSample = ToSample(next, parameters, skybox, time);
         sample = Blend(previousSample, nextSample, alpha) with
         {
             LightParamId = lightParamId,
             Time = time,
-            LightDirection = DayNight.CalculateLightDirection(time)
+            LightDirection = CalculateDirection(time)
         };
         return true;
     }
 
-    private static WorldLightingSample ToSample(
+    private Vector3 CalculateDirection(int time) =>
+        _profile == WorldLightingClientProfile.Wrath335
+            ? DayNight.CalculateWrath335LightDirection(time)
+            : DayNight.CalculateLightDirection(time);
+
+    private WorldLightingSample ToSample(
         WorldLightingData data,
         WorldLightParams parameters,
         WorldSkyboxDefinition? skybox,
@@ -378,7 +481,7 @@ public sealed class WorldLightingCatalog
         return new WorldLightingSample(
             data.LightParamId,
             time,
-            DayNight.CalculateLightDirection(time),
+            CalculateDirection(time),
             data.AmbientColor,
             data.DirectColor,
             oceanClose,
@@ -410,6 +513,10 @@ public sealed class WorldLightingCatalog
                 CloudEmissiveColor = data.CloudEmissiveColor,
                 CloudLayer1AmbientColor = data.CloudLayer1AmbientColor,
                 CloudLayer2AmbientColor = data.CloudLayer2AmbientColor,
+                LegacyCloudEmissiveColor = data.LegacyCloudEmissiveColor,
+                LegacyCloudBodyColor = data.LegacyCloudBodyColor,
+                LegacyCloudAmbientColor = data.LegacyCloudAmbientColor,
+                HasLegacyCloudData = data.HasLegacyCloudData,
                 HasSunCloudData = data.HasSunCloudData,
                 ShadowOpacity = data.ShadowOpacity,
                 FogEnd = data.FogEnd,
@@ -538,6 +645,19 @@ public sealed class WorldLightingCatalog
                 current.CloudLayer2AmbientColor,
                 incoming.CloudLayer2AmbientColor,
                 alpha),
+            LegacyCloudEmissiveColor = Vector3.Lerp(
+                current.LegacyCloudEmissiveColor,
+                incoming.LegacyCloudEmissiveColor,
+                alpha),
+            LegacyCloudBodyColor = Vector3.Lerp(
+                current.LegacyCloudBodyColor,
+                incoming.LegacyCloudBodyColor,
+                alpha),
+            LegacyCloudAmbientColor = Vector3.Lerp(
+                current.LegacyCloudAmbientColor,
+                incoming.LegacyCloudAmbientColor,
+                alpha),
+            HasLegacyCloudData = current.HasLegacyCloudData || incoming.HasLegacyCloudData,
             HasSunCloudData = current.HasSunCloudData || incoming.HasSunCloudData,
             ShadowOpacity = Lerp(current.ShadowOpacity, incoming.ShadowOpacity, alpha),
             FogEnd = Lerp(current.FogEnd, incoming.FogEnd, alpha),

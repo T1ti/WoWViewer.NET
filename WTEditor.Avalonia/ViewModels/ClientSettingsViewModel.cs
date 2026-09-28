@@ -18,6 +18,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
     [ObservableProperty] private float _diffuseColorR;
     [ObservableProperty] private float _diffuseColorG;
     [ObservableProperty] private float _diffuseColorB;
+    [ObservableProperty] private bool _disableScreenGlow;
 
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
@@ -32,6 +33,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
         _diffuseColorR = rendererSettings.DiffuseColor.X;
         _diffuseColorG = rendererSettings.DiffuseColor.Y;
         _diffuseColorB = rendererSettings.DiffuseColor.Z;
+        _disableScreenGlow = rendererSettings.DisableScreenGlow;
     }
 
     public EditorSettingsSnapshot ApplyTo(EditorSettingsSnapshot original) => original with
@@ -42,6 +44,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
             ViewportFrameRateLimit = ViewportFrameRateLimit,
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),
             DiffuseColor = new Vector3(DiffuseColorR, DiffuseColorG, DiffuseColorB),
+            DisableScreenGlow = DisableScreenGlow,
             MouseSensitivity = MouseSensitivity,
         },
         KeyboardLayout = ParseKeyboardLayout(KeyboardLayout)

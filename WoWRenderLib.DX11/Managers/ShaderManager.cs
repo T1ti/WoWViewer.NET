@@ -143,7 +143,7 @@ namespace WoWRenderLib.DX11.Managers
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("m2"))
                         GetOrCompileShader("m2", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("sky"))
-                        GetOrCompileShader("sky", true);
+                        GetOrCompileShader(Path.GetFileNameWithoutExtension(file), true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("liquid"))
                         GetOrCompileShader("liquid", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("glow"))
@@ -313,7 +313,85 @@ namespace WoWRenderLib.DX11.Managers
             ComPtr<ID3D11InputLayout> inputLayout = default;
 
             // TODO: I don't think this is a good way of doing this
-            if (type == "adt")
+            if (type == "sky_celestial")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                fixed (byte* texCoordName = SilkMarshal.StringToMemory("TEXCOORD"))
+                fixed (byte* colorName = SilkMarshal.StringToMemory("COLOR"))
+                {
+                    var inputElements = new InputElementDesc[]
+                    {
+                        new()
+                        {
+                            SemanticName = posName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 0,
+                            InputSlotClass = InputClassification.PerVertexData
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 12,
+                            InputSlotClass = InputClassification.PerVertexData
+                        },
+                        new()
+                        {
+                            SemanticName = colorName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 20,
+                            InputSlotClass = InputClassification.PerVertexData
+                        }
+                    };
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(
+                        in inputElements[0],
+                        (uint)inputElements.Length,
+                        vertexCode.GetBufferPointer(),
+                        vertexCode.GetBufferSize(),
+                        ref inputLayout));
+                }
+            }
+            else if (type == "sky_wrath")
+            {
+                fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
+                fixed (byte* colorName = SilkMarshal.StringToMemory("COLOR"))
+                {
+                    var inputElements = new InputElementDesc[]
+                    {
+                        new()
+                        {
+                            SemanticName = posName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 0,
+                            InputSlotClass = InputClassification.PerVertexData
+                        },
+                        new()
+                        {
+                            SemanticName = colorName,
+                            SemanticIndex = 0,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 0,
+                            AlignedByteOffset = 12,
+                            InputSlotClass = InputClassification.PerVertexData
+                        }
+                    };
+                    SilkMarshal.ThrowHResult(device.CreateInputLayout(
+                        in inputElements[0],
+                        (uint)inputElements.Length,
+                        vertexCode.GetBufferPointer(),
+                        vertexCode.GetBufferSize(),
+                        ref inputLayout));
+                }
+            }
+            else if (type == "adt")
             {
                 fixed (byte* posName = SilkMarshal.StringToMemory("POSITION"))
                 fixed (byte* normalName = SilkMarshal.StringToMemory("NORMAL"))

@@ -51,6 +51,9 @@ public sealed class WorldLightingData
         CloudEmissiveColor = ReadColor(NumericValues, "cloud_emissive_color");
         CloudLayer1AmbientColor = ReadColor(NumericValues, "cloud_layer_1_ambient_color");
         CloudLayer2AmbientColor = ReadColor(NumericValues, "cloud_layer_2_ambient_color");
+        LegacyCloudEmissiveColor = ReadColor(NumericValues, "legacy_cloud_emissive_color");
+        LegacyCloudBodyColor = ReadColor(NumericValues, "legacy_cloud_body_color");
+        LegacyCloudAmbientColor = ReadColor(NumericValues, "legacy_cloud_ambient_color");
         HasSkyColorData = HasNumericValue("sky_top_color") &&
             HasNumericValue("sky_middle_color") &&
             HasNumericValue("sky_band_1_color") &&
@@ -65,13 +68,21 @@ public sealed class WorldLightingData
              OceanFarColorPacked != 0 ||
              RiverCloseColorPacked != 0 ||
              RiverFarColorPacked != 0);
-        HasSunCloudData = HasAllNumericValues(
-            "sun_color",
-            "cloud_sun_color",
-            "cloud_emissive_color",
-            "cloud_layer_1_ambient_color",
-            "cloud_layer_2_ambient_color");
-        ShadowOpacity = ReadScalar(NumericValues, "shadow_opacity");
+        HasLegacyCloudData = HasAllNumericValues(
+            "legacy_cloud_emissive_color",
+            "legacy_cloud_body_color",
+            "legacy_cloud_ambient_color");
+        HasSunCloudData = HasNumericValue("sun_color") &&
+            (HasLegacyCloudData || HasAllNumericValues(
+                "cloud_sun_color",
+                "cloud_emissive_color",
+                "cloud_layer_1_ambient_color",
+                "cloud_layer_2_ambient_color"));
+        // DayNight__DeriveInteriorColors_MidPlus16 (3.3.5, 0x7EE750)
+        // copies byte +2 of int band 8 into the shadow modulation alpha.
+        ShadowOpacity = HasNumericValue("legacy_shadow_opacity_color")
+            ? ((ReadPackedColor(NumericValues, "legacy_shadow_opacity_color") >> 16) & 0xff) / 255f
+            : ReadScalar(NumericValues, "shadow_opacity");
         FogEnd = ReadScalar(NumericValues, "fog_end");
         FogScaler = ReadScalar(NumericValues, "fog_scaler");
         CloudDensity = ReadScalar(NumericValues, "cloud_density");
@@ -182,6 +193,10 @@ public sealed class WorldLightingData
     public Vector3 CloudEmissiveColor { get; }
     public Vector3 CloudLayer1AmbientColor { get; }
     public Vector3 CloudLayer2AmbientColor { get; }
+    public Vector3 LegacyCloudEmissiveColor { get; }
+    public Vector3 LegacyCloudBodyColor { get; }
+    public Vector3 LegacyCloudAmbientColor { get; }
+    public bool HasLegacyCloudData { get; }
     public bool HasSunCloudData { get; }
 
     public float ShadowOpacity { get; }

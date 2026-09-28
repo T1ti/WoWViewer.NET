@@ -30,6 +30,10 @@ public sealed class WorldLightingSmokeTests
         intRows[0] = new(19, 2, [0, 1440], [0x00ff0000, 0x000000ff]);
         intRows[1] = new(20, 2, [720, 2160], [0x0000ff00, 0x000000ff]);
         intRows[2] = new(21, 1, [0], [unchecked((int)0xff112233)]);
+        intRows[8] = new(27, 1, [0], [0x00aa1122]);
+        intRows[10] = new(29, 1, [0], [0x00102030]);
+        intRows[11] = new(30, 1, [0], [0x00405060]);
+        intRows[12] = new(31, 1, [0], [0x00708090]);
         intRows[14] = new(33, 1, [0], [0x00123456]);
         intRows[17] = new(36, 1, [0], [0x00abcdef]);
 
@@ -46,14 +50,24 @@ public sealed class WorldLightingSmokeTests
         var midnight = data.Single(row => row.Time == 0);
 
         Assert.AreEqual(paramId, noon.LightParamId);
-        Assert.AreEqual(0x000000ffu, noon.DirectColorPacked);
-        Assert.AreEqual(0x00800080u, morning.DirectColorPacked);
-        Assert.AreEqual(0x00008080u, midnight.AmbientColorPacked);
+        Assert.AreEqual(0xff0000ffu, noon.DirectColorPacked);
+        Assert.AreEqual(0xff7f007fu, morning.DirectColorPacked);
+        Assert.AreEqual(0xff007f7fu, midnight.AmbientColorPacked);
         Assert.AreEqual(new Vector3(0x11 / 255f, 0x22 / 255f, 0x33 / 255f), noon.SkyTopColor);
-        Assert.AreEqual(0x00123456u, noon.OceanCloseColorPacked);
-        Assert.AreEqual(0x00abcdefu, noon.RiverFarColorPacked);
-        Assert.AreEqual(200f, morning.FogEnd, 0.001f);
+        Assert.AreEqual(0xff123456u, noon.OceanCloseColorPacked);
+        Assert.AreEqual(0xffabcdefu, noon.RiverFarColorPacked);
+        Assert.AreEqual(200f / 36f, morning.FogEnd, 0.001f);
         Assert.AreEqual(0.75f, noon.CloudDensity, 0.001f);
+        Assert.AreEqual(0xaa / 255f, noon.ShadowOpacity, 0.001f);
+        Assert.AreEqual(new Vector3(0x10 / 255f, 0x20 / 255f, 0x30 / 255f),
+            noon.LegacyCloudEmissiveColor);
+        Assert.AreEqual(new Vector3(0x40 / 255f, 0x50 / 255f, 0x60 / 255f),
+            noon.LegacyCloudBodyColor);
+        Assert.AreEqual(new Vector3(0x70 / 255f, 0x80 / 255f, 0x90 / 255f),
+            noon.LegacyCloudAmbientColor);
+        Assert.IsTrue(noon.HasLegacyCloudData);
+        Assert.IsTrue(noon.HasSunCloudData);
+        Assert.AreEqual(Vector3.Zero, noon.CloudSunColor);
         Assert.IsTrue(noon.HasSkyColorData);
         Assert.IsTrue(noon.HasLiquidColorData);
     }
@@ -64,6 +78,48 @@ public sealed class WorldLightingSmokeTests
         var bad = new LegacyLightBandLoader.BandRow(1, 17, new int[16], new double[16]);
         Assert.ThrowsException<InvalidDataException>(() =>
             LegacyLightBandLoader.Build([bad], [], [1]));
+    }
+
+    [TestMethod]
+    public void Wrath335SamplesColorBytesAtRequestedTimeAcrossIndependentBandKeys()
+    {
+        var intRows = Enumerable.Range(1, 18)
+            .Select(id => new LegacyLightBandLoader.BandRow(id, 1, [0], [0]))
+            .ToArray();
+        intRows[0] = new(1, 2, [0, 1440], [0x00ff0000, 0x000000ff]);
+        intRows[1] = new(2, 1, [720], [0]);
+        var dataset = LegacyLightBandLoader.BuildDataset(intRows, [], [1]);
+        var catalog = new WorldLightingCatalog(
+            [new WorldLightDefinition(1, 42, Vector3.Zero, 0, 0, [1])],
+            [],
+            dataset.Snapshots,
+            new Dictionary<int, WorldLightParams> { [1] = new(1, 1, 1, 1, true) },
+            null,
+            WorldLightingClientProfile.Wrath335,
+            dataset.Samplers);
+
+        Assert.AreEqual(3, dataset.Snapshots.Count);
+        var morning = catalog.Evaluate(42, Vector3.Zero, 360)!.Value;
+        var evening = catalog.Evaluate(42, Vector3.Zero, 2520)!.Value;
+        Assert.AreEqual(191f / 255f, morning.DirectColor.X, 0.00001f);
+        Assert.AreEqual(63f / 255f, morning.DirectColor.Z, 0.00001f);
+        Assert.AreEqual(191f / 255f, evening.DirectColor.X, 0.00001f);
+        Assert.AreEqual(63f / 255f, evening.DirectColor.Z, 0.00001f);
+    }
+
+    [TestMethod]
+    public void OtherLegacyClientsRetainTheirExistingCloudBandNames()
+    {
+        var rows = Enumerable.Range(1, 18)
+            .Select(id => new LegacyLightBandLoader.BandRow(id, 1, [0], [0x00112233]))
+            .ToArray();
+        var data = LegacyLightBandLoader.BuildDataset(
+            rows, [], [1], wrath335CloudBands: false).Snapshots.Single();
+
+        Assert.AreEqual(new Vector3(0x11 / 255f, 0x22 / 255f, 0x33 / 255f),
+            data.CloudSunColor);
+        Assert.IsFalse(data.HasLegacyCloudData);
+        Assert.IsTrue(data.HasSunCloudData);
     }
 
     [TestMethod]
@@ -111,6 +167,7 @@ public sealed class WorldLightingSmokeTests
         Assert.AreEqual(0.4f, snapshot.OceanShallowAlpha, 0.0001f);
         Assert.AreEqual(0.9f, snapshot.OceanDeepAlpha, 0.0001f);
         Assert.AreEqual(512d, snapshot.NumericValues["fog_end"], 0.0001d);
+        Assert.AreEqual(512f, snapshot.FogEnd, 0.0001f);
         Assert.AreEqual("temporary-profile", snapshot.StringValues["debug_name"]);
     }
 
@@ -284,6 +341,39 @@ public sealed class WorldLightingSmokeTests
     }
 
     [TestMethod]
+    public void WrathSunDirectionUsesClientCubicCurveAndKeepsModernProfileSeparate()
+    {
+        // DayNight::SetDirection (0x7EEA90) outputs this raw noon ray. The
+        // client's CM2Light::SetDirection normalizes it for material lighting.
+        var rawNoon = DayNight.CalculateWrath335SunRayDirection(1440);
+        Assert.AreEqual(-0.537091f, rawNoon.X, 0.0001f);
+        Assert.AreEqual(-0.537091f, rawNoon.Y, 0.0001f);
+        Assert.AreEqual(-0.581925f, rawNoon.Z, 0.0001f);
+
+        var light = new WorldLightDefinition(1, 42, Vector3.Zero, 0, 0, [7]);
+        var data = CreateData(1, 7, 1440, Pack(255, 255, 255));
+        var wrath = CreateCatalog([light], [], [data], WorldLightingClientProfile.Wrath335)
+            .Evaluate(42, Vector3.Zero, 1440);
+        var modern = CreateCatalog([light], [], [data])
+            .Evaluate(42, Vector3.Zero, 1440);
+
+        Assert.IsTrue(wrath.HasValue);
+        Assert.IsTrue(modern.HasValue);
+        Assert.AreEqual(0.561309f, wrath.Value.LightDirection.X, 0.0001f);
+        Assert.AreEqual(0.561309f, wrath.Value.LightDirection.Y, 0.0001f);
+        Assert.AreEqual(0.608165f, wrath.Value.LightDirection.Z, 0.0001f);
+        Assert.AreEqual(1f, wrath.Value.LightDirection.Length(), 0.0001f);
+        Assert.IsTrue(Vector3.Distance(
+            wrath.Value.LightDirection, modern.Value.LightDirection) > 0.005f);
+
+        var quarterDay = DayNight.CalculateWrath335LightDirection(720);
+        Assert.AreEqual(0.664877f, quarterDay.X, 0.0001f);
+        Assert.AreEqual(0.340406f, quarterDay.Z, 0.0001f);
+        Assert.AreEqual(quarterDay,
+            DayNight.CalculateWrath335LightDirection(720 + DayNight.GameDayLength));
+    }
+
+    [TestMethod]
     public void WrathSkyGlowUsesTimedCurveAndHighlightStrength()
     {
         Assert.AreEqual(0f, DayNight.CalculateSkyGlowStrength(360, 0.4f), 0.0001f);
@@ -328,6 +418,89 @@ public sealed class WorldLightingSmokeTests
         Assert.IsTrue(nearLocalLight.HasValue);
         Assert.AreEqual(0.8f, nearLocalLight.Value.ActiveLightContributions![0].Weight, 0.0001f);
         Assert.AreEqual(0.2f, nearLocalLight.Value.ActiveLightContributions[1].Weight, 0.0001f);
+    }
+
+    [TestMethod]
+    public void Wrath335SelectsTheLastMapDefaultThenFallsBackToRecordOne()
+    {
+        var lights = new[]
+        {
+            new WorldLightDefinition(1, 0, Vector3.Zero, 0, 0, [1]),
+            new WorldLightDefinition(5, 0, Vector3.Zero, 0, 0, [2]),
+            new WorldLightDefinition(9, 42, Vector3.Zero, 0, 0, [9]),
+            new WorldLightDefinition(7, 42, Vector3.Zero, 0, 0, [7])
+        };
+        var data = new[]
+        {
+            CreateData(1, 1, 0, Pack(0, 0, 0)),
+            CreateData(2, 2, 0, Pack(255, 0, 0)),
+            CreateData(7, 7, 0, Pack(0, 0, 255)),
+            CreateData(9, 9, 0, Pack(0, 255, 0))
+        };
+        var wrath = CreateCatalog(lights, [], data, WorldLightingClientProfile.Wrath335);
+        var standard = CreateCatalog(lights, [], data);
+
+        Assert.AreEqual(7, wrath.Evaluate(42, Vector3.Zero, 0)!.Value
+            .ActiveLightContributions![0].LightId);
+        Assert.AreEqual(1, wrath.Evaluate(43, Vector3.Zero, 0)!.Value
+            .ActiveLightContributions![0].LightId);
+        Assert.AreEqual(5, standard.Evaluate(43, Vector3.Zero, 0)!.Value
+            .ActiveLightContributions![0].LightId);
+    }
+
+    [TestMethod]
+    public void Wrath335BlendsFartherLocalLightsBeforeNearerOnes()
+    {
+        var catalog = CreateCatalog(
+            [
+                new WorldLightDefinition(1, 42, Vector3.Zero, 0, 0, [1]),
+                new WorldLightDefinition(2, 42, new Vector3(40, 0, 0), 0, 80, [2]),
+                new WorldLightDefinition(7, 42, new Vector3(10, 0, 0), 0, 80, [7])
+            ],
+            [],
+            [
+                CreateData(1, 1, 0, Pack(0, 0, 0)),
+                CreateData(2, 2, 0, Pack(255, 0, 0)),
+                CreateData(7, 7, 0, Pack(0, 0, 255))
+            ],
+            WorldLightingClientProfile.Wrath335);
+
+        var sample = catalog.Evaluate(42, Vector3.Zero, 0)!.Value;
+
+        Assert.AreEqual(0.0625f, sample.AmbientColor.X, 0.0001f);
+        Assert.AreEqual(0.875f, sample.AmbientColor.Z, 0.0001f);
+        Assert.AreEqual(0.0625f, sample.ActiveLightContributions!
+            .Single(light => light.LightId == 2).Weight, 0.0001f);
+        Assert.AreEqual(0.875f, sample.ActiveLightContributions
+            .Single(light => light.LightId == 7).Weight, 0.0001f);
+    }
+
+    [TestMethod]
+    public void Wrath335UsesInnerRadiusWhenLocalPositionsAlmostCoincide()
+    {
+        var catalog = CreateCatalog(
+            [
+                new WorldLightDefinition(1, 42, Vector3.Zero, 0, 0, [1]),
+                new WorldLightDefinition(2, 42, new Vector3(20, 0, 0), 2, 50, [2]),
+                new WorldLightDefinition(7, 42, new Vector3(20.1f, 0, 0), 20.2f, 50, [7])
+            ],
+            [],
+            [
+                CreateData(1, 1, 0, Pack(0, 0, 0)),
+                CreateData(2, 2, 0, Pack(255, 0, 0)),
+                CreateData(7, 7, 0, Pack(0, 0, 255))
+            ],
+            WorldLightingClientProfile.Wrath335);
+
+        var sample = catalog.Evaluate(42, Vector3.Zero, 0)!.Value;
+
+        Assert.AreEqual(0.625f, sample.AmbientColor.X, 0.0001f);
+        Assert.AreEqual(0.375f, sample.AmbientColor.Z, 0.0001f);
+        Assert.AreEqual(2, sample.ActiveLightContributions!.Count);
+        Assert.AreEqual(0.625f, sample.ActiveLightContributions
+            .Single(light => light.LightId == 2).Weight, 0.0001f);
+        Assert.AreEqual(0.375f, sample.ActiveLightContributions
+            .Single(light => light.LightId == 7).Weight, 0.0001f);
     }
 
     [TestMethod]
@@ -495,7 +668,8 @@ public sealed class WorldLightingSmokeTests
     private static WorldLightingCatalog CreateCatalog(
         IReadOnlyList<WorldLightDefinition> lights,
         IReadOnlyList<ZoneLightDefinition> zones,
-        IReadOnlyList<WorldLightingData> data) => new(
+        IReadOnlyList<WorldLightingData> data,
+        WorldLightingClientProfile profile = WorldLightingClientProfile.Standard) => new(
         lights,
         zones,
         data,
@@ -505,7 +679,8 @@ public sealed class WorldLightingSmokeTests
             [2] = new(1, 1, 1, 1, true),
             [7] = new(1, 1, 1, 1, true),
             [9] = new(1, 1, 1, 1, true)
-        });
+        },
+        profile: profile);
 
     private static WorldLightingData CreateData(
         int id,

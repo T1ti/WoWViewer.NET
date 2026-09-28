@@ -159,6 +159,23 @@ public sealed partial class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void ClientSettingsCanChangeTheExistingGlowOption()
+    {
+        var original = new EditorSettingsSnapshot
+        {
+            Rendering = new RenderingConfiguration { DisableScreenGlow = true }
+        };
+        var viewModel = new ClientSettingsViewModel(original);
+        Assert.IsTrue(viewModel.DisableScreenGlow);
+
+        viewModel.DisableScreenGlow = false;
+        var changed = viewModel.ApplyTo(original);
+        Assert.IsFalse(changed.Rendering.DisableScreenGlow);
+        Assert.AreEqual(original.Rendering.TerrainRenderDistance,
+            changed.Rendering.TerrainRenderDistance);
+    }
+
+    [TestMethod]
     public void LegacyRenderingSettings_DefaultTerrainLayersToVisible()
     {
         var restored = JsonSerializer.Deserialize<PersistedRenderingSettings>("{}");
@@ -187,6 +204,26 @@ public sealed partial class EditorSettingsSmokeTests
 
         Assert.AreEqual("0.5", viewModel.WmoSidnPulseDisplay);
         Assert.AreEqual("(0.125, 0.25, 0.375)", viewModel.SpecularColorDisplay);
+    }
+
+    [TestMethod]
+    public void LightingViewModelLabelsWrathCloudBandsWithoutModernLayerNames()
+    {
+        var viewModel = new LightingViewModel();
+        var sky = WorldSkyLighting.None with
+        {
+            LegacyCloudEmissiveColor = new Vector3(1f, 0f, 0f),
+            LegacyCloudBodyColor = new Vector3(0f, 1f, 0f),
+            LegacyCloudAmbientColor = new Vector3(0f, 0f, 1f),
+            HasLegacyCloudData = true,
+            HasSunCloudData = true
+        };
+        viewModel.Update(LightingSettingsProjection.ToDisplay(WorldLightingSettings.Defaults, sky));
+
+        var clouds = viewModel.RuntimeGroups.Single(group => group.Title == "Clouds");
+        CollectionAssert.AreEqual(
+            new[] { "Emissive", "Body", "Ambient", "Density" },
+            clouds.Values.Select(value => value.Label).ToArray());
     }
 
     [TestMethod]

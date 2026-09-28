@@ -1,6 +1,6 @@
 # WTEditor rendering feature status
 
-Last updated: 2026-09-25. This is the working rendering ledger for future
+Last updated: 2026-09-28. This is the working rendering ledger for future
 client-version work. Update the version matrix, open issues, and next steps
 when a fix lands or a visual comparison changes their status. WowLib remains
 the only client-file reader and parser; Wisp is a rendering reference for 3.3.5.
@@ -224,13 +224,14 @@ for every M2 effect or other client versions.
 | Dynamic time-of-day lighting | Implemented | Light/LightParams and either LightData (builds after 15595) or LightIntBand/LightFloatBand (builds through 15595) are loaded by DBD column name and evaluated on the circular 0–2880 timeline. Legacy Light coordinates and falloff radii are converted from inches; legacy LightSkybox model paths resolve through the MPQ asset registry. Missing tables, columns, band rows, and referenced entries are reported in the console. Map navigation is durable view-model state, replayed whenever the DX11 renderer attaches/restarts, then retained by the engine until content/database initialization finishes and applied on the render thread with dynamic evaluation enabled. Renderer-owned controls are read-only while live lighting is active, and delayed TwoWay control echoes cannot disable dynamic updates. |
 | Local radial lights | Implemented | Light falloff volumes are blended from the camera in renderer-native center-origin GameCoords space. |
 | Zone lighting | Implemented | ZoneLight polygons use the same center-origin camera space, including vertical bounds, transition distance, and priority ordering. |
-| LightData sky colors | Implemented | Top, middle, band 1/2, smog, and fog colors drive a camera-oriented gradient sky pass. |
-| LightParams skybox model override | Implemented | LightSkybox is resolved by named columns and its SkyboxFileDataID is rendered as a camera-centred M2. Flag 0x4 flattens the cone to the available sky-fog color. |
+| LightData sky colors | Implemented | Top, middle, band 1/2, smog, and fog colors drive the modern camera-oriented gradient. The 3.3.5 path uses a shared-vertex dome with client band colors and additive blending. The user confirmed the temporal color seam is fixed in the editor; a matched client capture remains. |
+| LightParams skybox model override | Implemented | LightSkybox is resolved by named columns and its SkyboxFileDataID is rendered as a camera-centred M2. The later-client flag 0x4 fog-color override remains separate from 3.3.5, where the traced dome keeps sampled sky bands. |
 | Multiple skybox crossfades | Implemented | Distinct default, zone, and local skyboxes are retained together, their opacity weights are interpolated through each spatial blend, and every active model is submitted. |
 | Animated skybox models | Partial parity | Active 3.3.5 skybox M2s use bone and material tracks through the same cached evaluator as world M2s. The animation toggle retains the last pose, or evaluates frame zero once for a newly visible skybox. LightSkybox flag 0x1 maps the lighting day onto the default sequence; other skyboxes use the scene animation clock. This clock mapping still needs comparison with the 3.3.5 client. |
 | Celestial skybox override | Not yet | CelestialSkyboxFileDataID is decoded but not submitted. |
-| Sun, moons, and stars | Not yet | Directional exterior lighting is active, but celestial discs and star fields are not rendered. |
-| Cloud layers | Not yet | LightData cloud colors/density and cloud textures are not rendered. |
+| Sun, moons, and stars | Partial parity | 3.3.5 sun and moon1 textured billboards draw before the dome with client orbit curves, horizon fade, and alpha blending. A wowlib-resolved stars M2 now draws first with the client night fade. The user's reference/editor comparison supports sun/moon size and orientation. Moon02 weather/override tint, a visual stars check, exact sky depth/scissor, and matched client pixels remain. Modern clients retain their prior path. |
+| Sun and moon glare | Not yet | The client glare textures and post-world additive pass are traced, including visibility and cloud response. The renderer does not submit glare yet; the user's sun comparison shows the missing effect. |
+| Cloud layers | Not yet | The 3.3.5 cloud palette, fixed cap mesh, and startup density lookup are ported as CPU data with focused tests. The procedural texture update and GPU cloud pass remain. |
 | Distance/height/sun fog | Not yet | The current passes do not consume the full LightData fog parameter set, so skybox flag 0x4 uses SkyFogColor rather than EndFogColor. |
 | Color grading | Not yet | LightData color-grading FileDataIDs are not applied. |
 

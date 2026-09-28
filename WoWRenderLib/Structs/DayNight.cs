@@ -4,9 +4,9 @@ namespace WoWRenderLib.Structs;
 
 /// <summary>
 /// Time-dependent world lighting shared by the lighting catalog and renderers.
-/// The direction and SIDN curves follow the documented Mists of Pandaria client;
-/// the DNSky glow curve comes from the Wrath 3.3.5a client. Client lighting
-/// tables supply the colors and spatial light selection.
+/// The standard direction and SIDN curves follow the documented Mists of
+/// Pandaria client. Wrath 3.3.5a supplies its own sun direction and DNSky glow
+/// curves. Client lighting tables supply colors and spatial light selection.
 /// </summary>
 public static class DayNight
 {
@@ -26,16 +26,9 @@ public static class DayNight
     /// </summary>
     public static float CalculateSkyGlowStrength(int time, float highlightSkyStrength)
     {
-        ReadOnlySpan<Vector2> glowCurve =
-        [
-            new(0.125f, 0f),
-            new(0.270833343f, 1f),
-            new(0.291666687f, 0f),
-            new(0.854166627f, 0f),
-            new(0.895833313f, 1f),
-            new(0.999305546f, 0f)
-        ];
-        return InterpolateCircularTable(glowCurve, NormalizeTime(time) / (float)GameDayLength) *
+        return InterpolateCircularTable(
+            Wrath335SkyReference.TimeGlowCurve,
+            NormalizeTime(time) / (float)GameDayLength) *
             highlightSkyStrength;
     }
 
@@ -72,6 +65,32 @@ public static class DayNight
         return Vector3.Normalize(-clientDirection);
     }
 
+    /// <summary>
+    /// Raw 3.3.5 DayNight::SetDirection sunlight ray. Celestial calculations
+    /// can use the client vector before CM2Light::SetDirection normalizes it.
+    /// </summary>
+    public static Vector3 CalculateWrath335SunRayDirection(int time)
+    {
+        var dayProgress = NormalizeTime(time) / (float)GameDayLength;
+        var phi = InterpolateCircularTable(Wrath335SkyReference.SunPhiCurve, dayProgress);
+        var phiPhase = phi * Wrath335SkyReference.InversePi;
+        var thetaPhase = Wrath335SkyReference.SunThetaRadians * Wrath335SkyReference.InversePi;
+        var sinPhi = Wrath335SkyReference.CubicCosine(
+            phiPhase - Wrath335SkyReference.SinePhaseShift);
+        return new Vector3(
+            Wrath335SkyReference.CubicCosine(thetaPhase) * sinPhi,
+            Wrath335SkyReference.CubicCosine(
+                thetaPhase - Wrath335SkyReference.SinePhaseShift) * sinPhi,
+            Wrath335SkyReference.CubicCosine(phiPhase));
+    }
+
+    /// <summary>
+    /// The DX11 lighting contract points toward the light. The 3.3.5 M2
+    /// sunlight setter normalizes the opposite client ray before shading.
+    /// </summary>
+    public static Vector3 CalculateWrath335LightDirection(int time) =>
+        Vector3.Normalize(-CalculateWrath335SunRayDirection(time));
+
     /// <summary>Night glow for WMO SIDN materials on the 0..2880 world clock.</summary>
     public static float CalculateWmoSidnPulse(long worldTime)
     {
@@ -101,7 +120,7 @@ public static class DayNight
             (1f - CalculateWmoSidnPulse(worldTime));
     }
 
-    private static float InterpolateCircularTable(ReadOnlySpan<Vector2> table, float time)
+    internal static float InterpolateCircularTable(ReadOnlySpan<Vector2> table, float time)
     {
         var next = 0;
         while (next < table.Length && time > table[next].X)

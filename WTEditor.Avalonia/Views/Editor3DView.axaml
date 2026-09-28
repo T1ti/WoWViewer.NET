@@ -200,7 +200,7 @@
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Colour}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding DisableScreenGlow}"
-                                    ToolTip.Tip="Disable screen glow">
+                                    ToolTip.Tip="Disable full-screen glow (3.3.5 ffxGlow)">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Glow}"/>
                       </ToggleButton>
                       <Border Background="Transparent" ToolTip.Tip="Specular lighting (not yet available)">

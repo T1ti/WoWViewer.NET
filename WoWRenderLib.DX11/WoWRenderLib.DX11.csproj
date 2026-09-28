@@ -50,6 +50,12 @@
     <None Update="Shaders\sky.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Shaders\sky_wrath.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Shaders\sky_celestial.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Shaders\liquid.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

@@ -86,7 +86,13 @@ public sealed record LightingRuntimeSnapshot(
     long DarkerColorGradingFileDataId,
     bool HasFogData,
     bool HighlightSky,
-    IReadOnlyList<LightingSkyboxSnapshot> Skyboxes);
+    IReadOnlyList<LightingSkyboxSnapshot> Skyboxes)
+{
+    public Vector3 LegacyCloudEmissiveColor { get; init; }
+    public Vector3 LegacyCloudBodyColor { get; init; }
+    public Vector3 LegacyCloudAmbientColor { get; init; }
+    public bool HasLegacyCloudData { get; init; }
+}
 
 public sealed record ViewportTelemetry(
     double FramesPerSecond,

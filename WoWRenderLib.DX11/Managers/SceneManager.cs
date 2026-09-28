@@ -420,6 +420,12 @@ namespace WoWRenderLib.DX11.Managers
             _skyRenderer.SetLighting(sky);
         }
 
+        public void ConfigureWrathCelestialTextures(uint sun, uint moon1, uint moon02) =>
+            _skyRenderer.ConfigureWrathCelestialTextures(sun, moon1, moon02);
+
+        public void ConfigureWrathStarModel(uint modelId) =>
+            _skyRenderer.ConfigureWrathStarModel(modelId);
+
         private static Vector3 ClampLightingColor(Vector3 color) => new(
             Math.Clamp(color.X, 0f, 4f),
             Math.Clamp(color.Y, 0f, 4f),

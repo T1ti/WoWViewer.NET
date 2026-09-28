@@ -297,6 +297,22 @@ public partial class LightingViewModel : ViewModelBase
         var skyStatus = runtime.HasSkyColorData ? "Final blended values" : "No client sky palette reported";
         var sunStatus = runtime.HasSunCloudData ? "Final blended values" : "No client sun/cloud palette reported";
         var fogStatus = runtime.HasFogData ? "Final blended values" : "No client fog settings reported";
+        IReadOnlyList<LightingValueDisplayItem> cloudValues = runtime.HasLegacyCloudData
+            ?
+            [
+                ColorValue("Emissive", runtime.LegacyCloudEmissiveColor),
+                ColorValue("Body", runtime.LegacyCloudBodyColor),
+                ColorValue("Ambient", runtime.LegacyCloudAmbientColor),
+                NumberValue("Density", runtime.CloudDensity)
+            ]
+            :
+            [
+                ColorValue("Sun light", runtime.CloudSunColor),
+                ColorValue("Emissive", runtime.CloudEmissiveColor),
+                ColorValue("Layer 1 ambient", runtime.CloudLayer1AmbientColor),
+                ColorValue("Layer 2 ambient", runtime.CloudLayer2AmbientColor),
+                NumberValue("Density", runtime.CloudDensity)
+            ];
         var skyboxes = runtime.Skyboxes.Count == 0
             ? "None"
             : string.Join(
@@ -340,13 +356,7 @@ public partial class LightingViewModel : ViewModelBase
             new LightingGroupDisplayItem(
                 "Clouds",
                 sunStatus,
-                [
-                    ColorValue("Sun light", runtime.CloudSunColor),
-                    ColorValue("Emissive", runtime.CloudEmissiveColor),
-                    ColorValue("Layer 1 ambient", runtime.CloudLayer1AmbientColor),
-                    ColorValue("Layer 2 ambient", runtime.CloudLayer2AmbientColor),
-                    NumberValue("Density", runtime.CloudDensity)
-                ]),
+                cloudValues),
             new LightingGroupDisplayItem(
                 "Fog",
                 fogStatus,

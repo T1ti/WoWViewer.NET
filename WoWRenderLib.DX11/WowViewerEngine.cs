@@ -944,6 +944,24 @@ namespace WoWRenderLib.DX11
                         fileSystem.Version.Minor == 3 &&
                         fileSystem.Version.Patch == 5;
                     sceneManager.EnableDayNightSkyColors = sceneManager.EnableClientGlow;
+                    if (sceneManager.EnableDayNightSkyColors)
+                    {
+                        sceneManager.ConfigureWrathStarModel(
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335StarEvaluator.ModelPath));
+                        sceneManager.ConfigureWrathCelestialTextures(
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335CelestialEvaluator.SunTexturePath),
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335CelestialEvaluator.Moon1TexturePath),
+                            WowlibFileSystem.ResolveAssetId(
+                                fileSystem, Wrath335CelestialEvaluator.Moon02TexturePath));
+                    }
+                    else
+                    {
+                        sceneManager.ConfigureWrathStarModel(0);
+                        sceneManager.ConfigureWrathCelestialTextures(0, 0, 0);
+                    }
 
                     try
                     {
@@ -1030,6 +1048,8 @@ namespace WoWRenderLib.DX11
 
                     sceneManager.EnableClientGlow = false;
                     sceneManager.EnableDayNightSkyColors = false;
+                    sceneManager.ConfigureWrathStarModel(0);
+                    sceneManager.ConfigureWrathCelestialTextures(0, 0, 0);
 
                     try
                     {

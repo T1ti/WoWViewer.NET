@@ -28,13 +28,18 @@ public static class WorldLightingCatalogLoader
             new GithubDBDProvider(useCache: true));
 
         var legacyBands = LegacyLightBandLoader.UsesLegacyBands(buildName);
+        var profile = buildName.StartsWith("3.3.5.", StringComparison.Ordinal)
+            ? WorldLightingClientProfile.Wrath335
+            : WorldLightingClientProfile.Standard;
         var lights = ReadLights(database.Load("Light", buildName), legacyBands);
-        var timedData = legacyBands
-            ? LegacyLightBandLoader.Load(
+        var legacyDataset = legacyBands
+            ? LegacyLightBandLoader.LoadDataset(
                 database.Load("LightIntBand", buildName),
                 database.Load("LightFloatBand", buildName),
-                lights.SelectMany(static light => light.LightParamIds))
-            : ReadLightData(database.Load("LightData", buildName));
+                lights.SelectMany(static light => light.LightParamIds),
+                profile == WorldLightingClientProfile.Wrath335)
+            : null;
+        var timedData = legacyDataset?.Snapshots ?? ReadLightData(database.Load("LightData", buildName));
         var parameters = ReadLightParams(database.Load("LightParams", buildName));
         var skyboxes = ReadLightSkyboxes(database, fileSystem, buildName);
         var zones = ReadZoneLights(database, buildName);
@@ -65,7 +70,8 @@ public static class WorldLightingCatalogLoader
         }
 
         var catalog = new WorldLightingCatalog(
-            lights, zones, timedData, parameters, skyboxes);
+            lights, zones, timedData, parameters, skyboxes, profile,
+            profile == WorldLightingClientProfile.Wrath335 ? legacyDataset?.Samplers : null);
         Console.WriteLine(
             $"Loaded dynamic world lighting by column name: {catalog.LightCount} Light rows, " +
             $"{catalog.ZoneLightCount} ZoneLight volumes, {catalog.TimedDataCount} " +

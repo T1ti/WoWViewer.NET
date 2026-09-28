@@ -32,6 +32,9 @@
           </Grid>
           <TextBlock Text="Model viewer lighting uses these ambient and direct light values. The editor viewport uses world lighting."
                      TextWrapping="Wrap" Opacity="0.75" />
+          <CheckBox Content="Disable full-screen glow (3.3.5 ffxGlow)"
+                    IsChecked="{Binding DisableScreenGlow}"
+                    ToolTip.Tip="The 3.3.5 client exposes this effect through the ffxGlow CVar. The viewport toggle uses the same saved setting." />
         </StackPanel>
       </TabItem>
       <TabItem Header="General">

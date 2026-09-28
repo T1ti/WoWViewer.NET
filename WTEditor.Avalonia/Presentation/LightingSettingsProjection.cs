@@ -93,7 +93,13 @@ internal static class LightingSettingsProjection
                     layer.Flags,
                     layer.Opacity))
                 .ToArray()
-                ?? Array.Empty<LightingSkyboxSnapshot>()));
+                ?? Array.Empty<LightingSkyboxSnapshot>())
+        {
+            LegacyCloudEmissiveColor = sky.LegacyCloudEmissiveColor,
+            LegacyCloudBodyColor = sky.LegacyCloudBodyColor,
+            LegacyCloudAmbientColor = sky.LegacyCloudAmbientColor,
+            HasLegacyCloudData = sky.HasLegacyCloudData
+        });
 
     public static WorldLightingSettings ToRenderer(LightingSettingsSnapshot lighting) => new(
         lighting.LightParamId,
