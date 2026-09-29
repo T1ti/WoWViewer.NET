@@ -31,13 +31,13 @@ public sealed class WmoInteriorFogBatchTests
         {
             Vertices =
             [
-                new(-0.2f, -0.2f, height), new(0.2f, -0.2f, height),
-                new(0.2f, 0.2f, height), new(-0.2f, 0.2f, height)
+                new(0.3f, -0.2f, height), new(0.7f, -0.2f, height),
+                new(0.7f, 0.2f, height), new(0.3f, 0.2f, height)
             ],
             Normal = Vector3.UnitZ,
             Distance = -height,
-            Bounds = new BoundingBox(new(-0.2f, -0.2f, height),
-                new(0.2f, 0.2f, height))
+            Bounds = new BoundingBox(new(0.3f, -0.2f, height),
+                new(0.7f, 0.2f, height))
         };
 
         static WorldModelGroupBatches Group(uint flags, WmoPortalLink[] links,
@@ -320,6 +320,93 @@ public sealed class WmoInteriorFogBatchTests
         Assert.IsFalse(WmoPortalVisibility.TryLocateViewerGroup(wmo,
             Matrix4x4.Identity, eye, [true],
             new WmoPortalVisibilityScratch(), out _));
+    }
+
+    [TestMethod]
+    public void NearSideExteriorPortalOverridesInteriorFloor()
+    {
+        var bounds = new BoundingBox(new(-1f), new(1f));
+        var portal = new WmoPortal
+        {
+            Vertices =
+            [
+                new(-0.5f, -0.5f, 0.5f), new(0.5f, -0.5f, 0.5f),
+                new(0.5f, 0.5f, 0.5f), new(-0.5f, 0.5f, 0.5f)
+            ],
+            Normal = Vector3.UnitZ,
+            Distance = -0.5f,
+            Bounds = new BoundingBox(
+                new(-0.5f, -0.5f, 0.5f),
+                new(0.5f, 0.5f, 0.5f))
+        };
+        var wmo = new WorldModel
+        {
+            legacyLighting = true,
+            portalGraphValid = true,
+            portals = [portal],
+            groupBatches =
+            [
+                new WorldModelGroupBatches
+                {
+                    boundingBox = bounds,
+                    mogiBoundingBox = bounds,
+                    raycastVertices =
+                    [
+                        new(-1f, -1f, 0f), new(1f, -1f, 0f),
+                        new(0f, 1f, 0f)
+                    ],
+                    raycastIndices = [0, 1, 2],
+                    portalLinks =
+                    [
+                        new WmoPortalLink
+                        {
+                            PortalIndex = 0,
+                            TargetGroupIndex = 1,
+                            Side = -1
+                        }
+                    ]
+                },
+                new WorldModelGroupBatches
+                {
+                    flags = 0x8,
+                    mogiFlags = 0x8,
+                    boundingBox = bounds,
+                    mogiBoundingBox = bounds,
+                    portalLinks = []
+                }
+            ]
+        };
+        var eye = new Vector3(0f, 0f, 1f);
+        var scratch = new WmoPortalVisibilityScratch();
+
+        Assert.IsFalse(WmoPortalVisibility.TryLocateViewerGroup(wmo,
+            Matrix4x4.Identity, eye, [true, true], scratch, out _));
+        Assert.IsTrue(scratch.PortalViewerOverride);
+        Assert.AreEqual(-1, scratch.PrimaryViewerGroupIndex);
+
+        bool[] visible = new bool[2];
+        Assert.IsTrue(WmoPortalVisibility.TryCompute(wmo,
+            Matrix4x4.Identity, Matrix4x4.Identity, eye, [true, true],
+            visible, [], scratch, out _));
+        CollectionAssert.AreEqual(new[] { false, true }, visible);
+        CollectionAssert.AreEqual(new[] { false, false },
+            scratch.PropagatedGroups);
+
+        wmo.groupBatches[1] = new WorldModelGroupBatches
+        {
+            boundingBox = bounds,
+            mogiBoundingBox = bounds,
+            portalLinks = []
+        };
+        Assert.IsTrue(WmoPortalVisibility.TryLocateViewerGroup(wmo,
+            Matrix4x4.Identity, eye, [true, true], scratch, out var nearGroup));
+        Assert.AreEqual(1, nearGroup);
+        Assert.AreEqual(0, scratch.SecondaryViewerGroupIndex);
+
+        Assert.IsTrue(WmoPortalVisibility.TryLocateViewerGroup(wmo,
+            Matrix4x4.Identity, new Vector3(0f, 0f, 0.55f),
+            [true, true], scratch, out _));
+        Assert.AreEqual(0f, scratch.PrimaryViewerHitDistance);
     }
 
     [TestMethod]
