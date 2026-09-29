@@ -7,6 +7,7 @@ namespace WTEditor.Avalonia.Services;
 
 public sealed class PersistedRenderingSettings
 {
+    public bool UseClientRenderingRules { get; set; }
     public bool IsForegroundFrameRateLimitEnabled { get; set; }
     public bool IsForegroundFrameRateLimitInitialized { get; set; }
     public int ViewportFrameRateLimit { get; set; } = 60;
@@ -48,6 +49,7 @@ public sealed class PersistedRenderingSettings
 
     public RenderingConfiguration ToModel() => new()
     {
+        UseClientRenderingRules = UseClientRenderingRules,
         IsForegroundFrameRateLimitEnabled = IsForegroundFrameRateLimitEnabled,
         IsForegroundFrameRateLimitInitialized = IsForegroundFrameRateLimitInitialized,
         ViewportFrameRateLimit = ViewportFrameRateLimit,
@@ -86,6 +88,7 @@ public sealed class PersistedRenderingSettings
 
     public static PersistedRenderingSettings From(RenderingConfiguration rendering) => new()
     {
+        UseClientRenderingRules = rendering.UseClientRenderingRules,
         IsForegroundFrameRateLimitEnabled = rendering.IsForegroundFrameRateLimitEnabled,
         IsForegroundFrameRateLimitInitialized = rendering.IsForegroundFrameRateLimitInitialized,
         ViewportFrameRateLimit = rendering.ViewportFrameRateLimit,

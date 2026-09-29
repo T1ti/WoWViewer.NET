@@ -116,6 +116,7 @@ namespace WoWRenderLib.Structs
     {
         public readonly uint FileDataID { get; init; }
         public readonly bool LegacyLighting { get; init; }
+        public readonly bool Wrath335 { get; init; }
         public readonly uint AmbientColor { get; init; }
         public readonly ushort Flags { get; init; }
         public readonly BoundingBox BoundingBox { get; init; }
@@ -163,6 +164,7 @@ namespace WoWRenderLib.Structs
         public readonly byte[] vertexBuffer { get; init; }
         public readonly byte[] indiceBuffer { get; init; }
         public readonly ushort[] raycastIndices { get; init; }
+        public readonly WmoBspTree? viewerBsp { get; init; }
         public readonly byte[] collisionVertexBuffer { get; init; }
         public readonly PreppedWMOGroupBatch[] groupBatches { get; init; }
         public readonly int sourceGroupIndex { get; init; }

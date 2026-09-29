@@ -10,6 +10,9 @@
     <TabControl MinHeight="260">
       <TabItem Header="Rendering">
         <StackPanel Margin="8" Spacing="10">
+          <ToggleSwitch OffContent="Editor mode" OnContent="Client mode"
+                        IsChecked="{Binding UseClientRenderingRules}"
+                        ToolTip.Tip="Client mode uses the installed client's rendering rules and CVars. Editor mode uses custom world distances and visibility settings." />
           <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="10">
             <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="Ambient light (R,G,B)" />
             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
@@ -41,10 +44,10 @@
                            Minimum="0" Maximum="3" Increment="1" FormatString="0"
                            ToolTip.Tip="Client SkyCloudLOD CVar: 0 to 3 selects 128 to 1024 pixel procedural cloud textures. Only affects the 3.3.5 renderer." />
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="10" IsEnabled="{Binding UseClientRenderingRules}">
             <TextBlock VerticalAlignment="Center" Text="3.3.5 view distance (farclip)" />
             <NumericUpDown Width="110" Value="{Binding WrathFarClip}"
-                           Minimum="177" Maximum="1277" Increment="110"
+                           Minimum="183.33333" Maximum="1277" Increment="110"
                            FormatString="0.###"
                            ToolTip.Tip="Client farclip CVar in world units. The client applies a map-dependent upper limit." />
             <CheckBox VerticalAlignment="Center" Content="farClipOverride"

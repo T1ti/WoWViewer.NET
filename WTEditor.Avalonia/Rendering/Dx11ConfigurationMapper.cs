@@ -15,6 +15,7 @@ internal static class Dx11ConfigurationMapper
 
     public static RendererSettings ToDx11(this RenderingConfiguration configuration) => new()
     {
+        UseClientRenderingRules = configuration.UseClientRenderingRules,
         TerrainRenderDistance = configuration.TerrainRenderDistance,
         ModelRenderDistance = configuration.ModelRenderDistance,
         AnimationRenderDistancePercent = configuration.AnimationRenderDistancePercent,

@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WoWRenderLib\WoWRenderLib.csproj" />
+    <ProjectReference Include="..\build\ClientShaderTools\ClientShaderTools.csproj" />
   </ItemGroup>
 </Project>

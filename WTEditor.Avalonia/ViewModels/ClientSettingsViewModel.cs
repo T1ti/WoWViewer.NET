@@ -6,6 +6,7 @@ namespace WTEditor.Avalonia.ViewModels;
 
 public partial class ClientSettingsViewModel : ViewModelBase
 {
+    [ObservableProperty] private bool _useClientRenderingRules;
     public IReadOnlyList<string> KeyboardLayouts { get; } = ["Auto", "QWERTY", "AZERTY"];
 
     [ObservableProperty] private string _keyboardLayout;
@@ -26,6 +27,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
     public ClientSettingsViewModel(EditorSettingsSnapshot settings)
     {
         var rendererSettings = settings.Rendering;
+        _useClientRenderingRules = rendererSettings.UseClientRenderingRules;
         _keyboardLayout = ToDisplayName(settings.KeyboardLayout);
         _isForegroundFrameRateLimitEnabled = rendererSettings.IsForegroundFrameRateLimitEnabled;
         _viewportFrameRateLimit = rendererSettings.ViewportFrameRateLimit;
@@ -46,6 +48,7 @@ public partial class ClientSettingsViewModel : ViewModelBase
     {
         Rendering = original.Rendering with
         {
+            UseClientRenderingRules = UseClientRenderingRules,
             IsForegroundFrameRateLimitEnabled = IsForegroundFrameRateLimitEnabled,
             ViewportFrameRateLimit = ViewportFrameRateLimit,
             AmbientColor = new Vector3(AmbientColorR, AmbientColorG, AmbientColorB),

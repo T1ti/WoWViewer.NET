@@ -1,5 +1,9 @@
 # 3.3.5 client lighting port plan
 
+The complete DX9 Shader Model 3.0 audit and reusable shader-cache workflow are
+in [CLIENT_335_RENDERING_ACCURACY_PLAN.md](CLIENT_335_RENDERING_ACCURACY_PLAN.md).
+This lighting ledger remains part of that plan's environment workstream.
+
 ## Goal and reference
 
 Reproduce the visible outdoor and indoor environment produced by the connected
@@ -22,7 +26,7 @@ each area is resolved instead of retaining bulk pseudocode.
 
 - Use the extracted 3.3.5 client shaders at
   `E:\WoWModding\aExtractedClients\WOTLK ClientFiles\shaders` as the primary
-  material-shader reference. The directory contains 592 BLS variants and five
+  material-shader reference. The directory contains 592 BLS containers and five
   WFX effect descriptions. Parse each BLS container, select the matching
   client backend/profile and variant, then compare its constants and
   instructions with the DX11 translation. Keep the chosen shader path,

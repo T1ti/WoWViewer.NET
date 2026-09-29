@@ -103,6 +103,10 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private float _minimumModelScreenSizePixels;
     [ObservableProperty] private float _terrainLodTransitionPixels;
     [ObservableProperty] private float _terrainRenderDistance;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEditorRenderMode))]
+    private bool _useClientRenderingRules;
+    public bool IsEditorRenderMode => !UseClientRenderingRules;
     [ObservableProperty] private float _modelRenderDistance;
     [ObservableProperty] private float _animationRenderDistancePercent;
     [ObservableProperty] private float _particleRenderDistancePercent;
@@ -278,6 +282,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
         _terrainLodTransitionPixels = session.Current.Rendering.TerrainLodTransitionPixels;
         _terrainRenderDistance = session.Current.Rendering.TerrainRenderDistance;
+        _useClientRenderingRules = session.Current.Rendering.UseClientRenderingRules;
         _modelRenderDistance = session.Current.Rendering.ModelRenderDistance;
         _animationRenderDistancePercent = session.Current.Rendering.AnimationRenderDistancePercent;
         _particleRenderDistancePercent = session.Current.Rendering.ParticleRenderDistancePercent;
@@ -385,6 +390,8 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     }
     partial void OnTerrainRenderDistanceChanged(float value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { TerrainRenderDistance = value });
+    partial void OnUseClientRenderingRulesChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { UseClientRenderingRules = value });
     partial void OnModelRenderDistanceChanged(float value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ModelRenderDistance = value });
     partial void OnAnimationRenderDistancePercentChanged(float value) =>
@@ -866,6 +873,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
             WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
             TerrainRenderDistance = configuration.TerrainRenderDistance;
+            UseClientRenderingRules = configuration.UseClientRenderingRules;
             ModelRenderDistance = configuration.ModelRenderDistance;
             AnimationRenderDistancePercent = configuration.AnimationRenderDistancePercent;
             ParticleRenderDistancePercent = configuration.ParticleRenderDistancePercent;

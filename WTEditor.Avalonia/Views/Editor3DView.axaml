@@ -213,6 +213,8 @@
                   <ScrollViewer Grid.Column="1" MaxHeight="620" VerticalScrollBarVisibility="Auto">
                   <StackPanel Spacing="10">
                     <TextBlock Text="ADVANCED RENDERING" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                    <ToggleSwitch OffContent="Editor mode" OnContent="Client mode"
+                                  IsChecked="{Binding UseClientRenderingRules}"/>
                     <TextBlock Text="Navigation" Foreground="#9FB4C6" FontWeight="SemiBold"/>
                     <Grid ColumnDefinitions="*,120" RowDefinitions="Auto" RowSpacing="6">
                       <TextBlock Text="Camera speed" Foreground="#D7E2EC" VerticalAlignment="Center"/>
@@ -223,9 +225,11 @@
                     <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
                       <TextBlock Text="Terrain distance" Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       <NumericUpDown Grid.Column="1" Value="{Binding TerrainRenderDistance}"
+                                     IsEnabled="{Binding IsEditorRenderMode}"
                                      Minimum="100" Maximum="1000000" Increment="500"/>
                       <TextBlock Grid.Row="1" Text="Model distance" Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ModelRenderDistance}"
+                                     IsEnabled="{Binding IsEditorRenderMode}"
                                      Minimum="100" Maximum="1000000" Increment="500"/>
                       <TextBlock Grid.Row="2" Text="Tile loading radius" Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding TileLoadingDistance}"
@@ -251,7 +255,8 @@
                                    Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       </Grid>
                     </Grid>
-                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <Grid ColumnDefinitions="*,120" RowDefinitions="Auto,Auto" RowSpacing="6"
+                          IsEnabled="{Binding IsEditorRenderMode}">
                       <TextBlock Text="Minimum model pixels" Foreground="#D7E2EC" VerticalAlignment="Center"
                                  ToolTip.Tip="Cull models below this projected diameter; 0 disables size culling"/>
                       <NumericUpDown Grid.Column="1" Value="{Binding MinimumModelScreenSizePixels}"

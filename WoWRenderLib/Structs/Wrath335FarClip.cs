@@ -24,8 +24,7 @@ public static class Wrath335FarClip
         var expansionMap = mapId >= OutlandMapId &&
                            mapId != ExpansionExceptionMapIdA &&
                            mapId != ExpansionExceptionMapIdB;
-        // ignore the client's memory check
-        var maximum = (expansionMap /*&& hasMoreThanOneGiBPhysicalMemory*/) ||
+        var maximum = (expansionMap && hasMoreThanOneGiBPhysicalMemory) ||
                       (!expansionMap && overrideEnabled)
             ? ExpandedMaximum : StandardMaximum;
         return Math.Clamp(float.IsFinite(requested) ? requested : Default,

@@ -23,10 +23,12 @@ public partial class SettingsWindow : Window
     //textureFilteringMode = { text = "ANISOTROPIC", minValue = 0, maxValue = 5, valueStep = 1, gameRestart = 1, tooltipOwnerPoint = "TOPLEFT", tooltipRequirement = OPTION_RESTART_REQUIREMENT, },
     //weatherDensity = { text = "WEATHER_DETAIL", minValue = 0, maxValue = 3, valueStep = 1, tooltipOwnerPoint = "TOPLEFT", },
     //componentTextureLevel = { text = "PLAYER_DETAIL", minValue = 8, maxValue = 9, valueStep = 1, tooltipPoint = "BOTTOMRIGHT", tooltipOwnerPoint = "TOPLEFT", gameRestart = 1, tooltipRequirement = OPTION_RESTART_REQUIREMENT, },
+    // checkboxes:
     //specular = { text = "TERRAIN_HIGHLIGHTS", logout = 1, tooltipRequirement = OPTION_LOGOUT_REQUIREMENT, },
     //ffxGlow = { text = "FULL_SCREEN_GLOW", },
     //ffxDeath = { text = "DEATH_EFFECT", },
     //projectedTextures = { text = "PROJECTED_TEXTURES", },
+
     //quality = { text = "", minValue = 1, maxValue = 6, valueStep = 1 },
     // }
 
@@ -42,9 +44,12 @@ public partial class SettingsWindow : Window
     // textureFilteringMode : 5
     // weatherDensity : 3
     // componentTextureLevel : 9
+
+    // checkboxes:
     // specular : 1
     // ffxGlow : 1
     // ffxDeath : 1
     // projectedTextures : 1
+
     // quality : 6 // quality slider (low - ultra...))
 }

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 
 public sealed class RendererSettings
 {
+    public bool UseClientRenderingRules { get; set; }
     // Reference-noon colors from the 3.3.5 client lighting profile. They are
     // stored as linear RGB-style factors and serialized with the other
     // renderer settings so a future settings UI can edit them without a
@@ -62,6 +63,7 @@ public sealed class RendererSettings
 
     public RendererSettings Clone() => new()
     {
+        UseClientRenderingRules = UseClientRenderingRules,
         AmbientColor = AmbientColor,
         DiffuseColor = DiffuseColor,
         TerrainRenderDistance = TerrainRenderDistance,

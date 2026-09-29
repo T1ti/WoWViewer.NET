@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using WoWRenderLib.DX11.Cache;
 using WoWRenderLib.DX11.Editing;
 using WoWRenderLib.DX11.Managers;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Profiling;
 using WoWRenderLib.DX11.Streaming;
@@ -183,6 +184,7 @@ namespace WoWRenderLib.DX11
         private static readonly SemaphoreSlim ContentInitializationGate = new(1, 1);
         private const ulong ClientExpandedMemoryThresholdBytes = 1024UL * 1024UL * 1024UL;
         private static readonly bool ClientExpandedMemoryAvailable = CheckClientPhysicalMemory();
+        private bool _isWrath335ReferenceClient;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct MemoryStatusEx
@@ -977,6 +979,8 @@ namespace WoWRenderLib.DX11
                         fileSystem.Version.Minor == 3 &&
                         fileSystem.Version.Patch == 5;
                     sceneManager.EnableDayNightSkyColors = sceneManager.EnableClientGlow;
+                    _isWrath335ReferenceClient = sceneManager.EnableClientGlow &&
+                        fileSystem.Kind == StorageKind.Mpq && fileSystem.Version.Build == 12340;
                     if (sceneManager.EnableDayNightSkyColors)
                     {
                         sceneManager.ConfigureWrathStarModel(
@@ -1087,6 +1091,7 @@ namespace WoWRenderLib.DX11
 
                     sceneManager.EnableClientGlow = false;
                     sceneManager.EnableDayNightSkyColors = false;
+                    _isWrath335ReferenceClient = false;
                     sceneManager.ConfigureWrathStarModel(0);
                     sceneManager.ConfigureWrathGlareTextures(0, 0);
                     sceneManager.ConfigureWrathCelestialTextures(0, 0, 0);
@@ -1226,27 +1231,15 @@ namespace WoWRenderLib.DX11
             if (activeCamera == null || sceneManager == null)
                 return;
 
-            if (sceneManager.EnableDayNightSkyColors)
-            {
-                var farClip = Wrath335FarClip.Validate(
-                    Settings.WrathFarClip, _currentMapId,
-                    Settings.WrathFarClipOverride,
-                    ClientExpandedMemoryAvailable);
-                activeCamera.NearPlane = Wrath335FarClip.FixedNearClip;
-                activeCamera.FarPlane = farClip;
-                sceneManager.TerrainRenderDistance = MathF.Min(
-                    Settings.TerrainRenderDistance, farClip);
-                sceneManager.ModelRenderDistance = MathF.Min(
-                    Settings.ModelRenderDistance, farClip);
-            }
-            else
-            {
-                activeCamera.NearPlane = 1f;
-                activeCamera.FarPlane = MathF.Max(
-                    Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
-                sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
-                sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
-            }
+            var rules = WorldRenderingRules.Resolve(Settings,
+                _isWrath335ReferenceClient, _currentMapId, ClientExpandedMemoryAvailable);
+            activeCamera.NearPlane = rules.NearPlane;
+            activeCamera.FarPlane = rules.FarPlane;
+            sceneManager.TerrainRenderDistance = rules.TerrainDistance;
+            sceneManager.ModelRenderDistance = rules.ModelDistance;
+            sceneManager.EnableWmoPortalCulling = rules.PortalCulling;
+            sceneManager.MinimumModelScreenSizePixels = rules.MinimumModelPixels;
+            sceneManager.TerrainLodTransitionPixels = rules.TerrainLodPixels;
         }
 
         public void NavigateTo(

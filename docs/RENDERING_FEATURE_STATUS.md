@@ -21,6 +21,44 @@ repository smoke suite; it does not imply parity with every WoW client era.
 Other WoW builds are not yet assigned a rendering-parity status. The matrix
 records known coverage, not a claim that every feature below is era-correct.
 
+## 12340 CPU scene audit (2026-09-30)
+
+The [extended rendering plan](CLIENT_335_RENDERING_ACCURACY_PLAN.md) covers
+all CPU scene preparation and render submission alongside DX9 SM3 shaders.
+The [CPU dossier](reference/client-335/CPU_SCENE_AUDIT.md) records 48 cached
+complete function decompilations, 26 scene roots, 271 direct relationships,
+and 378 call sites. Recursive closure and ten indirect/global-pointer targets
+remain open.
+
+The 3.3.5.12340 MPQ camera query now traverses wowlib's decoded WMO BSP,
+preserving reached leaves, face identity/order, duplicate suppression, the
+8192-face cap, and the default digest-leaf rejection/fallback rules. CPU data
+is prepared once and traversal scratch is reused. Other clients keep their
+existing query path. A build-scoped per-placement caller now uses exact geometry
+caps, last equal group hits, the strict normalized portal tolerance, native
+polygon projection/boundaries, exterior rejection and one winning geometry seed.
+This is a partial port: native placement pools/order, x87 boundary rounding,
+entity MOCV queries, propagated lighting and client captures remain open.
+The full smoke batch passed 428 tests, including 21 added CPU behavioral cases
+and four mode/persistence cases.
+
+The persistent Client/Editor toggle separates effective Wrath CVar distances
+from custom editor distances. Client mode currently applies recovered farclip
+validation (including memory/map rules), near clip and portal culling, and
+removes editor pixel-culling/terrain-LOD thresholds. Editor values survive mode
+switches. [render-cvars.csv](reference/client-335/render-cvars.csv) records the
+remaining option/consumer frontier. Full Client-mode parity, native LOD/fades,
+all CVar effects and explicit whole-map Editor demand remain open.
+
+The client frame audit also confirms liquid-dependent ordering of M2 passes
+1/2 and a common sorted mesh/ribbon/particle/callback list. The editor's
+current asset/effect loops and water order do not yet reproduce that system.
+Next CPU batches establish viewer-liquid/plane selection, alpha/eligibility
+and animation/bounds policies, then move M2 submission into a dedicated
+renderer before wiring the recovered frame/element queues. Terrain, WMO,
+detail, shadow, sky/weather, FFX, and resource preparation remain required
+workstreams with their own CPU-to-shader contracts.
+
 ## WMO CPU/GPU audit (2026-09-25)
 
 The 3.3.5 path uses Wisp for group preprocessing and draw state. SIDN uses
@@ -74,7 +112,8 @@ TODO(WMO):
 4. Add WMO directional shadow receiving and finish interior/portal fog. MOMT
    `Unfogged` bypasses 3.3.5 distance fog. The camera WMO now supplies blended
    distances/rate to the staged fog bank and current color to its interior WMO
-   batches; client BSP and exact propagated group mode remain. WMO specular remains disabled until its material
+   batches. The 12340 viewer BSP traversal is now ported; full viewer caller,
+   entity lighting queries, and exact propagated group mode remain. WMO specular remains disabled until its material
    program and intensity have a reliable reference.
 5. Replace the generic magenta fallback for absent optional material stages
    with per-shader neutral textures or a decoded shader fallback. A missing

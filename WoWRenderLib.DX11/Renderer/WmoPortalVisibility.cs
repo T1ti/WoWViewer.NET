@@ -111,7 +111,7 @@ public static class WmoPortalVisibility
             out var nearestViewerHit,
             out var foundViewerHit);
 
-        if (scratch.PortalViewerOverride)
+        if (scratch.PortalViewerOverride || wmo.wrath335)
         {
             for (var viewer = 0; viewer < 2; viewer++)
             {
@@ -120,10 +120,12 @@ public static class WmoPortalVisibility
                     : scratch.SecondaryViewerGroupIndex;
                 if (groupIndex < 0 || !enabledGroups[groupIndex])
                     continue;
-                var flags = wmo.groupBatches[groupIndex].mogiFlags;
+                var flags = scratch.PortalViewerOverride
+                    ? wmo.groupBatches[groupIndex].mogiFlags
+                    : wmo.groupBatches[groupIndex].flags;
                 if ((flags & ExteriorFlag) != 0)
                     continue;
-                if ((flags & ExteriorLightingFlag) == 0)
+                if (wmo.wrath335 || (flags & ExteriorLightingFlag) == 0)
                     viewerInInterior = true;
                 Traverse(groupIndex, -1, 0, fullView, true, wmo, eyeLocal,
                     enabledGroups, visibleGroups, visibleBatches, scratch,
@@ -197,6 +199,13 @@ public static class WmoPortalVisibility
         float maximumViewerDistance, bool allowBoundsFallback,
         out float nearestViewerHit, out bool foundViewerHit)
     {
+        if (wmo.wrath335 && wmo.legacyLighting)
+        {
+            Wrath335WmoViewerQuery.Locate(wmo, modelMatrix, eyeWorld,
+                enabledGroups, scratch, maximumViewerDistance,
+                out nearestViewerHit, out foundViewerHit);
+            return;
+        }
         nearestViewerHit = float.IsNaN(maximumViewerDistance)
             ? ClientViewerRayLength
             : Math.Clamp(maximumViewerDistance, 0f, ClientViewerRayLength);
@@ -218,13 +227,25 @@ public static class WmoPortalVisibility
                     nearestViewerHit + ClientViewerHitTie)
                 continue;
 
-            if (canRaycast && group.raycastVertices is { Length: > 0 } vertices &&
-                group.raycastIndices is { Length: > 2 } indices)
+            if (group.raycastVertices is { Length: > 0 } vertices &&
+                (group.viewerBsp is not null || group.raycastIndices is { Length: > 2 }))
             {
-                if (TriangleMeshRaycaster.TryIntersectTriangles(viewerRay,
-                    vertices, indices, nearestViewerHit + ClientViewerHitTie,
-                    out var hitDistance,
-                    wmo.legacyLighting ? ClientViewerFaceEdgeTolerance : 0f))
+                float hitDistance;
+                bool foundHit;
+                if (wmo.legacyLighting && group.viewerBsp is { } bsp)
+                {
+                    foundHit = Wrath335WmoBspRaycaster.TryIntersect(viewerRay,
+                        vertices, bsp, group.boundingBox, scratch.ViewerBsp,
+                        nearestViewerHit + ClientViewerHitTie, ClientViewerRayLength,
+                        out var bspHit);
+                    hitDistance = bspHit.WorldDistance;
+                }
+                else
+                    foundHit = TriangleMeshRaycaster.TryIntersectTriangles(viewerRay,
+                        vertices, group.raycastIndices ?? [],
+                        nearestViewerHit + ClientViewerHitTie, out hitDistance,
+                        wmo.legacyLighting ? ClientViewerFaceEdgeTolerance : 0f);
+                if (foundHit)
                 {
                     scratch.ViewerHitDistances[groupIndex] = hitDistance;
                     nearestViewerHit = MathF.Min(nearestViewerHit, hitDistance);
@@ -673,6 +694,7 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
 /// <summary>Reusable camera and portal projection storage owned by one WMO placement.</summary>
 public sealed class WmoPortalVisibilityScratch
 {
+    internal WmoBspRayScratch ViewerBsp { get; } = new();
     internal int PrimaryViewerGroupIndex { get; set; } = -1;
     internal int SecondaryViewerGroupIndex { get; set; } = -1;
     internal float PrimaryViewerHitDistance { get; set; } = float.PositiveInfinity;

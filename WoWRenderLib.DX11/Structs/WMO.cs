@@ -14,6 +14,7 @@ namespace WoWRenderLib.DX11.Structs
         public readonly uint collisionVertexCount { get; init; }
         public readonly Vector3[] raycastVertices { get; init; }
         public readonly ushort[] raycastIndices { get; init; }
+        public readonly WmoBspTree? viewerBsp { get; init; }
         public readonly uint verticeCount { get; init; }
         public readonly string groupName { get; init; }
         public readonly string mogiGroupName { get; init; }
@@ -49,6 +50,7 @@ namespace WoWRenderLib.DX11.Structs
     {
         public uint rootWMOFileDataID;
         public bool legacyLighting;
+        public bool wrath335;
         public WmoFogVolume[] fogs;
         public uint ambientColor;
         public ushort flags;

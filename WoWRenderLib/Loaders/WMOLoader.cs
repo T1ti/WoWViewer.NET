@@ -15,6 +15,9 @@ public static class WMOLoader
     public static PreppedWMO ParseWMO(uint fileDataId, string fileName = "")
     {
         var fileSystem = WowlibFileSystem.Current;
+        var wrath335 = fileSystem.Kind == StorageKind.Mpq &&
+            fileSystem.Version.Major == 3 && fileSystem.Version.Minor == 3 &&
+            fileSystem.Version.Patch == 5 && fileSystem.Version.Build == 12340;
         WorldLiquidMaterialCatalog.Shared.Configure(fileSystem);
         if (!WowlibFileSystem.AssetExists(fileSystem, fileDataId))
             throw new FileNotFoundException(
@@ -102,6 +105,12 @@ public static class WMOLoader
             }
 
             var indices = body.Indices.AsSpan().ToArray();
+            // Retain the decoded tree and original face ordinals for the 12340
+            // camera query; flattening MOBR loses traversal and tie order.
+            var viewerBsp = wrath335
+                ? ReadViewerBsp(body.BspNodes.AsDataSpan(),
+                    body.BspFaceIndices.AsSpan(), indices, body.Polys.AsDataSpan())
+                : null;
             var raycastIndices = fileSystem.Kind == StorageKind.Mpq
                 ? ReadViewerRayIndices(groupBytes, indices)
                 : indices;
@@ -192,6 +201,7 @@ public static class WMOLoader
                 vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(),
                 indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray(),
                 raycastIndices = raycastIndices,
+                viewerBsp = viewerBsp,
                 collisionVertexBuffer = collisionVertices,
                 groupBatches = [.. renderBatches]
             });
@@ -206,6 +216,7 @@ public static class WMOLoader
         {
             FileDataID = fileDataId,
             LegacyLighting = fileSystem.Kind == StorageKind.Mpq,
+            Wrath335 = wrath335,
             AmbientColor = PackColor(rootHeader.AmbientColor),
             Flags = rootHeader.Flags,
             Fogs = fogs,
@@ -219,6 +230,25 @@ public static class WMOLoader
             PortalReferences = portalReferences,
             SourceGroupCount = groups.Count
         };
+    }
+
+    internal static WmoBspTree ReadViewerBsp(
+        ReadOnlySpan<Formats.WMO.Group.Chunks.CAaBspNode.Data> sourceNodes,
+        ReadOnlySpan<ushort> faceReferences, ushort[] indices,
+        ReadOnlySpan<Formats.WMO.Group.Chunks.SmoPoly.Data> polys)
+    {
+        var nodes = new WmoBspNode[sourceNodes.Length];
+        for (var index = 0; index < nodes.Length; index++)
+        {
+            var node = sourceNodes[index];
+            nodes[index] = new(node.Flags, unchecked((ushort)node.NegChild),
+                unchecked((ushort)node.PosChild), node.NFaces, node.FaceStart,
+                node.PlaneDist);
+        }
+        var faceFlags = new byte[polys.Length];
+        for (var index = 0; index < faceFlags.Length; index++)
+            faceFlags[index] = polys[index].Flags;
+        return new(nodes, faceReferences.ToArray(), indices, faceFlags);
     }
 
     private static ParsedWorldLiquid ReadLiquid(

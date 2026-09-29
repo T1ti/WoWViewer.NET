@@ -31,6 +31,7 @@ public sealed record RenderingConfiguration
     public const float DefaultWrathFarClip = 350f;
     public const float MinimumWrathFarClip = 183.33333f;
     public const float MaximumWrathFarClip = 1583.3334f;
+    public bool UseClientRenderingRules { get; init; }
     public bool IsForegroundFrameRateLimitEnabled { get; init; }
     public bool IsForegroundFrameRateLimitInitialized { get; init; }
     public int ViewportFrameRateLimit { get; init; } = 60;
