@@ -48,7 +48,8 @@ internal static class TriangleMeshRaycaster
         ReadOnlySpan<Vector3> vertices,
         ReadOnlySpan<ushort> indices,
         float maximumWorldDistance,
-        out float worldDistance)
+        out float worldDistance,
+        float edgeTolerance = 0f)
     {
         worldDistance = maximumWorldDistance;
         var hit = false;
@@ -67,7 +68,8 @@ internal static class TriangleMeshRaycaster
                     vertices[i0],
                     vertices[i1],
                     vertices[i2],
-                    out var localDistance))
+                    out var localDistance,
+                    edgeTolerance))
             {
                 continue;
             }
@@ -90,7 +92,8 @@ internal static class TriangleMeshRaycaster
         Vector3 v0,
         Vector3 v1,
         Vector3 v2,
-        out float distance)
+        out float distance,
+        float edgeTolerance)
     {
         distance = 0f;
         var edge1 = v1 - v0;
@@ -103,12 +106,12 @@ internal static class TriangleMeshRaycaster
         var inverseDeterminant = 1f / determinant;
         var originOffset = ray.Origin - v0;
         var u = Vector3.Dot(originOffset, perpendicular) * inverseDeterminant;
-        if (u < 0f || u > 1f)
+        if (u < -edgeTolerance || u > 1f + edgeTolerance)
             return false;
 
         var perpendicularOffset = Vector3.Cross(originOffset, edge1);
         var v = Vector3.Dot(ray.Direction, perpendicularOffset) * inverseDeterminant;
-        if (v < 0f || u + v > 1f)
+        if (v < -edgeTolerance || u + v > 1f + edgeTolerance)
             return false;
 
         distance = Vector3.Dot(edge2, perpendicularOffset) * inverseDeterminant;

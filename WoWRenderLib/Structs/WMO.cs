@@ -162,6 +162,7 @@ namespace WoWRenderLib.Structs
         public readonly float boundingRadius { get; init; }
         public readonly byte[] vertexBuffer { get; init; }
         public readonly byte[] indiceBuffer { get; init; }
+        public readonly ushort[] raycastIndices { get; init; }
         public readonly byte[] collisionVertexBuffer { get; init; }
         public readonly PreppedWMOGroupBatch[] groupBatches { get; init; }
         public readonly int sourceGroupIndex { get; init; }

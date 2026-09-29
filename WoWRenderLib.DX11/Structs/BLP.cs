@@ -8,6 +8,7 @@ namespace WoWRenderLib.DX11.Structs
         public byte[] PixelData;
         public int Width;
         public int Height;
+        public byte AlphaDepth;
         public bool IsCompressed;
         public Format CompressedFormat;
         public List<MipLevel>? MipLevels;

@@ -102,6 +102,9 @@ public static class WMOLoader
             }
 
             var indices = body.Indices.AsSpan().ToArray();
+            var raycastIndices = fileSystem.Kind == StorageKind.Mpq
+                ? ReadViewerRayIndices(groupBytes, indices)
+                : indices;
             var collisionVertices = ReadCollisionVertexBuffer(groupBytes, vertices, indices);
             if (groupBytes.Length == 0)
             {
@@ -120,7 +123,11 @@ public static class WMOLoader
                 var materialId = batch is Formats.WMO.Group.Chunks.WMOBatchLegionPlus modern && (batch.Flags & 2) != 0
                     ? modern.MaterialIdLarge
                     : batch.MaterialId;
-                var hasBounds = TryGetBatchBounds(indices, vertices, batch.StartIndex, batch.Count, out var batchBounds);
+                BoundingBox batchBounds;
+                var hasBounds = fileSystem.Kind == StorageKind.Mpq &&
+                    batch is Formats.WMO.Group.Chunks.WMOBatchVanillaToWod legacyBatch
+                    ? TryGetClientBatchBounds(legacyBatch, out batchBounds)
+                    : TryGetBatchBounds(indices, vertices, batch.StartIndex, batch.Count, out batchBounds);
                 renderBatches.Add(new PreppedWMOGroupBatch
                 {
                     FirstFace = batch.StartIndex,
@@ -184,6 +191,7 @@ public static class WMOLoader
                 boundingBox = new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
                 vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(),
                 indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray(),
+                raycastIndices = raycastIndices,
                 collisionVertexBuffer = collisionVertices,
                 groupBatches = [.. renderBatches]
             });
@@ -606,6 +614,36 @@ public static class WMOLoader
         return BuildCollisionVertexBuffer(records, modern, vertices, indices);
     }
 
+    internal static ushort[] ReadViewerRayIndices(
+        ReadOnlySpan<byte> groupBytes, ushort[] indices)
+    {
+        const uint mobr = ('M' << 24) | ('O' << 16) | ('B' << 8) | 'R';
+        var offsets = FindGroupChunkPayloads(groupBytes, mobr, 0, sizeof(ushort));
+        if (offsets.Count == 0)
+            return indices;
+
+        // CMapObjGroup::BspWalkRay visits MOBN leaves and tests only their MOBR
+        // face references. Retain that face set even though the DX11 query does
+        // not yet reproduce the client's BSP traversal order.
+        var offset = offsets[0];
+        var bytes = BinaryPrimitives.ReadInt32LittleEndian(groupBytes.Slice(offset - 4, 4));
+        var references = MemoryMarshal.Cast<byte, ushort>(groupBytes.Slice(offset, bytes));
+        var included = new bool[indices.Length / 3];
+        var selected = new List<ushort>(Math.Min(references.Length, included.Length) * 3);
+        foreach (var face in references)
+        {
+            if (face >= included.Length || included[face])
+                continue;
+            included[face] = true;
+            var first = face * 3;
+            selected.Add(indices[first]);
+            selected.Add(indices[first + 1]);
+            selected.Add(indices[first + 2]);
+        }
+
+        return [.. selected];
+    }
+
     private static byte[] BuildCollisionVertexBuffer(
         ReadOnlySpan<byte> records,
         bool modern,
@@ -783,6 +821,24 @@ public static class WMOLoader
             };
         }
         return result;
+    }
+
+    private static bool TryGetClientBatchBounds(
+        Formats.WMO.Group.Chunks.WMOBatchVanillaToWod batch, out BoundingBox bounds)
+    {
+        // CMapObj::CullBatch passes these six signed MOBA shorts directly to
+        // the frustum culler. Recomputing tight vertex bounds changes which
+        // edge batches survive a portal's clipped view.
+        var min = batch.BoxMin;
+        var max = batch.BoxMax;
+        bounds = default;
+        if (min.Count != 3 || max.Count != 3 ||
+            min[0] > max[0] || min[1] > max[1] || min[2] > max[2])
+            return false;
+        bounds = new BoundingBox(
+            new Vector3(min[0], min[1], min[2]),
+            new Vector3(max[0], max[1], max[2]));
+        return true;
     }
 
     private static bool TryGetBatchBounds(ReadOnlySpan<ushort> indices, ReadOnlySpan<WMOVertex> vertices,

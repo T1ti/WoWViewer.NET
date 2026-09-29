@@ -479,13 +479,31 @@ namespace WoWRenderLib.DX11.Managers
             }
         }
 
-        private bool TryRaycastTerrainLocked(Ray ray, out TerrainRayHit closestHit)
+        private float GetWmoViewerTerrainRayLimit(Vector3 eyeWorld)
+        {
+            // CWorldScene::LocateViewer3 stops its 1760-unit downward WMO ray
+            // at the first terrain intersection, even when terrain rendering
+            // is disabled or its chunks are outside the render-distance CVar.
+            lock (SceneObjectLock)
+            {
+                return TryRaycastTerrainLocked(
+                    new Ray(eyeWorld, -Vector3.UnitZ), out var terrainHit,
+                    includeUnrenderedTerrain: true,
+                    maximumDistance: WmoPortalVisibility.ClientViewerRayLength)
+                    ? Vector3.Distance(eyeWorld, terrainHit.WorldPosition)
+                    : WmoPortalVisibility.ClientViewerRayLength;
+            }
+        }
+
+        private bool TryRaycastTerrainLocked(Ray ray, out TerrainRayHit closestHit,
+            bool includeUnrenderedTerrain = false,
+            float maximumDistance = float.MaxValue)
         {
             closestHit = default;
-            if (!RenderADT)
+            if (!RenderADT && !includeUnrenderedTerrain)
                 return false;
 
-            var closestDistance = float.MaxValue;
+            var closestDistance = maximumDistance;
 
             foreach (var adt in adtContainers)
             {
@@ -500,7 +518,8 @@ namespace WoWRenderLib.DX11.Managers
                     Vector3.Transform(ray.Origin, inverseModel),
                     Vector3.Normalize(Vector3.TransformNormal(ray.Direction, inverseModel)));
                 var terrain = adt.Terrain;
-                if (!ScreenSpaceCulling.IntersectsRenderDistance(
+                if (!includeUnrenderedTerrain &&
+                    !ScreenSpaceCulling.IntersectsRenderDistance(
                         ray.Origin,
                         terrain.terrainBoundingSphere.Center,
                         terrain.terrainBoundingSphere.Radius,
@@ -513,7 +532,8 @@ namespace WoWRenderLib.DX11.Managers
                 for (var chunkIndex = 0; chunkIndex < terrain.chunkBounds.Length; chunkIndex++)
                 {
                     var chunkSphere = terrain.chunkBoundingSpheres[chunkIndex];
-                    if (!ScreenSpaceCulling.IntersectsRenderDistance(
+                    if (!includeUnrenderedTerrain &&
+                        !ScreenSpaceCulling.IntersectsRenderDistance(
                             ray.Origin,
                             chunkSphere.Center,
                             chunkSphere.Radius,
@@ -528,7 +548,7 @@ namespace WoWRenderLib.DX11.Managers
                 }
             }
 
-            return closestDistance < float.MaxValue;
+            return closestDistance < maximumDistance;
         }
 
         private static void TryRaycastTerrainChunk(
@@ -571,16 +591,18 @@ namespace WoWRenderLib.DX11.Managers
                         terrain.vertices[i0].Position,
                         terrain.vertices[i1].Position,
                         terrain.vertices[i2].Position,
-                        out var distance,
-                        out var localPosition,
-                        out var triangleU,
-                        out var triangleV) ||
-                    distance >= closestDistance)
+                    out _,
+                    out var localPosition,
+                    out var triangleU,
+                    out var triangleV))
                 {
                     continue;
                 }
 
                 var worldPosition = Vector3.Transform(localPosition, candidate.ModelMatrix);
+                var worldDistance = Vector3.Distance(worldRay.Origin, worldPosition);
+                if (worldDistance >= closestDistance)
+                    continue;
                 var localNormal = Vector3.Normalize(Vector3.Cross(
                     terrain.vertices[i1].Position - terrain.vertices[i0].Position,
                     terrain.vertices[i2].Position - terrain.vertices[i0].Position));
@@ -590,7 +612,7 @@ namespace WoWRenderLib.DX11.Managers
                 if (worldNormal.Z < 0f)
                     worldNormal = -worldNormal;
 
-                closestDistance = Vector3.Distance(worldRay.Origin, worldPosition);
+                closestDistance = worldDistance;
                 closestHit = new TerrainRayHit(
                     candidate.Container,
                     chunkIndex,

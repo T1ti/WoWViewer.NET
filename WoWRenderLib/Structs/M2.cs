@@ -20,7 +20,7 @@ namespace WoWRenderLib.Structs
         public Vector3 lightDirection;
         public float alphaRef;
         public float blendMode;
-        public int unfogged;
+        public int fogMode;
         public Vector2 _pad;
         public Vector3 ambientColor;
         public float globalOpacity;

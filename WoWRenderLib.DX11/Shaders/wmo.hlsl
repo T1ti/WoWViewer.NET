@@ -515,8 +515,8 @@ float4 PS_Main(VSOut i) : SV_Target
         finalOpacity = 1.0f;
 
     // TODO(WMO): Wisp applies directional shadow visibility before fog; this
-    // pass currently has neither a WMO shadow receiver nor the material's
-    // Unfogged (MOMT 0x2) fog selection. Add both with client-version scope.
+    // pass currently has no WMO shadow receiver. The CPU selects MOMT 0x2 fog
+    // behavior by 3.3.5 WMO batch category before this pixel shader runs.
     float3 finalRgb = matDiffuse * lighting + spec + emissive;
     // Noggit reference: finalRgb += sidnColor for every SIDN batch. Legacy
     // 3.3.5 uses Wisp's texture-tinted vertex c29 above; modern rendering

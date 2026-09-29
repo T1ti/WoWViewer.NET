@@ -22,9 +22,32 @@ public static class WmoPortalVisibility
     private const float ClientProjectedWMinimum = 0.0001f;
     internal const float ClientRectDegeneracy = 0.001f;
     private const float BoundsTolerance = 0.0001f;
-    private const float ClientViewerRayLength = 1760f;
+    internal const float ClientViewerRayLength = 1760f;
     private const float ClientViewerHitTie = 0.0001f;
+    private const float ClientViewerFaceEdgeTolerance = 0.002f;
     private const uint ClientViewerExcludedFlags = 0x410080;
+
+    /// <summary>Resolve the camera's WMO group without running portal culling.</summary>
+    public static bool TryLocateViewerGroup(
+        in WorldModel wmo,
+        in Matrix4x4 modelMatrix,
+        Vector3 eyeWorld,
+        ReadOnlySpan<bool> enabledGroups,
+        WmoPortalVisibilityScratch scratch,
+        out int viewerGroupIndex,
+        float maximumViewerDistance = ClientViewerRayLength)
+    {
+        viewerGroupIndex = -1;
+        if (wmo.groupBatches == null ||
+            enabledGroups.Length != wmo.groupBatches.Length)
+            return false;
+        scratch.PrepareViewer(wmo.groupBatches.Length);
+        LocateViewerGroups(wmo, modelMatrix, eyeWorld,
+            enabledGroups, scratch, maximumViewerDistance,
+            allowBoundsFallback: false, out _, out _);
+        viewerGroupIndex = scratch.PrimaryViewerGroupIndex;
+        return viewerGroupIndex >= 0;
+    }
 
     public static bool TryCompute(
         in WorldModel wmo,
@@ -35,10 +58,11 @@ public static class WmoPortalVisibility
         Span<bool> visibleGroups,
         Span<bool> visibleDoodads,
         WmoPortalVisibilityScratch scratch,
-        out int traversedPortalReferences) =>
+        out int traversedPortalReferences,
+        float maximumViewerDistance = ClientViewerRayLength) =>
         TryCompute(wmo, modelMatrix, viewProjection, eyeWorld, enabledGroups,
             visibleGroups, visibleDoodads, Span<bool>.Empty, scratch,
-            out traversedPortalReferences);
+            out traversedPortalReferences, maximumViewerDistance);
 
     public static bool TryCompute(
         in WorldModel wmo,
@@ -50,7 +74,8 @@ public static class WmoPortalVisibility
         Span<bool> visibleDoodads,
         Span<bool> visibleBatches,
         WmoPortalVisibilityScratch scratch,
-        out int traversedPortalReferences)
+        out int traversedPortalReferences,
+        float maximumViewerDistance = ClientViewerRayLength)
     {
         traversedPortalReferences = 0;
         if (!wmo.portalGraphValid ||
@@ -74,53 +99,29 @@ public static class WmoPortalVisibility
         var exhaustedBudget = false;
         var fullView = WmoPortalRect.Full;
 
-        // The client resolves viewer groups with a downward geometry ray. Its
-        // BSP and terrain occlusion are not available here; testing the loaded
-        // triangle mesh resolves overlapping group bounds without a new mesh.
+        // The client limits the downward WMO query to the nearest terrain hit.
+        // Legacy groups require a triangle hit; bounds alone never locate a
+        // viewer in the 3.3.5 client. Keep the previous fallback for modern WMOs.
         var viewerInInterior = false;
-        var nearestViewerHit = ClientViewerRayLength;
-        var foundViewerHit = false;
-        var canRaycast = TriangleMeshRaycaster.TryCreateContext(
-            new Ray(eyeWorld, -Vector3.UnitZ), modelMatrix, out var viewerRay);
-        for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
-        {
-            var group = wmo.groupBatches[groupIndex];
-            if (!enabledGroups[groupIndex] ||
-                (group.flags & AlwaysDrawFlag) != 0 ||
-                (wmo.legacyLighting && (group.flags & ClientViewerExcludedFlags) != 0) ||
-                !Contains(group.boundingBox, eyeLocal))
-                continue;
-
-            if (canRaycast && group.raycastVertices is { Length: > 0 } vertices &&
-                group.raycastIndices is { Length: > 2 } indices)
-            {
-                if (TriangleMeshRaycaster.TryIntersectTriangles(viewerRay,
-                    vertices, indices, nearestViewerHit + ClientViewerHitTie,
-                    out var hitDistance))
-                {
-                    scratch.ViewerHitDistances[groupIndex] = hitDistance;
-                    nearestViewerHit = MathF.Min(nearestViewerHit, hitDistance);
-                    foundViewerHit = true;
-                }
-            }
-            else
-            {
-                scratch.ViewerHitDistances[groupIndex] = -1f;
-            }
-        }
+        LocateViewerGroups(wmo, modelMatrix, eyeWorld,
+            enabledGroups, scratch, maximumViewerDistance,
+            allowBoundsFallback: !wmo.legacyLighting,
+            out var nearestViewerHit,
+            out var foundViewerHit);
 
         for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
         {
             var distance = scratch.ViewerHitDistances[groupIndex];
-            if (distance < 0f ||
-                (foundViewerHit && distance <= nearestViewerHit + ClientViewerHitTie))
+            if ((!foundViewerHit && distance < 0f) ||
+                (foundViewerHit && distance >= 0f &&
+                 distance <= nearestViewerHit + ClientViewerHitTie))
             {
                 var flags = wmo.groupBatches[groupIndex].flags;
                 if ((flags & ExteriorFlag) != 0)
                     continue;
                 if ((flags & (ExteriorFlag | ExteriorLightingFlag)) == 0)
                     viewerInInterior = true;
-                Traverse(groupIndex, -1, 0, fullView, wmo, eyeLocal,
+                Traverse(groupIndex, -1, 0, fullView, true, wmo, eyeLocal,
                     enabledGroups, visibleGroups, visibleBatches, scratch,
                     budget, ref traversedPortalReferences, ref exhaustedBudget);
             }
@@ -140,7 +141,7 @@ public static class WmoPortalVisibility
                     !IntersectsRect(group.mogiBoundingBox, scratch.LocalToClip, fullView))
                     continue;
 
-                Traverse(groupIndex, -1, 0, fullView, wmo, eyeLocal, enabledGroups,
+                Traverse(groupIndex, -1, 0, fullView, false, wmo, eyeLocal, enabledGroups,
                     visibleGroups, visibleBatches, scratch, budget,
                     ref traversedPortalReferences, ref exhaustedBudget);
             }
@@ -166,11 +167,83 @@ public static class WmoPortalVisibility
         return true;
     }
 
+    private static void LocateViewerGroups(in WorldModel wmo,
+        in Matrix4x4 modelMatrix, Vector3 eyeWorld,
+        ReadOnlySpan<bool> enabledGroups, WmoPortalVisibilityScratch scratch,
+        float maximumViewerDistance, bool allowBoundsFallback,
+        out float nearestViewerHit, out bool foundViewerHit)
+    {
+        nearestViewerHit = float.IsNaN(maximumViewerDistance)
+            ? ClientViewerRayLength
+            : Math.Clamp(maximumViewerDistance, 0f, ClientViewerRayLength);
+        foundViewerHit = false;
+        var canRaycast = TriangleMeshRaycaster.TryCreateContext(
+            new Ray(eyeWorld, -Vector3.UnitZ), modelMatrix, out var viewerRay);
+        for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+        {
+            var group = wmo.groupBatches[groupIndex];
+            if (!enabledGroups[groupIndex] ||
+                (group.flags & AlwaysDrawFlag) != 0 ||
+                (wmo.legacyLighting && (group.flags & ClientViewerExcludedFlags) != 0) ||
+                !canRaycast ||
+                !IntersectionTests.RayIntersectsBox(viewerRay.LocalRay,
+                    wmo.legacyLighting ? group.mogiBoundingBox : group.boundingBox,
+                    out var boundDistance) ||
+                Vector3.Distance(eyeWorld,
+                    Vector3.Transform(viewerRay.LocalRay.GetPoint(boundDistance), modelMatrix)) >
+                    nearestViewerHit + ClientViewerHitTie)
+                continue;
+
+            if (canRaycast && group.raycastVertices is { Length: > 0 } vertices &&
+                group.raycastIndices is { Length: > 2 } indices)
+            {
+                if (TriangleMeshRaycaster.TryIntersectTriangles(viewerRay,
+                    vertices, indices, nearestViewerHit + ClientViewerHitTie,
+                    out var hitDistance,
+                    wmo.legacyLighting ? ClientViewerFaceEdgeTolerance : 0f))
+                {
+                    scratch.ViewerHitDistances[groupIndex] = hitDistance;
+                    nearestViewerHit = MathF.Min(nearestViewerHit, hitDistance);
+                    foundViewerHit = true;
+                }
+            }
+            else if (allowBoundsFallback)
+            {
+                scratch.ViewerHitDistances[groupIndex] = -1f;
+            }
+        }
+
+        var primaryDistance = float.PositiveInfinity;
+        for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
+        {
+            var distance = scratch.ViewerHitDistances[groupIndex];
+            var group = wmo.groupBatches[groupIndex];
+            if ((group.flags & (ExteriorFlag | ExteriorLightingFlag)) != 0 ||
+                !((!foundViewerHit && distance < 0f) ||
+                  (foundViewerHit && distance >= 0f &&
+                   distance <= nearestViewerHit + ClientViewerHitTie)))
+                continue;
+            if (distance >= 0f && distance < primaryDistance)
+            {
+                primaryDistance = distance;
+                scratch.PrimaryViewerGroupIndex = groupIndex;
+                scratch.PrimaryViewerHitDistance = distance;
+            }
+            else if (allowBoundsFallback && !foundViewerHit &&
+                     scratch.PrimaryViewerGroupIndex < 0)
+            {
+                scratch.PrimaryViewerGroupIndex = groupIndex;
+                scratch.PrimaryViewerHitDistance = ClientViewerRayLength;
+            }
+        }
+    }
+
     private static void Traverse(
         int groupIndex,
         int previousGroupIndex,
         int depth,
         WmoPortalRect view,
+        bool propagatedFromInterior,
         in WorldModel wmo,
         Vector3 eyeLocal,
         ReadOnlySpan<bool> enabledGroups,
@@ -187,7 +260,15 @@ public static class WmoPortalVisibility
             scratch.Path[groupIndex])
             return;
 
+        // The client clears propagation when a portal route reaches an
+        // exterior or exterior-lit MOGP group. The group callback ORs the
+        // surviving bit across all visits before its render node is drawn.
+        if ((wmo.groupBatches[groupIndex].flags &
+             Wrath335PortalFogDistance.ExteriorGroupFlags) != 0)
+            propagatedFromInterior = false;
         MarkGroup(groupIndex, view, wmo, visibleGroups, visibleBatches, scratch.LocalToClip);
+        if (wmo.legacyLighting && propagatedFromInterior)
+            scratch.PropagatedGroups[groupIndex] = true;
         if (depth >= ClientPortalMaxDepth ||
             (wmo.groupBatches[groupIndex].flags & AlwaysDrawFlag) != 0)
             return;
@@ -232,6 +313,7 @@ public static class WmoPortalVisibility
             }
 
             Traverse(link.TargetGroupIndex, groupIndex, depth + 1, clipped,
+                propagatedFromInterior,
                 wmo, eyeLocal, enabledGroups, visibleGroups, visibleBatches,
                 scratch, budget, ref traversedPortalReferences, ref exhaustedBudget);
         }
@@ -458,10 +540,6 @@ public static class WmoPortalVisibility
         return side < 0 ? distance <= 0f : distance >= 0f;
     }
 
-    private static bool Contains(in BoundingBox bounds, Vector3 point) =>
-        point.X >= bounds.Min.X && point.X <= bounds.Max.X &&
-        point.Y >= bounds.Min.Y && point.Y <= bounds.Max.Y &&
-        point.Z >= bounds.Min.Z && point.Z <= bounds.Max.Z;
 }
 
 internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX, float MaxY)
@@ -491,7 +569,10 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
 /// <summary>Reusable camera and portal projection storage owned by one WMO placement.</summary>
 public sealed class WmoPortalVisibilityScratch
 {
+    internal int PrimaryViewerGroupIndex { get; set; } = -1;
+    internal float PrimaryViewerHitDistance { get; set; } = float.PositiveInfinity;
     internal bool[] Path { get; private set; } = [];
+    internal bool[] PropagatedGroups { get; private set; } = [];
     internal bool[] ProjectedPortals { get; private set; } = [];
     internal WmoPortalRect[] PortalRects { get; private set; } = [];
     internal Vector4[] PolygonA { get; private set; } = [];
@@ -503,13 +584,15 @@ public sealed class WmoPortalVisibilityScratch
     internal void Prepare(int groupCount, int portalCount,
         in Matrix4x4 localToClip, bool legacyClient)
     {
+        PrepareViewer(groupCount);
         if (Path.Length != groupCount)
             Path = new bool[groupCount];
         else
             Path.AsSpan().Clear();
-        if (ViewerHitDistances.Length != groupCount)
-            ViewerHitDistances = new float[groupCount];
-        ViewerHitDistances.AsSpan().Fill(float.PositiveInfinity);
+        if (PropagatedGroups.Length != groupCount)
+            PropagatedGroups = new bool[groupCount];
+        else
+            PropagatedGroups.AsSpan().Clear();
         if (ProjectedPortals.Length != portalCount)
         {
             ProjectedPortals = new bool[portalCount];
@@ -519,6 +602,15 @@ public sealed class WmoPortalVisibilityScratch
             ProjectedPortals.AsSpan().Clear();
         LocalToClip = localToClip;
         LegacyClient = legacyClient;
+    }
+
+    internal void PrepareViewer(int groupCount)
+    {
+        PrimaryViewerGroupIndex = -1;
+        PrimaryViewerHitDistance = float.PositiveInfinity;
+        if (ViewerHitDistances.Length != groupCount)
+            ViewerHitDistances = new float[groupCount];
+        ViewerHitDistances.AsSpan().Fill(float.PositiveInfinity);
     }
 
     internal void EnsurePolygonCapacity(int count)

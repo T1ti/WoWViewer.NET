@@ -1,4 +1,5 @@
 using System.Numerics;
+using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
 using WoWRenderLib.DX11.Structs;
 
 namespace WoWRenderLib.DX11.Renderer;
@@ -12,7 +13,8 @@ internal static class Wrath335PortalFogDistance
 {
     internal const float MaximumDistance = 25f;
     internal const int MaximumDepth = 3;
-    private const uint ExteriorGroupFlags = 0x48;
+    internal const uint ExteriorGroupFlags =
+        (uint)(GroupFlags.exterior | GroupFlags.exterior_lit);
     private const float DegenerateEdgeLengthSquared = 0.000001f;
 
     public static bool TryFind(in WorldModel wmo, int viewerGroupIndex,

@@ -93,7 +93,7 @@ public static class Wrath335WmoFogVolumes
             LerpPackedRgb(current.Color, target.Color, alpha));
     }
 
-    private static uint LerpPackedRgb(uint current, uint target, int alpha)
+    internal static uint LerpPackedRgb(uint current, uint target, int alpha)
     {
         if (alpha == PackedColorMaximum)
             return (current & 0xFF000000u) | (target & 0x00FFFFFFu);

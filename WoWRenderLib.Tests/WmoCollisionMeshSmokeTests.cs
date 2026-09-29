@@ -45,6 +45,22 @@ public sealed class WmoCollisionMeshSmokeTests
         Assert.AreEqual(3 * Marshal.SizeOf<WMOCollisionVertex>(), packed.Length);
     }
 
+    [TestMethod]
+    public void LegacyViewerRayUsesOnlyBspReferencedFaces()
+    {
+        ushort[] triangles = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        byte[] faceReferences = [2, 0, 2, 0, 0xFF, 0xFF, 0, 0];
+
+        var selected = WMOLoader.ReadViewerRayIndices(
+            GroupWithChunk("MOBR", faceReferences), triangles);
+
+        CollectionAssert.AreEqual(new ushort[] { 6, 7, 8, 0, 1, 2 }, selected);
+        CollectionAssert.AreEqual(triangles,
+            WMOLoader.ReadViewerRayIndices(GroupWithChunk("MOPY", [0, 0]), triangles));
+        Assert.AreEqual(0, WMOLoader.ReadViewerRayIndices(
+            GroupWithChunk("MOBR", []), triangles).Length);
+    }
+
     private static byte[] GroupWithChunk(string fourCc, byte[] payload)
     {
         var bytes = new byte[8 + 68 + 8 + payload.Length];

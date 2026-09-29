@@ -736,11 +736,14 @@ namespace WoWRenderLib.DX11.Managers
         }
 
         private WmoVisibilityBatch GetWmoVisibilityBatch(
-            ReadOnlySpan<bool> groupMask, ReadOnlySpan<bool> batchMask)
+            ReadOnlySpan<bool> groupMask, ReadOnlySpan<bool> batchMask,
+            ReadOnlySpan<bool> propagatedMask,
+            Wrath335FogState? interiorFog = null)
         {
             for (var index = 0; index < _activeWmoVisibilityBatchCount; index++)
             {
-                if (_wmoVisibilityBatches[index].Matches(groupMask, batchMask))
+                if (_wmoVisibilityBatches[index].Matches(groupMask, batchMask,
+                        propagatedMask, interiorFog))
                     return _wmoVisibilityBatches[index];
             }
 
@@ -755,8 +758,93 @@ namespace WoWRenderLib.DX11.Managers
                 batch = _wmoVisibilityBatches[_activeWmoVisibilityBatchCount];
             }
             _activeWmoVisibilityBatchCount++;
-            batch.Begin(groupMask, batchMask);
+            batch.Begin(groupMask, batchMask, propagatedMask, interiorFog);
             return batch;
+        }
+
+        private static WrathFogCB CreateWrathFogConstants(Wrath335FogState fog)
+        {
+            var width = MathF.Max(fog.EndDistance - fog.StartDistance,
+                Wrath335OutdoorFogEvaluator.MinimumShaderFogWidth);
+            return new WrathFogCB
+            {
+                Parameters = new Vector4(-1f / width,
+                    fog.EndDistance / width, fog.Rate, 1f),
+                Color = new Vector4(Wrath335InteriorFog.UnpackColor(fog.Color), 1f)
+            };
+        }
+
+        private WMOContainer? LocatePrimaryViewerWmo(Vector3 eyeWorld,
+            ref float? viewerTerrainRayLimit,
+            out WorldModel primaryModel, out int primaryGroupIndex)
+        {
+            WMOContainer? primary = null;
+            primaryModel = default;
+            primaryGroupIndex = -1;
+            var nearestHit = float.PositiveInfinity;
+            foreach (var (_, instances) in wmoInstances)
+            {
+                if (instances.Count == 0 || !instances[0].IsLoaded)
+                    continue;
+                var wmo = instances[0].GetWMO();
+                if (!wmo.legacyLighting)
+                    continue;
+
+                foreach (var instance in instances)
+                {
+                    if (!instance.IsLoaded || instance.GetBoundingBox() is not { } bounds ||
+                        eyeWorld.X < bounds.Min.X || eyeWorld.X > bounds.Max.X ||
+                        eyeWorld.Y < bounds.Min.Y || eyeWorld.Y > bounds.Max.Y ||
+                        eyeWorld.Z < bounds.Min.Z ||
+                        eyeWorld.Z - bounds.Max.Z > WmoPortalVisibility.ClientViewerRayLength)
+                        continue;
+
+                    instance.GetPortalVisibilityBuffers(wmo,
+                        out _, out _, out _, out var scratch);
+                    viewerTerrainRayLimit ??= GetWmoViewerTerrainRayLimit(eyeWorld);
+                    if (!WmoPortalVisibility.TryLocateViewerGroup(wmo,
+                            instance.GetModelMatrix(), eyeWorld,
+                            instance.EnabledGroups, scratch, out var groupIndex,
+                            viewerTerrainRayLimit.Value) ||
+                        scratch.PrimaryViewerHitDistance >= nearestHit)
+                        continue;
+                    nearestHit = scratch.PrimaryViewerHitDistance;
+                    primary = instance;
+                    primaryModel = wmo;
+                    primaryGroupIndex = groupIndex;
+                }
+            }
+            return primary;
+        }
+
+        private static Wrath335FogState? ResolveWmoInteriorFog(
+            in WorldModel wmo, in Matrix4x4 modelMatrix,
+            Vector3 eyeWorld, ReadOnlySpan<bool> enabledGroups,
+            WmoPortalVisibilityScratch scratch, int viewerGroupIndex,
+            Wrath335FogState outdoor, float farClip, bool expansionMode)
+        {
+            if (!wmo.legacyLighting || wmo.fogs is not { Length: > 1 } ||
+                !Matrix4x4.Invert(modelMatrix, out var inverseModel))
+                return null;
+            if (viewerGroupIndex < 0 &&
+                !WmoPortalVisibility.TryLocateViewerGroup(wmo, modelMatrix,
+                    eyeWorld, enabledGroups, scratch, out viewerGroupIndex))
+                return null;
+            if ((uint)viewerGroupIndex >= (uint)wmo.groupBatches.Length)
+                return null;
+
+            var eyeLocal = Vector3.Transform(eyeWorld, inverseModel);
+            var group = wmo.groupBatches[viewerGroupIndex];
+            if (!Wrath335WmoFogVolumes.TryEvaluate(wmo.fogs,
+                    group.fogIds ?? [], eyeLocal, out var volume))
+                return null;
+
+            var portalDistance = Wrath335PortalFogDistance.TryFind(
+                wmo, viewerGroupIndex, eyeLocal, out var closestPortal)
+                ? closestPortal : Wrath335PortalFogDistance.MaximumDistance;
+            var target = Wrath335InteriorFog.EvaluateTarget(
+                volume.Fog, farClip, expansionMode);
+            return Wrath335InteriorFog.BlendPortal(outdoor, target, portalDistance);
         }
 
         private void TraceWmoGroupVisibility(
@@ -1012,6 +1100,10 @@ namespace WoWRenderLib.DX11.Managers
                 Parameters = new Vector4(0f, 0f, 1f, 0f),
                 Color = Vector4.Zero
             };
+            Wrath335FogState? outdoorFogState = null;
+            Wrath335FogState? currentInteriorFogState = null;
+            WMOContainer? primaryInteriorFogWmo = null;
+            float? viewerTerrainRayLimit = null;
             _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
                 ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
             ConstantBufferUpdates++;
@@ -1033,12 +1125,29 @@ namespace WoWRenderLib.DX11.Managers
                 var fog = Wrath335OutdoorFogEvaluator.Evaluate(
                     _activeWorldSky.FogEnd, _activeWorldSky.FogScaler,
                     camera.FarPlane,
-                    CurrentMapId >= Wrath335FarClip.ExpansionMapId);
-                var width = MathF.Max(fog.EndDistance - fog.StartDistance,
-                    Wrath335OutdoorFogEvaluator.MinimumShaderFogWidth);
-                fogCB.Parameters = new Vector4(-1f / width,
-                    fog.EndDistance / width, fog.Rate, 1f);
-                fogCB.Color = new Vector4(_activeWorldSky.FogColor, 1f);
+                    CurrentMapId >= Wrath335FarClip.OutlandMapId);
+                outdoorFogState = Wrath335InteriorFog.FromOutdoor(
+                    fog, _activeWorldSky.FogColor);
+                var primaryViewerWmo = LocatePrimaryViewerWmo(camera.Position,
+                    ref viewerTerrainRayLimit,
+                    out var primaryModel, out var primaryGroupIndex);
+                if (primaryViewerWmo != null)
+                {
+                    primaryViewerWmo.GetPortalVisibilityBuffers(primaryModel,
+                        out _, out _, out _, out var scratch);
+                    currentInteriorFogState = ResolveWmoInteriorFog(primaryModel,
+                        primaryViewerWmo.GetModelMatrix(), camera.Position,
+                        primaryViewerWmo.EnabledGroups, scratch, primaryGroupIndex,
+                        outdoorFogState.Value, camera.FarPlane,
+                        CurrentMapId >= Wrath335FarClip.OutlandMapId);
+                    if (currentInteriorFogState.HasValue)
+                    {
+                        outdoorFogState = Wrath335InteriorFog.StageOutdoorColor(
+                            outdoorFogState.Value, currentInteriorFogState.Value);
+                        primaryInteriorFogWmo = primaryViewerWmo;
+                    }
+                }
+                fogCB = CreateWrathFogConstants(outdoorFogState.Value);
                 _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
                     ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
                 ConstantBufferUpdates++;
@@ -1403,6 +1512,7 @@ namespace WoWRenderLib.DX11.Managers
             var lastWmoTwoSided = false; // The WMO pass starts with back-face culling.
 
             var viewProjection = cameraMatrix * projectionMatrix;
+            Wrath335FogState? boundInteriorFog = null;
             foreach (var (_, instances) in wmoInstances)
             {
                 if ((!RenderWMO && !ShowWmoCollisionMesh) || instances.Count == 0)
@@ -1448,7 +1558,11 @@ namespace WoWRenderLib.DX11.Managers
                         var enabledGroups = instance.EnabledGroups;
                         if (!EnableWmoPortalCulling)
                         {
-                            GetWmoVisibilityBatch(enabledGroups, ReadOnlySpan<bool>.Empty).InstanceIndices.Add(i);
+                            var interiorFog = ReferenceEquals(instance, primaryInteriorFogWmo)
+                                ? currentInteriorFogState : null;
+                            GetWmoVisibilityBatch(enabledGroups, ReadOnlySpan<bool>.Empty,
+                                ReadOnlySpan<bool>.Empty,
+                                interiorFog).InstanceIndices.Add(i);
                             continue;
                         }
 
@@ -1459,6 +1573,8 @@ namespace WoWRenderLib.DX11.Managers
                             out var portalVisibleBatches,
                             out var portalVisibilityScratch);
                         var traversedPortalReferences = 0;
+                        if (wmo.legacyLighting)
+                            viewerTerrainRayLimit ??= GetWmoViewerTerrainRayLimit(camera.Position);
                         var portalApplied = EnableWmoPortalCulling &&
                             WmoPortalVisibility.TryCompute(
                                 wmo,
@@ -1470,7 +1586,10 @@ namespace WoWRenderLib.DX11.Managers
                                 portalVisibleDoodads,
                                 portalVisibleBatches,
                                 portalVisibilityScratch,
-                                out traversedPortalReferences);
+                                out traversedPortalReferences,
+                                wmo.legacyLighting
+                                    ? viewerTerrainRayLimit!.Value
+                                    : WmoPortalVisibility.ClientViewerRayLength);
                         if (portalApplied)
                         {
                             traversedWmoPortalReferences += traversedPortalReferences;
@@ -1494,7 +1613,15 @@ namespace WoWRenderLib.DX11.Managers
                             portalApplied,
                             camera.Position);
                         instance.SetPortalVisibilityFrame(_renderFrameNumber);
-                        GetWmoVisibilityBatch(portalVisibleGroups, portalVisibleBatches).InstanceIndices.Add(i);
+                        var portalFog = ReferenceEquals(instance, primaryInteriorFogWmo)
+                            ? currentInteriorFogState : null;
+                        ReadOnlySpan<bool> propagatedMask = portalApplied &&
+                            wmo.legacyLighting && portalFog.HasValue
+                            ? portalVisibilityScratch.PropagatedGroups
+                            : ReadOnlySpan<bool>.Empty;
+                        GetWmoVisibilityBatch(portalVisibleGroups, portalVisibleBatches,
+                            propagatedMask,
+                            portalFog).InstanceIndices.Add(i);
                     }
                 }
                 var cullingElapsed = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
@@ -1526,7 +1653,8 @@ namespace WoWRenderLib.DX11.Managers
                         {
                             for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
                             {
-                                if (!enabledGroups[groupIndex] || !wmo.groupBatches[groupIndex].liquid.HasGeometry)
+                                if (!visibilityBatch.GroupMask[groupIndex] ||
+                                    !wmo.groupBatches[groupIndex].liquid.HasGeometry)
                                     continue;
                                 foreach (var instanceIndex in visibleInstanceIndices)
                                     _visibleWmoLiquids.Add(new WmoLiquidInstance(instances[instanceIndex], groupIndex));
@@ -1554,6 +1682,9 @@ namespace WoWRenderLib.DX11.Managers
                             VertexBufferBindings++;
 
                             var currentGroupId = uint.MaxValue;
+                            var currentGroupFlags = 0u;
+                            var currentGroupMogiFlags = 0u;
+                            var currentGroupHasPrimaryVertexColors = false;
 
                             for (int j = 0; j < wmo.wmoRenderBatches.Length; j++)
                             {
@@ -1565,6 +1696,9 @@ namespace WoWRenderLib.DX11.Managers
                                 if (currentGroupId != batch.groupID)
                                 {
                                     var group = wmo.groupBatches[batch.groupID];
+                                    currentGroupFlags = group.flags;
+                                    currentGroupMogiFlags = group.mogiFlags;
+                                    currentGroupHasPrimaryVertexColors = group.hasPrimaryVertexColors;
                                     var vertexBuffer = group.vertexBuffer;
                                     var indiceBuffer = group.indiceBuffer;
                                     _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in wmoVertexStride, in wmoVertexOffset);
@@ -1577,9 +1711,18 @@ namespace WoWRenderLib.DX11.Managers
                                 // Unknown modern shader IDs have no decoded program.
                                 // TODO(WMO): add version-specific programs rather than
                                 // using the generic fallback for unsupported IDs.
-                                if (batch.shader < (uint)ShaderEnums.WMOShaders.Count)
+                                byte? baseAlphaDepth = null;
+                                if (wmo.legacyLighting && batch.shader == 0 &&
+                                    batch.blendType == 0 && batch.materialFDIDs.Length > 0 &&
+                                    BLPCache.TryGetAlphaDepth(batch.materialFDIDs[0],
+                                        out var loadedAlphaDepth))
+                                    baseAlphaDepth = loadedAlphaDepth;
+                                var selectedShader = WmoMaterialPolicy.ResolveBaseTextureShader(
+                                    wmo.legacyLighting, (int)batch.shader,
+                                    batch.blendType, baseAlphaDepth);
+                                if ((uint)selectedShader < (uint)ShaderEnums.WMOShaders.Count)
                                 {
-                                    var shaderPair = ShaderEnums.WMOShaders[(int)batch.shader];
+                                    var shaderPair = ShaderEnums.WMOShaders[selectedShader];
                                     wmoConstantBuffer.vertexShader = (int)shaderPair.VertexShader;
                                     wmoConstantBuffer.pixelShader = (int)shaderPair.PixelShader;
                                 }
@@ -1620,16 +1763,38 @@ namespace WoWRenderLib.DX11.Managers
                                     lastWmoSamplerIndex = samplerIndex;
                                 }
 
-                                var passCount = wmo.legacyLighting && batch.category == 0 ? 2 : 1;
+                                var passCount = wmo.legacyLighting &&
+                                    batch.category == WmoMaterialPolicy.TransitionBatchCategory ? 2 : 1;
                                 for (var pass = 0; pass < passCount; pass++)
                                 {
+                                    var selectedFog = visibilityBatch.InteriorFog.HasValue &&
+                                        WmoMaterialPolicy.UsesCurrentFogForPass(
+                                            wmo.legacyLighting, currentGroupFlags,
+                                            currentGroupMogiFlags, batch.category, pass,
+                                            wmo.legacyLighting &&
+                                            visibilityBatch.PropagatedMask.Length == wmo.groupBatches.Length
+                                                ? visibilityBatch.PropagatedMask[batch.groupID]
+                                                : null,
+                                            wmo.flags, currentGroupHasPrimaryVertexColors)
+                                        ? visibilityBatch.InteriorFog : null;
+                                    if (selectedFog != boundInteriorFog)
+                                    {
+                                        var batchFogCB = selectedFog.HasValue
+                                            ? CreateWrathFogConstants(selectedFog.Value)
+                                            : fogCB;
+                                        _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
+                                            ref Unsafe.NullRef<Box>(), ref batchFogCB, 0, 0);
+                                        ConstantBufferUpdates++;
+                                        boundInteriorFog = selectedFog;
+                                    }
                                     var blendMode = passCount == 2 ? (pass == 0 ? 9u : 7u) : batch.blendType;
                                     ApplyBlendMode((int)blendMode, ref currentBlendType);
                                     wmoConstantBuffer.alphaRef = WmoMaterialPolicy.AlphaReference(
                                         blendMode, wmo.legacyLighting);
                                     wmoConstantBuffer.sidnColor = sidnColors[batch.materialIndex];
-                                    wmoConstantBuffer.unfogged = (materialFlags &
-                                        (uint)WmoMaterialFlags.unfogged) != 0 ? 1 : 0;
+                                    wmoConstantBuffer.unfogged = WmoMaterialPolicy.IsUnfogged(
+                                        wmo.legacyLighting, wmo.flags, batch.category,
+                                        materialFlags) ? 1 : 0;
                                     wmoConstantBuffer.lightingMode = pass == 0 ? batch.lightingMode
                                         : wmoConstantBuffer.unifiedMocv != 0 ? 3 : 0;
 
@@ -1673,6 +1838,12 @@ namespace WoWRenderLib.DX11.Managers
                     DrawWmoCollisionMesh(wmo, instances, projectionMatrix, cameraMatrix,
                         instanceStride, instanceOffset, lastWmoTwoSided,
                         ref currentBlendType, ref drawCalls, ref submittedIndexCount);
+            }
+            if (boundInteriorFog.HasValue)
+            {
+                _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
+                    ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
+                ConstantBufferUpdates++;
             }
             gpuTimer?.EndWorldModels();
             ComPtr<ID3D11DepthStencilState> defaultWmoDepthState = default;
@@ -1718,7 +1889,7 @@ namespace WoWRenderLib.DX11.Managers
             var lastM2PixelShader = int.MinValue;
             var lastM2AlphaRef = float.NaN;
             var lastM2HasSkinning = -1;
-            var lastM2Unfogged = -1;
+            var lastM2FogMode = -1;
             var lastM2HasAnimation = false;
             var lastM2MaterialColor = Vector4.Zero;
             var lastM2TexMatrix1 = Matrix4x4.Identity;
@@ -1992,8 +2163,9 @@ namespace WoWRenderLib.DX11.Managers
                                     GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
                                 m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
                                 m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
-                                m2ConstantBuffer.unfogged = (batch.renderFlags &
-                                    (ushort)M2MaterialFlags.Unfogged) != 0 ? 1 : 0;
+                                m2ConstantBuffer.fogMode = (int)Wrath335M2FogPolicy.ForMaterial(
+                                    m2.usesLegacyDepthFlags, (int)batch.blendType,
+                                    (batch.renderFlags & (ushort)M2MaterialFlags.Unfogged) != 0);
                                 if (pose is not null)
                                 {
                                     var material = pose.Materials[j];
@@ -2016,7 +2188,7 @@ namespace WoWRenderLib.DX11.Managers
                                     m2ConstantBuffer.vertexShader != lastM2VertexShader ||
                                     m2ConstantBuffer.pixelShader != lastM2PixelShader ||
                                     m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
-                                    m2ConstantBuffer.unfogged != lastM2Unfogged ||
+                                    m2ConstantBuffer.fogMode != lastM2FogMode ||
                                     m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
                                     lastM2HasAnimation != (pose is not null) ||
                                     m2ConstantBuffer.materialColor != lastM2MaterialColor ||
@@ -2031,7 +2203,7 @@ namespace WoWRenderLib.DX11.Managers
                                     lastM2VertexShader = m2ConstantBuffer.vertexShader;
                                     lastM2PixelShader = m2ConstantBuffer.pixelShader;
                                     lastM2AlphaRef = m2ConstantBuffer.alphaRef;
-                                    lastM2Unfogged = m2ConstantBuffer.unfogged;
+                                    lastM2FogMode = m2ConstantBuffer.fogMode;
                                     lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
                                     lastM2HasAnimation = pose is not null;
                                     lastM2MaterialColor = m2ConstantBuffer.materialColor;

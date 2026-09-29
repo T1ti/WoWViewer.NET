@@ -1244,7 +1244,7 @@ internal sealed class SkyRenderer(
             ambientColor = Vector3.One,
             diffuseColor = Vector3.Zero,
             materialColor = Vector4.One,
-            unfogged = 1,
+            fogMode = (int)Wrath335M2FogMode.Disabled,
             globalOpacity = opacity
         };
 

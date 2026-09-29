@@ -22,6 +22,7 @@ namespace WoWRenderLib.DX11.Cache
         private static readonly ResourceFailureTracker<uint> failures = new();
 
         private static readonly ConcurrentDictionary<uint, ComPtr<ID3D11ShaderResourceView>> Cache = new();
+        private static readonly ConcurrentDictionary<uint, byte> AlphaDepths = new();
         private static readonly ConcurrentDictionary<uint, List<uint>> Users = new();
 
         // The old TEX cache supplied an immediate low-resolution texture for
@@ -106,6 +107,7 @@ namespace WoWRenderLib.DX11.Cache
                 return new DecodedBLP
                 {
                     FileDataId = fileDataId,
+                    AlphaDepth = blp.AlphaDepth,
                     IsCompressed = true,
                     CompressedFormat = compressedFormat,
                     MipLevels = mipmaps
@@ -116,6 +118,7 @@ namespace WoWRenderLib.DX11.Cache
             return new DecodedBLP
             {
                 FileDataId = fileDataId,
+                AlphaDepth = blp.AlphaDepth,
                 PixelData = image.Pixels.AsSpan().ToArray(),
                 Width = (int)image.Width,
                 Height = (int)image.Height,
@@ -143,6 +146,11 @@ namespace WoWRenderLib.DX11.Cache
             uint fileDataId,
             out ComPtr<ID3D11ShaderResourceView> texture) =>
             Cache.TryGetValue(fileDataId, out texture);
+
+        // The 3.3.5 WMO shader selector reads the texture's BLP alpha depth.
+        // Publish it with the uploaded texture so WMO loading stays asynchronous.
+        internal static bool TryGetAlphaDepth(uint fileDataId, out byte alphaDepth) =>
+            AlphaDepths.TryGetValue(fileDataId, out alphaDepth);
 
         public static int Upload(
             Stopwatch queueTimer,
@@ -268,6 +276,7 @@ namespace WoWRenderLib.DX11.Cache
                             SilkMarshal.ThrowHResult(device.CreateShaderResourceView(tex, in srvDesc, ref srv));
 
                             Cache[decoded.FileDataId] = srv;
+                            AlphaDepths[decoded.FileDataId] = decoded.AlphaDepth;
                             failures.Succeeded(decoded.FileDataId);
                             uploaded++;
                         }
@@ -334,6 +343,7 @@ namespace WoWRenderLib.DX11.Cache
 
                     if (Cache.TryRemove(fileDataId, out var srv))
                         srv.Dispose();
+                    AlphaDepths.TryRemove(fileDataId, out _);
                 }
                 else
                 {
@@ -360,6 +370,7 @@ namespace WoWRenderLib.DX11.Cache
                 {
                     Cache.TryRemove(blpId, out _);
                     blp.Dispose();
+                    AlphaDepths.TryRemove(blpId, out _);
                 }
             }   
         }
@@ -371,6 +382,7 @@ namespace WoWRenderLib.DX11.Cache
                 kv.Value.Dispose();
 
             Cache.Clear();
+            AlphaDepths.Clear();
             Users.Clear();
             inFlight.Clear();
             failures.Clear();

@@ -104,6 +104,33 @@ public sealed class WmoLightingSmokeTests
     }
 
     [TestMethod]
+    public void UnifiedOpaqueBatchesRemainFoggedDespiteMaterialUnfoggedFlag()
+    {
+        const uint unfoggedMaterial = 0x2;
+        Assert.IsFalse(WmoMaterialPolicy.IsUnfogged(true, 0x2, 1, unfoggedMaterial));
+        Assert.IsFalse(WmoMaterialPolicy.IsUnfogged(true, 0x2, 2, unfoggedMaterial));
+        Assert.IsTrue(WmoMaterialPolicy.IsUnfogged(true, 0x2, 0, unfoggedMaterial));
+        Assert.IsTrue(WmoMaterialPolicy.IsUnfogged(true, 0, 1, unfoggedMaterial));
+        Assert.IsTrue(WmoMaterialPolicy.IsUnfogged(false, 0x2, 1, unfoggedMaterial));
+        Assert.IsFalse(WmoMaterialPolicy.IsUnfogged(true, 0x2, 1, 0));
+    }
+
+    [TestMethod]
+    public void LegacyFogBankUsesGroupHeaderExteriorLightingFlag()
+    {
+        Assert.IsFalse(WmoMaterialPolicy.UsesCurrentFog(true, 0x40, 0));
+        Assert.IsTrue(WmoMaterialPolicy.UsesCurrentFog(true, 0, 0x40));
+        Assert.IsTrue(WmoMaterialPolicy.UsesCurrentFog(false, 0x40, 0));
+        Assert.IsFalse(WmoMaterialPolicy.UsesCurrentFogForPass(true, 0, 0,
+            WmoMaterialPolicy.TransitionBatchCategory, 0));
+        Assert.IsTrue(WmoMaterialPolicy.UsesCurrentFogForPass(true, 0, 0,
+            WmoMaterialPolicy.TransitionBatchCategory, 1));
+        Assert.IsTrue(WmoMaterialPolicy.UsesCurrentFogForPass(true, 0, 0, 1, 0));
+        Assert.IsTrue(WmoMaterialPolicy.UsesCurrentFogForPass(false, 0, 0,
+            WmoMaterialPolicy.TransitionBatchCategory, 0));
+    }
+
+    [TestMethod]
     public void LegacyMissingSecondTextureUsesOpaqueShaderOnlyForTwoStageFamilies()
     {
         Assert.AreEqual(4, WmoMaterialPolicy.ResolveShader(true, 3, false));
@@ -111,6 +138,16 @@ public sealed class WmoLightingSmokeTests
         Assert.AreEqual(4, WmoMaterialPolicy.ResolveShader(true, 6, false));
         Assert.AreEqual(6, WmoMaterialPolicy.ResolveShader(true, 6, true));
         Assert.AreEqual(6, WmoMaterialPolicy.ResolveShader(false, 6, false));
+    }
+
+    [TestMethod]
+    public void LegacyOpaqueBlendUsesMapObjOpaqueWhenBlpHasAlpha()
+    {
+        Assert.AreEqual(4, WmoMaterialPolicy.ResolveBaseTextureShader(true, 0, 0, 8));
+        Assert.AreEqual(0, WmoMaterialPolicy.ResolveBaseTextureShader(true, 0, 0, 0));
+        Assert.AreEqual(0, WmoMaterialPolicy.ResolveBaseTextureShader(true, 0, 0, null));
+        Assert.AreEqual(0, WmoMaterialPolicy.ResolveBaseTextureShader(true, 0, 1, 8));
+        Assert.AreEqual(0, WmoMaterialPolicy.ResolveBaseTextureShader(false, 0, 0, 8));
     }
 
     [TestMethod]

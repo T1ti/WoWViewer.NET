@@ -6,16 +6,56 @@ namespace WoWRenderLib.DX11.Renderer;
 
 internal static class WmoMaterialPolicy
 {
+    internal const byte TransitionBatchCategory = 0;
     private const uint SidnFlag = 0x10;
+    private const uint UnfoggedFlag = 0x2;
+    private const ushort UnifiedLightingFlag = 0x2;
+
+    // CMapObj::UnifiedRender bypasses F_UNFOG for batches after the
+    // transparent range. Its opaque exterior path explicitly installs the
+    // staged fog state, and its opaque interior path installs the current one.
+    // The older ExtRender/IntRender paths and unified transparent range still
+    // consult F_UNFOG. Keep the modern material behavior unchanged.
+    internal static bool IsUnfogged(bool legacyClient, ushort rootFlags,
+        byte category, uint materialFlags) =>
+        (materialFlags & UnfoggedFlag) != 0 &&
+        (!legacyClient || (rootFlags & UnifiedLightingFlag) == 0 ||
+         category == TransitionBatchCategory);
+
+    // UnifiedRender uses MOGP flags 0x48 to force the staged outdoor fog on
+    // opaque batches. The legacy portal walk clears propagation at the same
+    // exterior/use-exterior-lighting boundary for the other batch ranges.
+    internal static bool UsesCurrentFog(bool legacyClient, uint groupFlags,
+        uint mogiFlags) =>
+        ((legacyClient ? groupFlags : mogiFlags) &
+         Wrath335PortalFogDistance.ExteriorGroupFlags) == 0;
+
+    internal static bool UsesCurrentFogForPass(bool legacyClient,
+        uint groupFlags, uint mogiFlags, byte category, int passIndex,
+        bool? propagatedFromInterior = null, ushort rootFlags = 0,
+        bool hasPrimaryVertexColors = true) =>
+        // RenderGroup dispatches non-unified groups without a primary MOCV
+        // stream to ExtRender, which always installs staged outdoor fog.
+        (!legacyClient || (rootFlags & UnifiedLightingFlag) != 0 ||
+         hasPrimaryVertexColors) &&
+        (legacyClient && propagatedFromInterior.HasValue
+            ? propagatedFromInterior.Value
+            : UsesCurrentFog(legacyClient, groupFlags, mogiFlags)) &&
+        (!legacyClient || category != TransitionBatchCategory || passIndex != 0);
 
     // Wisp's load-time fix-up: legacy two-texture shaders without their
     // second stage use the one-texture Opaque program.
     internal static int ResolveShader(bool legacyClient, int shader, bool hasTexture2) =>
         legacyClient && !hasTexture2 && shader is 3 or 5 or 6 ? 4 : shader;
 
-    // TODO(WMO): Wisp also promotes shader 0 + opaque blend to shader 4 when
-    // the base BLP has alpha. The streaming BLP metadata currently does not
-    // expose alpha presence to WMO material setup.
+    // PumpBlpTextureAsync sets CTexture flag 0x1 only when BLP alphaSize is 0.
+    // ExtRender, IntRender and UnifiedRender change shader 0/opaque blend to
+    // shader 4 when that flag is clear. The two shaders share fogged RGB, but
+    // shader 4 uses vertex alpha instead of texture alpha in transition passes.
+    internal static int ResolveBaseTextureShader(bool legacyClient, int shader,
+        uint blendMode, byte? alphaDepth) =>
+        legacyClient && shader == 0 && blendMode == 0 && alphaDepth > 0
+            ? 4 : shader;
 
     // Wisp's decoded WotLK MapObj lighting banks. Modern clients retain the
     // established DX11 lighting path because these selectors were decoded for

@@ -44,7 +44,7 @@
           <StackPanel Orientation="Horizontal" Spacing="10">
             <TextBlock VerticalAlignment="Center" Text="3.3.5 view distance (farclip)" />
             <NumericUpDown Width="110" Value="{Binding WrathFarClip}"
-                           Minimum="183.33333" Maximum="1583.3334" Increment="25"
+                           Minimum="177" Maximum="1277" Increment="110"
                            FormatString="0.###"
                            ToolTip.Tip="Client farclip CVar in world units. The client applies a map-dependent upper limit." />
             <CheckBox VerticalAlignment="Center" Content="farClipOverride"

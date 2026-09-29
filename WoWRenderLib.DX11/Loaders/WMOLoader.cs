@@ -44,7 +44,7 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 var preppedGroup = preppedWMO.PreppedWMOGroups[g];
                 var raycastVertices = ExtractRaycastVertices(preppedGroup.vertexBuffer);
-                var raycastIndices = MemoryMarshal
+                var raycastIndices = preppedGroup.raycastIndices ?? MemoryMarshal
                     .Cast<byte, ushort>(preppedGroup.indiceBuffer)
                     .ToArray();
 
@@ -287,11 +287,18 @@ namespace WoWRenderLib.DX11.Loaders
             return [.. result];
         }
 
-        private static bool ValidatePortalGraph(
+        internal static bool ValidatePortalGraph(
             in PreppedWMO preppedWMO,
             int[] sourceGroupToRenderGroup,
             WmoPortal[] portals)
         {
+            // A 3.3.5 WMO can have no portal references. The client still runs
+            // outdoor MOGI exterior/always-draw group culling for that case;
+            // rejecting the empty graph made our fallback render every group.
+            if (preppedWMO.LegacyLighting && preppedWMO.PortalReferences.Length == 0 &&
+                preppedWMO.PreppedWMOGroups.All(group => group.portalCount == 0))
+                return true;
+
             if (portals.Length == 0 ||
                 preppedWMO.PortalReferences.Length == 0 ||
                 sourceGroupToRenderGroup.Length == 0)

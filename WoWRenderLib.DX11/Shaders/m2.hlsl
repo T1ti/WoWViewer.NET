@@ -12,7 +12,7 @@ cbuffer PerObject : register(b0)
     float3 lightDirection;
     float alphaRef;
     float blendMode;
-    int unfogged;
+    int fogMode;
     float2 _pad;
     float3 ambientColor;
     float globalOpacity;
@@ -570,7 +570,17 @@ float4 PS_Main(VSOutput input) : SV_TARGET
     float3 lit_color = mat_diffuse * input.LitColor;
     // lit_color += specular; // uncomment when ready
 
-    return float4(unfogged != 0 ? lit_color
-        : lerp(fogColor.rgb, lit_color, input.FogVisibility),
+    // CM2SceneRender::SetupLighting selects black/white/gray fog for the
+    // additive and modulated legacy blend families. Modern paths pass 0/1.
+    float3 materialFogColor = fogColor.rgb;
+    if (fogMode == 2)
+        materialFogColor = 0.0f;
+    else if (fogMode == 3)
+        materialFogColor = 1.0f;
+    else if (fogMode == 4)
+        materialFogColor = 128.0f / 255.0f;
+
+    return float4(fogMode == 1 ? lit_color
+        : lerp(materialFogColor, lit_color, input.FogVisibility),
         final_opacity * globalOpacity);
 }

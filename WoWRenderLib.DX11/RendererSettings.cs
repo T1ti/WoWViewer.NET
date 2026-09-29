@@ -49,7 +49,7 @@ public sealed class RendererSettings
     public bool RenderParticles { get; set; } = true;
     public bool DisableScreenGlow { get; set; }
     public int SkyCloudLod { get; set; }
-    public float WrathFarClip { get; set; } = WoWRenderLib.Structs.Wrath335FarClip.Default;
+    public float WrathFarClip { get; set; } = WoWRenderLib.Structs.Wrath335FarClip.CVarMaximum;
     public bool WrathFarClipOverride { get; set; }
     public bool AnimateModels { get; set; } = true;
     public bool EnableWmoPortalCulling { get; set; }
