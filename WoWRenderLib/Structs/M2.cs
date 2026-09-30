@@ -21,7 +21,8 @@ namespace WoWRenderLib.Structs
         public float alphaRef;
         public float blendMode;
         public int fogMode;
-        public Vector2 _pad;
+        public int doodadMaterialLit;
+        public float _pad;
         public Vector3 ambientColor;
         public float globalOpacity;
         public Vector3 diffuseColor;

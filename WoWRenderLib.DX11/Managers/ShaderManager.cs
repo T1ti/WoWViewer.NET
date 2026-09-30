@@ -717,6 +717,27 @@ namespace WoWRenderLib.DX11.Managers
                             AlignedByteOffset = uint.MaxValue,
                             InputSlotClass = InputClassification.PerVertexData
                         },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 6,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 64,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 7,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 80,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 8,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 96,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
 
                         // Buffer 1
                         new()

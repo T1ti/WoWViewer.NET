@@ -154,13 +154,13 @@ public sealed class WmoSceneViewerQueryTests
         primary.GetPortalVisibilityBuffers(model, out _, out _, out _, out var scratch);
         var epoch = scratch.ViewerBsp.Epoch;
         var preparation = new WmoScenePortalPreparation();
-        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity);
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
         Assert.IsFalse(preparation.Views.HasSkyView);
         Assert.IsTrue(preparation.TryGetPreparedVisibility(primary, out var applied, out var traversed));
         Assert.IsTrue(applied);
         Assert.AreEqual(0, traversed);
         Assert.AreEqual(epoch, scratch.ViewerBsp.Epoch);
-        preparation.Prepare(viewer, false, Eye, -Vector3.UnitZ, Matrix4x4.Identity);
+        preparation.Prepare(viewer, false, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
         Assert.IsTrue(preparation.Views.HasSkyView);
         Assert.IsFalse(preparation.UsesWrath335Rules);
         Assert.IsFalse(preparation.TryGetPreparedVisibility(primary, out _, out _));
@@ -172,7 +172,7 @@ public sealed class WmoSceneViewerQueryTests
         using var scene = new CpuScene();
         var primary = scene.Add(Model(Floor(0f)));
         var preparation = new WmoScenePortalPreparation();
-        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity);
+        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
         Assert.IsTrue(preparation.Views.HasSkyView);
         Assert.IsTrue(preparation.Views.HasExteriorView);
         Assert.IsTrue(preparation.TryGetPreparedVisibility(primary, out var applied, out _));
@@ -187,16 +187,560 @@ public sealed class WmoSceneViewerQueryTests
         model.portalGraphValid = true;
         var primary = scene.Add(model);
         var preparation = new WmoScenePortalPreparation();
-        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity);
+        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
         Assert.AreEqual(WmoPortalRect.Full, preparation.Views.SkyRect);
         var updated = scene.Add(model);
         updated.InvalidateTransform();
-        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity);
+        preparation.Prepare(scene.Locate(), true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
         Assert.IsFalse(preparation.Views.HasSkyView);
         Assert.IsTrue(preparation.TryGetPreparedVisibility(primary, out var applied, out _));
         Assert.IsTrue(applied);
-        Assert.IsFalse(preparation.TryGetPreparedVisibility(updated, out _, out _));
+        Assert.IsTrue(preparation.TryGetPreparedVisibility(updated, out var secondaryApplied, out _));
+        Assert.IsTrue(secondaryApplied);
     }
+
+    [TestMethod]
+    public void ScenePreparationBuildsPrimaryComplementAndDiscardsOtherPlacementAndOldFrameWindows()
+    {
+        using var scene = new CpuScene();
+        var owner = Floor(0f) with { portalLinks = [new() { PortalIndex = 0, TargetGroupIndex = 1, Side = 1 }] };
+        var model = Model(owner, Floor(-1f, 8));
+        model.portalGraphValid = true;
+        model.portals = [new() { Normal = Vector3.UnitZ, Distance = -0.5f,
+            Vertices = [new(-0.2f, -0.2f, 0.5f), new(0.2f, -0.2f, 0.5f),
+                new(0.2f, 0.2f, 0.5f), new(-0.2f, 0.2f, 0.5f)] }];
+        var primary = scene.Add(model);
+        var secondaryModel = model;
+        secondaryModel.portals = [model.portals[0] with
+            { Vertices = model.portals[0].Vertices.Select(v => new Vector3(v.X * 3f, v.Y * 3f, v.Z)).ToArray() }];
+        var secondary = scene.Add(secondaryModel);
+        secondary.InvalidateTransform(); // native secondary pool, distinct from the primary
+        var viewer = scene.Locate();
+        Assert.AreSame(primary, viewer.Primary.Instance);
+        Assert.AreSame(secondary, viewer.Secondary.Instance);
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.AreEqual(1, preparation.Views.Windows.Length);
+        Assert.AreEqual(new Wrath335PortalWindow(new(0.4f, 0.4f, 0.6f, 0.6f), 0.5f),
+            preparation.Views.Windows[0]);
+        CollectionAssert.AreEqual(new WmoPortalRect[] { new(0f, 0f, 1f, 0.4f),
+            new(0f, 0.6f, 1f, 1f), new(0f, 0.4f, 0.4f, 0.6f), new(0.6f, 0.4f, 1f, 0.6f) },
+            preparation.Views.Complement.Views.ToArray().Select(v => v.Rect).ToArray());
+        preparation.Prepare(viewer, false, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.AreEqual(0, preparation.Views.Windows.Length);
+        Assert.AreEqual(0, preparation.Views.Complement.Views.Length);
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        var invalidViewer = viewer with { Primary = viewer.Primary with
+            { Model = viewer.Primary.Model with { portalGraphValid = false } } };
+        preparation.Prepare(invalidViewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.AreEqual(0, preparation.Views.Windows.Length);
+        Assert.AreEqual(0, preparation.Views.Complement.Views.Length);
+        Assert.IsTrue(preparation.Views.HasSkyView);
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        preparation.Prepare(viewer with { UsesWrath335Rules = false }, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.AreEqual(0, preparation.Views.Windows.Length);
+        Assert.AreEqual(0, preparation.Views.Complement.Views.Length);
+        Assert.IsFalse(preparation.UsesWrath335Rules);
+    }
+
+    [TestMethod]
+    public void SceneExteriorSeedsInterleavePlacementsAndReemitOnReturningToAPlacement()
+    {
+        using var scene = new CpuScene();
+        var a = scene.Add(QueueModel(QueueGroup(10f, 8, QueueLink(0, 2)),
+            QueueGroup(80f, 8, QueueLink(0, 2)), QueueGroup(0f, 0)));
+        var bModel = QueueModel(QueueGroup(40f, 8, QueueLink(0, 1)), QueueGroup(0f, 0));
+        bModel.portals = [QueuePortal(0.1f)];
+        var b = scene.Add(bModel);
+        var preparation = PrepareScene(scene);
+        AssertPolygonOrder(preparation, 0.4f, 0.45f, 0.4f);
+        CollectionAssert.AreEqual(new[] { true, true, true }, Groups(a));
+        Assert.IsTrue(preparation.TryGetPreparedVisibility(a, out var applied, out var references));
+        Assert.IsTrue(applied);
+        Assert.AreEqual(2, references);
+        Assert.IsTrue(preparation.TryGetPreparedVisibility(b, out applied, out references));
+        Assert.IsTrue(applied);
+        Assert.AreEqual(1, references);
+        Assert.AreEqual(0, scene.TerrainQueries);
+        b.EnabledGroups[0] = false;
+        PrepareScene(scene, preparation: preparation);
+        AssertPolygonOrder(preparation, 0.4f); // Consecutive A seeds share emission bit 8.
+        Assert.IsFalse(Groups(b)[0]);
+    }
+
+    [TestMethod]
+    public void AlwaysDrawCallbackBetweenExteriorSeedsDoesNotSwitchPortalCachePlacement()
+    {
+        using var scene = new CpuScene();
+        var a = scene.Add(QueueModel(QueueGroup(10f, 8, QueueLink(0, 2)),
+            QueueGroup(80f, 8, QueueLink(0, 2)), QueueGroup(0f, 0)));
+        var always = scene.Add(QueueModel(QueueGroup(40f, 0x10000, QueueLink(0, 1)), QueueGroup(0f, 0)));
+        var preparation = PrepareScene(scene);
+        AssertPolygonOrder(preparation, 0.4f);
+        CollectionAssert.AreEqual(new[] { true, false }, Groups(always));
+        Assert.IsTrue(preparation.TryGetPreparedVisibility(always, out var applied, out var references));
+        Assert.IsTrue(applied);
+        Assert.AreEqual(0, references);
+        CollectionAssert.AreEqual(new[] { true, true, true }, Groups(a));
+    }
+
+    [TestMethod]
+    public void RepeatedAssetsStillHaveIndependentPlacementCacheGenerations()
+    {
+        using var scene = new CpuScene();
+        var first = scene.Add(QueueModel(QueueGroup(10f, 8, QueueLink(0, 2)),
+            QueueGroup(80f, 8, QueueLink(0, 2)), QueueGroup(0f, 0)));
+        scene.Add(first.FileDataId);
+        var preparation = PrepareScene(scene);
+        AssertPolygonOrder(preparation, 0.4f, 0.4f, 0.4f, 0.4f);
+    }
+
+    [TestMethod]
+    public void PrimaryInteriorEmissionSuppressesItsExteriorSeedUntilAnotherPlacementIsVisited()
+    {
+        using var scene = new CpuScene();
+        var primary = scene.Add(QueueModel(QueueGroup(0f, 0, QueueLink(0, 1)),
+            QueueGroup(10f, 8, QueueLink(0, 0)), QueueGroup(80f, 8, QueueLink(0, 0))));
+        var otherModel = QueueModel(QueueGroup(40f, 8, QueueLink(0, 1)), QueueGroup(0f, 0));
+        otherModel.portals = [QueuePortal(0.1f)];
+        var other = scene.Add(otherModel);
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1), default, true);
+        var preparation = PrepareScene(scene, viewer);
+        Assert.AreEqual(1, preparation.Views.Windows.Length);
+        AssertPolygonOrder(preparation, 0.45f, 0.4f);
+        other.EnabledGroups[0] = false;
+        PrepareScene(scene, viewer, preparation);
+        Assert.AreEqual(1, preparation.Views.Windows.Length);
+        Assert.AreEqual(0, preparation.Views.RenderViews.Views.Length);
+    }
+
+    [TestMethod]
+    public void EnclosedViewerAcceptsUpdatedGroupsThroughTheLiveVisibleBoundsChain()
+    {
+        using var scene = new CpuScene();
+        var primary = scene.Add(QueueModel(QueueGroup(0f, 0, width: 10f)));
+        var first = scene.Add(QueueModel(QueueGroup(10f, 8, width: 10f)));
+        var second = scene.Add(QueueModel(QueueGroup(20f, 8, width: 10f)));
+        var disjoint = scene.Add(QueueModel(QueueGroup(35f, 8)));
+        var ordinary = scene.Add(QueueModel(QueueGroup(0f, 8)));
+        UpdatePlacement(first);
+        UpdatePlacement(second);
+        UpdatePlacement(disjoint);
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1), default, true);
+        var preparation = PrepareScene(scene, viewer);
+        Assert.IsFalse(preparation.Views.HasExteriorView);
+        Assert.IsTrue(Groups(first)[0]);
+        Assert.IsTrue(Groups(second)[0]);
+        Assert.IsFalse(Groups(disjoint)[0]);
+        Assert.IsFalse(Groups(ordinary)[0]);
+        scene.Objects.Remove(second);
+        scene.Objects.Insert(1, second);
+        PrepareScene(scene, viewer, preparation);
+        Assert.IsFalse(Groups(second)[0]); // Rejected arrivals are not reconsidered.
+        Assert.IsTrue(Groups(first)[0]);
+    }
+
+    [TestMethod]
+    public void UpdatedSeedsUseFullCameraRectWhileOrdinarySeedsUseTheInteriorExteriorWindow()
+    {
+        using var scene = new CpuScene();
+        var primary = scene.Add(QueueModel(QueueGroup(0f, 0, QueueLink(0, 1)), QueueGroup(10f, 8)));
+        var sideGroup = QueueGroup(20f, 8) with
+        { mogiBoundingBox = new(new(20f, 0.5f, 0.1f), new(21f, 0.8f, 0.8f)) };
+        var ordinary = scene.Add(QueueModel(sideGroup));
+        var updated = scene.Add(ordinary.FileDataId);
+        UpdatePlacement(updated);
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1), default, true);
+        var preparation = PrepareScene(scene, viewer);
+        Assert.IsTrue(preparation.Views.HasExteriorView);
+        Assert.IsFalse(Groups(ordinary)[0]);
+        Assert.IsTrue(Groups(updated)[0]);
+    }
+
+    [TestMethod]
+    public void NoViewerRebucketCutoffStopsLaterUpdatedGroupsWithoutStoppingOrdinarySources()
+    {
+        using var scene = new CpuScene();
+        var updated = scene.Add(QueueModel(QueueGroup(10f, 8), QueueGroup(3000f, 8), QueueGroup(20f, 8)));
+        UpdatePlacement(updated);
+        var ordinary = scene.Add(QueueModel(QueueGroup(3000f, 8), QueueGroup(40f, 8)));
+        var later = scene.Add(QueueModel(QueueGroup(10f, 8)));
+        UpdatePlacement(later);
+        _ = PrepareScene(scene);
+        CollectionAssert.AreEqual(new[] { true, false, false }, Groups(updated));
+        CollectionAssert.AreEqual(new[] { false, true }, Groups(ordinary));
+        Assert.IsFalse(Groups(later)[0]);
+    }
+
+    [TestMethod]
+    public void SecondaryVisibleCallbacksSurviveWindowResetAndGateUpdatedExteriorGroups()
+    {
+        using var scene = new CpuScene();
+        var primary = scene.Add(QueueModel(QueueGroup(0f, 0, width: 10f)));
+        var secondary = scene.Add(QueueModel(QueueGroup(50f, 0, QueueLink(0, 1), 10f), QueueGroup(51f, 8)));
+        UpdatePlacement(secondary);
+        var updated = scene.Add(QueueModel(QueueGroup(60f, 8)));
+        UpdatePlacement(updated);
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1),
+            new(secondary, secondary.GetWMO(), 0, -1), true);
+        var preparation = PrepareScene(scene, viewer);
+        Assert.AreEqual(0, preparation.Views.Windows.Length);
+        Assert.IsFalse(preparation.Views.HasExteriorView);
+        Assert.IsTrue(Groups(secondary)[0]);
+        Assert.IsTrue(Groups(updated)[0]);
+    }
+
+    [TestMethod]
+    public void ScenePreparationResetsVisibilityAndDoodadsWithoutLosingOtherClientFallback()
+    {
+        using var scene = new CpuScene();
+        var model = QueueModel(QueueGroup(10f, 8) with { doodadReferences = [0] });
+        model.doodads = [default, default];
+        model.doodadsReferencedByGroups = [true, false];
+        var placement = scene.Add(model);
+        placement.PlacementFlags = 0x420;
+        var otherClientModel = model with { wrath335 = false };
+        var otherClient = scene.Add(otherClientModel);
+        var invalid = scene.Add(model with { portalGraphValid = false });
+        var preparation = PrepareScene(scene);
+        placement.GetPortalVisibilityBuffers(placement.GetWMO(), out _, out var doodads, out _, out _);
+        CollectionAssert.AreEqual(new[] { true, true }, doodads);
+        Assert.IsTrue(Groups(placement)[0]); // MODF flags did not become runtime skip/update flags.
+        Assert.IsFalse(preparation.TryGetPreparedVisibility(otherClient, out _, out _));
+        Assert.IsTrue(preparation.TryGetPreparedVisibility(invalid, out var applied, out _));
+        Assert.IsFalse(applied);
+        placement.EnabledGroups[0] = false;
+        PrepareScene(scene, preparation: preparation);
+        Assert.IsFalse(Groups(placement)[0]);
+        CollectionAssert.AreEqual(new[] { false, true }, doodads);
+        scene.Objects.Remove(placement);
+        PrepareScene(scene, preparation: preparation);
+        Assert.IsFalse(preparation.TryGetPreparedVisibility(placement, out _, out _));
+        preparation.Prepare(new(default, default, true), false, Eye, Vector3.UnitX,
+            QueueCamera, scene.Objects);
+        Assert.IsFalse(preparation.TryGetPreparedVisibility(invalid, out _, out _));
+        Assert.AreEqual(0, preparation.Views.RenderViews.Views.Length);
+        Assert.IsTrue(preparation.Views.HasSkyView);
+    }
+
+    [TestMethod]
+    public void NativeMapOccluderRejectsExteriorGroupAndDropsItsStateOnMapAndProfileChanges()
+    {
+        using var scene = new CpuScene();
+        Wrath335ClipVolumesTests.StormwindCamera(out var center, out var forward, out var eye, out var camera);
+        var placement = scene.Add(Model(ClipGroup(8, -21f, -19f)) with { portalGraphValid = true });
+        placement.ModelMatrix = ClipPlacement(center, forward);
+        placement.InitializeFileViewerPlacement();
+        var preparation = new WmoScenePortalPreparation();
+        var viewer = new WmoSceneViewerResult(default, default, true);
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 0);
+        Assert.AreEqual(1, preparation.ClipVolumes.Volumes.Length);
+        Assert.IsFalse(Groups(placement)[0]);
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 1);
+        Assert.IsTrue(Groups(placement)[0]);
+        Assert.AreEqual(0, preparation.ClipVolumes.Volumes.Length);
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 0);
+        preparation.Prepare(viewer with { UsesWrath335Rules = false }, true,
+            eye, forward, camera, scene.Objects, 0);
+        Assert.AreEqual(0, preparation.ClipVolumes.Volumes.Length);
+        Assert.IsFalse(preparation.TryGetPreparedVisibility(placement, out _, out _));
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 0);
+        preparation.Prepare(viewer, false, eye, forward, camera, scene.Objects, 0);
+        Assert.AreEqual(0, preparation.ClipVolumes.Volumes.Length);
+    }
+
+    [DataTestMethod]
+    [DataRow(8u, false)]
+    [DataRow(0u, true)]
+    [DataRow(0x40u, true)]
+    public void ExteriorPortalOcclusionBypassUsesLoadedOwnerBitEightRatherThanRootOrExteriorLightFlags(
+        uint loadedFlags, bool targetVisible)
+    {
+        using var scene = new CpuScene();
+        Wrath335ClipVolumesTests.StormwindCamera(out var center, out var forward, out var eye, out var camera);
+        var source = ClipGroup(8, -40f, 40f, 30f) with
+        { flags = loadedFlags, portalLinks = QueueLink(0, 1) };
+        var model = Model(source, ClipGroup(0, -21f, -19f)) with
+        { portalGraphValid = true, portals = [ClipPortal(-20f, 5f)] };
+        var placement = scene.Add(model);
+        placement.ModelMatrix = ClipPlacement(center, forward);
+        placement.InitializeFileViewerPlacement();
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(new(default, default, true), true, eye, forward, camera, scene.Objects, 0);
+        Assert.AreEqual(1, preparation.ClipVolumes.Volumes.Length);
+        Assert.IsTrue(Groups(placement)[0]); // Its sphere straddles the occluder cap.
+        Assert.AreEqual(targetVisible, Groups(placement)[1]);
+        Assert.AreEqual(targetVisible ? 1 : 0, preparation.Views.RenderViews.Views.Length);
+    }
+
+    [TestMethod]
+    public void UpdatedExteriorPlacementBypassesSphereOcclusionWithAnInteriorExteriorWindow()
+    {
+        using var scene = new CpuScene();
+        Wrath335ClipVolumesTests.StormwindCamera(out var center, out var forward, out var eye, out var camera);
+        var primaryModel = Model(ClipGroup(0, -1f, 1f) with { portalLinks = QueueLink(0, 1) },
+            ClipGroup(8, -1f, 1f)) with { portalGraphValid = true, portals = [ClipPortal(0f, 100f)] };
+        var primary = scene.Add(primaryModel);
+        primary.ModelMatrix = ClipPlacement(center - forward * 50f, forward);
+        primary.InitializeFileViewerPlacement();
+        var ordinary = scene.Add(Model(ClipGroup(8, -21f, -19f)) with { portalGraphValid = true });
+        ordinary.ModelMatrix = ClipPlacement(center, forward);
+        ordinary.InitializeFileViewerPlacement();
+        var updated = scene.Add(ordinary.FileDataId);
+        updated.ModelMatrix = ordinary.ModelMatrix;
+        Assert.AreEqual(0x400u, updated.ViewerRuntimeFlags);
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1), default, true);
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 0);
+        Assert.IsTrue(preparation.Views.HasExteriorView);
+        Assert.AreEqual(1, preparation.ClipVolumes.Volumes.Length);
+        Assert.IsFalse(Groups(ordinary)[0]);
+        Assert.IsTrue(Groups(updated)[0]);
+    }
+
+    [TestMethod]
+    public void ClosedPrimaryInteriorIsVisitedBeforeStaticVolumesAndSkipsTheirConstruction()
+    {
+        using var scene = new CpuScene();
+        Wrath335ClipVolumesTests.StormwindCamera(out var center, out var forward, out var eye, out var camera);
+        var primary = scene.Add(Model(ClipGroup(0, -21f, -19f)) with { portalGraphValid = true });
+        primary.ModelMatrix = ClipPlacement(center, forward);
+        primary.InitializeFileViewerPlacement();
+        var viewer = new WmoSceneViewerResult(new(primary, primary.GetWMO(), 0, -1), default, true);
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(viewer, true, eye, forward, camera, scene.Objects, 0);
+        Assert.IsTrue(Groups(primary)[0]);
+        Assert.IsFalse(preparation.Views.HasExteriorView);
+        Assert.AreEqual(0, preparation.ClipVolumes.Volumes.Length);
+    }
+
+    [DataTestMethod]
+    [DataRow(8u)]
+    [DataRow(0x10000u)]
+    public void TerrainEdgesUpdateAfterTheirBandAndGateBothExteriorAndAlwaysDrawSeeds(uint flags)
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 60f, 20f);
+        var sameBand = scene.Add(HorizonModel(55f, flags));
+        var behind = scene.Add(HorizonModel(110f, flags));
+        PrepareTerrainScene(scene);
+        Assert.IsTrue(Groups(sameBand)[0]);
+        Assert.IsFalse(Groups(behind)[0]);
+    }
+
+    [TestMethod]
+    public void IntactChunkDefersItsEdgesUntilTheFarCornerBand()
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 83f, 20f);
+        var beforeFarBand = scene.Add(HorizonModel(75f, 8));
+        var behind = scene.Add(HorizonModel(110f, 8));
+        PrepareTerrainScene(scene);
+        Assert.IsTrue(Groups(beforeFarBand)[0]);
+        Assert.IsFalse(Groups(behind)[0]);
+    }
+
+    [DataTestMethod]
+    [DataRow((ushort)1)]
+    [DataRow(ushort.MaxValue)]
+    public void HoleChunksEraseAfterIntactChunksEvenWhenTheyArrivedFirst(ushort holes)
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 60f, 20f, holes);
+        AddTerrain(scene, 50f, 60f, 20f);
+        var behind = scene.Add(HorizonModel(110f, 8));
+        var preparation = PrepareTerrainScene(scene);
+        Assert.IsTrue(Groups(behind)[0]);
+        Assert.IsFalse(preparation.TerrainOcclusion.Buffer.ContainsBox(
+            new(new(109f, -1f, 0f), new(111f, 1f, 10f))));
+    }
+
+    [TestMethod]
+    public void AChunkRejectedByAnEarlierHorizonCannotEraseItOrBecomeAnOccluder()
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 60f, 20f);
+        AddTerrain(scene, 100f, 110f, 20f, 1);
+        var behind = scene.Add(HorizonModel(150f, 8));
+        PrepareTerrainScene(scene);
+        Assert.IsFalse(Groups(behind)[0]);
+    }
+
+    [DataTestMethod]
+    [DataRow(70f, true)]
+    [DataRow(1000f, false)]
+    public void IntactTerrainProducerHonorsTheStrictFarDistanceWindow(float farClip, bool visible)
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 60f, 20f);
+        var behind = scene.Add(HorizonModel(110f, 8));
+        PrepareTerrainScene(scene, farClip: farClip);
+        Assert.AreEqual(visible, Groups(behind)[0]);
+    }
+
+    [DataTestMethod]
+    [DataRow(true, true)]
+    [DataRow(false, false)]
+    public void UpdatedGroupBypassesTerrainOnlyWithAPrimaryViewer(bool hasPrimary, bool updatedVisible)
+    {
+        using var scene = new CpuScene();
+        var viewer = new WmoSceneViewerResult(default, default, true);
+        if (hasPrimary)
+        {
+            var owner = Floor(0f) with { portalLinks = QueueLink(0, 1) };
+            var primaryModel = Model(owner, HorizonModel(40f, 8).groupBatches[0]) with
+            {
+                portalGraphValid = true,
+                portals = [new() { Normal = -Vector3.UnitX, Distance = 40f,
+                    Vertices = [new(40f, -100f, -100f), new(40f, 100f, -100f),
+                        new(40f, 100f, 100f), new(40f, -100f, 100f)] }]
+            };
+            var primary = scene.Add(primaryModel);
+            viewer = viewer with { Primary = new(primary, primary.GetWMO(), 0, -1) };
+        }
+        AddTerrain(scene, 80f, 90f, 20f);
+        var ordinary = scene.Add(HorizonModel(120f, 8));
+        var updated = scene.Add(ordinary.FileDataId);
+        UpdatePlacement(updated);
+        var preparation = PrepareTerrainScene(scene, viewer);
+        Assert.IsTrue(preparation.Views.HasExteriorView);
+        Assert.IsTrue(preparation.TerrainOcclusion.Buffer.ContainsBox(
+            new(new(119f, -1f, 0f), new(121f, 1f, 10f))));
+        Assert.IsFalse(Groups(ordinary)[0]);
+        Assert.AreEqual(updatedVisible, Groups(updated)[0]);
+    }
+
+    [TestMethod]
+    public void TerrainFeedDropsUnloadedAndMissingMetadataAndOldProfileState()
+    {
+        using var scene = new CpuScene();
+        var adt = AddTerrain(scene, 50f, 60f, 20f);
+        var behind = scene.Add(HorizonModel(110f, 8));
+        var preparation = PrepareTerrainScene(scene);
+        Assert.IsFalse(Groups(behind)[0]);
+        var terrain = adt.Terrain;
+        adt.UpdateTerrain(terrain with { chunkHoleMasks = null! });
+        PrepareTerrainScene(scene, preparation: preparation);
+        Assert.IsTrue(Groups(behind)[0]);
+        adt.UpdateTerrain(terrain);
+        PrepareTerrainScene(scene, preparation: preparation);
+        Assert.IsFalse(Groups(behind)[0]);
+        adt.Unload();
+        PrepareTerrainScene(scene, preparation: preparation);
+        Assert.IsTrue(Groups(behind)[0]);
+        adt.OnLoaded(terrain);
+        PrepareTerrainScene(scene, preparation: preparation);
+        PrepareTerrainScene(scene, new(default, default, false), preparation);
+        Assert.IsFalse(preparation.TerrainOcclusion.Buffer.Active);
+        PrepareTerrainScene(scene, preparation: preparation);
+        preparation.Prepare(new(default, default, true), false, Vector3.Zero, Vector3.UnitX,
+            HorizonCamera, scene.Objects, cameraProjection: HorizonProjection);
+        Assert.IsFalse(preparation.TerrainOcclusion.Buffer.Active);
+    }
+
+    [TestMethod]
+    public void TerrainOutsideTheSceneViewDoesNotOccludeVisibleWmos()
+    {
+        using var scene = new CpuScene();
+        AddTerrain(scene, 50f, 60f, 100f);
+        var behind = scene.Add(HorizonModel(110f, 8));
+        PrepareTerrainScene(scene);
+        Assert.IsTrue(Groups(behind)[0]);
+    }
+
+    private static readonly Matrix4x4 HorizonProjection =
+        Matrix4x4.CreatePerspectiveFieldOfViewLeftHanded(MathF.PI / 2f, 1f, 1f, 1000f);
+    private static readonly Matrix4x4 HorizonCamera = new Camera(Vector3.Zero, 0f, 0f, 1f).GetViewMatrix() *
+        HorizonProjection;
+
+    private static WmoScenePortalPreparation PrepareTerrainScene(CpuScene scene,
+        WmoSceneViewerResult? viewer = null, WmoScenePortalPreparation? preparation = null, float farClip = 1000f)
+    {
+        preparation ??= new();
+        preparation.Prepare(viewer ?? new(default, default, true), true, Vector3.Zero, Vector3.UnitX,
+            HorizonCamera, scene.Objects, cameraProjection: HorizonProjection, farClip: farClip);
+        return preparation;
+    }
+
+    private static WorldModel HorizonModel(float x, uint flags) => Model(Floor(0f, flags) with
+    { mogiBoundingBox = new(new(x - 1f, -1f, 0f), new(x + 1f, 1f, 10f)) }) with { portalGraphValid = true };
+
+    private static ADTContainer AddTerrain(CpuScene scene, float minX, float maxX, float height, ushort holes = 0)
+    {
+        var adt = new ADTContainer(default, default) { ModelMatrix = Matrix4x4.Identity, Scale = 1f };
+        adt.OnLoaded(new() { usesLegacyLighting = true,
+            vertices = Wrath335TerrainClipBufferTests.TerrainVertices(minX, maxX, height),
+            chunkBounds = [new(new(minX, -50f, height), new(maxX, 50f, height))], chunkHoleMasks = [holes] });
+        scene.Objects.Add(adt);
+        return adt;
+    }
+
+    private static Matrix4x4 ClipPlacement(Vector3 center, Vector3 forward)
+    {
+        var z = -forward;
+        var x = Vector3.Cross(Vector3.UnitZ, z);
+        return new(x.X, x.Y, x.Z, 0f, 0f, 0f, 1f, 0f, z.X, z.Y, z.Z, 0f,
+            center.X, center.Y, center.Z, 1f);
+    }
+
+    private static WorldModelGroupBatches ClipGroup(uint flags, float minZ, float maxZ, float radius = 1f) =>
+        Floor(0f, flags) with
+        { mogiBoundingBox = new(new(-radius, -radius, minZ), new(radius, radius, maxZ)) };
+
+    private static WmoPortal ClipPortal(float z, float radius) => new()
+    {
+        Normal = Vector3.UnitZ, Distance = -z,
+        Vertices = [new(-radius, -radius, z), new(radius, -radius, z),
+            new(radius, radius, z), new(-radius, radius, z)]
+    };
+
+    private static readonly Matrix4x4 QueueCamera = Matrix4x4.CreateScale(1f / 4096f, 1f, 1f);
+
+    private static void UpdatePlacement(WMOContainer placement)
+    {
+        placement.InvalidateTransform();
+        placement.ModelMatrix = Matrix4x4.Identity;
+        Assert.AreEqual(0x400u, placement.ViewerRuntimeFlags);
+    }
+
+    private static WmoScenePortalPreparation PrepareScene(CpuScene scene, WmoSceneViewerResult? viewer = null,
+        WmoScenePortalPreparation? preparation = null)
+    {
+        preparation ??= new();
+        preparation.Prepare(viewer ?? new(default, default, true), true, Eye, Vector3.UnitX,
+            QueueCamera, scene.Objects);
+        return preparation;
+    }
+
+    private static bool[] Groups(WMOContainer placement)
+    {
+        placement.GetPortalVisibilityBuffers(placement.GetWMO(), out var groups, out _, out _, out _);
+        return groups;
+    }
+
+    private static void AssertPolygonOrder(WmoScenePortalPreparation preparation, params float[] expected) =>
+        CollectionAssert.AreEqual(expected, preparation.Views.RenderViews.Views.ToArray()
+            .Select(v => v.Rect.MinY).ToArray());
+
+    private static WorldModel QueueModel(params WorldModelGroupBatches[] groups) =>
+        Model(groups) with { portalGraphValid = true, portals = [QueuePortal(0.2f)] };
+
+    private static WorldModelGroupBatches QueueGroup(float depth, uint flags,
+        WmoPortalLink[]? links = null, float width = 1f) => Floor(0f, flags) with
+        {
+            mogiBoundingBox = new(new(depth, -0.2f, 0.1f), new(depth + width, 0.2f, 0.8f)),
+            portalLinks = links ?? []
+        };
+
+    private static WmoPortalLink[] QueueLink(ushort portal, ushort group) =>
+        [new() { PortalIndex = portal, TargetGroupIndex = group, Side = 1 }];
+
+    private static WmoPortal QueuePortal(float radius) => new()
+    {
+        Normal = Vector3.UnitZ, Distance = -0.5f,
+        Vertices = [new(-2048f, -radius, 0.5f), new(2048f, -radius, 0.5f),
+            new(2048f, radius, 0.5f), new(-2048f, radius, 0.5f)]
+    };
 
     private static WorldModel Model(params WorldModelGroupBatches[] groups) => new()
     {

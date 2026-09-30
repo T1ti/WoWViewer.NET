@@ -1,6 +1,6 @@
 # 3.3.5.12340 rendering accuracy plan: DX9 Shader Model 3.0
 
-Last updated: 2026-09-30. Reference: 32-bit `Wow.exe` 3.3.5 build 12340,
+Last updated: 2026-10-01. Reference: 32-bit `Wow.exe` 3.3.5 build 12340,
 Direct3D 9 with `vs_3_0` / `ps_3_0` capabilities. Destination:
 `WTEditor.Avalonia`, `WoWRenderLib.DX11`, and their dependencies.
 
@@ -25,37 +25,76 @@ section; the inventories and chronological notes below are reference material,
 not a startup reading checklist. Check the current checkout and preserve existing
 changes. Do not recreate the shader cache or re-export the IDB to begin work.
 
-- **Baseline:** the latest code batch passed 544 smoke tests (66 Render,
-  287 DX11, 191 Avalonia). Directed portal references, camera boundaries and
-  exterior depth-zero blocker/view queues are partially ported; matched client
-  pixels, full CPU closure and native occlusion remain open.
-- **First implementation slice:** recover the native scene-wide render-view
-  collection order and complement generation `0x7968D0`, then collect every
-  placement's forwarded polygon list before its consumer. The current scene
-  preparation collects only the primary placement; other placements retain
-  their own forwarded scratch lists. Begin with the
+- **Baseline:** the latest code batch passed 698 smoke tests (66 Render,
+  441 DX11, 191 Avalonia). Static WMO doodads now use MODR ownership and
+  MOGI-derived baked MODD lighting indoors, with per-instance DX11 inputs and
+  native material lit gates. Exterior WMO gates consume the 384-column
+  terrain clip buffer with depth-band edge updates, MCNK hole erasure and
+  updated-placement bypasses, alongside static CPU occluder volumes.
+  World-horizon line sources, native terrain/streaming bounds, GPU volumes,
+  numerical captures and matched client pixels remain open.
+  The original bounded portal/occlusion list has five
+  incomplete function contracts; it is not a full rendering-closure count.
+- **First implementation slice (current WMO/doodad lighting focus):** retain each
+  visible-group callback's portal frustum and recover doodad sphere acceptance
+  and the first-accepted-group fog writer at `0x799C91`. Replace the group-only
+  doodad mask with that union and carry staged/current fog per instance. Start
+  with the [static doodad lighting batch](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
+  Acceptance: a visible group's off-window doodad is rejected, either of two
+  portal windows may admit a sphere, shared references submit once with the
+  native fog choice, and indoor/outdoor transitions do not retain stale state.
+- **Remaining exterior occlusion slice:** finish the exterior queue consumers' native
+  horizon feed. Trace writers of the sort-table line list at bucket offset 0x3C
+  (bucket-zero base `0xCD9084`) and endpoints passed at `0x7938BC` to
+  `0x7CC880`/`0x78F900`; connect protected lines after terrain-hole erasure.
+  Terrain edge producers and box reader `0x78FDC0` now feed the bucket/adapter
+  WMO gates; flags=1 retains the stored clip-Z >=50 requirement, while
+  unbucketed a4=1 bypasses terrain rejection. `0xD2DCEC` is a volume count, not a
+  clip-enable flag: its static producers and `0x7CCE00`/`0x7CCFA0` predicates
+  are now ported. Scene-wide CPU preparation
+  now precedes GPU asset batching and collects all accepted exterior polygons;
+  primary interior windows remain separate and secondary visible callbacks survive
+  their window reset. Source bounds use the eight-corner base-frustum AABB;
+  decoded editor availability still adapts native runtime 0x80/loaded-group bit 1,
+  whose streaming lifetimes and runtime 0x20 writers remain open. Begin with the
+  [terrain clip-buffer batch](reference/client-335/CPU_SCENE_AUDIT.md#terrain-clip-buffer-and-depth-band-feed-2026-09-30), the
+  [static CPU occluder batch and scoped function list](reference/client-335/CPU_SCENE_AUDIT.md#static-cpu-occluder-volumes-and-portal-early-out-2026-09-30), the
+  [scene-wide queue batch](reference/client-335/CPU_SCENE_AUDIT.md#scene-wide-exterior-queues-and-placement-cache-2026-09-30), the
+  [exterior group-order batch](reference/client-335/CPU_SCENE_AUDIT.md#exterior-group-depth-order-2026-09-30), the
+  [interior window/complement batch](reference/client-335/CPU_SCENE_AUDIT.md#interior-portal-windows-and-complements-2026-09-30), the
   [exterior queue batch](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30), the
   [Stormwind contract table](reference/client-335/CPU_SCENE_AUDIT.md#stormwind-directed-portals-and-camera-boundaries-2026-09-30)
   and [scene-view findings](reference/client-335/CPU_SCENE_AUDIT.md#scene-portal-views-and-sky-scissor-2026-09-30).
   The callback's two stack arguments and both pointer installations are now
   instruction-supported, and `0x7A70B3` sets the emission gate to 1. Its full
-  group/liquid/frustum consumers remain incomplete. Trace clip-enable storage
-  `0xD2DCEC` via reader `0x7CCDF0` before adding the `0x7CCFA0` early-out.
+  group/liquid/frustum consumers remain incomplete.
 - **Code entry points:** [WmoPortalVisibility](../WoWRenderLib.DX11/Renderer/WmoPortalVisibility.cs),
   [WmoScenePortalPreparation](../WoWRenderLib.DX11/Renderer/WmoScenePortalPreparation.cs),
   [Wrath335PortalRenderViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalRenderViews.cs),
+  [Wrath335ExteriorGroupOrder](../WoWRenderLib.DX11/Renderer/Wrath335ExteriorGroupOrder.cs),
+  [Wrath335SceneExteriorGroups](../WoWRenderLib.DX11/Renderer/Wrath335SceneExteriorGroups.cs),
+  [Wrath335ClipVolumes](../WoWRenderLib.DX11/Renderer/Wrath335ClipVolumes.cs),
+  [Wrath335TerrainClipBuffer](../WoWRenderLib.DX11/Renderer/Wrath335TerrainClipBuffer.cs),
+  [Wrath335SceneTerrainOcclusion](../WoWRenderLib.DX11/Renderer/Wrath335SceneTerrainOcclusion.cs),
+  [Wrath335PortalComplement](../WoWRenderLib.DX11/Renderer/Wrath335PortalComplement.cs),
   and [Wrath335PortalSceneViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalSceneViews.cs).
   Extend [portal traversal tests](../WoWRenderLib.DX11.Tests/Wrath335PortalTraversalTests.cs),
   [exterior queue tests](../WoWRenderLib.DX11.Tests/Wrath335ExteriorPortalViewsTests.cs),
+  [exterior group-order tests](../WoWRenderLib.DX11.Tests/Wrath335ExteriorGroupOrderTests.cs),
+  [scene queue tests](../WoWRenderLib.DX11.Tests/Wrath335SceneExteriorGroupsTests.cs),
+  [scene preparation tests](../WoWRenderLib.DX11.Tests/WmoSceneViewerQueryTests.cs),
+  [CPU occluder tests](../WoWRenderLib.DX11.Tests/Wrath335ClipVolumesTests.cs),
+  [terrain clip-buffer tests](../WoWRenderLib.DX11.Tests/Wrath335TerrainClipBufferTests.cs),
   and [Stormwind tests](../WoWRenderLib.DX11.Tests/Stormwind335PortalTests.cs) as needed.
-- **Slice acceptance:** independent expected complement polygons and ordering for
-  empty/full, disjoint/overlapping windows, repeated seeds and multiple placements;
-  retain unit-viewport rectangles separately from projected polygon coordinates.
+- **Slice acceptance:** independent world-horizon endpoint/enlistment fixtures,
+  protected-line versus hole ordering and accepted/rejected WMO cases. Retain the verified global
+  group/polygon order, interleaved placement cache behavior and the separation of
+  interior window/complement rectangles from exterior polygons.
   Run the full smoke suite after the code batch. Final facade/sky/depth pixel
   comparisons remain a separate capture gate; list tests do not complete occlusion.
-- **Then:** implement clip-volume early-out
-  `0x7CCFA0`, terrain clip buffers and volume draw/state, followed by global
-  exterior consumers. The [Roadmap](#roadmap) retains all CPU and SM3 work.
+- **Then:** wire GPU volume state/frame order and propagate global exterior
+  rectangles/distances to the remaining consumers. The [Roadmap](#roadmap)
+  retains all CPU and SM3 work.
 
 ## Working loop
 
@@ -130,11 +169,84 @@ Twenty new behavioral cases include real Stormwind facade direction crossings.
 Full smoke exits 0 with **544 tests** (66 Render, 287 DX11, 191 Avalonia).
 See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30)
 for evidence, remaining gaps and acceptance. No complement or GPU occlusion
-consumer is completed by this list port.
+consumer was completed by that list port.
+
+Interior window/complement batch: scene preparation now retains emitted interior
+windows separately from exterior polygons and sky/exterior unions, then builds
+the native ordered rectangle subtraction at `0x7968D0`. The port preserves
+zero-area projected windows, touching-edge rules, the strict greater-than-60
+fragment guard (including dropped unprocessed pieces), zero output distance,
+and primary/secondary/reset gates. Full smoke exits 0 with **565 tests**
+(66 Render, 308 DX11, 191 Avalonia), including 21 new cases. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#interior-portal-windows-and-complements-2026-09-30).
+GPU volume submission and matched pixels remain open.
+
+Exterior group-order batch: depth-sorted exterior seeds now visit buckets 0–63
+within each placement, preserving source group order within a bucket. The port
+uses transformed MOGI bounds, the nearest camera-facing corner, horizontal depth,
+staged float scale and nearest-even conversion; updated-transform placements
+retain their existing source order. A behavioral fixture proves that a nearer
+seed can retain a shared portal polygon before a farther blocker stamps emission
+bit 8. Full smoke exits 0 with **585 tests** (66 Render, 328 DX11, 191 Avalonia),
+including 20 new cases. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-group-depth-order-2026-09-30).
+Scene-wide queues and no-viewer rebucketing were completed in the following batch;
+native occlusion remains open.
+
+Scene-wide exterior batch: CPU preparation now follows placement/group arrival
+order across all 12340 placements, independently of GPU asset buckets. It gates
+sources by the base-frustum AABB, rebuckets updated groups outdoors with the native
+first-cutoff break, and reads live visible-group bounds for enclosed unbucketed
+visits. Shared interior/exterior cache generations preserve consecutive-placement
+deduplication and A/B/A re-emission; always-draw callbacks do not switch the cache.
+Secondary visible callbacks survive the primary window reset, and accepted exterior
+polygons append to one scene list. Full smoke exits 0 with **613 tests**
+(66 Render, 356 DX11, 191 Avalonia), including 28 new cases. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#scene-wide-exterior-queues-and-placement-cache-2026-09-30).
+Native streaming activation, point-cull/clip buffers, GPU volume submission and
+matched pixels remain open.
+
+Static CPU occluder batch: the 62 build-12340 map-specific polygons now produce
+reusable plane/volume ranges after interior preparation. Depth clipping preserves
+source flags, full camera pitch, coplanar tolerance and original cap facets.
+Exterior buckets reject fully enclosed MOGI spheres; updated unbucketed visits
+bypass this sphere gate. Portal projection tests offset world points before
+frustum clipping, with cache bit 0x10 derived from destination MOGI and owner
+MOGP bit 8. Full smoke exits 0 with **639 tests** (66 Render, 382 DX11,
+191 Avalonia), including 26 new cases. See the
+[compact CPU entry and scoped function list](reference/client-335/CPU_SCENE_AUDIT.md#static-cpu-occluder-volumes-and-portal-early-out-2026-09-30).
+That batch ported six of the thirteen identified CPU/consumer contracts for the
+world-scene path and left seven incomplete, including partially ported consumers
+and projection numerical validation. This is a bounded list, not dependency
+closure. Terrain clip buffers followed in the next batch; GPU volumes and
+matched captures remain open.
+
+Terrain clip-buffer batch: the 384-column CPU horizon now receives loaded terrain
+edge updates at the end of each depth band, after that band's WMO tests. Intact
+chunks defer updates to their far-corner band and honor the exterior +33.333332 /
+farclip -33.333332 distance window; chunks with holes erase unprotected columns.
+WMO box rejection retains the clip-Z gate, nearest-even column conversion and
+extra right column; updated unbucketed visits bypass it. Full smoke exits 0 with
+**674 tests** (66 Render, 417 DX11, 191 Avalonia), including 35 new cases. See
+[the compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#terrain-clip-buffer-and-depth-band-feed-2026-09-30).
+The original thirteen-contract list now has five incomplete contracts; separate
+world-horizon sources and terrain streaming/combined-bounds adaptation remain
+outside that bounded list. Full terrain culling and final-frame parity remain open.
+
+Static WMO doodad lighting batch: MODR ownership now gates 12340 spawning;
+missing MODS ownership is retained as invalid. MOGI interior/exterior references
+select baked MODD lighting or sunlight; any exterior reference remains authoritative
+for a shared doodad. Per-instance light inputs keep mixed copies in one M2 draw,
+and unlit/modulate materials retain the native lit gate. Full smoke exits 0 with
+**698 tests** (66 Render, 441 DX11, 191 Avalonia), including 24 new cases and
+a WARP pixel fixture using the live M2 shader/input layout. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
+Portal sphere/frustum culling, per-doodad fog, underwater/dynamic lights, entity
+MOCV queries and matched client captures remain open.
 
 | Priority | Next concrete work | Acceptance check |
 | --- | --- | --- |
-| 1 | Finish the portal pipeline after the ported depth-zero queues, bit 8 and forwarding: scene-wide ordered list collection, `0x7968D0` complement generation, clip-volume early-out (`0x7CCFA0`), terrain clip buffer, and portal-view volume draw/state. Recover clip-enable writers and finish callback consumers before wiring those stages. | Reproduce directed and paired Stormwind portals, on-plane/edge crossings, cycles, offsets, exterior-lit groups and empty destinations in CPU traces; compare facade/sky/depth pixels at matched cameras. |
+| 1 | Finish callback/doodad portal-frustum sphere acceptance, shared-reference submission and per-instance staged/current fog (`0x799310`, writer `0x799C91`). Then finish protected world-horizon line sources (`0x7938BC` -> `0x7CC880`/`0x78F900`), native terrain combined bounds/availability, exterior doodad enlistment (`0x7998A0`, post-cull `0x79A242`) and GPU volume state (`0x796C10`), activation/streaming lifetimes and projection numerical validation. | Doodad sphere/window union and first-admission fog fixtures, with frame reset and shared-reference cases; independent horizon-line producer/enlistment and hole-order fixtures; preserve depth-band/unbucketed exceptions, static occluders, global queue/cache behavior and cutoffs; compare doodad/facade/sky/depth pixels at matched cameras. |
 | 2 | Propagate the global exterior rectangle and distance to terrain, standalone M2, other WMO placements, doodads and liquids, including the +33.333332 distance handoff and depth-sorted/unbucketed exceptions. Recover group availability/order and WDT bounds. | Compare accepted/rejected scene nodes and batch lists against client captures; no conservative full-frustum shortcut in Client mode. |
 | 3 | Recover viewer-liquid/plane selection, blend-sky overrides, MOCV entity lighting, animation/eligibility/bounds, then move M2 submission to its renderer and implement the shared element queues and conditional frame graph. | Independent input/order fixtures plus liquid/interior/exterior frame captures and state restoration checks. |
 | 4 | Complete Client-mode CVar consumers and native streaming/LOD/fades; implement explicit whole-map Editor demand while preserving its custom rules. | Low/default/ultra, mode-switch and whole-map tests; other-client regression checks. |
@@ -734,6 +846,13 @@ exterior/interior passes (`0x7AC6A0` / `0x7AC9F0`), default state
 group query (`0x7C7FE0`), doodad interior query (`0x7C1C40`),
 light selection (`0x7C1150`), and permutation/light-count binding
 (`0x7A84D0`).
+
+The [static doodad batch](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01)
+ports the MODD baseline and MOGI ownership classifier. The static mesh callback
+does not dispatch the floor-query slot: entity BSP/MOCV queries remain a separate
+contract. The cached `Diffuse_T1` SM3 evidence supports the directional vertex
+term for this slice; other M2 permutations, dynamic lights, material arithmetic
+and matched pixels remain open.
 
 - Recover MOMT flags/material keys, batch categories, transition passes,
   unfogged/unlit behavior, texture count, BLP alpha promotion and render state.

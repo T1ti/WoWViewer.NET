@@ -1,56 +1,185 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using WoWRenderLib.DX11.Objects;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Renderer;
 
-/// <summary>Prepares the primary viewer's masks and global view unions before sky submission.</summary>
+/// <summary>Prepares 12340 scene masks and global portal lists independently of GPU asset buckets.</summary>
 internal sealed class WmoScenePortalPreparation
 {
     public Wrath335PortalSceneViews Views { get; } = new();
     public bool UsesWrath335Rules { get; private set; }
-    private WMOContainer? _preparedPlacement;
-    private bool _preparedVisibility;
-    private int _traversedReferences;
+    private readonly List<Placement> placements = [];
+    private readonly Dictionary<WMOContainer, int> placementIndices = [];
+    private readonly List<BoundingBox> visibleBounds = [];
+    private readonly Wrath335SceneExteriorGroups exteriorGroups = new();
+    private readonly Wrath335PortalPlacementCache cache = new();
+    internal Wrath335ClipVolumes ClipVolumes { get; } = new();
+    internal Wrath335SceneTerrainOcclusion TerrainOcclusion { get; } = new();
+    private int activeCount;
 
     public void Prepare(in WmoSceneViewerResult viewer, bool portalCulling,
-        Vector3 eyeWorld, Vector3 cameraForwardWorld, in Matrix4x4 viewProjection)
+        Vector3 eyeWorld, Vector3 cameraForwardWorld, in Matrix4x4 viewProjection,
+        IReadOnlyList<Container3D> sceneObjects, int mapId = -1,
+        Matrix4x4? cameraProjection = null, float farClip = 1000f)
     {
-        _preparedPlacement = null;
-        _preparedVisibility = false;
-        _traversedReferences = 0;
+        for (var index = 0; index < activeCount; index++)
+            placements[index].Release();
+        activeCount = 0;
+        placementIndices.Clear();
+        visibleBounds.Clear();
+        cache.Reset();
+        ClipVolumes.Clear(); // 0x79A96F: interior passes precede static volume construction.
+        TerrainOcclusion.Clear();
+        Views.Reset(false);
         UsesWrath335Rules = portalCulling && viewer.UsesWrath335Rules;
-        var primary = viewer.Primary;
-        if (!UsesWrath335Rules || primary.Instance == null)
-        {
-            Views.Reset(false);
+        if (!UsesWrath335Rules)
             return;
+
+        exteriorGroups.Begin(eyeWorld, cameraForwardWorld, viewProjection);
+        // 0x7B6110 visits the placement list, then ascending root group links.
+        for (var index = 0; index < sceneObjects.Count; index++)
+        {
+            if (sceneObjects[index] is not WMOContainer instance || placementIndices.ContainsKey(instance))
+                continue;
+            var model = ReferenceEquals(instance, viewer.Primary.Instance) ? viewer.Primary.Model :
+                ReferenceEquals(instance, viewer.Secondary.Instance) ? viewer.Secondary.Model : instance.GetWMO();
+            if (!model.wrath335 || !model.legacyLighting || model.rootWMOFileDataID != instance.FileDataId ||
+                model.groupBatches is not { Length: > 0 })
+                continue;
+            if (activeCount == placements.Count)
+                placements.Add(new());
+            var placementIndex = activeCount++;
+            var placement = placements[placementIndex];
+            placementIndices.Add(instance, placementIndex);
+            placement.Model = model;
+            placement.Enabled = instance.EnabledGroups;
+            instance.GetPortalVisibilityBuffers(model, out placement.Groups, out placement.Doodads,
+                out placement.Batches, out var scratch);
+            placement.Scratch = scratch;
+            placement.Applied = WmoPortalVisibility.TryBeginWrath335Scene(model,
+                instance.GetModelMatrix(), viewProjection, eyeWorld, cameraForwardWorld,
+                placement.Enabled, placement.Groups, placement.Batches, scratch, visibleBounds, ClipVolumes);
+            exteriorGroups.AddPlacement(placementIndex, model.groupBatches, placement.Enabled,
+                instance.GetModelMatrix(), instance.ViewerRuntimeFlags, placement.Applied);
         }
-        var model = primary.Model;
-        var flags = RootFlags(model, primary.PrimaryGroupIndex) |
-                    RootFlags(model, primary.SecondaryGroupIndex);
-        Views.Reset(true, flags, viewer.Secondary.Instance != null);
-        primary.Instance.GetPortalVisibilityBuffers(model,
-            out var groups, out var doodads, out var batches, out var scratch);
-        _preparedPlacement = primary.Instance;
-        _preparedVisibility = WmoPortalVisibility.TryComputeViewerScene(model,
-            primary.Instance.GetModelMatrix(), viewProjection, eyeWorld, cameraForwardWorld,
-            primary.Instance.EnabledGroups, groups, doodads, batches, scratch,
-            out _traversedReferences,
-            new(primary.PrimaryGroupIndex, primary.SecondaryGroupIndex), Views);
-        if (!_preparedVisibility)
-            Views.Reset(false); // Invalid/incomplete graphs retain the ordinary visible scene.
+
+        // Secondary callbacks survive the list reset before the primary interior pass.
+        VisitInterior(viewer.Secondary, null);
+        var hasPrimary = viewer.Primary.Instance != null &&
+            placementIndices.TryGetValue(viewer.Primary.Instance, out var primaryIndex) &&
+            placements[primaryIndex].Applied;
+        if (hasPrimary)
+        {
+            Views.Reset(true, RootFlags(viewer.Primary.Model, viewer.Primary.PrimaryGroupIndex) |
+                RootFlags(viewer.Primary.Model, viewer.Primary.SecondaryGroupIndex),
+                viewer.Secondary.Instance != null);
+            VisitInterior(viewer.Primary, Views);
+            Views.BuildComplement();
+        }
+
+        // 0x79A7A5 builds volumes only when the exterior bucket consumer runs.
+        if (Views.HasExteriorView)
+        {
+            ClipVolumes.Prepare(mapId, eyeWorld, cameraForwardWorld, viewProjection, Views.ExteriorDistance);
+            if (cameraProjection is { } projection)
+                TerrainOcclusion.Begin(sceneObjects, eyeWorld, cameraForwardWorld, projection,
+                    viewProjection, Views.ExteriorRect, Views.ExteriorDistance, hasPrimary, farClip, ClipVolumes);
+        }
+        exteriorGroups.Complete(hasPrimary, Views.HasExteriorView);
+        var seeds = exteriorGroups.Seeds;
+        var seedIndex = 0;
+        for (var bucket = 0; bucket < 64; bucket++)
+        {
+            TerrainOcclusion.BeginBucket(bucket);
+            while (seedIndex < seeds.Length && seeds[seedIndex].Bucket == bucket)
+                VisitExterior(seeds[seedIndex++]);
+            TerrainOcclusion.EndBucket(bucket);
+        }
+        while (seedIndex < seeds.Length)
+            VisitExterior(seeds[seedIndex++]);
+        for (var index = 0; index < activeCount; index++)
+        {
+            var placement = placements[index];
+            if (placement.Applied)
+                WmoPortalVisibility.FinishWrath335Scene(placement.Model, placement.Groups, placement.Doodads);
+        }
+    }
+
+    private void VisitExterior(in Wrath335SceneExteriorSeed seed)
+    {
+        var unbucketed = seed.Bucket < 0;
+        if (unbucketed && !Wrath335SceneExteriorGroups.AcceptUnbucketed(seed.Bounds,
+            Views.HasExteriorView, CollectionsMarshal.AsSpan(visibleBounds)))
+            return;
+        var placement = placements[seed.PlacementIndex];
+        // 0x79A221/0x7B3A76 use flags=1 at both terrain gates. Unbucketed a4=1
+        // bypasses sphere and terrain tests, while keeping the full camera test.
+        if (!unbucketed && (ClipVolumes.ContainsSphere(Wrath335ClipVolumes.GroupSphere(
+                placement.Model.groupBatches[seed.GroupIndex].mogiBoundingBox,
+                placement.Scratch!.ModelToWorld)) || TerrainOcclusion.Buffer.ContainsBox(seed.Bounds, 1)))
+            return;
+        var scratch = placement.Scratch!;
+        WmoPortalVisibility.VisitWrath335Exterior(placement.Model, seed.GroupIndex, seed.Bounds,
+            unbucketed ? WmoPortalRect.Full : Views.ExteriorRect,
+            placement.Enabled, placement.Groups, placement.Batches, scratch, cache,
+            ref placement.References);
+        Views.RenderViews.Append(scratch.ExteriorPortalViews.Forwarded);
+    }
+
+    private void VisitInterior(in WmoViewerPlacement viewer, Wrath335PortalSceneViews? views)
+    {
+        if (viewer.Instance == null || !placementIndices.TryGetValue(viewer.Instance, out var index))
+            return;
+        var placement = placements[index];
+        if (!placement.Applied)
+            return;
+        cache.Enter(placement.Scratch!);
+        WmoPortalVisibility.VisitWrath335Interior(placement.Model,
+            new(viewer.PrimaryGroupIndex, viewer.SecondaryGroupIndex), placement.Enabled,
+            placement.Groups, placement.Batches, placement.Scratch!, views, ref placement.References);
     }
 
     public bool TryGetPreparedVisibility(WMOContainer instance, out bool applied,
         out int traversedReferences)
     {
-        applied = _preparedVisibility;
-        traversedReferences = _traversedReferences;
-        return ReferenceEquals(instance, _preparedPlacement);
+        if (placementIndices.TryGetValue(instance, out var index))
+        {
+            applied = placements[index].Applied;
+            traversedReferences = placements[index].References;
+            return true;
+        }
+        applied = false;
+        traversedReferences = 0;
+        return false;
     }
 
     private static uint RootFlags(in WorldModel model, int index) =>
         model.groupBatches != null && (uint)index < (uint)model.groupBatches.Length
             ? model.groupBatches[index].mogiFlags : 0;
+
+    // Reuse frame records; masks/projection buffers remain owned by each placement.
+    private sealed class Placement
+    {
+        public WorldModel Model;
+        public bool[] Enabled = [], Groups = [], Doodads = [], Batches = [];
+        public WmoPortalVisibilityScratch? Scratch;
+        public bool Applied;
+        public int References;
+        public void Release()
+        {
+            if (Scratch != null)
+            {
+                Scratch.SceneVisibleBounds = null;
+                Scratch.WrathProjection.ClipVolumes = null;
+            }
+            Model = default;
+            Enabled = Groups = Doodads = Batches = [];
+            Scratch = null;
+            Applied = false;
+            References = 0;
+        }
+    }
 }

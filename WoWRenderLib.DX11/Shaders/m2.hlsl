@@ -13,7 +13,8 @@ cbuffer PerObject : register(b0)
     float alphaRef;
     float blendMode;
     int fogMode;
-    float2 _pad;
+    int doodadMaterialLit;
+    float _pad;
     float3 ambientColor;
     float globalOpacity;
     float3 diffuseColor;
@@ -56,6 +57,9 @@ struct VSInput
     float4 instanceRow1 : TEXCOORD3;
     float4 instanceRow2 : TEXCOORD4;
     float4 instanceRow3 : TEXCOORD5;
+    float4 instanceAmbient : TEXCOORD6;
+    float4 instanceDiffuse : TEXCOORD7;
+    float4 instanceDirection : TEXCOORD8;
 };
 
 struct VSOutput
@@ -158,6 +162,18 @@ VSOutput VS_Main(VSInput input)
     // textures are not multiplied by the old unbounded (1 + N.L) factor.
     float nDotL = max(dot(output.Normal, normalize(lightDirection)), 0.0f);
     output.LitColor = saturate(ambientColor + diffuseColor * nDotL);
+    if (input.instanceAmbient.w > 0.5f)
+    {
+        // Build 12340 static WMO doodads use baked MODD indoors and sunlight
+        // outdoors. The fixed interior direction is in world space.
+        if (doodadMaterialLit == 0)
+            output.LitColor = 1.0f;
+        else if (input.instanceAmbient.w < 1.5f)
+        {
+            float bakedNDotL = saturate(dot(output.Normal, input.instanceDirection.xyz));
+            output.LitColor = saturate(input.instanceAmbient.rgb + input.instanceDiffuse.rgb * bakedNDotL);
+        }
+    }
 
     float4x4 textureMatrix1 = hasTexMatrix1 != 0 ? texMatrix1 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
     float4x4 textureMatrix2 = hasTexMatrix2 != 0 ? texMatrix2 : float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);

@@ -113,6 +113,7 @@ public static class ADTLoader
         var indices = new int[MaxChunksPerTile * IndicesPerChunk];
         var farLodIndices = new int[MaxChunksPerTile * FarLodIndicesPerChunk];
         var chunkBounds = new BoundingBox[MaxChunksPerTile];
+        var chunkHoleMasks = new ushort[chunkCount];
         var renderBatches = new ParsedADTRenderBatch[MaxChunksPerTile];
         var indicesOffset = 0;
         var farLodIndicesOffset = 0;
@@ -123,6 +124,7 @@ public static class ADTLoader
         {
             var chunk = chunks[chunkIndex];
             var header = chunk.Header;
+            chunkHoleMasks[chunkIndex] = (ushort)header.HolesLowRes;
             var heights = chunk.Heights.AsSpan();
             var normals = chunk.Normals.AsDataSpan();
             Span<Formats.Common.CImVector.Data> vertexColors = default;
@@ -233,6 +235,7 @@ public static class ADTLoader
         }
 
         parsed.vertexBuffer = MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray();
+        parsed.chunkHoleMasks = chunkHoleMasks;
         parsed.indiceBuffer = MemoryMarshal.AsBytes(indices.AsSpan()).ToArray();
         parsed.farLodIndiceBuffer = MemoryMarshal.AsBytes(farLodIndices.AsSpan()).ToArray();
         parsed.renderBatches = renderBatches;

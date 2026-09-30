@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using System.Numerics;
+using WoWRenderLib.DX11.Renderer;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Structs
@@ -65,6 +66,7 @@ namespace WoWRenderLib.DX11.Structs
         public WmoPortal[] portals;
         public bool portalGraphValid;
         public bool[] doodadsReferencedByGroups;
+        internal Wrath335WmoDoodadLighting[]? doodadLighting;
         public int[] firstRenderBatchByGroup;
         public int[] renderBatchCountByGroup;
     }

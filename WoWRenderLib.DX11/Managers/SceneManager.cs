@@ -550,7 +550,7 @@ namespace WoWRenderLib.DX11.Managers
                 // Instance buffer
                 bufferDesc = new BufferDesc
                 {
-                    ByteWidth = (uint)(MaxInstancesPerBatch * sizeof(Matrix4x4)),
+                    ByteWidth = (uint)(MaxInstancesPerBatch * sizeof(M2InstanceData)),
                     Usage = Usage.Dynamic,
                     BindFlags = (uint)BindFlag.VertexBuffer,
                     CPUAccessFlags = (uint)CpuAccessFlag.Write
@@ -1057,7 +1057,8 @@ namespace WoWRenderLib.DX11.Managers
                 : default;
             var portalPreparationStarted = Stopwatch.GetTimestamp();
             _wmoScenePortalPreparation.Prepare(sceneViewer, EnableWmoPortalCulling,
-                camera.Position, camera.Front, viewProjection);
+                camera.Position, camera.Front, viewProjection, SceneObjects, CurrentMapId,
+                projectionMatrix, camera.FarPlane);
             var portalPreparationElapsed = Stopwatch.GetElapsedTime(portalPreparationStarted).TotalMilliseconds;
             WmoCullingTimeMs += portalPreparationElapsed;
             CullingTimeMs += portalPreparationElapsed;
@@ -1563,7 +1564,10 @@ namespace WoWRenderLib.DX11.Managers
                                 wmo.legacyLighting
                                     ? viewerTerrainRayLimit!.Value
                                     : WmoPortalVisibility.ClientViewerRayLength,
-                                sceneViewer.GetViewerGroups(instance));
+                                sceneViewer.GetViewerGroups(instance),
+                                cameraForwardWorld: camera.Front,
+                                depthSortedExteriorSeeds:
+                                    (instance.ViewerRuntimeFlags & Wrath335ViewerPlacementSelection.UpdatedTransform) == 0);
                         if (prepared)
                             traversedPortalReferences = preparedReferences;
                         if (portalApplied)
@@ -1858,13 +1862,15 @@ namespace WoWRenderLib.DX11.Managers
                 diffuseColor = DiffuseColor,
                 alphaRef = 1.0f,
                 blendMode = 0,
-                _pad = Vector2.Zero
+                doodadMaterialLit = 1,
+                _pad = 0
             };
             var lastM2BlendMode = float.NaN;
             var lastM2VertexShader = int.MinValue;
             var lastM2PixelShader = int.MinValue;
             var lastM2AlphaRef = float.NaN;
             var lastM2HasSkinning = -1;
+            var lastDoodadMaterialLit = -1;
             var lastM2FogMode = -1;
             var lastM2HasAnimation = false;
             var lastM2MaterialColor = Vector4.Zero;
@@ -2104,15 +2110,19 @@ namespace WoWRenderLib.DX11.Managers
                                 MappedSubresource mapped = default;
                                 SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
 
-                                var dest = new Span<Matrix4x4>(mapped.PData, batchCount);
+                                var dest = new Span<M2InstanceData>(mapped.PData, batchCount);
                                 for (int i = 0; i < batchCount; i++)
-                                    dest[i] = packet.WorldMatrices[animationGroup.Indices[batchStart + i]];
+                                {
+                                    var index = animationGroup.Indices[batchStart + i];
+                                    dest[i] = M2InstanceData.ForScene(packet.Instances[index], packet.WorldMatrices[index]);
+                                }
 
                                 _deviceContext.Unmap(instanceMatrixBuffer, 0);
                                 InstanceBufferMapCalls++;
                             }
 
-                            _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in instanceStride, in instanceOffset);
+                            var m2InstanceStride = (uint)Marshal.SizeOf<M2InstanceData>();
+                            _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in m2InstanceStride, in instanceOffset);
                             VertexBufferBindings++;
 
                             for (int j = 0; j < m2.submeshes.Length; j++)
@@ -2139,6 +2149,8 @@ namespace WoWRenderLib.DX11.Managers
                                     GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
                                 m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
                                 m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
+                                m2ConstantBuffer.doodadMaterialLit = Wrath335WmoDoodadLighting.IsMaterialLit(
+                                    batch.renderFlags, (int)batch.blendType) ? 1 : 0;
                                 m2ConstantBuffer.fogMode = (int)Wrath335M2FogPolicy.ForMaterial(
                                     m2.usesLegacyDepthFlags, (int)batch.blendType,
                                     (batch.renderFlags & (ushort)M2MaterialFlags.Unfogged) != 0);
@@ -2166,6 +2178,7 @@ namespace WoWRenderLib.DX11.Managers
                                     m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
                                     m2ConstantBuffer.fogMode != lastM2FogMode ||
                                     m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
+                                    m2ConstantBuffer.doodadMaterialLit != lastDoodadMaterialLit ||
                                     lastM2HasAnimation != (pose is not null) ||
                                     m2ConstantBuffer.materialColor != lastM2MaterialColor ||
                                     !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
@@ -2181,6 +2194,7 @@ namespace WoWRenderLib.DX11.Managers
                                     lastM2AlphaRef = m2ConstantBuffer.alphaRef;
                                     lastM2FogMode = m2ConstantBuffer.fogMode;
                                     lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
+                                    lastDoodadMaterialLit = m2ConstantBuffer.doodadMaterialLit;
                                     lastM2HasAnimation = pose is not null;
                                     lastM2MaterialColor = m2ConstantBuffer.materialColor;
                                     lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;

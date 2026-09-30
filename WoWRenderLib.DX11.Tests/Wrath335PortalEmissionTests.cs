@@ -61,6 +61,7 @@ public sealed class Wrath335PortalEmissionTests
         var views = Compute(model, out _, out _);
         Assert.IsTrue(views.HasSkyView);
         Assert.IsFalse(views.HasExteriorView);
+        Assert.AreEqual(1, views.Windows.Length);
     }
 
     [TestMethod]
@@ -129,6 +130,47 @@ public sealed class Wrath335PortalEmissionTests
             visible, [], [], new(), out _, new(0, -1), views));
         Assert.IsTrue(views.HasExteriorView);
         CollectionAssert.AreEqual(new[] { true, false }, visible);
+    }
+
+    [TestMethod]
+    public void ThreeOrMoreProjectedVerticesRetainAZeroAreaInteriorWindow()
+    {
+        var model = Model(Group(0), Group(0x100));
+        Link(ref model, 0, 1, 0);
+        model.portals = [new() { Normal = Vector3.UnitX, Distance = -0.5f,
+            Vertices = [new(0.5f, -0.2f, 0.3f), new(0.5f, 0.2f, 0.3f),
+                new(0.5f, 0.2f, 0.7f), new(0.5f, -0.2f, 0.7f)] }];
+        var scene = new Wrath335PortalSceneViews();
+        scene.Reset(true);
+        var visible = new bool[2];
+        Assert.IsTrue(WmoPortalVisibility.TryComputeViewerScene(model, Matrix4x4.Identity,
+            Matrix4x4.Identity, new(0.5f, 0f, 0.5f), -Vector3.UnitZ, [true, true],
+            visible, [], [], new(), out _, new(0, -1), scene));
+        CollectionAssert.AreEqual(new[] { true, true }, visible);
+        Assert.AreEqual(1, scene.Windows.Length);
+        Assert.AreEqual(new WmoPortalRect(0.745f, 0.4f, 0.745f, 0.6f), scene.Windows[0].Rect);
+        Assert.IsTrue(scene.HasSkyView);
+        scene.BuildComplement();
+        Assert.AreEqual(4, scene.Complement.Views.Length);
+    }
+
+    [TestMethod]
+    public void BothRegisteredViewerGroupsAppendInteriorWindowsInTheirTraversalOrder()
+    {
+        var model = Model(Group(0), Group(0), Group(0x100), Group(0x40000));
+        Link(ref model, 0, 2, 0);
+        Link(ref model, 1, 3, 1);
+        model.portals = [Portal(0.1f), Portal(0.5f)];
+        var scene = new Wrath335PortalSceneViews();
+        scene.Reset(true);
+        var visible = new bool[4];
+        Assert.IsTrue(WmoPortalVisibility.TryComputeViewerScene(model, Matrix4x4.Identity,
+            Matrix4x4.Identity, new(0f, 0f, 1f), -Vector3.UnitZ, [true, true, true, true],
+            visible, [], [], new(), out _, new(0, 1), scene));
+        CollectionAssert.AreEqual(new[] { true, true, true, true }, visible);
+        CollectionAssert.AreEqual(new Wrath335PortalWindow[] {
+            new(new(0.45f, 0.45f, 0.55f, 0.55f), 0.5f),
+            new(new(0.25f, 0.25f, 0.75f, 0.75f), 0.5f) }, scene.Windows.ToArray());
     }
 
     private static Wrath335PortalSceneViews Compute(WorldModel model,

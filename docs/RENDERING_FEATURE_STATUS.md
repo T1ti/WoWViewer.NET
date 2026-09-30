@@ -1,6 +1,6 @@
 # WTEditor rendering feature status
 
-Last updated: 2026-09-30. This is the working rendering ledger for future
+Last updated: 2026-10-01. This is the working rendering ledger for future
 client-version work. Update the version matrix, open issues, and next steps
 when a fix lands or a visual comparison changes their status. WowLib remains
 the only client-file reader and parser; Wisp is a rendering reference for 3.3.5.
@@ -12,14 +12,30 @@ repository smoke suite; it does not imply parity with every WoW client era.
 
 ## Roadmap
 
-The latest portal batch implements exterior depth-zero blocker/view queues,
-emission bits 4/8 and ordered forwarding for 12340, with retained polygon
-storage separate from sky/exterior unions. Full smoke exits 0 with **544 tests**
-(66 Render, 287 DX11, 191 Avalonia), including 20 new portal cases. Evidence and
+The latest batch connects static 12340 WMO doodad MODR/MODS ownership and MOGI
+light-bank classification. Interior copies use the baked MODD ambient/diffuse
+split; exterior copies retain sunlight. The instance stream supports both in
+one M2 draw, with the native unlit/modulate gate and neutral sky/other-client
+fallback. Full smoke exits 0 with **698 tests** (66 Render, 441 DX11,
+191 Avalonia), including 24 new cases and a live M2 shader WARP pixel fixture.
+See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
+Next for doodads: callback frustum/sphere culling, shared-owner admission order
+and per-instance current/staged fog. Underwater/dynamic lights, entity MOCV,
+shadows and matched client pixels remain open.
+
+The preceding portal batch connects the 12340 terrain clip buffer to exterior WMO
+box rejection. Loaded terrain edge updates follow each depth band's WMO tests;
+hole chunks erase unprotected columns and updated unbucketed groups bypass the
+gate. Static CPU volumes remain separate. Full smoke exits 0 with **674 tests**
+(66 Render, 417 DX11, 191 Avalonia), including 35 new cases. Evidence and
 remaining limitations are recorded in the
-[CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30).
-The next work is scene-wide render-view collection, complements and native
-clip/volume consumers, followed by global exterior view/distance and viewer-liquid/frame
+[CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#terrain-clip-buffer-and-depth-band-feed-2026-09-30).
+Five originally listed function contracts remain incomplete; separate horizon
+sources and terrain/streaming adaptation remain gaps, not dependency closure.
+The next work is protected world-horizon sources, native terrain bounds/
+availability, callback/doodad gates and GPU volume
+consumers and native activation/streaming lifetimes, followed by global exterior
+view/distance and viewer-liquid/frame
 ordering. Continue all CPU preparation and DX9 SM3 workstreams using the
 [extended roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap) and
 [CPU roadmap](reference/client-335/CPU_SCENE_AUDIT.md#roadmap).
@@ -71,7 +87,7 @@ running normal/updated-transform pools, including equal-hit replacement and
 exterior clearing. Runtime flags and stored 12340 ADT MODF bounds remain separate
 from file flags. Shared primary/secondary group pairs seed WMO portal culling
 independently of fog data, without repeating each placement's BSP query.
-Primary scene portal masks and separate sky/exterior view unions now prepare
+Scene portal masks and separate sky/exterior view unions now prepare
 before sky submission. Closed views skip sky; open views apply the recovered
 DX9 window scissor rounding across dome, clouds, celestials, stars and skyboxes.
 Closed interiors clear to current fog color, and the WMO pass reuses prepared
@@ -80,10 +96,18 @@ clips against normalized world planes with ±0.0001 classification, omits near
 rather than far, and preserves original portal plane coefficients. Directed
 MOGP ranges, null references, previous-group back edges, inclusive depth 10,
 strict rectangle degeneracy, loaded always-draw callback rejection and the
-selected placement's exterior-window seeds have regression coverage.
+scene-wide exterior-window seeds have regression coverage. Exterior CPU queues
+now preserve placement/group arrival order across GPU asset buckets, rebucket
+updated placements outdoors and use live visible-group overlap when enclosed.
+Interior/exterior visits share placement cache generations; accepted exterior
+polygons collect globally, separately from primary interior windows/complements.
+Map-specific static CPU occluders now reject bucketed MOGI spheres and offset
+world portal polygons, with updated-placement and cached interior bypasses.
+The terrain clip buffer now gates exterior WMO boxes and receives loaded edge
+updates after each depth band, retaining hole and unbucketed exceptions.
 The Stormwind fixture retains seven facade polygons and eleven actual one-way
 links; those two named facades have paired links in the inspected asset.
-This is a partial port: native streaming/group order, global exterior
+This is a partial port: native streaming/group availability, global exterior
 consumers/occlusion, WDT bounds, viewer liquids, blend-sky models, x87 rounding,
 entity MOCV lighting and captures remain open.
 Pre-existing IDA names are unverified hypotheses; address-based findings are in
@@ -138,8 +162,10 @@ TODO(WMO):
    describes BSP/MOPY based barycentric
    MOCV lighting queries for entities inside interior groups. Wisp implements
    camera visibility and collision BSP queries but has no equivalent lighting
-   query for dynamic entities. The editor also has no interior MOCV lighting
-   query for its doodads. Add one when entity lighting inside WMOs is audited.
+   query for dynamic entities. Entity BSP/MOCV lighting remains open. Static
+   12340 WMO doodad mesh lighting now uses its MODD baseline and MOGI owner
+   classification; its native mesh callback does not invoke a floor query.
+   Keep that static baseline separate from the remaining entity lighting audit.
    The page also lists detail/render/trans MOPY debug modes. Normal editor
    rendering already consumes MOBA index ranges and the MOGP transition,
    interior, and exterior batch counts. Its collision overlay reads MOPY/MPY2
@@ -307,7 +333,7 @@ for every M2 effect or other client versions.
 | Feature | Status | Current scope / remaining work |
 | --- | --- | --- |
 | ADT terrain geometry and textures | Partial parity | Layered diffuse/height textures, LOD, editor overlays, culling, and streaming are active. MCAL sampling and composition need the per-version visual checks above. |
-| WMO rendering | Partial parity | Groups, materials, instancing, doodad sets, portal visibility, and selection are active. The 3.3.5 path keeps MOGI and MOGP flags separate, uses downward viewer-group hits, projected nested portal rectangles, and the client packed MOBA batch bounds. Portal-less MPQ WMOs still cull interior groups outdoors; a real floor hit supersedes bounds-only candidates. Instance grouping and modern CASC batch bounds remain. Exact terrain fraction/rounding, native streaming/group availability, exterior clip-buffer occlusion, and portal views for outdoor terrain, M2, liquid, and doodads remain. The user's reference/editor exterior captures still require a matched regression view. WotLK alpha-key cutout and WMO material clamp flags are connected; interior/material permutations remain. |
+| WMO rendering | Partial parity | Groups, materials, instancing, doodad sets, portal visibility, and selection are active. The 3.3.5 path keeps MOGI and MOGP flags separate, uses downward viewer-group hits, projected nested portal rectangles, and the client packed MOBA batch bounds. Portal-less MPQ WMOs still cull interior groups outdoors; a real floor hit supersedes bounds-only candidates. Native static CPU occluders gate exterior group spheres and world portal polygons, preserving updated-placement and cached interior bypasses. Terrain clip-buffer box rejection and depth-band edge updates are connected, including hole erasure and unbucketed exceptions. Instance grouping and modern CASC batch bounds remain. Exact terrain fraction/rounding, native streaming/group availability and terrain combined bounds, protected horizon sources, GPU volume occlusion, and portal views for outdoor terrain, M2, liquid, and doodads remain. The user's reference/editor exterior captures still require a matched regression view. WotLK alpha-key cutout and WMO material clamp flags are connected; interior/material permutations remain. |
 | M2 rendering | Partial parity | Static geometry/material combinations and instancing are active. 3.3.5 skeletal/material animation, billboard bones, per-instance selection, and first ribbon and particle draw passes are active. The white instance portal particle plane is visually confirmed; broader effect parity and visual comparison remain. Opaque and translucent M2 submeshes are submitted on opposite sides of the liquid pass without repeating animation evaluation. Hermite and Bezier tracks currently use Wisp's linear fallback because their tangents are not retained. World-space M2 normals and WotLK material depth flags need broader visual confirmation. |
 | MH2O liquid rendering | Partial parity | Geometry, material families, LightData colors, and LightParams alpha are active. All-zero named LightData color quartets resolve to the shared non-black client-material palette in both renderer and UI snapshots while retaining the selected LightParams alpha values. Water now draws between opaque and translucent M2 submeshes, preventing distant water from washing over a nearer additive beam. Water and transparent M2s still lack general per-depth interleaving, and the forward water pass lacks scene-colour/depth refraction. Wisp marks exact ADT liquid materials unfinished, so 3.3.5 terrain-water tint/alpha needs a comparison against the client; WMO liquid can be checked against Wisp. |
 | Dynamic time-of-day lighting | Implemented | Light/LightParams and either LightData (builds after 15595) or LightIntBand/LightFloatBand (builds through 15595) are loaded by DBD column name and evaluated on the circular 0–2880 timeline. Legacy Light coordinates and falloff radii are converted from inches; legacy LightSkybox model paths resolve through the MPQ asset registry. Missing tables, columns, band rows, and referenced entries are reported in the console. Map navigation is durable view-model state, replayed whenever the DX11 renderer attaches/restarts, then retained by the engine until content/database initialization finishes and applied on the render thread with dynamic evaluation enabled. Renderer-owned controls are read-only while live lighting is active, and delayed TwoWay control echoes cannot disable dynamic updates. |

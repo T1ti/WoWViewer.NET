@@ -209,7 +209,7 @@ public static class WMOLoader
         }
 
         var doodadSets = ReadDoodadSets(root);
-        var doodads = ReadDoodads(fileSystem, rootData, doodadSets);
+        var doodads = ReadDoodads(fileSystem, rootData, doodadSets, wrath335);
         var rootHeader = root.Header;
         var rootBounds = rootHeader.BoundingBox;
 
@@ -806,7 +806,7 @@ public static class WMOLoader
         return result;
     }
 
-    private static WMODoodad[] ReadDoodads(Fs.FileSystem fileSystem, RootData root, string[] doodadSets)
+    private static WMODoodad[] ReadDoodads(Fs.FileSystem fileSystem, RootData root, string[] doodadSets, bool wrath335)
     {
         // The typed view supplies derived NameIndex/Orientation accessors;
         // the raw Data mirror stores NameAndFlags and fixed wire fields.
@@ -831,7 +831,7 @@ public static class WMOLoader
                 _ => 0u
             };
 
-            var setIndex = 0u;
+            var setIndex = wrath335 ? uint.MaxValue : 0u;
             for (var set = 0; set < doodadSetRecords.Count; set++)
             {
                 var record = doodadSetRecords[set];

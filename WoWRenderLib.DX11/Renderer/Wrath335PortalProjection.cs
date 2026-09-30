@@ -4,7 +4,7 @@ using WoWRenderLib.DX11.Structs;
 namespace WoWRenderLib.DX11.Renderer;
 
 /// <summary>12340 portal projection (0x7A7210, 0x7A72A0, 0x7A85E0).
-/// Reusable placement scratch; native clip-volume occlusion is a separate consumer.</summary>
+/// Reusable placement scratch with the shared static-occluder early-out.</summary>
 internal sealed class Wrath335PortalProjection
 {
     private readonly Vector3[] polygonA = new Vector3[32];
@@ -12,9 +12,11 @@ internal sealed class Wrath335PortalProjection
     private readonly Vector4[] planes = new Vector4[5];
     private Matrix4x4 model;
     private Matrix4x4 viewProjection;
+    internal Wrath335ClipVolumes? ClipVolumes { get; set; }
 
     public void Prepare(in Matrix4x4 modelMatrix, in Matrix4x4 worldViewProjection)
     {
+        ClipVolumes = null;
         model = modelMatrix;
         viewProjection = worldViewProjection;
         var x = new Vector4(viewProjection.M11, viewProjection.M21, viewProjection.M31, viewProjection.M41);
@@ -31,21 +33,21 @@ internal sealed class Wrath335PortalProjection
     }
 
     public WmoPortalRect Project(in WmoPortal portal, Vector3 eyeLocal,
-        Vector3 offset = default, bool allowEyeContainment = true)
+        Vector3 offset = default, bool allowEyeContainment = true, bool bypassClipVolumes = false)
     {
-        ProjectCore(portal, eyeLocal, [], out var rect, offset, allowEyeContainment);
+        ProjectCore(portal, eyeLocal, [], out var rect, offset, allowEyeContainment, bypassClipVolumes);
         return rect;
     }
 
     // 0x7A87C7..0x7A87DC stores divided X/Y but undivided internal clip Z.
     // The render-view consumer needs the polygon, not just its bounds.
     public int ProjectPolygon(in WmoPortal portal, Vector3 eyeLocal,
-        Span<Vector3> projected, out WmoPortalRect rect, Vector3 offset)
-        => ProjectCore(portal, eyeLocal, projected, out rect, offset, false);
+        Span<Vector3> projected, out WmoPortalRect rect, Vector3 offset, bool bypassClipVolumes = false)
+        => ProjectCore(portal, eyeLocal, projected, out rect, offset, false, bypassClipVolumes);
 
     private int ProjectCore(in WmoPortal portal, Vector3 eyeLocal,
         Span<Vector3> projected, out WmoPortalRect rect, Vector3 offset,
-        bool allowEyeContainment)
+        bool allowEyeContainment, bool bypassClipVolumes)
     {
         rect = default;
         if (portal.Vertices is not { Length: >= 3 } vertices)
@@ -61,6 +63,10 @@ internal sealed class Wrath335PortalProjection
         var destination = polygonB;
         for (var i = 0; i < count; i++)
             source[i] = Vector3.Transform(vertices[i] + offset, model);
+        // 0x7A869A..0x7A86D2 tests the offset world polygon before frustum clipping.
+        // Cache bit 0x10 bypasses this for non-exterior MOGI target / MOGP owner pairs.
+        if (!bypassClipVolumes && ClipVolumes?.ContainsPolygon(source.AsSpan(0, count)) == true)
+            return 0;
         foreach (var plane in planes)
         {
             count = ClipAgainstPlane(source.AsSpan(0, count), destination, plane);

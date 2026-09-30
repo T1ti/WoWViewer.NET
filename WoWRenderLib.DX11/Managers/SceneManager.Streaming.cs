@@ -579,7 +579,7 @@ namespace WoWRenderLib.DX11.Managers
             for (var doodadIndex = 0; doodadIndex < wmo.doodads.Length; doodadIndex++)
             {
                 var doodad = wmo.doodads[doodadIndex];
-                if (!IsWmoDoodadSpawnable(doodad, enabledSets))
+                if (!IsWmoDoodadSpawnable(wmo, doodadIndex, enabledSets))
                     continue;
 
                 var m2Container = new M2Container(
@@ -607,6 +607,13 @@ namespace WoWRenderLib.DX11.Managers
             doodad.filedataid != 0 &&
             doodad.doodadSet < enabledSets.Count &&
             enabledSets[(int)doodad.doodadSet];
+
+        internal static bool IsWmoDoodadSpawnable(in WorldModel wmo, int index, IReadOnlyList<bool> enabledSets) =>
+            (uint)index < (uint)wmo.doodads.Length &&
+            IsWmoDoodadSpawnable(wmo.doodads[index], enabledSets) &&
+            (!(wmo.wrath335 && wmo.legacyLighting) ||
+                (wmo.doodadsReferencedByGroups is { } references &&
+                 (uint)index < (uint)references.Length && references[index]));
 
         public void RefreshWMODoodads(WMOContainer wmoContainer)
         {
@@ -764,7 +771,7 @@ namespace WoWRenderLib.DX11.Managers
                 {
                     var doodadIndex = pending.NextDoodad++;
                     var doodad = wmo.doodads[doodadIndex];
-                    if (!IsWmoDoodadSpawnable(doodad, enabledSets))
+                    if (!IsWmoDoodadSpawnable(wmo, doodadIndex, enabledSets))
                         continue;
 
                     var doodadContainer = new M2Container(

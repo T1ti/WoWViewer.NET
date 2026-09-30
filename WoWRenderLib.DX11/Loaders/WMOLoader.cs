@@ -213,6 +213,8 @@ namespace WoWRenderLib.DX11.Loaders
                         wmoBatch.portalGraphValid = false;
                 }
             }
+            if (wmoBatch.wrath335 && wmoBatch.legacyLighting)
+                wmoBatch.doodadLighting = Wrath335WmoDoodadLighting.Build(wmoBatch.doodads, wmoBatch.groupBatches);
             return wmoBatch;
         }
 

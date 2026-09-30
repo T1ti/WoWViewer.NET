@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace WoWRenderLib.DX11.Renderer;
 
@@ -8,6 +9,9 @@ internal sealed class Wrath335PortalSceneViews
     internal const uint ViewerSkyFlags = 0x40140;
     internal const uint PortalViewFlags = 0x50148;
     internal const uint ExteriorViewFlags = 0x10008;
+    private readonly List<Wrath335PortalWindow> windows = [];
+    public ReadOnlySpan<Wrath335PortalWindow> Windows => CollectionsMarshal.AsSpan(windows);
+    public Wrath335PortalComplement Complement { get; } = new();
     public Wrath335PortalRenderViews RenderViews { get; } = new();
     public WmoPortalRect SkyRect { get; private set; }
     public WmoPortalRect ExteriorRect { get; private set; }
@@ -19,6 +23,8 @@ internal sealed class Wrath335PortalSceneViews
     public void Reset(bool viewerPlacement, uint viewerRootFlags = 0,
         bool secondaryPlacement = false)
     {
+        windows.Clear();
+        Complement.Clear();
         RenderViews.Clear();
         // 0x795400 resets both unions. 0x795D40 can seed full sky from MOGI;
         // 0x79A99E..0x79AA1C discards that seed after rendering a secondary WMO.
@@ -39,9 +45,22 @@ internal sealed class Wrath335PortalSceneViews
 
     public void AddPortal(WmoPortalRect rect, float distance, uint destinationRootFlags)
     {
+        if (IsNonEmpty(rect))
+            AddProjectedPortal(rect, distance, destinationRootFlags);
+    }
+
+    // The caller has established >=3 projected vertices. 0x7A9058 retains
+    // even zero-area rectangle bounds; polygon count is the emission gate.
+    public void AddProjectedPortal(WmoPortalRect rect, float distance, uint destinationRootFlags)
+    {
         if ((destinationRootFlags & PortalViewFlags) == 0 ||
-            !IsNonEmpty(rect) || !float.IsFinite(distance) || distance < 0f)
+            !float.IsFinite(rect.MinX) || !float.IsFinite(rect.MinY) ||
+            !float.IsFinite(rect.MaxX) || !float.IsFinite(rect.MaxY) ||
+            rect.MaxX < rect.MinX || rect.MaxY < rect.MinY ||
+            !float.IsFinite(distance) || distance < 0f)
             return;
+        windows.Add(new(new((rect.MinX + 1f) * 0.5f, (rect.MinY + 1f) * 0.5f,
+            (rect.MaxX + 1f) * 0.5f, (rect.MaxY + 1f) * 0.5f), distance));
         SkyRect = Union(SkyRect, rect);
         SkyDistance = MathF.Max(SkyDistance, distance);
         if ((destinationRootFlags & ExteriorViewFlags) != 0)
@@ -49,6 +68,16 @@ internal sealed class Wrath335PortalSceneViews
             ExteriorRect = Union(ExteriorRect, rect);
             ExteriorDistance = MathF.Max(ExteriorDistance, distance);
         }
+    }
+
+    public void BuildComplement()
+    {
+        // 0x79AC4C..0x79AC56 calls subtraction only for a sky view and a
+        // nonempty interior window list. Exterior polygon views are unrelated.
+        if (HasSkyView && windows.Count != 0)
+            Complement.Build(Windows);
+        else
+            Complement.Clear();
     }
 
     // 0x7A70D0 uses every original vertex, starts at zero, and measures along

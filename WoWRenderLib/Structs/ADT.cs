@@ -45,6 +45,9 @@ namespace WoWRenderLib.Structs
         public Vector4 heights;
         public Vector4 weights;
         public BoundingBox[] chunkBounds;
+        // Native 12340 horizon preparation treats any low-resolution MCNK hole as an eraser.
+        // The array length also retains decoded chunk availability instead of padded GPU capacity.
+        public ushort[] chunkHoleMasks;
         public ParsedWorldLiquid? worldLiquid;
     }
 

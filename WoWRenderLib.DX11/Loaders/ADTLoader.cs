@@ -123,6 +123,7 @@ namespace WoWRenderLib.DX11.Loaders
             result.usesLegacyLighting = parsedADT.usesLegacyLighting;
             result.startPos = parsedADT.startPos;
             result.chunkBounds = parsedADT.chunkBounds;
+            result.chunkHoleMasks = parsedADT.chunkHoleMasks;
             result.vertices = cpuVertices;
             result.indices = MemoryMarshal.Cast<byte, int>(parsedADT.indiceBuffer).ToArray();
             result.chunkBoundingSpheres = CreateChunkBoundingSpheres(parsedADT.chunkBounds);

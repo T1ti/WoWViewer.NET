@@ -197,10 +197,10 @@ internal sealed class SkyRenderer(
                 null,
                 ref _bonePaletteConstantBuffer));
 
-            var skyboxTransform = SkyboxTransform;
+            var skyboxTransform = new M2InstanceData { World = SkyboxTransform };
             bufferDesc = new BufferDesc
             {
-                ByteWidth = (uint)Marshal.SizeOf<Matrix4x4>(),
+                ByteWidth = (uint)Marshal.SizeOf<M2InstanceData>(),
                 Usage = Usage.Default,
                 BindFlags = (uint)BindFlag.VertexBuffer
             };
@@ -1349,7 +1349,7 @@ internal sealed class SkyRenderer(
 
         var vertexStride = (uint)Marshal.SizeOf<M2Vertex>();
         var vertexOffset = 0u;
-        var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
+        var instanceStride = (uint)Marshal.SizeOf<M2InstanceData>();
         var instanceOffset = 0u;
         var vertexBuffer = model.vertexBuffer;
         var indexBuffer = model.indiceBuffer;
