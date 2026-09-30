@@ -123,4 +123,5 @@ public sealed record LightingSettingsSnapshot(
     bool HasLiquidAlphaData,
     bool IsDynamic,
     IReadOnlyList<ActiveLightingSnapshot>? ActiveLights = null,
-    LightingRuntimeSnapshot? Runtime = null);
+    LightingRuntimeSnapshot? Runtime = null,
+    float? EffectiveFarClip = null);

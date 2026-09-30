@@ -761,7 +761,8 @@ namespace WTEditor.Avalonia.Controls
                         LightingSettingsProjection.ToDisplay(
                             engine.ActiveWorldLighting,
                             engine.ActiveWorldSky,
-                            engine.ActiveWorldLightingContributions));
+                            engine.ActiveWorldLightingContributions,
+                            engine.activeCamera?.FarPlane));
                 }
 
                 var profileSnapshot = FrameProfileSnapshotFactory.Create(

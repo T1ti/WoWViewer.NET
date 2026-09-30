@@ -14,7 +14,8 @@ internal static class LightingSettingsProjection
     public static LightingSettingsSnapshot ToDisplay(
         WorldLightingSettings lighting,
         WorldSkyLighting sky,
-        IReadOnlyList<WorldLightingContribution>? activeLights = null) => new(
+        IReadOnlyList<WorldLightingContribution>? activeLights = null,
+        float? effectiveFarClip = null) => new(
         lighting.LightParamId,
         lighting.Time,
         lighting.LightDirection,
@@ -99,7 +100,8 @@ internal static class LightingSettingsProjection
             LegacyCloudBodyColor = sky.LegacyCloudBodyColor,
             LegacyCloudAmbientColor = sky.LegacyCloudAmbientColor,
             HasLegacyCloudData = sky.HasLegacyCloudData
-        });
+        },
+        effectiveFarClip);
 
     public static WorldLightingSettings ToRenderer(LightingSettingsSnapshot lighting) => new(
         lighting.LightParamId,

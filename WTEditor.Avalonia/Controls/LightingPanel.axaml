@@ -47,6 +47,11 @@
         <StackPanel Spacing="1">
           <TextBlock Text="Lighting view" Foreground="White" FontWeight="SemiBold" FontSize="15"/>
           <TextBlock Text="{Binding Lighting.ProfileDescription}" Foreground="#AFC0CF" FontSize="10"/>
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Text="Effective farclip:" Foreground="#AFC0CF" FontSize="10"/>
+            <TextBlock x:Name="EffectiveFarClipValue" Text="{Binding Lighting.EffectiveFarClipDisplay}"
+                       Foreground="#D7E2EC" FontSize="10"/>
+          </StackPanel>
         </StackPanel>
         <Button Grid.Column="1" Width="28" Height="28" Padding="5"
                 Command="{Binding CloseLightingPanelCommand}" ToolTip.Tip="Close lighting view">
@@ -57,11 +62,11 @@
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="3">
           <WrapPanel Orientation="Horizontal" HorizontalAlignment="Stretch">
-          <Border Width="360" Classes="lighting-card" IsEnabled="{Binding IsEditorRenderMode}">
+          <Border Width="360" Classes="lighting-card">
             <StackPanel Spacing="2">
               <TextBlock Text="Time" Classes="card-title"/>
               <Grid ColumnDefinitions="105,*,48" RowDefinitions="Auto,Auto" ColumnSpacing="6">
-                <CheckBox Content="Live local time" IsChecked="{Binding Lighting.IsDynamic}"/>
+                <CheckBox x:Name="LiveLocalTimeCheckBox" Content="Live local time" IsChecked="{Binding Lighting.IsDynamic}"/>
                 <Slider x:Name="LightingTimeSlider" Grid.Column="1" Value="{Binding Lighting.Time}"
                         Minimum="0" Maximum="2879" TickFrequency="120"
                         IsSnapToTickEnabled="True"

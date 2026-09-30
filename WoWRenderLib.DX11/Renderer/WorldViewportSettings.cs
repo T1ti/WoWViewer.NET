@@ -47,5 +47,9 @@ internal static class WorldViewportSettings
 
     public static WorldLightingSettings ResolveLighting(
         bool clientMode, WorldLightingSettings editorLighting) =>
-        clientMode ? WorldLightingSettings.Defaults with { IsDynamic = true } : editorLighting;
+        clientMode ? WorldLightingSettings.Defaults with
+        {
+            Time = editorLighting.Time,
+            IsDynamic = editorLighting.IsDynamic
+        } : editorLighting;
 }

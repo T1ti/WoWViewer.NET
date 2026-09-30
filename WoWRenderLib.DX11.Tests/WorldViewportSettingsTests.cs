@@ -79,7 +79,7 @@ public sealed class WorldViewportSettingsTests
     }
 
     [TestMethod]
-    public void ClientLightingIgnoresManualColorsAndTimeWhileEditorLightingRestoresThem()
+    public void ClientLightingPreservesTimePreferencesWhileIgnoringManualColors()
     {
         var editor = WorldLightingSettings.Defaults with
         {
@@ -88,7 +88,10 @@ public sealed class WorldViewportSettingsTests
             OceanCloseColor = Vector3.UnitZ, WaterShallowAlpha = 0.2f
         };
         var client = WorldViewportSettings.ResolveLighting(true, editor);
-        Assert.AreEqual(WorldLightingSettings.Defaults with { IsDynamic = true }, client);
+        Assert.AreEqual(WorldLightingSettings.Defaults with { Time = 123, IsDynamic = false }, client);
+        var live = editor with { IsDynamic = true };
+        Assert.AreEqual(WorldLightingSettings.Defaults with { Time = 123, IsDynamic = true },
+            WorldViewportSettings.ResolveLighting(true, live));
         Assert.AreEqual(editor, WorldViewportSettings.ResolveLighting(false, editor));
     }
 }

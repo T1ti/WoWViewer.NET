@@ -28,6 +28,11 @@ public partial class LightingViewModel : ViewModelBase
     private IReadOnlyList<ActiveLightingSnapshot> _activeLightSnapshots =
         Array.Empty<ActiveLightingSnapshot>();
     private LightingRuntimeSnapshot? _runtimeSnapshot;
+    private float? _effectiveFarClip;
+
+    public string EffectiveFarClipDisplay => _effectiveFarClip is { } value
+        ? FormatNumber(value)
+        : "Unavailable";
 
     public event EventHandler<LightingSettingsSnapshot>? Changed;
 
@@ -190,6 +195,8 @@ public partial class LightingViewModel : ViewModelBase
             OceanDeepAlpha = lighting.OceanDeepAlpha;
             SetActiveLights(lighting.ActiveLights);
             SetRuntimeGroups(lighting.Runtime, lighting);
+            _effectiveFarClip = lighting.EffectiveFarClip;
+            OnPropertyChanged(nameof(EffectiveFarClipDisplay));
             OnPropertyChanged(nameof(ProfileDescription));
         }
         finally
@@ -217,7 +224,8 @@ public partial class LightingViewModel : ViewModelBase
         HasLiquidAlphaData,
         IsDynamic,
         _activeLightSnapshots,
-        _runtimeSnapshot);
+        _runtimeSnapshot,
+        _effectiveFarClip);
 
     private bool Matches(LightingSettingsSnapshot lighting)
     {

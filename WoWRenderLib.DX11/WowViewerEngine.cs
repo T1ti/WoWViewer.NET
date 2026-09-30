@@ -360,7 +360,7 @@ namespace WoWRenderLib.DX11
             var catalog = _worldLightingCatalog.Current;
             if (catalog != null &&
                 _currentMapId >= 0 &&
-                lighting.Time != ActiveWorldLighting.Time)
+                (Settings.UseClientRenderingRules || lighting.Time != ActiveWorldLighting.Time))
             {
                 var worldPosition = RendererToWorldLightingPosition(activeCamera.Position);
                 var evaluated = catalog.Evaluate(

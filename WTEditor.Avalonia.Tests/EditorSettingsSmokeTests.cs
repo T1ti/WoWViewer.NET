@@ -227,6 +227,58 @@ public sealed partial class EditorSettingsSmokeTests
     }
 
     [TestMethod]
+    public void ClientModeLightingTimeControlsFollowAndPersistUserChoice()
+    {
+        var session = new EditorSession(new MemorySettingsStore(new EditorSettingsSnapshot
+        {
+            Rendering = new RenderingConfiguration
+            {
+                UseClientRenderingRules = true,
+                UseLocalWorldLightingTime = false,
+                WorldLightingTime = 1200
+            }
+        }));
+        using var viewport = new Editor3DViewModel(session);
+        var panel = new LightingPanel { DataContext = viewport };
+        viewport.UpdateActiveLighting(LightingSettingsProjection.ToDisplay(
+            WorldLightingSettings.Defaults with { Time = 1200, IsDynamic = false }));
+        var live = panel.FindControl<CheckBox>("LiveLocalTimeCheckBox")!;
+        var time = panel.FindControl<Slider>("LightingTimeSlider")!;
+        Assert.IsTrue(live.IsEffectivelyEnabled);
+        Assert.IsFalse(live.IsChecked);
+        Assert.IsTrue(time.IsEffectivelyEnabled);
+
+        live.IsChecked = true;
+        Assert.IsTrue(session.Current.Rendering.UseLocalWorldLightingTime);
+        Assert.IsFalse(time.IsEffectivelyEnabled);
+        live.IsChecked = false;
+        time.Value = 1440;
+        Assert.IsFalse(session.Current.Rendering.UseLocalWorldLightingTime);
+        Assert.AreEqual(1440, session.Current.Rendering.WorldLightingTime);
+    }
+
+    [TestMethod]
+    public void LightingViewShowsEffectiveFarClipAndRefreshesWhenOnlyDistanceChanges()
+    {
+        var session = new EditorSession(new MemorySettingsStore(new EditorSettingsSnapshot()));
+        using var viewport = new Editor3DViewModel(session);
+        var panel = new LightingPanel { DataContext = viewport };
+        var value = panel.FindControl<TextBlock>("EffectiveFarClipValue")!;
+        Assert.AreEqual("Unavailable", value.Text);
+        var edits = 0;
+        viewport.Lighting.Changed += (_, _) => edits++;
+        var snapshot = LightingSettingsProjection.ToDisplay(
+            WorldLightingSettings.Defaults, WorldSkyLighting.None,
+            effectiveFarClip: 777f);
+        viewport.Lighting.Update(snapshot);
+        Assert.AreEqual("777", value.Text);
+
+        viewport.Lighting.Update(snapshot with { EffectiveFarClip = 1277f });
+        Assert.AreEqual("1277", value.Text);
+        Assert.AreEqual(0, edits);
+    }
+
+    [TestMethod]
     public void LightingViewModel_ShowsWmoSidnPulseAndTimedSunSpecularColor()
     {
         var viewModel = new LightingViewModel();
