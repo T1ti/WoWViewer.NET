@@ -20,6 +20,7 @@ namespace WoWRenderLib.DX11.Objects
         private long _portalVisibilityFrame = -1;
         private long _cameraVisibilityFrame = -1;
         private bool _cameraVisible;
+        private WmoViewerPlacementState _viewerPlacementState;
 
         public bool DoodadsSpawned = false;
 
@@ -96,6 +97,14 @@ namespace WoWRenderLib.DX11.Objects
         public ushort PlacementFlags { get; set; }
         public ushort PlacementDoodadSet { get; set; }
         public ushort PlacementNameSet { get; set; }
+
+        internal uint ViewerRuntimeFlags => _viewerPlacementState.RuntimeFlags;
+
+        internal void InitializeFileViewerPlacement(BoundingBox? bounds = null) =>
+            _viewerPlacementState.InitializeFilePlacement(bounds);
+
+        internal BoundingBox? GetViewerQueryBounds() =>
+            _viewerPlacementState.FileBounds ?? GetBoundingBox();
 
         // TODO: This is a bit of a hack -- this is what sets should be enabled AFTER the WMO is actually loaded, so we use it above to ensure things are always loaded correctly. Keep in mind when doing async rework.
         public List<uint> DoodadSetsToEnable = [];
@@ -239,6 +248,7 @@ namespace WoWRenderLib.DX11.Objects
 
         protected override void OnTransformInvalidated()
         {
+            _viewerPlacementState.TransformChanged();
             foreach (var doodad in ActiveDoodads)
                 doodad.InvalidateTransform();
         }

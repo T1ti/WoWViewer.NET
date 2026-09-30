@@ -1,0 +1,548 @@
+{
+  "assetPath": "World/wmo/Azeroth/Buildings/Stormwind/Stormwind.wmo",
+  "sha256": "C94A0183F1046FC33B0E579C0863A1320C85229B24DD317DA5672C2AD5D7C6D6",
+  "sourceGroupCount": 286,
+  "ownedReferenceCount": 627,
+  "nullTargetCount": 0,
+  "groups": [
+    {
+      "index": 92,
+      "name": "city01",
+      "mogiFlags": 8,
+      "mogpFlags": 2569,
+      "portalStart": 186,
+      "portalCount": 0
+    },
+    {
+      "index": 93,
+      "name": "Trade District",
+      "mogiFlags": 8384,
+      "mogpFlags": 10433,
+      "portalStart": 186,
+      "portalCount": 0
+    },
+    {
+      "index": 171,
+      "name": "warlock01",
+      "mogiFlags": 8192,
+      "mogpFlags": 10245,
+      "portalStart": 383,
+      "portalCount": 2
+    },
+    {
+      "index": 178,
+      "name": "The Slaughtered Lamb",
+      "mogiFlags": 8192,
+      "mogpFlags": 10245,
+      "portalStart": 397,
+      "portalCount": 2
+    },
+    {
+      "index": 183,
+      "name": "cath01",
+      "mogiFlags": 8192,
+      "mogpFlags": 10245,
+      "portalStart": 404,
+      "portalCount": 2
+    },
+    {
+      "index": 184,
+      "name": "Cathedral of Light",
+      "mogiFlags": 8192,
+      "mogpFlags": 10245,
+      "portalStart": 406,
+      "portalCount": 2
+    },
+    {
+      "index": 185,
+      "name": "cathy_facade01",
+      "mogiFlags": 8192,
+      "mogpFlags": 10245,
+      "portalStart": 408,
+      "portalCount": 4
+    },
+    {
+      "index": 186,
+      "name": "bazaarfacade03",
+      "mogiFlags": 8192,
+      "mogpFlags": 10757,
+      "portalStart": 412,
+      "portalCount": 3
+    },
+    {
+      "index": 187,
+      "name": "Warrior01",
+      "mogiFlags": 8192,
+      "mogpFlags": 10757,
+      "portalStart": 415,
+      "portalCount": 2
+    },
+    {
+      "index": 257,
+      "name": "cathstairs01",
+      "mogiFlags": 8256,
+      "mogpFlags": 10817,
+      "portalStart": 536,
+      "portalCount": 20
+    },
+    {
+      "index": 282,
+      "name": "The Slaughtered Lamb",
+      "mogiFlags": 8,
+      "mogpFlags": 6153,
+      "portalStart": 587,
+      "portalCount": 8
+    },
+    {
+      "index": 283,
+      "name": "CryptRm02",
+      "mogiFlags": 2149580808,
+      "mogpFlags": 2149586957,
+      "portalStart": 595,
+      "portalCount": 16
+    },
+    {
+      "index": 284,
+      "name": "The Slaughtered Lamb",
+      "mogiFlags": 8,
+      "mogpFlags": 6153,
+      "portalStart": 611,
+      "portalCount": 15
+    }
+  ],
+  "facadePortals": [
+    {
+      "portal": 181,
+      "references": [
+        {
+          "owner": 186,
+          "ownerName": "bazaarfacade03",
+          "index": 412,
+          "portal": 181,
+          "target": 282,
+          "side": 1
+        },
+        {
+          "owner": 282,
+          "ownerName": "The Slaughtered Lamb",
+          "index": 594,
+          "portal": 181,
+          "target": 186,
+          "side": -1
+        }
+      ],
+      "normal": [
+        -1.0,
+        0.0,
+        0.0
+      ],
+      "distance": -269.5546,
+      "vertices": [
+        [
+          -269.5546,
+          -134.91353,
+          -3.0723794
+        ],
+        [
+          -269.5546,
+          -137.76616,
+          -3.0723794
+        ],
+        [
+          -269.5546,
+          -137.76616,
+          0.18813165
+        ],
+        [
+          -269.5546,
+          -134.91353,
+          0.18813165
+        ]
+      ]
+    },
+    {
+      "portal": 182,
+      "references": [
+        {
+          "owner": 186,
+          "ownerName": "bazaarfacade03",
+          "index": 413,
+          "portal": 182,
+          "target": 283,
+          "side": 1
+        },
+        {
+          "owner": 283,
+          "ownerName": "CryptRm02",
+          "index": 607,
+          "portal": 182,
+          "target": 186,
+          "side": -1
+        }
+      ],
+      "normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "distance": 170.43065,
+      "vertices": [
+        [
+          -302.21906,
+          -170.43065,
+          0.18813038
+        ],
+        [
+          -302.21906,
+          -170.43065,
+          -3.07238
+        ],
+        [
+          -305.0717,
+          -170.43065,
+          -3.07238
+        ],
+        [
+          -305.0717,
+          -170.43065,
+          0.18813038
+        ]
+      ]
+    },
+    {
+      "portal": 212,
+      "references": [
+        {
+          "owner": 184,
+          "ownerName": "Cathedral of Light",
+          "index": 406,
+          "portal": 212,
+          "target": 185,
+          "side": 1
+        },
+        {
+          "owner": 185,
+          "ownerName": "cathy_facade01",
+          "index": 408,
+          "portal": 212,
+          "target": 184,
+          "side": -1
+        }
+      ],
+      "normal": [
+        -0.3826777,
+        0.92388195,
+        0.0
+      ],
+      "distance": -531.3986,
+      "vertices": [
+        [
+          -233.5603,
+          478.43805,
+          74.39798
+        ],
+        [
+          -233.5603,
+          478.43805,
+          18.928528
+        ],
+        [
+          -277.09,
+          460.40778,
+          18.928528
+        ],
+        [
+          -277.09,
+          460.40778,
+          74.39798
+        ]
+      ]
+    },
+    {
+      "portal": 229,
+      "references": [
+        {
+          "owner": 178,
+          "ownerName": "The Slaughtered Lamb",
+          "index": 398,
+          "portal": 229,
+          "target": 185,
+          "side": -1
+        },
+        {
+          "owner": 185,
+          "ownerName": "cathy_facade01",
+          "index": 409,
+          "portal": 229,
+          "target": 178,
+          "side": 1
+        }
+      ],
+      "normal": [
+        -0.70710677,
+        0.70710677,
+        0.0
+      ],
+      "distance": -482.50436,
+      "vertices": [
+        [
+          -232.09186,
+          450.27237,
+          27.621836
+        ],
+        [
+          -232.09186,
+          450.27237,
+          18.928535
+        ],
+        [
+          -236.17438,
+          446.18985,
+          18.928535
+        ],
+        [
+          -236.17438,
+          446.18985,
+          27.621836
+        ]
+      ]
+    },
+    {
+      "portal": 231,
+      "references": [
+        {
+          "owner": 183,
+          "ownerName": "cath01",
+          "index": 405,
+          "portal": 231,
+          "target": 185,
+          "side": 1
+        },
+        {
+          "owner": 185,
+          "ownerName": "cathy_facade01",
+          "index": 410,
+          "portal": 231,
+          "target": 183,
+          "side": -1
+        }
+      ],
+      "normal": [
+        -0.70710677,
+        -0.70710677,
+        0.0
+      ],
+      "distance": 121.420105,
+      "vertices": [
+        [
+          -278.55838,
+          450.27234,
+          18.928535
+        ],
+        [
+          -274.47586,
+          446.18982,
+          18.928535
+        ],
+        [
+          -274.47586,
+          446.18982,
+          27.621836
+        ],
+        [
+          -278.55838,
+          450.27234,
+          27.621836
+        ]
+      ]
+    },
+    {
+      "portal": 235,
+      "references": [
+        {
+          "owner": 186,
+          "ownerName": "bazaarfacade03",
+          "index": 414,
+          "portal": 235,
+          "target": 187,
+          "side": -1
+        },
+        {
+          "owner": 187,
+          "ownerName": "Warrior01",
+          "index": 416,
+          "portal": 235,
+          "target": 186,
+          "side": 1
+        }
+      ],
+      "normal": [
+        -1.0,
+        0.0,
+        0.0
+      ],
+      "distance": -317.8801,
+      "vertices": [
+        [
+          -317.8801,
+          -130.79532,
+          -13.106236
+        ],
+        [
+          -317.8801,
+          -141.90642,
+          -13.106236
+        ],
+        [
+          -317.8801,
+          -141.90642,
+          -7.2074604
+        ],
+        [
+          -317.8801,
+          -130.79532,
+          -7.2074604
+        ]
+      ]
+    },
+    {
+      "portal": 239,
+      "references": [
+        {
+          "owner": 171,
+          "ownerName": "warlock01",
+          "index": 384,
+          "portal": 239,
+          "target": 185,
+          "side": -1
+        },
+        {
+          "owner": 185,
+          "ownerName": "cathy_facade01",
+          "index": 411,
+          "portal": 239,
+          "target": 171,
+          "side": 1
+        }
+      ],
+      "normal": [
+        3.866256E-05,
+        0.99999994,
+        0.0
+      ],
+      "distance": -443.31744,
+      "vertices": [
+        [
+          -245.85316,
+          443.32697,
+          45.355606
+        ],
+        [
+          -245.85316,
+          443.32697,
+          18.928532
+        ],
+        [
+          -264.79712,
+          443.3277,
+          18.928532
+        ],
+        [
+          -264.79712,
+          443.3277,
+          45.355606
+        ]
+      ]
+    }
+  ],
+  "oneWayReferences": [
+    {
+      "owner": 257,
+      "ownerName": "cathstairs01",
+      "index": 542,
+      "portal": 38,
+      "target": 93,
+      "side": -1
+    },
+    {
+      "owner": 284,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 615,
+      "portal": 52,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 284,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 616,
+      "portal": 53,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 284,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 617,
+      "portal": 54,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 284,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 618,
+      "portal": 55,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 284,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 619,
+      "portal": 56,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 282,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 588,
+      "portal": 57,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 283,
+      "ownerName": "CryptRm02",
+      "index": 600,
+      "portal": 58,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 283,
+      "ownerName": "CryptRm02",
+      "index": 601,
+      "portal": 59,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 283,
+      "ownerName": "CryptRm02",
+      "index": 602,
+      "portal": 60,
+      "target": 92,
+      "side": 1
+    },
+    {
+      "owner": 282,
+      "ownerName": "The Slaughtered Lamb",
+      "index": 589,
+      "portal": 61,
+      "target": 92,
+      "side": 1
+    }
+  ]
+}

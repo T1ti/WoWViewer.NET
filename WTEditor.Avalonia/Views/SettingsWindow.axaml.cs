@@ -12,6 +12,7 @@ public partial class SettingsWindow : Window
 
     // client UI code
     //EffectsPanelOptions = {
+    // sliders
     //farclip = { text = "FARCLIP", minValue = OPTIONS_FARCLIP_MIN, maxValue = OPTIONS_FARCLIP_MAX, valueStep = (OPTIONS_FARCLIP_MAX - OPTIONS_FARCLIP_MIN)/10},
     //TerrainMip = { text = "TERRAIN_MIP", minValue = 0, maxValue = 1, valueStep = 1, logout = 1, tooltip = OPTION_TOOLTIP_TERRAIN_TEXTURE, tooltipRequirement = OPTION_LOGOUT_REQUIREMENT,},
     //particleDensity = { text = "PARTICLE_DENSITY", minValue = 0.1, maxValue = 1.0, valueStep = 0.1},
@@ -29,6 +30,7 @@ public partial class SettingsWindow : Window
     //ffxDeath = { text = "DEATH_EFFECT", },
     //projectedTextures = { text = "PROJECTED_TEXTURES", },
 
+    // quality slider (low - ultra...))
     //quality = { text = "", minValue = 1, maxValue = 6, valueStep = 1 },
     // }
 

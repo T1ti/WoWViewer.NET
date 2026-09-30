@@ -1,6 +1,6 @@
 # WTEditor rendering feature status
 
-Last updated: 2026-09-29. This is the working rendering ledger for future
+Last updated: 2026-09-30. This is the working rendering ledger for future
 client-version work. Update the version matrix, open issues, and next steps
 when a fix lands or a visual comparison changes their status. WowLib remains
 the only client-file reader and parser; Wisp is a rendering reference for 3.3.5.
@@ -9,6 +9,15 @@ This file is the maintained implementation ledger for the active Avalonia/DX11
 editor. Update it whenever a rendering feature changes status. “Implemented”
 means the feature is connected to live editor rendering and covered by the
 repository smoke suite; it does not imply parity with every WoW client era.
+
+## Roadmap
+
+The next rendering work is the entire native portal occlusion/view-list pipeline,
+followed by global exterior view/distance consumers and viewer-liquid/frame
+ordering. Continue all CPU preparation and DX9 SM3 workstreams using the
+[extended roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap) and
+[CPU roadmap](reference/client-335/CPU_SCENE_AUDIT.md#roadmap).
+After each batch, retain next tasks and acceptance checks in those documents.
 
 ## Version matrix
 
@@ -25,9 +34,9 @@ records known coverage, not a claim that every feature below is era-correct.
 
 The [extended rendering plan](CLIENT_335_RENDERING_ACCURACY_PLAN.md) covers
 all CPU scene preparation and render submission alongside DX9 SM3 shaders.
-The [CPU dossier](reference/client-335/CPU_SCENE_AUDIT.md) records 48 cached
-complete function decompilations, 26 scene roots, 271 direct relationships,
-and 378 call sites. Recursive closure and ten indirect/global-pointer targets
+The [CPU dossier](reference/client-335/CPU_SCENE_AUDIT.md) records 93 cached
+complete function decompilations, 71 scene roots, 418 direct relationships,
+and 603 call sites. Recursive closure and thirteen indirect/global-pointer targets
 remain open.
 
 The 3.3.5.12340 MPQ camera query now traverses wowlib's decoded WMO BSP,
@@ -37,9 +46,29 @@ is prepared once and traversal scratch is reused. Other clients keep their
 existing query path. A build-scoped per-placement caller now uses exact geometry
 caps, last equal group hits, the strict normalized portal tolerance, native
 polygon projection/boundaries, exterior rejection and one winning geometry seed.
-This is a partial port: native placement pools/order, x87 boundary rounding,
-entity MOCV queries, propagated lighting and client captures remain open.
-The full smoke batch passed 428 tests, including 21 added CPU behavioral cases
+Scene selection now uses insertion order across GPU asset buckets and separate
+running normal/updated-transform pools, including equal-hit replacement and
+exterior clearing. Runtime flags and stored 12340 ADT MODF bounds remain separate
+from file flags. Shared primary/secondary group pairs seed WMO portal culling
+independently of fog data, without repeating each placement's BSP query.
+Primary scene portal masks and separate sky/exterior view unions now prepare
+before sky submission. Closed views skip sky; open views apply the recovered
+DX9 window scissor rounding across dome, clouds, celestials, stars and skyboxes.
+Closed interiors clear to current fog color, and the WMO pass reuses prepared
+masks. The camera-on-portal path now shares the native asymmetric polygon test,
+clips against normalized world planes with ±0.0001 classification, omits near
+rather than far, and preserves original portal plane coefficients. Directed
+MOGP ranges, null references, previous-group back edges, inclusive depth 10,
+strict rectangle degeneracy, loaded always-draw callback rejection and the
+selected placement's exterior-window seeds have regression coverage.
+The Stormwind fixture retains seven facade polygons and eleven actual one-way
+links; those two named facades have paired links in the inspected asset.
+This is a partial port: native streaming/group order, global exterior
+consumers/occlusion, WDT bounds, viewer liquids, blend-sky models, x87 rounding,
+entity MOCV lighting and captures remain open.
+Pre-existing IDA names are unverified hypotheses; address-based findings are in
+[cpu-semantic-claims.csv](reference/client-335/cpu-semantic-claims.csv).
+The full smoke batch passed 494 tests, including 87 added CPU behavioral cases
 and four mode/persistence cases.
 
 The persistent Client/Editor toggle separates effective Wrath CVar distances
@@ -258,7 +287,7 @@ for every M2 effect or other client versions.
 | Feature | Status | Current scope / remaining work |
 | --- | --- | --- |
 | ADT terrain geometry and textures | Partial parity | Layered diffuse/height textures, LOD, editor overlays, culling, and streaming are active. MCAL sampling and composition need the per-version visual checks above. |
-| WMO rendering | Partial parity | Groups, materials, instancing, doodad sets, portal visibility, and selection are active. The 3.3.5 path keeps MOGI and MOGP flags separate, uses downward viewer-group hits, projected nested portal rectangles, and the client packed MOBA batch bounds. Portal-less MPQ WMOs still cull interior groups outdoors; a real floor hit supersedes bounds-only candidates. Instance grouping and modern CASC batch bounds remain. Client BSP/terrain-hit viewer selection, exterior clip-buffer occlusion, and portal views for outdoor terrain, M2, liquid, and doodads remain. The user's reference/editor exterior captures still require a matched regression view. WotLK alpha-key cutout and WMO material clamp flags are connected; interior/material permutations remain. |
+| WMO rendering | Partial parity | Groups, materials, instancing, doodad sets, portal visibility, and selection are active. The 3.3.5 path keeps MOGI and MOGP flags separate, uses downward viewer-group hits, projected nested portal rectangles, and the client packed MOBA batch bounds. Portal-less MPQ WMOs still cull interior groups outdoors; a real floor hit supersedes bounds-only candidates. Instance grouping and modern CASC batch bounds remain. Exact terrain fraction/rounding, native streaming/group availability, exterior clip-buffer occlusion, and portal views for outdoor terrain, M2, liquid, and doodads remain. The user's reference/editor exterior captures still require a matched regression view. WotLK alpha-key cutout and WMO material clamp flags are connected; interior/material permutations remain. |
 | M2 rendering | Partial parity | Static geometry/material combinations and instancing are active. 3.3.5 skeletal/material animation, billboard bones, per-instance selection, and first ribbon and particle draw passes are active. The white instance portal particle plane is visually confirmed; broader effect parity and visual comparison remain. Opaque and translucent M2 submeshes are submitted on opposite sides of the liquid pass without repeating animation evaluation. Hermite and Bezier tracks currently use Wisp's linear fallback because their tangents are not retained. World-space M2 normals and WotLK material depth flags need broader visual confirmation. |
 | MH2O liquid rendering | Partial parity | Geometry, material families, LightData colors, and LightParams alpha are active. All-zero named LightData color quartets resolve to the shared non-black client-material palette in both renderer and UI snapshots while retaining the selected LightParams alpha values. Water now draws between opaque and translucent M2 submeshes, preventing distant water from washing over a nearer additive beam. Water and transparent M2s still lack general per-depth interleaving, and the forward water pass lacks scene-colour/depth refraction. Wisp marks exact ADT liquid materials unfinished, so 3.3.5 terrain-water tint/alpha needs a comparison against the client; WMO liquid can be checked against Wisp. |
 | Dynamic time-of-day lighting | Implemented | Light/LightParams and either LightData (builds after 15595) or LightIntBand/LightFloatBand (builds through 15595) are loaded by DBD column name and evaluated on the circular 0–2880 timeline. Legacy Light coordinates and falloff radii are converted from inches; legacy LightSkybox model paths resolve through the MPQ asset registry. Missing tables, columns, band rows, and referenced entries are reported in the console. Map navigation is durable view-model state, replayed whenever the DX11 renderer attaches/restarts, then retained by the engine until content/database initialization finishes and applied on the render thread with dynamic evaluation enabled. Renderer-owned controls are read-only while live lighting is active, and delayed TwoWay control echoes cannot disable dynamic updates. |
@@ -272,7 +301,7 @@ for every M2 effect or other client versions.
 | Sun, moons, and stars | Partial parity | 3.3.5 sun and moon1 textured billboards draw before the dome with client orbit curves, horizon fade, and alpha blending. A wowlib-resolved stars M2 draws first with the client night fade and a live scene animation clock. The user's reference/editor comparison supports sun/moon size and orientation; the user reports that stars look good in the editor. Moon02 weather/override tint, exact sky depth/scissor, and matched client pixels remain. Modern clients retain their prior path. |
 | Sun and moon glare | Partial parity | Client glare BLPs load through wowlib. Time, angle, cloud coverage, skybox opacity, and smoothed occlusion response feed an additive pass after world effects and before FFX glow. Nonblocking GPU occlusion queries are implemented. The user supplied an editor capture showing sun glare; matched client visibility, intensity, and weather behavior remain open. |
 | Cloud layers | Partial parity | The 3.3.5 cloud palette, fixed cap mesh, density lookup, four-octave process-random noise, eight-row CPU texture updates, two GPU textures, and alpha-blended cap pass are connected. The client `SkyCloudLOD` CVar selects 128/256/512/1024 textures via a saved 0–3 Settings control; CPU preparation occurs off the render thread before a one-time GPU swap. The user supplied day/night cloud captures and confirmed the LOD control works. Matched client pixels, high-LOD frame cost, mip filtering, and weather remain open. |
-| Distance/height/sun fog | Partial | 3.3.5 distance fog reaches terrain, WMO, M2, and liquids with the BLS visibility curve. The client `farclip`/`farClipOverride` CVars are active. Legacy unified opaque WMO batches stay fogged even with MOMT `Unfogged`; transparent and non-unified batches honor it. The portal walk records the interior-propagated bit per group, clears it at MOGP `0x48`, and uses it for the current/staged fog bank; transition batches use staged fog on their first pass before the propagated second pass. Non-unified groups without primary MOCV colors use staged fog, matching the client's `ExtRender` dispatch. Placements with different propagated masks render in separate batches. The client shader 0/blend 0 WMO promotion to `MapObjOpaque` follows wowlib BLP alpha depth, removing unintended texture-alpha weighting from the transition pass. Modern WMO behavior retains its prior path. Wowlib MFOG volumes and the camera-WMO portal distance feed blended fog distances/rate. Legacy M2 mesh blend families select scene, black, white, or byte-gray fog; modern M2s retain their previous path. The user's exterior WMO comparison needs a matched repeat. Client BSP/terrain-hit selection, exterior portal-view and terrain horizon culling, M2 per-instance fog tint, underwater, effect fog, weather overrides, and later-client height/sun fog remain. The modern skybox flag 0x4 path still uses SkyFogColor rather than EndFogColor. |
+| Distance/height/sun fog | Partial | 3.3.5 distance fog reaches terrain, WMO, M2, and liquids with the BLS visibility curve. The client `farclip`/`farClipOverride` CVars are active. Legacy unified opaque WMO batches stay fogged even with MOMT `Unfogged`; transparent and non-unified batches honor it. The portal walk records the interior-propagated bit per group, clears it at MOGP `0x48`, and uses it for the current/staged fog bank; transition batches use staged fog on their first pass before the propagated second pass. Non-unified groups without primary MOCV colors use staged fog, matching the client's `ExtRender` dispatch. Placements with different propagated masks render in separate batches. The client shader 0/blend 0 WMO promotion to `MapObjOpaque` follows wowlib BLP alpha depth, removing unintended texture-alpha weighting from the transition pass. Modern WMO behavior retains its prior path. Wowlib MFOG volumes and the camera-WMO portal distance feed blended fog distances/rate. Legacy M2 mesh blend families select scene, black, white, or byte-gray fog; modern M2s retain their previous path. The user's exterior WMO comparison needs a matched repeat. Exact terrain fraction/rounding, native streaming/group availability, global exterior portal-view and terrain horizon culling, M2 per-instance fog tint, underwater, effect fog, weather overrides, and later-client height/sun fog remain. The modern skybox flag 0x4 path still uses SkyFogColor rather than EndFogColor. |
 | Color grading | Not yet | LightData color-grading FileDataIDs are not applied. |
 
 ## Rendering infrastructure

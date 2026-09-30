@@ -7,9 +7,9 @@ using WoWRenderLib.Structs;
 namespace WoWRenderLib.DX11.Renderer;
 
 /// <summary>
-/// The per-placement part of CMap::LocateViewerMapObjs (0x7D59B0).
-/// Group order and MOPR order are retained; placement list/pool selection belongs
-/// to the scene query and still requires a separate port.
+/// Per-placement query recovered from 0x7D59B0. Pre-existing IDB names are
+/// hypotheses. Group order and MOPR order are retained; the scene query owns
+/// placement order and the two running pools.
 /// </summary>
 internal static class Wrath335WmoViewerQuery
 {
@@ -22,8 +22,10 @@ internal static class Wrath335WmoViewerQuery
         WmoPortalVisibilityScratch scratch, float maximumDistance,
         out float nearestDistance, out bool foundHit)
     {
-        nearestDistance = float.IsNaN(maximumDistance) ? RayLength
-            : Math.Clamp(maximumDistance, 0f, RayLength);
+        // An accepted portal can increase the pool's cap beyond 1.0. Retain
+        // that cap for following placements while broad phases use the full ray.
+        nearestDistance = float.IsFinite(maximumDistance)
+            ? Math.Max(0f, maximumDistance) : RayLength;
         foundHit = false;
         if (!TriangleMeshRaycaster.TryCreateContext(new Ray(eye, -Vector3.UnitZ),
                 model, out var ray))
@@ -97,11 +99,12 @@ internal static class Wrath335WmoViewerQuery
                 var portal = wmo.portals[link.PortalIndex];
                 if (portal.Vertices is not { Length: >= 3 } vertices)
                     continue;
-                var signedDistance = Vector3.Dot(portal.Normal, ray.Origin) + portal.Distance;
-                var denominator = Vector3.Dot(portal.Normal, ray.Direction);
-                if (MathF.Abs(denominator) < 0.0001f && MathF.Abs(signedDistance) >= 0.1f)
+                var signedDistance = Wrath335PortalProjection.SignedDistance(portal, ray.Origin);
+                var denominator = (double)portal.Normal.X * ray.Direction.X +
+                    (double)portal.Normal.Y * ray.Direction.Y + (double)portal.Normal.Z * ray.Direction.Z;
+                if (Math.Abs(denominator) < (double)0.0001f && Math.Abs(signedDistance) >= (double)0.1f)
                     continue;
-                var distance = MathF.Abs(signedDistance) < 0.1f ? 0f : -signedDistance / denominator;
+                var distance = Math.Abs(signedDistance) < (double)0.1f ? 0f : (float)(-signedDistance / denominator);
                 if (!float.IsFinite(distance) || distance < 0f || distance > extent ||
                     !PointInPortal(ray.GetPoint(distance), vertices, portal.Normal))
                     continue;

@@ -38,6 +38,8 @@ namespace WoWRenderLib.DX11.Managers
         private readonly ComPtr<ID3D11Device> _device;
         private readonly ComPtr<ID3D11DeviceContext> _deviceContext;
         private readonly ShaderManager _shaderManager;
+        private readonly WmoSceneViewerQuery _wmoSceneViewerQuery;
+        private readonly WmoScenePortalPreparation _wmoScenePortalPreparation = new();
         public List<Container3D> SceneObjects { get; } = [];
         public Lock SceneObjectLock { get; } = new();
 
@@ -220,6 +222,7 @@ namespace WoWRenderLib.DX11.Managers
             _device = device;
             _deviceContext = deviceContext;
             _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
+            _wmoSceneViewerQuery = new(GetWmoViewerTerrainRayLimit);
             _worldLiquidRenderer = new WorldLiquidRenderer(device, deviceContext);
             _glowRenderer = new SceneGlowRenderer(device, deviceContext);
             _skyRenderer = new SkyRenderer(device, deviceContext);
@@ -774,48 +777,10 @@ namespace WoWRenderLib.DX11.Managers
             };
         }
 
-        private WMOContainer? LocatePrimaryViewerWmo(Vector3 eyeWorld,
-            ref float? viewerTerrainRayLimit,
-            out WorldModel primaryModel, out int primaryGroupIndex)
-        {
-            WMOContainer? primary = null;
-            primaryModel = default;
-            primaryGroupIndex = -1;
-            var nearestHit = float.PositiveInfinity;
-            foreach (var (_, instances) in wmoInstances)
-            {
-                if (instances.Count == 0 || !instances[0].IsLoaded)
-                    continue;
-                var wmo = instances[0].GetWMO();
-                if (!wmo.legacyLighting)
-                    continue;
-
-                foreach (var instance in instances)
-                {
-                    if (!instance.IsLoaded || instance.GetBoundingBox() is not { } bounds ||
-                        eyeWorld.X < bounds.Min.X || eyeWorld.X > bounds.Max.X ||
-                        eyeWorld.Y < bounds.Min.Y || eyeWorld.Y > bounds.Max.Y ||
-                        eyeWorld.Z < bounds.Min.Z ||
-                        eyeWorld.Z - bounds.Max.Z > WmoPortalVisibility.ClientViewerRayLength)
-                        continue;
-
-                    instance.GetPortalVisibilityBuffers(wmo,
-                        out _, out _, out _, out var scratch);
-                    viewerTerrainRayLimit ??= GetWmoViewerTerrainRayLimit(eyeWorld);
-                    if (!WmoPortalVisibility.TryLocateViewerGroup(wmo,
-                            instance.GetModelMatrix(), eyeWorld,
-                            instance.EnabledGroups, scratch, out var groupIndex,
-                            viewerTerrainRayLimit.Value) ||
-                        scratch.PrimaryViewerHitDistance >= nearestHit)
-                        continue;
-                    nearestHit = scratch.PrimaryViewerHitDistance;
-                    primary = instance;
-                    primaryModel = wmo;
-                    primaryGroupIndex = groupIndex;
-                }
-            }
-            return primary;
-        }
+        private WmoSceneViewerResult LocateSceneViewerWmos(Vector3 eyeWorld,
+            ref float? viewerTerrainRayLimit) =>
+            _wmoSceneViewerQuery.Locate(SceneObjects, wmoInstances,
+                eyeWorld, ref viewerTerrainRayLimit);
 
         private static Wrath335FogState? ResolveWmoInteriorFog(
             in WorldModel wmo, in Matrix4x4 modelMatrix,
@@ -1037,6 +1002,7 @@ namespace WoWRenderLib.DX11.Managers
             var projectionMatrix = camera.GetProjectionMatrix();
 
             var cameraMatrix = camera.GetViewMatrix();
+            var viewProjection = cameraMatrix * projectionMatrix;
 
             camera.UpdateFrustum();
 
@@ -1075,7 +1041,6 @@ namespace WoWRenderLib.DX11.Managers
             var sceneTarget = applyClientGlow
                 ? _glowRenderer.GetSceneTarget(_renderWidth, _renderHeight)
                 : renderTargetView;
-            _deviceContext.ClearRenderTargetView(sceneTarget, ref backgroundColour[0]);
             _deviceContext.OMSetRenderTargets(1, ref sceneTarget, depthStencilView);
             _deviceContext.ClearDepthStencilView(depthStencilView, (uint)ClearFlag.Depth, 1.0f, 0);
 
@@ -1104,21 +1069,21 @@ namespace WoWRenderLib.DX11.Managers
             Wrath335FogState? currentInteriorFogState = null;
             WMOContainer? primaryInteriorFogWmo = null;
             float? viewerTerrainRayLimit = null;
+            var sceneViewer = EnableWmoPortalCulling ||
+                              (EnableDayNightSkyColors && _activeWorldSky.HasFogData)
+                ? LocateSceneViewerWmos(camera.Position, ref viewerTerrainRayLimit)
+                : default;
+            var portalPreparationStarted = Stopwatch.GetTimestamp();
+            _wmoScenePortalPreparation.Prepare(sceneViewer, EnableWmoPortalCulling,
+                camera.Position, camera.Front, viewProjection);
+            var portalPreparationElapsed = Stopwatch.GetElapsedTime(portalPreparationStarted).TotalMilliseconds;
+            WmoCullingTimeMs += portalPreparationElapsed;
+            CullingTimeMs += portalPreparationElapsed;
             _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
                 ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
             ConstantBufferUpdates++;
             _deviceContext.VSSetConstantBuffers(4, 1, ref wrathFogConstantBuffer);
             _deviceContext.PSSetConstantBuffers(4, 1, ref wrathFogConstantBuffer);
-
-            _skyRenderer.SetCloudLod(SkyCloudLod);
-            var skyStats = _skyRenderer.Render(
-                camera, AnimateModels, animationTime, _activeWorldLighting.Time,
-                LightDirection, EnableDayNightSkyColors);
-            SkyDrawCalls = skyStats.DrawCalls;
-            SkySubmittedIndices = skyStats.SubmittedIndices;
-            SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
-            drawCalls += skyStats.DrawCalls;
-            submittedIndexCount += skyStats.SubmittedIndices;
 
             if (EnableDayNightSkyColors && _activeWorldSky.HasFogData)
             {
@@ -1128,9 +1093,9 @@ namespace WoWRenderLib.DX11.Managers
                     CurrentMapId >= Wrath335FarClip.OutlandMapId);
                 outdoorFogState = Wrath335InteriorFog.FromOutdoor(
                     fog, _activeWorldSky.FogColor);
-                var primaryViewerWmo = LocatePrimaryViewerWmo(camera.Position,
-                    ref viewerTerrainRayLimit,
-                    out var primaryModel, out var primaryGroupIndex);
+                var primaryViewerWmo = sceneViewer.Primary.Instance;
+                var primaryModel = sceneViewer.Primary.Model;
+                var primaryGroupIndex = sceneViewer.Primary.PrimaryGroupIndex;
                 if (primaryViewerWmo != null)
                 {
                     primaryViewerWmo.GetPortalVisibilityBuffers(primaryModel,
@@ -1152,6 +1117,31 @@ namespace WoWRenderLib.DX11.Managers
                     ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
                 ConstantBufferUpdates++;
             }
+
+            if (_wmoScenePortalPreparation.UsesWrath335Rules &&
+                !_wmoScenePortalPreparation.Views.HasSkyView)
+            {
+                // 0x79AB6C clears a closed interior to the current fog color.
+                var clearFog = currentInteriorFogState is { } interiorClearFog
+                    ? Wrath335InteriorFog.UnpackColor(interiorClearFog.Color)
+                    : _activeWorldSky.FogColor;
+                backgroundColour[0] = clearFog.X;
+                backgroundColour[1] = clearFog.Y;
+                backgroundColour[2] = clearFog.Z;
+            }
+            _deviceContext.ClearRenderTargetView(sceneTarget, ref backgroundColour[0]);
+            _skyRenderer.SetCloudLod(SkyCloudLod);
+            var skyStats = _skyRenderer.Render(
+                camera, AnimateModels, animationTime, _activeWorldLighting.Time,
+                LightDirection, EnableDayNightSkyColors,
+                _wmoScenePortalPreparation.UsesWrath335Rules
+                    ? _wmoScenePortalPreparation.Views.SkyRect : null,
+                _renderWidth, _renderHeight);
+            SkyDrawCalls = skyStats.DrawCalls;
+            SkySubmittedIndices = skyStats.SubmittedIndices;
+            SkySubmissionTimeMs = skyStats.SubmissionMilliseconds;
+            drawCalls += skyStats.DrawCalls;
+            submittedIndexCount += skyStats.SubmittedIndices;
 
             var adtVertexStride = (uint)Marshal.SizeOf<ADTGpuVertex>();
             var adtVertexOffset = 0U;
@@ -1511,7 +1501,6 @@ namespace WoWRenderLib.DX11.Managers
             var lastWmoSamplerIndex = 4; // The WMO pass starts with textureSampler bound.
             var lastWmoTwoSided = false; // The WMO pass starts with back-face culling.
 
-            var viewProjection = cameraMatrix * projectionMatrix;
             Wrath335FogState? boundInteriorFog = null;
             foreach (var (_, instances) in wmoInstances)
             {
@@ -1575,7 +1564,9 @@ namespace WoWRenderLib.DX11.Managers
                         var traversedPortalReferences = 0;
                         if (wmo.legacyLighting)
                             viewerTerrainRayLimit ??= GetWmoViewerTerrainRayLimit(camera.Position);
-                        var portalApplied = EnableWmoPortalCulling &&
+                        var prepared = _wmoScenePortalPreparation.TryGetPreparedVisibility(
+                            instance, out var preparedApplied, out var preparedReferences);
+                        var portalApplied = prepared ? preparedApplied : EnableWmoPortalCulling &&
                             WmoPortalVisibility.TryCompute(
                                 wmo,
                                 instance.GetModelMatrix(),
@@ -1589,7 +1580,10 @@ namespace WoWRenderLib.DX11.Managers
                                 out traversedPortalReferences,
                                 wmo.legacyLighting
                                     ? viewerTerrainRayLimit!.Value
-                                    : WmoPortalVisibility.ClientViewerRayLength);
+                                    : WmoPortalVisibility.ClientViewerRayLength,
+                                sceneViewer.GetViewerGroups(instance));
+                        if (prepared)
+                            traversedPortalReferences = preparedReferences;
                         if (portalApplied)
                         {
                             traversedWmoPortalReferences += traversedPortalReferences;

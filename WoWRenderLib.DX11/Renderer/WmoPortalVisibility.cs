@@ -78,6 +78,53 @@ public static class WmoPortalVisibility
         WmoPortalVisibilityScratch scratch,
         out int traversedPortalReferences,
         float maximumViewerDistance = ClientViewerRayLength)
+        => TryComputeCore(wmo, modelMatrix, viewProjection, eyeWorld, enabledGroups,
+            visibleGroups, visibleDoodads, visibleBatches, scratch,
+            out traversedPortalReferences, maximumViewerDistance, null);
+
+    internal static bool TryCompute(
+        in WorldModel wmo,
+        in Matrix4x4 modelMatrix,
+        in Matrix4x4 viewProjection,
+        Vector3 eyeWorld,
+        ReadOnlySpan<bool> enabledGroups,
+        Span<bool> visibleGroups,
+        Span<bool> visibleDoodads,
+        Span<bool> visibleBatches,
+        WmoPortalVisibilityScratch scratch,
+        out int traversedPortalReferences,
+        float maximumViewerDistance,
+        WmoViewerGroups? viewerGroups)
+        => TryComputeCore(wmo, modelMatrix, viewProjection, eyeWorld, enabledGroups,
+            visibleGroups, visibleDoodads, visibleBatches, scratch,
+            out traversedPortalReferences, maximumViewerDistance, viewerGroups);
+
+    internal static bool TryComputeViewerScene(
+        in WorldModel wmo, in Matrix4x4 modelMatrix, in Matrix4x4 viewProjection,
+        Vector3 eyeWorld, Vector3 cameraForwardWorld, ReadOnlySpan<bool> enabledGroups,
+        Span<bool> visibleGroups, Span<bool> visibleDoodads, Span<bool> visibleBatches,
+        WmoPortalVisibilityScratch scratch, out int traversedPortalReferences,
+        WmoViewerGroups viewerGroups, Wrath335PortalSceneViews sceneViews)
+        => TryComputeCore(wmo, modelMatrix, viewProjection, eyeWorld, enabledGroups,
+            visibleGroups, visibleDoodads, visibleBatches, scratch,
+            out traversedPortalReferences, ClientViewerRayLength, viewerGroups,
+            sceneViews, cameraForwardWorld);
+
+    private static bool TryComputeCore(
+        in WorldModel wmo,
+        in Matrix4x4 modelMatrix,
+        in Matrix4x4 viewProjection,
+        Vector3 eyeWorld,
+        ReadOnlySpan<bool> enabledGroups,
+        Span<bool> visibleGroups,
+        Span<bool> visibleDoodads,
+        Span<bool> visibleBatches,
+        WmoPortalVisibilityScratch scratch,
+        out int traversedPortalReferences,
+        float maximumViewerDistance,
+        WmoViewerGroups? viewerGroups,
+        Wrath335PortalSceneViews? sceneViews = null,
+        Vector3 cameraForwardWorld = default)
     {
         traversedPortalReferences = 0;
         if (!wmo.portalGraphValid ||
@@ -97,6 +144,10 @@ public static class WmoPortalVisibility
         var eyeLocal = Vector3.Transform(eyeWorld, inverseModel);
         scratch.Prepare(wmo.groupBatches.Length, wmo.portals.Length,
             modelMatrix * viewProjection, wmo.legacyLighting);
+        scratch.Wrath335 = wmo.wrath335 && wmo.legacyLighting;
+        if (scratch.Wrath335)
+            scratch.WrathProjection.Prepare(modelMatrix, viewProjection);
+        var directionLocal = Vector3.TransformNormal(cameraForwardWorld, inverseModel);
         var budget = Math.Max(128, wmo.portals.Length * 16 + wmo.groupBatches.Length * 4);
         var exhaustedBudget = false;
         var fullView = WmoPortalRect.Full;
@@ -105,31 +156,47 @@ public static class WmoPortalVisibility
         // Legacy groups require a triangle or portal hit; bounds alone never
         // locate a viewer in the 3.3.5 client. Keep the modern fallback.
         var viewerInInterior = false;
-        LocateViewerGroups(wmo, modelMatrix, eyeWorld,
-            enabledGroups, scratch, maximumViewerDistance,
-            allowBoundsFallback: !wmo.legacyLighting,
-            out var nearestViewerHit,
-            out var foundViewerHit);
+        float nearestViewerHit;
+        bool foundViewerHit;
+        var wrath335 = wmo.wrath335 && wmo.legacyLighting;
+        if (wrath335 && viewerGroups is { } selected)
+        {
+            // 0x795D40 registers both group pairs; 0x7AD1F0 consumes that
+            // registry. Other placements must not select their own floor again.
+            scratch.PrimaryViewerGroupIndex = selected.PrimaryGroupIndex;
+            scratch.SecondaryViewerGroupIndex = selected.SecondaryGroupIndex;
+            nearestViewerHit = float.PositiveInfinity;
+            foundViewerHit = false;
+        }
+        else
+            LocateViewerGroups(wmo, modelMatrix, eyeWorld,
+                enabledGroups, scratch, maximumViewerDistance,
+                allowBoundsFallback: !wmo.legacyLighting,
+                out nearestViewerHit, out foundViewerHit);
 
-        if (scratch.PortalViewerOverride || wmo.wrath335)
+        if (scratch.PortalViewerOverride || wrath335)
         {
             for (var viewer = 0; viewer < 2; viewer++)
             {
                 var groupIndex = viewer == 0
                     ? scratch.PrimaryViewerGroupIndex
                     : scratch.SecondaryViewerGroupIndex;
-                if (groupIndex < 0 || !enabledGroups[groupIndex])
+                if ((uint)groupIndex >= (uint)wmo.groupBatches.Length || !enabledGroups[groupIndex] ||
+                    (wrath335 && viewer == 1 && groupIndex == scratch.PrimaryViewerGroupIndex))
                     continue;
-                var flags = scratch.PortalViewerOverride
+                var flags = !wrath335 && scratch.PortalViewerOverride
                     ? wmo.groupBatches[groupIndex].mogiFlags
                     : wmo.groupBatches[groupIndex].flags;
-                if ((flags & ExteriorFlag) != 0)
+                if (!wrath335 && (flags & ExteriorFlag) != 0)
                     continue;
-                if (wmo.wrath335 || (flags & ExteriorLightingFlag) == 0)
+                // 0x7AD27E tests loaded MOGP mask 0x48 for the strict-interior
+                // marker but still traverses each registered group either way.
+                if ((flags & (ExteriorFlag | ExteriorLightingFlag)) == 0)
                     viewerInInterior = true;
                 Traverse(groupIndex, -1, 0, fullView, true, wmo, eyeLocal,
                     enabledGroups, visibleGroups, visibleBatches, scratch,
-                    budget, ref traversedPortalReferences, ref exhaustedBudget);
+                    budget, ref traversedPortalReferences, ref exhaustedBudget,
+                    sceneViews, directionLocal);
             }
         }
         else
@@ -156,7 +223,9 @@ public static class WmoPortalVisibility
         // From outdoors the client seeds only explicit exterior groups whose
         // bounds intersect the camera frustum. Unclassified groups are reachable
         // through portals but do not start a traversal.
-        if (!viewerInInterior)
+        var exteriorView = sceneViews is { HasExteriorView: true }
+            ? sceneViews.ExteriorRect : fullView;
+        if (sceneViews != null ? sceneViews.HasExteriorView : !viewerInInterior)
         {
             for (var groupIndex = 0; groupIndex < wmo.groupBatches.Length; groupIndex++)
             {
@@ -164,10 +233,10 @@ public static class WmoPortalVisibility
                 if (!enabledGroups[groupIndex] ||
                     (group.mogiFlags & ExteriorFlag) == 0 ||
                     (group.mogiFlags & AlwaysDrawFlag) != 0 ||
-                    !IntersectsRect(group.mogiBoundingBox, scratch.LocalToClip, fullView))
+                    !IntersectsRect(group.mogiBoundingBox, scratch.LocalToClip, exteriorView))
                     continue;
 
-                Traverse(groupIndex, -1, 0, fullView, false, wmo, eyeLocal, enabledGroups,
+                Traverse(groupIndex, -1, 0, exteriorView, false, wmo, eyeLocal, enabledGroups,
                     visibleGroups, visibleBatches, scratch, budget,
                     ref traversedPortalReferences, ref exhaustedBudget);
             }
@@ -377,12 +446,15 @@ public static class WmoPortalVisibility
         WmoPortalVisibilityScratch scratch,
         int budget,
         ref int traversedPortalReferences,
-        ref bool exhaustedBudget)
+        ref bool exhaustedBudget,
+        Wrath335PortalSceneViews? sceneViews = null,
+        Vector3 directionLocal = default)
     {
-        if (exhaustedBudget ||
+        if (exhaustedBudget || (scratch.Wrath335 && depth > ClientPortalMaxDepth) ||
             (uint)groupIndex >= (uint)wmo.groupBatches.Length ||
             !enabledGroups[groupIndex] ||
-            scratch.Path[groupIndex])
+            (!scratch.Wrath335 && scratch.Path[groupIndex]) ||
+            (scratch.Wrath335 && (wmo.groupBatches[groupIndex].flags & AlwaysDrawFlag) != 0))
             return;
 
         // The client clears propagation when a portal route reaches an
@@ -394,14 +466,14 @@ public static class WmoPortalVisibility
         MarkGroup(groupIndex, view, wmo, visibleGroups, visibleBatches, scratch.LocalToClip);
         if (wmo.legacyLighting && propagatedFromInterior)
             scratch.PropagatedGroups[groupIndex] = true;
-        if (depth >= ClientPortalMaxDepth ||
+        if ((!scratch.Wrath335 && depth >= ClientPortalMaxDepth) ||
             (wmo.groupBatches[groupIndex].flags & AlwaysDrawFlag) != 0)
             return;
 
         scratch.Path[groupIndex] = true;
         foreach (var link in wmo.groupBatches[groupIndex].portalLinks)
         {
-            if (++traversedPortalReferences > budget)
+            if (++traversedPortalReferences > budget && !scratch.Wrath335)
             {
                 exhaustedBudget = true;
                 break;
@@ -410,24 +482,46 @@ public static class WmoPortalVisibility
             if (link.PortalIndex >= wmo.portals.Length ||
                 link.TargetGroupIndex >= wmo.groupBatches.Length ||
                 link.TargetGroupIndex == previousGroupIndex ||
-                !enabledGroups[link.TargetGroupIndex] ||
-                scratch.Path[link.TargetGroupIndex])
+                (!scratch.Wrath335 && !enabledGroups[link.TargetGroupIndex]) ||
+                (!scratch.Wrath335 && scratch.Path[link.TargetGroupIndex]))
                 continue;
 
             var portal = wmo.portals[link.PortalIndex];
-            if (!FacesEye(portal, eyeLocal, link.Side))
+            if (!FacesEye(portal, eyeLocal, link.Side, scratch.Wrath335))
                 continue;
 
             var portalView = GetPortalRect(link.PortalIndex, portal, eyeLocal, scratch);
-            if (!portalView.IsValid ||
-                !view.TryIntersect(portalView, wmo.legacyLighting, out var clipped))
+            WmoPortalRect clipped;
+            if (scratch.Wrath335
+                ? !view.TryIntersectWrath335(portalView, out clipped)
+                : !portalView.IsValid || !view.TryIntersect(portalView, wmo.legacyLighting, out clipped))
                 continue;
 
             var targetGroup = wmo.groupBatches[link.TargetGroupIndex];
+            if (sceneViews != null &&
+                (targetGroup.mogiFlags & Wrath335PortalSceneViews.PortalViewFlags) != 0)
+            {
+                // 0x7A8F20 sets emission bit 4 before projecting the offset
+                // polygon. The emitted view is independent of the parent rect.
+                if (!scratch.EmittedPortalViews[link.PortalIndex])
+                {
+                    scratch.EmittedPortalViews[link.PortalIndex] = true;
+                    var offset = portal.Normal * (link.Side > 0 ? -0.01f : 0.01f);
+                    var emitted = ProjectPortal(portal, eyeLocal, scratch, offset,
+                        allowEyeContainment: false);
+                    sceneViews.AddPortal(emitted,
+                        Wrath335PortalSceneViews.MaximumDistance(portal.Vertices,
+                            eyeLocal, directionLocal), targetGroup.mogiFlags);
+                }
+                if ((targetGroup.mogiFlags & Wrath335PortalSceneViews.ExteriorViewFlags) != 0)
+                    continue;
+            }
             if ((targetGroup.mogiFlags & AlwaysDrawFlag) != 0)
                 continue;
             if ((targetGroup.mogiFlags & ExteriorFlag) != 0)
             {
+                if (scratch.Wrath335)
+                    continue; // Exterior callbacks come from the exterior seed pass.
                 // Exterior scenery is reached through a portal view from
                 // indoors, but does not recurse back through that group.
                 // The exterior group still passes a view-frustum bounds test.
@@ -440,7 +534,8 @@ public static class WmoPortalVisibility
             Traverse(link.TargetGroupIndex, groupIndex, depth + 1, clipped,
                 propagatedFromInterior,
                 wmo, eyeLocal, enabledGroups, visibleGroups, visibleBatches,
-                scratch, budget, ref traversedPortalReferences, ref exhaustedBudget);
+                scratch, budget, ref traversedPortalReferences, ref exhaustedBudget,
+                sceneViews, directionLocal);
         }
         scratch.Path[groupIndex] = false;
     }
@@ -499,13 +594,17 @@ public static class WmoPortalVisibility
     }
 
     private static WmoPortalRect ProjectPortal(in WmoPortal portal, Vector3 eyeLocal,
-        WmoPortalVisibilityScratch scratch)
+        WmoPortalVisibilityScratch scratch, Vector3 offset = default,
+        bool allowEyeContainment = true)
     {
         if (portal.Vertices == null || portal.Vertices.Length < 3)
             return default;
 
+        if (scratch.Wrath335)
+            return scratch.WrathProjection.Project(portal, eyeLocal, offset, allowEyeContainment);
+
         var planeDistance = Vector3.Dot(portal.Normal, eyeLocal) + portal.Distance;
-        if (MathF.Abs(planeDistance) < ClientPortalPlaneProximity &&
+        if (allowEyeContainment && MathF.Abs(planeDistance) < ClientPortalPlaneProximity &&
             PointInPortal(eyeLocal, portal.Vertices, portal.Normal))
             return WmoPortalRect.Full;
 
@@ -517,11 +616,10 @@ public static class WmoPortalVisibility
         var destination = scratch.PolygonB;
         var count = inputCount;
         for (var i = 0; i < count; i++)
-            source[i] = Vector4.Transform(new Vector4(portal.Vertices[i], 1f), scratch.LocalToClip);
+            source[i] = Vector4.Transform(new Vector4(portal.Vertices[i] + offset, 1f), scratch.LocalToClip);
 
-        // Wrath clips against four sides and near. The far plane is omitted
-        // by CWorldScene__ProjectAndClipWorldPolygon; later batch culling
-        // still applies the camera's far plane.
+        // Preserve the existing approximation for other legacy profiles.
+        // Exact 12340 world-space clipping is handled above.
         var clipPlaneCount = scratch.LegacyClient ? 5 : 6;
         for (var plane = 0; plane < clipPlaneCount && count >= 3; plane++)
         {
@@ -659,9 +757,10 @@ public static class WmoPortalVisibility
         }
     }
 
-    private static bool FacesEye(in WmoPortal portal, Vector3 eye, short side)
+    private static bool FacesEye(in WmoPortal portal, Vector3 eye, short side, bool wrath335)
     {
-        var distance = Vector3.Dot(portal.Normal, eye) + portal.Distance;
+        var distance = wrath335 ? Wrath335PortalProjection.SignedDistance(portal, eye)
+            : Vector3.Dot(portal.Normal, eye) + portal.Distance;
         return side < 0 ? distance <= 0f : distance >= 0f;
     }
 
@@ -672,6 +771,24 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
     public static WmoPortalRect Full => new(-1f, -1f, 1f, 1f);
     public bool IsValid => MaxX - MinX > WmoPortalVisibility.ClientRectDegeneracy &&
                            MaxY - MinY > WmoPortalVisibility.ClientRectDegeneracy;
+
+    public bool TryIntersectWrath335(WmoPortalRect child, out WmoPortalRect result)
+    {
+        if (child.MaxX < MinX || child.MinX > MaxX || child.MaxY < MinY || child.MinY > MaxY)
+        {
+            result = default;
+            return false;
+        }
+        // 0x7A6B90 proves CRect is YX/YX. 0x7AC354 clamps max-X
+        // a second time; max-Y is deliberately not clamped to the parent.
+        result = new(Math.Max(MinX, child.MinX), Math.Max(MinY, child.MinY),
+            Math.Min(MaxX, child.MaxX), child.MaxY);
+        // 0x482870 rejects only abs(a-b) < epsilon, including equality.
+        return float.IsFinite(result.MinX) && float.IsFinite(result.MinY) &&
+            float.IsFinite(result.MaxX) && float.IsFinite(result.MaxY) &&
+            (double)result.MaxX - result.MinX >= (double)WmoPortalVisibility.ClientRectDegeneracy &&
+            (double)result.MaxY - result.MinY >= (double)WmoPortalVisibility.ClientRectDegeneracy;
+    }
 
     public bool TryIntersect(WmoPortalRect child, bool legacyClient,
         out WmoPortalRect result)
@@ -694,6 +811,8 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
 /// <summary>Reusable camera and portal projection storage owned by one WMO placement.</summary>
 public sealed class WmoPortalVisibilityScratch
 {
+    internal Wrath335PortalProjection WrathProjection { get; } = new();
+    internal bool Wrath335 { get; set; }
     internal WmoBspRayScratch ViewerBsp { get; } = new();
     internal int PrimaryViewerGroupIndex { get; set; } = -1;
     internal int SecondaryViewerGroupIndex { get; set; } = -1;
@@ -702,6 +821,7 @@ public sealed class WmoPortalVisibilityScratch
     internal bool[] Path { get; private set; } = [];
     internal bool[] PropagatedGroups { get; private set; } = [];
     internal bool[] ProjectedPortals { get; private set; } = [];
+    internal bool[] EmittedPortalViews { get; private set; } = [];
     internal WmoPortalRect[] PortalRects { get; private set; } = [];
     internal Vector4[] PolygonA { get; private set; } = [];
     internal Vector4[] PolygonB { get; private set; } = [];
@@ -724,10 +844,14 @@ public sealed class WmoPortalVisibilityScratch
         if (ProjectedPortals.Length != portalCount)
         {
             ProjectedPortals = new bool[portalCount];
+            EmittedPortalViews = new bool[portalCount];
             PortalRects = new WmoPortalRect[portalCount];
         }
         else
+        {
             ProjectedPortals.AsSpan().Clear();
+            EmittedPortalViews.AsSpan().Clear();
+        }
         LocalToClip = localToClip;
         LegacyClient = legacyClient;
     }

@@ -225,7 +225,7 @@ namespace WoWRenderLib.DX11.Loaders
             return positions;
         }
 
-        private static WmoPortal[] BuildPortals(in PreppedWMO preppedWMO)
+        internal static WmoPortal[] BuildPortals(in PreppedWMO preppedWMO)
         {
             var result = new WmoPortal[preppedWMO.Portals.Length];
             for (var portalIndex = 0; portalIndex < result.Length; portalIndex++)
@@ -247,21 +247,22 @@ namespace WoWRenderLib.DX11.Loaders
                 }
 
                 var normalLength = source.Normal.Length();
-                var normal = normalLength > 0.000001f
+                var exactWrath = preppedWMO.Wrath335 && preppedWMO.LegacyLighting;
+                var normal = exactWrath ? source.Normal : normalLength > 0.000001f
                     ? source.Normal / normalLength
                     : Vector3.Zero;
                 result[portalIndex] = new WmoPortal
                 {
                     Vertices = vertices,
                     Normal = normal,
-                    Distance = normal == Vector3.Zero ? 0f : source.Distance / normalLength,
+                    Distance = exactWrath ? source.Distance : normal == Vector3.Zero ? 0f : source.Distance / normalLength,
                     Bounds = new BoundingBox(min, max)
                 };
             }
             return result;
         }
 
-        private static WmoPortalLink[] BuildPortalLinks(
+        internal static WmoPortalLink[] BuildPortalLinks(
             in PreppedWMOGroup group,
             PreppedWMOPortalReference[] references,
             int[] sourceGroupToRenderGroup)
@@ -271,10 +272,11 @@ namespace WoWRenderLib.DX11.Loaders
                 return [];
 
             var result = new List<WmoPortalLink>(group.portalCount);
-            for (var referenceIndex = group.portalStart; referenceIndex < end; referenceIndex++)
+            for (var referenceIndex = (int)group.portalStart; referenceIndex < end; referenceIndex++)
             {
                 var reference = references[referenceIndex];
-                if (reference.GroupIndex >= sourceGroupToRenderGroup.Length)
+                if (reference.GroupIndex == ushort.MaxValue ||
+                    reference.GroupIndex >= sourceGroupToRenderGroup.Length)
                     continue;
                 var targetGroupIndex = sourceGroupToRenderGroup[reference.GroupIndex];
                 if (targetGroupIndex < 0)
@@ -294,6 +296,33 @@ namespace WoWRenderLib.DX11.Loaders
             int[] sourceGroupToRenderGroup,
             WmoPortal[] portals)
         {
+            if (preppedWMO.Wrath335 && preppedWMO.LegacyLighting)
+            {
+                // 0x7AC194 consumes only MOGP-owned ranges. 0x7AC1A9
+                // skips the null destination before reading its portal index.
+                // Links are directional; neither a reverse reference nor a
+                // nonempty destination range is required.
+                foreach (var group in preppedWMO.PreppedWMOGroups)
+                {
+                    var end = (int)group.portalStart + group.portalCount;
+                    if (end > preppedWMO.PortalReferences.Length)
+                        return false;
+                    for (var index = (int)group.portalStart; index < end; index++)
+                    {
+                        var reference = preppedWMO.PortalReferences[index];
+                        if (reference.GroupIndex == ushort.MaxValue)
+                            continue;
+                        if (reference.GroupIndex >= sourceGroupToRenderGroup.Length ||
+                            reference.PortalIndex >= portals.Length)
+                            return false;
+                        var portal = portals[reference.PortalIndex];
+                        if (portal.Vertices is not { Length: >= 3 } || portal.Normal == Vector3.Zero)
+                            return false;
+                    }
+                }
+                return true;
+            }
+
             // A 3.3.5 WMO can have no portal references. The client still runs
             // outdoor MOGI exterior/always-draw group culling for that case;
             // rejecting the empty graph made our fallback render every group.

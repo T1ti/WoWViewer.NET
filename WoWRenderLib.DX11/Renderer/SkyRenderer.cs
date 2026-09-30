@@ -97,6 +97,13 @@ internal sealed class SkyRenderer(
     private ComPtr<ID3D11BlendState> _glareQueryBlendState;
     private ComPtr<ID3D11RasterizerState> _cullState;
     private ComPtr<ID3D11RasterizerState> _twoSidedState;
+    private ComPtr<ID3D11RasterizerState> _skyScissorCullState;
+    private ComPtr<ID3D11RasterizerState> _skyScissorTwoSidedState;
+    private bool _skyScissorEnabled;
+    private ComPtr<ID3D11RasterizerState> SkyCullState =>
+        _skyScissorEnabled ? _skyScissorCullState : _cullState;
+    private ComPtr<ID3D11RasterizerState> SkyTwoSidedState =>
+        _skyScissorEnabled ? _skyScissorTwoSidedState : _twoSidedState;
     private ComPtr<ID3D11ShaderResourceView> _missingTexture;
     private ShaderManager? _shaderManager;
     private WorldSkyLighting _lighting = WorldSkyLighting.None;
@@ -340,6 +347,12 @@ internal sealed class SkyRenderer(
             SilkMarshal.ThrowHResult(_device.CreateRasterizerState(
                 in rasterizerDesc,
                 ref _twoSidedState));
+            rasterizerDesc.ScissorEnable = true;
+            SilkMarshal.ThrowHResult(_device.CreateRasterizerState(
+                in rasterizerDesc, ref _skyScissorTwoSidedState));
+            rasterizerDesc.CullMode = CullMode.Back;
+            SilkMarshal.ThrowHResult(_device.CreateRasterizerState(
+                in rasterizerDesc, ref _skyScissorCullState));
 
             CreateSamplers();
             CreateBlendStates();
@@ -553,7 +566,43 @@ internal sealed class SkyRenderer(
         }
     }
 
+    /// <summary>
+    /// Optionally clips the complete sky pass to a Wrath NDC view. Returns with
+    /// scissor disabled and default blend/depth state for subsequent world passes.
+    /// </summary>
     public unsafe SkyRenderStats Render(
+        Camera camera, bool animateModels, long sceneTimeMilliseconds, long lightTime,
+        Vector3 lightDirection, bool enableDayNightSkyColors,
+        WmoPortalRect? skyView = null, uint viewportWidth = 0, uint viewportHeight = 0)
+    {
+        if (!_initialized)
+            return default;
+        if (skyView is { } view)
+        {
+            if (!Wrath335SkyScissor.TryCreate(view, viewportWidth, viewportHeight, out var rect))
+                return default;
+            var scissor = new Silk.NET.Maths.Box2D<int>(
+                new(rect.Left, rect.Top), new(rect.Right, rect.Bottom));
+            _deviceContext.RSSetScissorRects(1, in scissor);
+            _skyScissorEnabled = true;
+        }
+        try
+        {
+            return RenderCore(camera, animateModels, sceneTimeMilliseconds, lightTime,
+                lightDirection, enableDayNightSkyColors);
+        }
+        finally
+        {
+            if (_skyScissorEnabled)
+            {
+                _skyScissorEnabled = false;
+                _deviceContext.RSSetScissorRects(0, (Silk.NET.Maths.Box2D<int>*)null);
+                _deviceContext.RSSetState(_twoSidedState);
+            }
+        }
+    }
+
+    private unsafe SkyRenderStats RenderCore(
         Camera camera, bool animateModels, long sceneTimeMilliseconds, long lightTime,
         Vector3 lightDirection, bool enableDayNightSkyColors)
     {
@@ -644,7 +693,7 @@ internal sealed class SkyRenderer(
             // blends the DNSky dome additively over them.
             if (!enableDayNightSkyColors)
                 ApplyBlendMode(0);
-            _deviceContext.RSSetState(_twoSidedState);
+            _deviceContext.RSSetState(SkyTwoSidedState);
             _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
             if (enableDayNightSkyColors)
             {
@@ -653,7 +702,7 @@ internal sealed class SkyRenderer(
                     ref drawCalls, ref submittedIndices);
                 // M2 materials change rasterizer state; restore the sky state
                 // before the client billboard and dome passes.
-                _deviceContext.RSSetState(_twoSidedState);
+                _deviceContext.RSSetState(SkyTwoSidedState);
                 RenderWrathCelestials(camera, lightTime,
                     ref drawCalls, ref submittedIndices);
                 ApplyBlendMode(3);
@@ -820,7 +869,7 @@ internal sealed class SkyRenderer(
         _deviceContext.PSSetSamplers(0, 1, ref _samplers[0]);
         var activeResource = _cloudResources[_cloudGenerator.ActiveTextureIndex];
         _deviceContext.PSSetShaderResources(0, 1, ref activeResource);
-        _deviceContext.RSSetState(_twoSidedState);
+        _deviceContext.RSSetState(SkyTwoSidedState);
         ApplyBlendMode(2);
         _deviceContext.DrawIndexed(Wrath335CloudMesh.StripIndexCount, 0, 0);
         drawCalls++;
@@ -1340,7 +1389,7 @@ internal sealed class SkyRenderer(
                 0,
                 0);
 
-            _deviceContext.RSSetState(IsTwoSided(batch.renderFlags) ? _twoSidedState : _cullState);
+            _deviceContext.RSSetState(IsTwoSided(batch.renderFlags) ? SkyTwoSidedState : SkyCullState);
             ApplySkyboxBlendMode(checked((int)batch.blendType), opacity);
 
             for (var index = 0; index < batch.material.Length; index++)
@@ -1529,6 +1578,8 @@ internal sealed class SkyRenderer(
         _cloudVertexBuffer.Dispose();
         _twoSidedState.Dispose();
         _cullState.Dispose();
+        _skyScissorTwoSidedState.Dispose();
+        _skyScissorCullState.Dispose();
         _glareQueryBlendState.Dispose();
         _glareQueryDepthState.Dispose();
         _depthDisabledState.Dispose();

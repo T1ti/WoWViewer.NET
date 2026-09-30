@@ -121,6 +121,7 @@ namespace WoWRenderLib.DX11.Managers
                 OnGroupsChanged = _ => UpdateWMOInstanceList()
             };
             container.SetDoodadSetsToEnable([placement.DoodadSet]);
+            container.InitializeFileViewerPlacement();
             lock (SceneObjectLock)
                 SceneObjects.Add(container);
             pendingWMODoodads.Enqueue(new PendingWmoDoodadPopulation(container));
@@ -978,6 +979,7 @@ namespace WoWRenderLib.DX11.Managers
                 OnGroupsChanged = _ => UpdateWMOInstanceList()
             };
             container.SetDoodadSetsToEnable(worldModel.doodadSetIDs);
+            container.InitializeFileViewerPlacement(worldModel.clientViewerBounds);
 
             lock (SceneObjectLock)
                 SceneObjects.Add(container);

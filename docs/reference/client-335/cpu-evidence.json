@@ -4,9 +4,23 @@
   "client": "3.3.5.12340",
   "idb": "E:\\WoWModding\\TOOLS\\Other\\disasemble\\IDA-WoW-Wrath-2026.08.06.i64",
   "inputBinarySha256": null,
-  "cachedFunctionCount": 48,
-  "unresolvedCallCount": 10,
+  "cachedFunctionCount": 93,
+  "unresolvedCallCount": 13,
   "functions": [
+    {
+      "address": "0x482870",
+      "name": "FloatsApproxEqual",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 4,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x482870.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
     {
       "address": "0x4f8ea0",
       "name": "CGWorldFrame__OnWorldRender",
@@ -17,7 +31,92 @@
       "pseudocodeLines": 165,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x4f8ea0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x682e70",
+      "name": "CGxDevice__SetScissor",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R01-dx9-state",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 12,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x682e70.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x6a38d0",
+      "name": "CGxDeviceD3d__IStateSyncScissorRect",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R01-dx9-state",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 52,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x6a38d0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x6a9b40",
+      "name": "CGxDeviceD3d__XformSetProjection",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R01-dx9-state",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 111,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x6a9b40.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x6bf370",
+      "name": "GxuXformCreateProjection_Exact",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R01-dx9-state",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 43,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x6bf370.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x6bf6d0",
+      "name": "GxuXformCalcFrustumCorners",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 256,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x6bf6d0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x6ded60",
+      "name": "TSList__LinkNodeToHeadByOffset",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 32,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x6ded60.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x77eff0",
@@ -29,7 +128,8 @@
       "pseudocodeLines": 5,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x77eff0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x780620",
@@ -41,7 +141,8 @@
       "pseudocodeLines": 6,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x780620.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x780770",
@@ -53,7 +154,8 @@
       "pseudocodeLines": 27,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x780770.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x78df90",
@@ -65,7 +167,8 @@
       "pseudocodeLines": 42,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x78df90.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x78e400",
@@ -77,7 +180,36 @@
       "pseudocodeLines": 275,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x78e400.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x790570",
+      "name": "CWorldScene__InitViewerLocation",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 20,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x790570.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7905b0",
+      "name": "RectFExt__UnionInPlaceMaxField10ClearField18",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 16,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7905b0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
     },
     {
       "address": "0x790920",
@@ -89,7 +221,8 @@
       "pseudocodeLines": 71,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x790920.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x790a80",
@@ -101,7 +234,50 @@
       "pseudocodeLines": 7,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x790a80.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x790ab0",
+      "name": "CWorldScene__UnionPortalViewBounds",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 4,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x790ab0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x790ad0",
+      "name": "CWorldScene__UnionFlaggedPortalViewBounds",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 4,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x790ad0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7912c0",
+      "name": "CFacet__Set",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 40,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7912c0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
     },
     {
       "address": "0x792bd0",
@@ -113,7 +289,22 @@
       "pseudocodeLines": 77,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x792bd0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x792fc0",
+      "name": "CWorldScene__AddViewerGroup",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 64,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x792fc0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x793450",
@@ -125,7 +316,8 @@
       "pseudocodeLines": 79,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x793450.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x793760",
@@ -137,7 +329,8 @@
       "pseudocodeLines": 136,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x793760.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x793980",
@@ -149,7 +342,8 @@
       "pseudocodeLines": 86,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x793980.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x793d20",
@@ -161,19 +355,35 @@
       "pseudocodeLines": 124,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x793d20.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x795400",
       "name": "CWorldScene__Update",
       "workstream": "R00-R01-frame",
-      "analysisStatus": "pseudocode-exported",
-      "portStatus": "unaudited",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
       "captureStatus": "pending",
       "pseudocodeLines": 301,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x795400.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x795d40",
+      "name": "CWorldScene__LocateViewer3",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 90,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x795d40.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7964a0",
@@ -185,7 +395,8 @@
       "pseudocodeLines": 231,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7964a0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7968d0",
@@ -197,7 +408,8 @@
       "pseudocodeLines": 217,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7968d0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7984a0",
@@ -209,7 +421,8 @@
       "pseudocodeLines": 168,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7984a0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7989c0",
@@ -221,7 +434,8 @@
       "pseudocodeLines": 265,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7989c0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x798da0",
@@ -233,7 +447,8 @@
       "pseudocodeLines": 317,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x798da0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x799f80",
@@ -245,7 +460,8 @@
       "pseudocodeLines": 85,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x799f80.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a260",
@@ -257,7 +473,8 @@
       "pseudocodeLines": 39,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x79a260.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a790",
@@ -269,19 +486,21 @@
       "pseudocodeLines": 37,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x79a790.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a870",
       "name": "CWorldScene__Render",
       "workstream": "R00-R01-frame",
-      "analysisStatus": "pseudocode-exported",
-      "portStatus": "unaudited",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
       "captureStatus": "pending",
       "pseudocodeLines": 218,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x79a870.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79ae80",
@@ -293,7 +512,8 @@
       "pseudocodeLines": 109,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x79ae80.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79b1f0",
@@ -305,7 +525,232 @@
       "pseudocodeLines": 46,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x79b1f0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7a6b40",
+      "name": "CMapObj__SetGroupRenderCallback",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 6,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a6b40.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7a6b90",
+      "name": "Compute2dBoundsFromVertices",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 77,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a6b90.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a6e00",
+      "name": "RRenderThruPortals_SetupTopLevelPortalTransforms",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 123,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a6e00.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a70d0",
+      "name": "ComputeMaxProjectedVertexDistance",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 68,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a70d0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a7210",
+      "name": "CMapObjGroup__TestPortalSideIntersection",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 22,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a7210.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a72a0",
+      "name": "CWorldScene__ClipWorldPolygonAgainstPlanes",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 237,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a72a0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a85e0",
+      "name": "CWorldScene__ProjectAndClipWorldPolygon",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 143,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a85e0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a8f20",
+      "name": "CMapObj__AddPortalView",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 86,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a8f20.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a9090",
+      "name": "CMapObj__ProjectAndClipPortalPolygon",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 47,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a9090.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7a9200",
+      "name": "CWorldScene__ProjectPortalPolygonAndAddView",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 92,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7a9200.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7ac060",
+      "name": "CMapObj__RRenderThruPortals",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 319,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7ac060.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7ad1f0",
+      "name": "CMapObj__RenderPortalOcclusionPass",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 81,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7ad1f0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7ad350",
+      "name": "CMapObj__RRenderThruPortalsFromExterior",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 18,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7ad350.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7ae7b0",
+      "name": "CMapObj__GetGroupFlags",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 7,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7ae7b0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7aea80",
+      "name": "CMapObj__GetGroup",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 11,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7aea80.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7aeb10",
+      "name": "CMapObj__GetGroupInfo",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 7,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7aeb10.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
     },
     {
       "address": "0x7aecb0",
@@ -317,7 +762,8 @@
       "pseudocodeLines": 142,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7aecb0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7af280",
@@ -329,7 +775,106 @@
       "pseudocodeLines": 184,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7af280.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b3990",
+      "name": "CMapObjDef__TestAABox",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 4,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b3990.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b3a10",
+      "name": "CWorldScene__CullMapObjDefGroupFromExterior",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 47,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b3a10.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x7b3b20",
+      "name": "CWorldScene_RenderMapObjLiquids",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 12,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b3b20.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b4350",
+      "name": "CMapObjDef__constructor",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 78,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b4350.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b64f0",
+      "name": "CMapObjDef__UpdateMoved",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 112,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b64f0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b67b0",
+      "name": "CMapObjDef__UpdateMatrix",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 13,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b67b0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b6f60",
+      "name": "CMapObjDef__SetDoodadsEnabled",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 86,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7b6f60.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7bb570",
@@ -341,7 +886,50 @@
       "pseudocodeLines": 27,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7bb570.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7beae0",
+      "name": "TSHashTable__CMapObjDef__InsertEntry",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 15,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7beae0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7bf120",
+      "name": "CMap__CreateMapObjDef_007BF120",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "unaudited",
+      "captureStatus": "pending",
+      "pseudocodeLines": 177,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7bf120.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7bf460",
+      "name": "CMap__CreateMapObjDef",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 125,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7bf460.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7c6c30",
@@ -353,7 +941,8 @@
       "pseudocodeLines": 69,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7c6c30.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7c6d50",
@@ -365,7 +954,8 @@
       "pseudocodeLines": 483,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7c6d50.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7c78e0",
@@ -377,7 +967,8 @@
       "pseudocodeLines": 66,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7c78e0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7c7ae0",
@@ -389,7 +980,8 @@
       "pseudocodeLines": 239,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7c7ae0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7c9a00",
@@ -401,7 +993,8 @@
       "pseudocodeLines": 18,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7c9a00.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7ca180",
@@ -413,7 +1006,8 @@
       "pseudocodeLines": 136,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7ca180.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7ca920",
@@ -425,7 +1019,8 @@
       "pseudocodeLines": 135,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7ca920.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7cb0c0",
@@ -437,19 +1032,49 @@
       "pseudocodeLines": 36,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7cb0c0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7d59b0",
       "name": "CMap__LocateViewerMapObjs",
       "workstream": "R02-viewer-and-visibility",
-      "analysisStatus": "pseudocode-inspected",
+      "analysisStatus": "instruction-inspected",
       "portStatus": "partial-port",
       "captureStatus": "pending",
       "pseudocodeLines": 176,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x7d59b0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7d7260",
+      "name": "CMapBaseObj__constructor",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 20,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7d7260.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7f09b0",
+      "name": "DayNight__RenderSky",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R03-sky",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 141,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x7f09b0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
     },
     {
       "address": "0x81ef30",
@@ -461,7 +1086,8 @@
       "pseudocodeLines": 112,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x81ef30.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x81f1d0",
@@ -473,7 +1099,8 @@
       "pseudocodeLines": 85,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x81f1d0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x81fb10",
@@ -485,7 +1112,8 @@
       "pseudocodeLines": 197,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x81fb10.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x81fe90",
@@ -497,7 +1125,8 @@
       "pseudocodeLines": 325,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x81fe90.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x821a20",
@@ -509,7 +1138,8 @@
       "pseudocodeLines": 1669,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x821a20.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x823130",
@@ -521,7 +1151,8 @@
       "pseudocodeLines": 628,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x823130.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x823cb0",
@@ -533,7 +1164,8 @@
       "pseudocodeLines": 29,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x823cb0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x9829b0",
@@ -545,7 +1177,8 @@
       "pseudocodeLines": 22,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x9829b0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x982fb0",
@@ -557,19 +1190,21 @@
       "pseudocodeLines": 51,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x982fb0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x9830d0",
       "name": "NTempest__Intersect@3",
       "workstream": "R02-viewer-and-visibility",
-      "analysisStatus": "pseudocode-inspected",
+      "analysisStatus": "instruction-inspected",
       "portStatus": "partial-port",
       "captureStatus": "pending",
       "pseudocodeLines": 135,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x9830d0.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x983490",
@@ -581,14 +1216,57 @@
       "pseudocodeLines": 117,
       "complete": true,
       "cachePath": "artifacts/client-335-shaders/ida/0x983490.c",
-      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md"
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x983e70",
+      "name": "CFrustum__CalcPlanesFromCorners",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 32,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x983e70.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x984240",
+      "name": "CFrustum__CalcPlanesFromCorners@2",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "pseudocode-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 28,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x984240.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
+    },
+    {
+      "address": "0x9ce7e0",
+      "name": "RRenderThruPortals_SyncMaxDepth",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "workstream": "R02-viewer-and-visibility",
+      "analysisStatus": "instruction-inspected",
+      "portStatus": "partial-port",
+      "captureStatus": "pending",
+      "pseudocodeLines": 5,
+      "complete": true,
+      "cachePath": "artifacts/client-335-shaders/ida/0x9ce7e0.c",
+      "evidenceRef": "docs/reference/client-335/CPU_SCENE_AUDIT.md",
+      "semanticClaimsRef": "docs/reference/client-335/cpu-semantic-claims.csv"
     }
   ],
-  "pseudocodeLines": 8214.0,
-  "rootCount": 26,
-  "directEdges": 271,
-  "uniqueCallees": 221,
-  "callSites": 378,
+  "pseudocodeLines": 11201.0,
+  "rootCount": 71,
+  "directEdges": 418,
+  "uniqueCallees": 308,
+  "callSites": 603,
   "unresolvedCalls": [
     {
       "root": "CWorldScene__RenderMapObjDefGroups",
@@ -649,176 +1327,562 @@
       "site": "0x823c4c",
       "operand": "edx",
       "classification": "register-indirect"
+    },
+    {
+      "root": "CMapObj__RenderPortalOcclusionPass",
+      "rootAddress": "0x7ad1f0",
+      "site": "0x7ad32f",
+      "operand": "eax",
+      "classification": "register-indirect",
+      "storageAddress": "0xd1bed8",
+      "candidateTargets": [
+        "0x799310"
+      ],
+      "contextNote": "Caller 0x7B3B20 installs callback 0x799310 through setter 0x7A6B40 before seeding. Other callers and callback/reentrant writers remain a closure frontier; this site is retained as unresolved for complete rendering reachability."
+    },
+    {
+      "root": "CMapObj__RRenderThruPortals",
+      "rootAddress": "0x7ac060",
+      "site": "0x7ac0ea",
+      "operand": "eax",
+      "classification": "register-indirect"
+    },
+    {
+      "root": "CGxDeviceD3d__IStateSyncScissorRect",
+      "rootAddress": "0x6a38d0",
+      "site": "0x6a39c1",
+      "operand": "eax",
+      "classification": "register-indirect"
     }
   ],
   "cache": "artifacts/client-335-shaders/ida",
-  "coverageNote": "Complete exports and bounded direct-call tables do not establish exhaustive rendering closure or whole-function semantic/capture completion. All 10 indirect/global-pointer call sites and 221 distinct direct targets need follow-up. IDB types/comments are leads. Portal queries use a5=0; the sphere branch belongs to other callers.",
+  "coverageNote": "Addresses/build provenance identify functions. Every pre-existing IDB name/type/comment is an unverified hypothesis; instruction-proven semantic claims are separate. Complete exports and bounded call tables do not establish rendering closure or whole-function semantic/capture completion. The retained indirect/global-pointer sites and all distinct direct targets remain a closure frontier. Root runtime +0x0C flags are not MODF flags; the 0x7B6F60 mask writer affects child doodads. Portal sphere mode is outside the camera caller. Shared group registries now seed both selected placements independently of fog data. Global exterior/sky views and frame/lighting consumers remain partial; 0x7AD32F reads callback storage 0xD1BED8 with a caller-installed candidate target.",
   "roots": [
     {
       "address": "0x793760",
       "name": "CWorldScene__UpdateCullSortLists",
       "directCallees": 4,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x793d20",
       "name": "Liquid__BuildDrawInstances_ColorSplit",
       "directCallees": 15,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7964a0",
       "name": "CWorldScene__RenderMapObjDefGroups",
       "directCallees": 13,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7968d0",
       "name": "CWorldScene__BuildPortalViews",
       "directCallees": 1,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7984a0",
       "name": "CWorldScene__RenderDetailDoodads",
       "directCallees": 14,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7989c0",
       "name": "CWorldScene__RenderChunksSinglePass",
       "directCallees": 9,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x798da0",
       "name": "CWorldScene__RenderChunks",
       "directCallees": 14,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x799f80",
       "name": "CWorldScene__CullMapObjGroupsAndInteriors",
       "directCallees": 7,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a260",
       "name": "CWorldScene__CullInteriorGroups",
       "directCallees": 4,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a790",
       "name": "CWorldScene__CullSortTable",
       "directCallees": 11,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7bb570",
       "name": "CShadowQuery__Update",
       "directCallees": 5,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x4f8ea0",
       "name": "CGWorldFrame__OnWorldRender",
       "directCallees": 44,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x77eff0",
       "name": "World__Render",
       "directCallees": 1,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x795400",
       "name": "CWorldScene__Update",
       "directCallees": 12,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x79a870",
       "name": "CWorldScene__Render",
       "directCallees": 49,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7ca180",
       "name": "CMapObjGroup__BspWalkRay",
       "directCallees": 4,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7cb0c0",
       "name": "CMapObjGroup__GetTris",
       "directCallees": 5,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7d59b0",
       "name": "CMap__LocateViewerMapObjs",
       "directCallees": 8,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x821a20",
       "name": "CM2Scene__Animate",
       "directCallees": 25,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x823130",
       "name": "CM2SceneRender__Draw",
       "directCallees": 17,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x823cb0",
       "name": "CM2Scene__Draw",
       "directCallees": 3,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x7af280",
       "name": "CMapObj__VectorIntersectPortal",
       "directCallees": 5,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x982fb0",
       "name": "NTempest__Intersect@2",
       "directCallees": 0,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x9830d0",
       "name": "NTempest__Intersect@3",
       "directCallees": 0,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x9829b0",
       "name": "C3Vector__MajorAxis",
       "directCallees": 0,
-      "toolMore": false
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
     },
     {
       "address": "0x780770",
       "name": "World__ValidateFarClip",
       "directCallees": 1,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b4350",
+      "name": "CMapObjDef__constructor",
+      "directCallees": 1,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x795d40",
+      "name": "CWorldScene__LocateViewer3",
+      "directCallees": 10,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b3990",
+      "name": "CMapObjDef__TestAABox",
+      "directCallees": 1,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b64f0",
+      "name": "CMapObjDef__UpdateMoved",
+      "directCallees": 11,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7bf120",
+      "name": "CMap__CreateMapObjDef_007BF120",
+      "directCallees": 13,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7bf460",
+      "name": "CMap__CreateMapObjDef",
+      "directCallees": 8,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7d7260",
+      "name": "CMapBaseObj__constructor",
+      "directCallees": 0,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b6f60",
+      "name": "CMapObjDef__SetDoodadsEnabled",
+      "directCallees": 2,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b67b0",
+      "name": "CMapObjDef__UpdateMatrix",
+      "directCallees": 3,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7beae0",
+      "name": "TSHashTable__CMapObjDef__InsertEntry",
+      "directCallees": 3,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x6ded60",
+      "name": "TSList__LinkNodeToHeadByOffset",
+      "directCallees": 0,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7b3b20",
+      "name": "CWorldScene_RenderMapObjLiquids",
+      "directCallees": 2,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7ad1f0",
+      "name": "CMapObj__RenderPortalOcclusionPass",
+      "directCallees": 7,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7ae7b0",
+      "name": "CMapObj__GetGroupFlags",
+      "directCallees": 0,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x792fc0",
+      "name": "CWorldScene__AddViewerGroup",
+      "directCallees": 1,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x7a6b40",
+      "name": "CMapObj__SetGroupRenderCallback",
+      "directCallees": 0,
+      "toolMore": false,
+      "nameAuthority": "unverified-IDB-hypothesis"
+    },
+    {
+      "address": "0x790570",
+      "name": "CWorldScene__InitViewerLocation",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x7905b0",
+      "name": "RectFExt__UnionInPlaceMaxField10ClearField18",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 1,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a8f20",
+      "name": "CMapObj__AddPortalView",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 6,
+      "toolMore": false
+    },
+    {
+      "address": "0x7ac060",
+      "name": "CMapObj__RRenderThruPortals",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 17,
+      "toolMore": false
+    },
+    {
+      "address": "0x7ad350",
+      "name": "CMapObj__RRenderThruPortalsFromExterior",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 2,
+      "toolMore": false
+    },
+    {
+      "address": "0x7b3a10",
+      "name": "CWorldScene__CullMapObjDefGroupFromExterior",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 9,
+      "toolMore": false
+    },
+    {
+      "address": "0x7f09b0",
+      "name": "DayNight__RenderSky",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 14,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a70d0",
+      "name": "ComputeMaxProjectedVertexDistance",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x790ab0",
+      "name": "CWorldScene__UnionPortalViewBounds",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 1,
+      "toolMore": false
+    },
+    {
+      "address": "0x790ad0",
+      "name": "CWorldScene__UnionFlaggedPortalViewBounds",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 1,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a6e00",
+      "name": "RRenderThruPortals_SetupTopLevelPortalTransforms",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 5,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a9090",
+      "name": "CMapObj__ProjectAndClipPortalPolygon",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 3,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a85e0",
+      "name": "CWorldScene__ProjectAndClipWorldPolygon",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 5,
+      "toolMore": false
+    },
+    {
+      "address": "0x682e70",
+      "name": "CGxDevice__SetScissor",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x6a38d0",
+      "name": "CGxDeviceD3d__IStateSyncScissorRect",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 2,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a7210",
+      "name": "CMapObjGroup__TestPortalSideIntersection",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 2,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a72a0",
+      "name": "CWorldScene__ClipWorldPolygonAgainstPlanes",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x7aeb10",
+      "name": "CMapObj__GetGroupInfo",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x7aea80",
+      "name": "CMapObj__GetGroup",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a9200",
+      "name": "CWorldScene__ProjectPortalPolygonAndAddView",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 5,
+      "toolMore": false
+    },
+    {
+      "address": "0x9ce7e0",
+      "name": "RRenderThruPortals_SyncMaxDepth",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x6bf6d0",
+      "name": "GxuXformCalcFrustumCorners",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 5,
+      "toolMore": false
+    },
+    {
+      "address": "0x7912c0",
+      "name": "CFacet__Set",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x984240",
+      "name": "CFrustum__CalcPlanesFromCorners@2",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 1,
+      "toolMore": false
+    },
+    {
+      "address": "0x983e70",
+      "name": "CFrustum__CalcPlanesFromCorners",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 1,
+      "toolMore": false
+    },
+    {
+      "address": "0x6bf370",
+      "name": "GxuXformCreateProjection_Exact",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 3,
+      "toolMore": false
+    },
+    {
+      "address": "0x6a9b40",
+      "name": "CGxDeviceD3d__XformSetProjection",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 2,
+      "toolMore": false
+    },
+    {
+      "address": "0x482870",
+      "name": "FloatsApproxEqual",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
+      "toolMore": false
+    },
+    {
+      "address": "0x7a6b90",
+      "name": "Compute2dBoundsFromVertices",
+      "nameAuthority": "unverified-IDB-hypothesis",
+      "directCallees": 0,
       "toolMore": false
     }
   ],
   "verification": {
     "smokeExitCode": 0,
-    "coreTests": 50,
-    "dx11Tests": 193,
+    "coreTests": 52,
+    "dx11Tests": 257,
     "avaloniaTests": 185,
-    "totalTests": 428,
-    "cpuFixturesAdded": 21,
+    "totalTests": 494,
+    "cpuFixturesAdded": 87,
     "renderModeFixturesAdded": 4,
-    "smokeLog": "C:\\Users\\Titi\\AppData\\Local\\Temp\\wowviewer-smoke-cpu-viewer-309126ae0d6b4e40a6afef5b7aaea671.log"
+    "smokeLog": "C:\\Users\\Titi\\AppData\\Local\\Temp\\wowviewer-smoke-portal-boundaries-final-1790734046299.log",
+    "validatedCpuExports": 93,
+    "validatedInstructionExports": 44,
+    "validatedSemanticClaims": 36,
+    "validatedInventoryFunctions": 27280,
+    "validatedMarkdownLinks": 319
+  },
+  "completeInstructionFunctionCount": 44,
+  "completeInstructionCount": 5918,
+  "nameAuthority": "unverified-IDB-hypothesis",
+  "semanticClaims": "docs/reference/client-335/cpu-semantic-claims.csv",
+  "stormwindPortalFixture": {
+    "path": "WoWRenderLib.DX11.Tests/Fixtures/Stormwind335Portals.json",
+    "rootSha256": "C94A0183F1046FC33B0E579C0863A1320C85229B24DD317DA5672C2AD5D7C6D6",
+    "groups": 286,
+    "ownedReferences": 627,
+    "facadePolygons": 7,
+    "oneWayReferences": 11,
+    "nullTargets": 0,
+    "finalFrameVerified": false
   }
 }

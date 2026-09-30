@@ -484,6 +484,9 @@ public static class ADTLoader
         Formats.StringBlock wmoFilenames,
         ReadOnlySpan<uint> wmoNameOffsets)
     {
+        var wrath335 = fileSystem.Kind == StorageKind.Mpq &&
+            fileSystem.Version.Major == 3 && fileSystem.Version.Minor == 3 &&
+            fileSystem.Version.Patch == 5 && fileSystem.Version.Build == 12340;
         var result = new WorldModelBatch[placements.Length];
         for (var i = 0; i < result.Length; i++)
         {
@@ -506,6 +509,11 @@ public static class ADTLoader
                 flags = placement.Flags,
                 doodadSet = placement.DoodadSet,
                 nameSet = placement.NameSet,
+                clientViewerBounds = wrath335
+                    ? Wrath335WmoPlacementBounds.FromClientExtents(
+                        ToVector3(placement.Extents.Min), ToVector3(placement.Extents.Max),
+                        new(WorldOriginOffset, WorldOriginOffset, 0f))
+                    : null,
                 scale = placement.Scale / PlacementScaleDenominator,
                 doodadSetIDs = [placement.DoodadSet]
             };

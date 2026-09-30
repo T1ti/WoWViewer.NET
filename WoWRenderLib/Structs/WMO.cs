@@ -97,6 +97,8 @@ namespace WoWRenderLib.Structs
         public readonly ushort flags { get; init; }
         public readonly ushort doodadSet { get; init; }
         public readonly ushort nameSet { get; init; }
+        // Native 12340 viewer broad phase uses MODF extents, not the transformed root bounds.
+        public readonly BoundingBox? clientViewerBounds { get; init; }
         public readonly uint[] doodadSetIDs { get; init; }
     }
 

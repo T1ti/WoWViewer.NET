@@ -16,5 +16,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WoWRenderLib.DX11\WoWRenderLib.DX11.csproj" />
+    <EmbeddedResource Include="Fixtures\Stormwind335Portals.json" />
   </ItemGroup>
 </Project>

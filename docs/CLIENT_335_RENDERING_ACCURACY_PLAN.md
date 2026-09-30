@@ -17,6 +17,29 @@ liquids, effects, and presentation. Translate that behavior to DX11 with an
 explicit 3.3.5 profile. A later-client implementation or a readable third-party
 shader is a lead until it matches the 12340 evidence.
 
+## Roadmap
+
+Current batch: recover the Stormwind facade/single-owner portal contracts and
+camera-on-portal boundaries. The port now retains directed MOGP-owned links,
+accepts null references without invalidating the graph, preserves source plane
+coefficients, uses the native polygon-edge rule and world clipping tolerance,
+omits the **near** plane, and follows the native previous-group/depth policy.
+The selected placement's exterior seeds consume its emitted window. Full smoke:
+**494 tests**, including 24 new portal cases; matched client pixels remain pending.
+
+| Priority | Next concrete work | Acceptance check |
+| --- | --- | --- |
+| 1 | Finish the entire portal pipeline: `0x7AC060` exterior render-view/blocker lists, `0x7A9200` emission bit 8, `0x795D20` forwarding, `0x7968D0` complement generation, clip-volume early-out (`0x7CCFA0`), terrain clip buffer, and portal-view volume draw/state. Recover callback and feature-gate writers before wiring consumers. | Reproduce directed and paired Stormwind portals, on-plane/edge crossings, cycles, offsets, exterior-lit groups and empty destinations in CPU traces; compare facade/sky/depth pixels at matched cameras. |
+| 2 | Propagate the global exterior rectangle and distance to terrain, standalone M2, other WMO placements, doodads and liquids, including the +33.333332 distance handoff and depth-sorted/unbucketed exceptions. Recover group availability/order and WDT bounds. | Compare accepted/rejected scene nodes and batch lists against client captures; no conservative full-frustum shortcut in Client mode. |
+| 3 | Recover viewer-liquid/plane selection, blend-sky overrides, MOCV entity lighting, animation/eligibility/bounds, then move M2 submission to its renderer and implement the shared element queues and conditional frame graph. | Independent input/order fixtures plus liquid/interior/exterior frame captures and state restoration checks. |
+| 4 | Complete Client-mode CVar consumers and native streaming/LOD/fades; implement explicit whole-map Editor demand while preserving its custom rules. | Low/default/ultra, mode-switch and whole-map tests; other-client regression checks. |
+| 5 | Close every R00–R13 CPU preparation/submission path and its DX9 SM3 selector, register, formula and fixed-state contract using the cached shader programs. | Complete rendering reachability, indirect-target closure, CPU-to-shader maps and material/effect captures; no guessed name used as scope proof. |
+| 6 | Pin the original executable hash and finish matched whole-frame numerical/pixel validation. | All workstream evidence gates pass before declaring rendering parity. |
+
+Update this roadmap and the [CPU notes](reference/client-335/CPU_SCENE_AUDIT.md#roadmap)
+after every rendering batch. The detailed workstreams and inventories below
+remain required; this table supplies the next implementation order.
+
 ## Client mode and Editor mode
 
 Expose a persistent **Client mode / Editor mode** toggle. The setting is
@@ -82,7 +105,7 @@ and record the exact binary hash before final parity sign-off.
 | [ida-functions.csv](reference/client-335/ida-functions.csv) | All **27,280** IDA functions, enumerated in 137 pages of at most 200 with unique-address verification. |
 | Name-based rendering seeds | **3,867** candidates. Names and workstream hints are discovery aids; the remaining functions require reachability review. |
 | Initial pseudocode inspection | **17** anchors listed below. This is not semantic completion of the candidate set. |
-| CPU scene evidence | [CPU_SCENE_AUDIT.md](reference/client-335/CPU_SCENE_AUDIT.md): **48 complete function exports**, 26 scene roots, 271 direct call relationships, and 378 call sites; ten indirect/global-pointer sites remain unresolved. |
+| CPU scene evidence | [CPU_SCENE_AUDIT.md](reference/client-335/CPU_SCENE_AUDIT.md): **93 complete function exports**, 71 scene roots, 418 direct call relationships, and 603 call sites; thirteen indirect/global-pointer sites remain a closure frontier. Forty-four complete instruction exports support bounded claims. Existing IDB names are unverified hypotheses. |
 | [shader-containers.csv](reference/client-335/shader-containers.csv) | All **592 BLS containers** across 14 backend/profile directories, plus **five WFX descriptions**. A container is not a single permutation. |
 | Primary SM3 | **86 containers**: 31 vertex and 55 pixel; five empty placeholders; **2,749 nonempty permutation records**, **1,561 distinct bytecode programs**. |
 | All DX9 cache | **296 BLS containers + five WFX files**, **7,843 permutations**, **3,484 distinct programs**, 15 empty files, zero extraction/disassembly errors. |
@@ -142,6 +165,22 @@ being investigated; read only the relevant assembly and CPU writers.
   beside the committed reference ledgers. Do not repeatedly extract BLS files
   or paste whole shader dumps into plans or conversations.
 
+### When disk evidence is more efficient than live IDA MCP
+
+For BLS, the cache removes repeated extraction and disassembly: the last warm
+SM3 check processed **0** containers, reused **91** source records and
+disassembled **0** programs. No shaders were re-extracted for this portal batch.
+
+For CPU analysis, local exports are a reuse and audit aid. They do not make
+Hex-Rays faster or replace live IDA. Re-reading whole exports/manifests can
+consume as many tokens as live MCP, and an unchanged MCP function request can
+already be inexpensive. Use cached address/site ranges for previously inspected
+code; use MCP for new functions, xrefs, bytes and changed analysis. Persist only
+new or affected complete exports, together with compact semantic claims and
+call/frontier tables. A guessed IDB label or stale export is never authority.
+There is no measured end-to-end latency/token benchmark proving that every
+local read is cheaper than MCP; avoid such a blanket claim.
+
 ### BLS format verified against the client reader
 
 `CGxDevice__IShaderLoad` (`0x684970`) checks magic DWORD `0x47585348`
@@ -165,6 +204,19 @@ metadata word is a material ID, light count, or shader key.
 These functions were inspected during this expansion. Pseudocode, existing IDA
 names, and comments are leads; instruction checks and captures settle ambiguous
 casts, flags, comparator behavior, arithmetic, and units.
+
+The pre-existing function names were guessed. This warning applies to every
+function label in this plan, the earlier lighting plan, cached exports, and call
+tables. An address identifies a function within the recorded build; a label
+does not prove its role. Keep `nameAuthority` separate from analysis and port
+status, and record bounded semantic claims in
+[cpu-semantic-claims.csv](reference/client-335/cpu-semantic-claims.csv).
+For example, 0x6DED60 is labelled `TSList__LinkNodeToHeadByOffset`, but its
+instructions append at the tail. At 0x7D59B0, the query reads runtime flags at
+object +0x0C; MODF file flags are a different field and are not copied there.
+Trace callers, writers, constants, and data flow before adopting a semantic
+name. Recover rendering reachability independently of name searches, including
+unnamed/misnamed helpers, indirect calls, jobs, callbacks, and shader selectors.
 
 | Function | Address | Required follow-through |
 | --- | --- | --- |
@@ -255,16 +307,43 @@ default digest-leaf rejection rules. The per-placement caller now applies
 exact geometry caps, last equal group hits, native exterior/lighting distinction,
 strict normalized portal override and polygon boundary rules. The Client/Editor
 mode foundation resolves recovered clip/visibility settings separately from
-saved custom values. The full smoke batch passes **428 tests**, including
-21 added CPU cases and four mode/persistence cases. These are partial ports
+saved custom values. Scene-level viewer selection now preserves scene insertion
+order across GPU asset buckets, applies separate running normal/updated-transform
+pools, replaces equal hits, and lets exterior results clear prior winners while
+retaining the narrowed cap. The normal pool has priority; the other pool is
+promoted only when the normal pool is empty. Runtime flags and retained ADT MODF
+bounds are separate from file placement flags. Shared primary/secondary group
+pairs now seed portal culling independently of fog data, avoiding another BSP
+viewer query in each placement. Selected-WMO and strict-interior state remain
+distinct through loaded MOGP mask 0x48. Scene portal preparation now accumulates
+separate sky/exterior rectangles and distances before sky submission, applies
+the root sky seed/secondary-reset policy, deduplicates offset portal emissions,
+and reuses the primary WMO masks during submission. The sky pass skips closed
+views, uses the recovered DX9 window scissor rounding, and closed interiors
+clear to current fog color. Portal projection now uses native world-space
+tolerance and the top/bottom/left/right/far sequence, leaving the near plane out.
+The camera-on-polygon test shares the viewer's asymmetric edge rule. Directed
+MOGP ranges and null references, original plane coefficients, previous-group
+back-edge handling, inclusive depth 10 and strict rectangle degeneracy are
+covered by regressions, including the actual Stormwind facade polygons.
+Global exterior consumers, clip-buffer/view-volume occlusion,
+viewer-liquid suppression and matched pixels remain open. The full smoke batch
+passes **494 tests**, including 87 added CPU cases and four mode/persistence cases.
+These are partial ports
 until numerical boundaries, full scene closure and matched captures pass.
 
-Continue CPU batches in this order:
+The [roadmap](#roadmap) prioritizes the remaining portal work. Continue CPU
+batches with these wider closure requirements:
 
-1. Close the ten indirect call sites and recursively classify direct dependencies.
+1. Close the thirteen indirect call sites and recursively classify direct dependencies.
    Pin the executable hash and register build/configuration provenance.
-2. Finish placement/group order, native placement pools and cross-placement
-   exterior/primary/secondary semantics; port BSP MOCV entity lighting.
+2. Close original streaming/insertion and group availability/order, WDT-global
+   placement bounds, native transform/scale arithmetic and terrain fraction
+   handoff; propagate recovered exterior rectangles/distances into terrain,
+   standalone M2 and other placement culling, respecting depth-sorted/unbucketed
+   exceptions. Close portal complement/occlusion lists, viewer-liquid sky gating,
+   blend-sky models, frame ordering and lighting consumers. Recover the runtime
+   skip-bit writer; port BSP MOCV entity lighting.
    Extend mode/CVar policies and implement explicit whole-map Editor demand.
 3. Recover viewer-liquid and clip-plane selection, alpha/eligibility gates,
    animation clocks and bounds; build independent fixtures for their inputs.

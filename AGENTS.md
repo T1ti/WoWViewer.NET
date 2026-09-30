@@ -48,6 +48,20 @@ the reference or its analysis changes; do not repeatedly decompile unchanged
 functions. The original binary hash and full rendering closure remain required
 before sign-off.
 
+Always keep an explicit `Roadmap` section in the rendering plan and CPU audit
+notes. After each batch, record the verified changes, remaining gaps, next
+concrete tasks in priority order, and their acceptance checks. Keep the lighting
+plan and rendering status linked to that roadmap; never equate a passing smoke
+suite or a complete export with full client parity.
+
+Pre-existing IDA function names were guessed. Treat every existing IDB name,
+type, prototype, and comment as an unverified hypothesis, including helper
+names that appear precise. Identify evidence by build and address; recover
+semantic roles from instructions, callers, field writers, constants, and data
+flow. Keep name authority separate from analysis/port status in the manifests
+and `docs/reference/client-335/cpu-semantic-claims.csv`. Name searches are
+navigation aids and must never exclude unnamed or misnamed rendering paths.
+
 ## Tests
 
 After each completed batch of code, project, configuration, shader, or test
