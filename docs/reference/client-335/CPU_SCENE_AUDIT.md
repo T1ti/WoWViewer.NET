@@ -6,9 +6,31 @@ The reference is the 32-bit 12340 IDB recorded in [snapshot.json](snapshot.json)
 the target is the DX9 SM3 configuration. The original executable SHA-256
 remains unpinned.
 
+## Working loop
+
+For a fresh thread, begin with the plan's
+[handoff](../../CLIENT_335_RENDERING_ACCURACY_PLAN.md#start-here-in-a-new-thread)
+and [working loop](../../CLIENT_335_RENDERING_ACCURACY_PLAN.md#working-loop).
+Use this dossier by section/address, not as a required full read. The first
+implementation slice is scene-wide render-view collection and complement
+generation; the handoff links the existing code, tests and relevant contracts.
+
+Use focused live IDA for missing contracts and small saved slices for known
+ones. CPU exports are optional. After a code batch, keep one compact entry here:
+`rule; build/address/sites; port; verification; uncertainty; next/acceptance`.
+Record newly discovered dependencies and evidence changes in that entry; update
+the exhaustive CSV/JSON tables only at milestones or sign-off. Report implemented
+behaviors and concrete blockers, not export counts as rendering progress.
+
+**Evidence snapshot:** the coverage tables below describe the saved 2026-09-30
+export audit. The exterior queue entry adds bounded live instruction/xref
+findings; those callback, gate and forwarding claim deltas await milestone
+reconciliation. No export counts changed. Cached counts must not be used to
+imply complete or current semantic coverage.
+
 ## Roadmap
 
-Completed in the current batch: Stormwind directed-reference fixtures and
+Completed in the portal implementation batch: Stormwind directed-reference fixtures and
 camera-on-portal projection fixes, native clipping classification/plane order,
 previous-group/depth rules, null/unused graph handling, and selected-placement
 exterior-window culling. Full smoke passes **494 tests**; final-frame parity
@@ -25,11 +47,18 @@ Native streaming, animation/particle eligibility and fades still
 need the recovered policies and captures in the priorities below.
 Native CPU closure and matched pixel evidence remain open in the priorities below.
 
-1. **Finish all portal consumers.** Port the depth-zero exterior blocker/view
-   queues in `0x7AC060`, emission bit 8 in `0x7A9200`, forwarding `0x795D20`,
-   complement generation `0x7968D0`, clip-volume early-out `0x7CCFA0`, terrain
-   clip-buffer tests and portal-view volume submission/state. Close callback
-   `0xD1BED8`, top-level emission gate and clip-enable writers. Acceptance:
+Exterior queue batch: the depth-zero blocker/view lists, emission bit 8 and
+ordered forwarding are implemented. Full smoke exits 0 with **544 tests**
+(66 Render, 287 DX11, 191 Avalonia), including 20 new cases. The callback ABI
+and installations and the always-enabled emission gate are instruction-supported
+for this slice; full callback consumers and native occlusion remain open.
+See [the compact entry](#exterior-portal-render-view-queues-2026-09-30).
+
+1. **Finish all portal consumers.** Assemble the scene-wide render-view list in
+   native order and port complement generation `0x7968D0`, clip-volume early-out
+   `0x7CCFA0`, terrain clip-buffer tests and portal-view volume submission/state.
+   Close clip-enable writers at `0xD2DCEC` and the callback's group/liquid/frustum
+   consumers. Acceptance:
    matching native queues and facade/sky/depth pixels for both directions and
    camera crossings, including single-owner, on-edge and cycle cases.
 2. **Complete global scene preparation.** Apply exterior rectangles/distances
@@ -52,8 +81,10 @@ Native CPU closure and matched pixel evidence remain open in the priorities belo
    CPU/GPU state and whole frames. Passing tests or exporting every function
    alone does not satisfy this gate.
 
-Keep this list synchronized with the [plan roadmap](../../CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap)
-after every rendering batch; preserve outstanding CPU and shader work together.
+The [plan roadmap](../../CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap) owns the
+implementation order; this list retains CPU acceptance details. After each batch,
+record the next action in the compact entry and update roadmap items whose status
+or priority changed. Preserve outstanding CPU and shader work together.
 
 ## Saved evidence and coverage
 
@@ -62,9 +93,9 @@ after every rendering batch; preserve outstanding CPU and shader work together.
 [artifacts/client-335-shaders/ida/index.md](../../../artifacts/client-335-shaders/ida/index.md).
 Forty-four functions also have complete instruction exports, totaling 5,918
 instructions: BSP/face queries, placement/list/transform handling, viewer
-registries, portal seeding and the scene/flag/callback consumers. Reuse these
-files; refresh the affected function
-only when the reference database, analysis, or build changes.
+registries, portal seeding and the scene/flag/callback consumers. Reuse relevant
+slices when helpful; refresh stale evidence only when the active claim needs it.
+Complete exports and inventory revalidation are not startup requirements.
 
 The bounded scene audit contains:
 
@@ -400,8 +431,10 @@ A new indirect callback at **0x7AD32F** reads storage **0xD1BED8**. Setter
 **0x7A6B40** writes the supplied callback and context to 0xD1BED8/0xD1BEDC;
 the scene seed adapter installs candidate **0x799310**. The manifest retains
 this site as a closure frontier until the callback body, other callers and
-recursive/reentrant writers are classified. The original ten unresolved sites
-remain open.
+recursive/reentrant writers are classified. The later
+[exterior queue entry](#exterior-portal-render-view-queues-2026-09-30) establishes
+the bounded ABI and both installations; full queue/helper closure and the
+original ten unresolved sites remain open.
 
 ### Scene portal views and sky scissor (2026-09-30)
 
@@ -451,8 +484,9 @@ graphs, viewport boundaries and DX9 edge rounding.
 
 Two newly retained indirect sites are **0x7AC0EA** (the same callback storage
 0xD1BED8 consumed during recursion) and **0x6A39C1** (device vtable call).
-Candidate callback 0x799310 and the DX9 slot interpretation still require
-complete writer/ABI/body closure; guessed types do not prove them.
+The later exterior queue entry establishes callback 0x799310's bounded
+writer/ABI contract. Full callback consumer closure and the DX9 slot
+interpretation remain open; guessed types do not prove them.
 
 This remains a partial port. Unselected placements retain conservative exterior
 frustum culling. The primary can seed its exterior groups after an exterior
@@ -496,7 +530,7 @@ Fourteen new complete exports and instruction files support these findings:
 | `0x7AEA80`, `0x7AEB10`, `0x7AC09D` | Loaded lookup checks root availability and per-group +0x198 bit 1. Loaded MOGP 0x10000 returns before callback; MOGI still supplies destination metadata before recursive loaded lookup. Emissions therefore do not depend on the target's loaded mask. The native viewer's group-info helper has no index check. The editor keeps null references out of viewer links; their native viewer contract is not established and they must not be treated as a proven exterior group. |
 | `0x7A6B90`, `0x7AC2F6`–`0x7AC366`, `0x482870` | Bounds writes prove native CRect order is minY/minX/maxY/maxX. The repeated max-X clamp leaves max-Y unclamped, confirming the earlier quirk. Degeneracy rejects abs(a-b) **<0.001**, accepting equality. Both rules now have direct regressions. |
 | `0x7AC3C0`–`0x7AC3EF`, `0x7B3A10` | Interior-pass destination mask 0x10008 emits and stops; exterior-pass destination mask 0x10008 stops without a direct callback. The selected placement's exterior seeds now use the emitted window. Global depth lists, distances and clip-buffer exceptions remain open. |
-| `0x7A9200`, `0x7AC272`, `0x7AC416`, `0x7AC64F` | Outside-pass depth-zero back-facing links add a full blocker rectangle. Eligible front-facing links project an offset polygon once under cache bits 4/8; only local views disjoint from blockers are forwarded to the global list. This **unported** occlusion/view-volume stage is retained as the next roadmap item, not counted as a rendering fix. |
+| `0x7A9200`, `0x7AC272`, `0x7AC416`, `0x7AC64F` | Outside-pass depth-zero back-facing links add a full blocker rectangle. Eligible front-facing links project an offset polygon once under cache bits 4/8; only local views disjoint from blockers are forwarded. **Queue port completed in the following batch**; scene-wide aggregation, complement and GPU consumers remain open. |
 
 [Wrath335PortalProjection.cs](../../../WoWRenderLib.DX11/Renderer/Wrath335PortalProjection.cs)
 owns reusable polygon banks and world planes. No frame file access, shader
@@ -521,6 +555,71 @@ decompilation and provide stable audit references. Reading giant local exports
 or manifests still spends tokens. Live MCP remains the preferred source for
 new addresses, xrefs, bytes and changed analysis; there is no measured proof of
 a universal speed advantage for local files. No BLS was extracted this batch.
+
+## Exterior portal render-view queues (2026-09-30)
+
+**Rule and evidence (3.3.5.12340):** `0x7AC162`/`0x7AC272` reset local
+candidate/blocker lists per exterior depth-zero seed and add `[0,0,1,1]` for
+back-facing links before any projected-rectangle rejection. After parent
+intersection/degeneracy checks, destination MOGI `0x10008` stops exterior
+recursion; depth zero with destination `0x140` clear can emit (`0x7AC3EF`–
+`0x7AC416`). `0x7A920D` rejects either cache bit 4 or 8; `0x7A936A` sets bit 8
+even when the offset polygon clips to nothing. Bits persist across seeds and
+reset with the placement/frame preparation. Offset failures OR clip bit 1;
+eye-containment bit 2 still overrides that rejection. This pass is distinct
+from the interior pass even after propagation clears at loaded MOGP `0x48`.
+
+`0x7A92F3`–`0x7A933F` maps rectangle bounds to unit-viewport coordinates but
+copies projected polygon vertices without that mapping. `0x7A87C7`–`0x7A87DC`
+divides X/Y by clamped W while retaining undivided internal clip Z. The port
+undoes DX11's depth mapping with `2*clip.Z-clip.W`, using the previously
+established internal -1..1 projection contract. `0x7AC630` treats touching
+rectangle edges as overlap, rejects the whole candidate on any blocker and
+preserves accepted candidate order. `0x795D20` copies one 28-byte view into
+the separate render-view array `0xCDD0F8`; it does **not** update sky/exterior
+rectangle/distance unions.
+
+**New focused live findings:** complete data xrefs for `0xD1BED8`/`0xD1BEDC`
+identify only setter `0x7A6B40` as a writer, with two call sites. Instructions
+at `0x7B3A1B`–`0x7B3A21` and `0x7B3B26`–`0x7B3B2C` install `0x799310`
+and the placement pointer. The callback reads stack arguments group index and
+placement (`0x799313`–`0x79934C`) and returns with plain `ret` (`0x799428`);
+its first-visit branches pass the group node and globals `0xCDB080`/`0xCDB08C`
+to `0x6DED60` (`0x799351`–`0x79938A`), and repeated visits call `0x790020`
+with current frustum storage, then `0x6DED60` with group+0x6C
+(`0x7993F9`–`0x79941E`). This establishes the bounded
+callback ABI/installation contract, not complete queue/indirect-call closure.
+The emission gate `0xCFBEBC` has only setup writer `0x7A70B3`, which stores 1,
+and traversal reader `0x7AC3FB` in its complete data-xref set. Existing IDB
+names, types and comments remain navigation hypotheses. New claim/xref deltas
+await milestone reconciliation; the saved export inventories are unchanged.
+
+**Port and verification:**
+[Wrath335PortalRenderViews.cs](../../../WoWRenderLib.DX11/Renderer/Wrath335PortalRenderViews.cs)
+owns reusable candidate/blocker/forwarded polygon storage;
+[WmoPortalVisibility.cs](../../../WoWRenderLib.DX11/Renderer/WmoPortalVisibility.cs)
+distinguishes traversal passes and applies the cache/mask rules.
+[Wrath335PortalSceneViews.cs](../../../WoWRenderLib.DX11/Renderer/Wrath335PortalSceneViews.cs)
+retains the primary placement's render list separately from its unions.
+Twenty new behavioral cases cover directed empty/unavailable destinations,
+root/loaded flag differences, bits 4/8, failed-offset/eye-containment behavior,
+per-seed blocker reset, per-frame reset and retained polygon copies, recursion
+depth, inclusive overlap/order, offsets/depth representation, both portal
+edges, other-client isolation and front/back/front camera crossings through
+real Stormwind portals 181/182. Full smoke exits **0**, **544 passed**
+(66 Render, 287 DX11, 191 Avalonia); full output was captured in the temporary
+`client-335-exterior-portals-smoke.log`. No BLS extraction or IDB edits occurred.
+
+**Remaining uncertainty and next acceptance:** forwarded lists on other
+placements are still per-placement scratch, not collected into the scene list.
+Recover native collection order and `0x7968D0` complement generation, then
+wire them with independent expected polygons/queues for empty/full, overlapping,
+disjoint and multiple-placement cases. Clip-enable storage `0xD2DCEC` (reader
+`0x7CCDF0`), `0x7CCFA0` early-out, terrain clip buffers, volume draw/state,
+global exterior distance/bounds and callback group/liquid/frustum consumers
+remain. Exact native projection/x87 arithmetic and matched facade/sky/depth
+pixels remain capture gates. This batch ports list preparation, not complete
+occlusion or final-frame parity; follow the [Roadmap](#roadmap).
 
 ## Client/Editor policy foundation (2026-09-30)
 

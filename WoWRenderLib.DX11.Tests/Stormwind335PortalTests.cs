@@ -100,6 +100,56 @@ public sealed class Stormwind335PortalTests
         }
     }
 
+    [DataTestMethod]
+    [DataRow(181)]
+    [DataRow(182)]
+    public void ExteriorFacadeOwnerEmitsOnlyOnItsOwnedFrontSideAcrossCameraCrossing(int index)
+    {
+        using var fixture = ReadFixture();
+        var root = fixture.RootElement;
+        var entry = root.GetProperty("facadePortals").EnumerateArray()
+            .Single(p => p.GetProperty("portal").GetInt32() == index);
+        var portal = new WmoPortal { Normal = Vector(entry.GetProperty("normal")),
+            Distance = entry.GetProperty("distance").GetSingle(),
+            Vertices = entry.GetProperty("vertices").EnumerateArray().Select(Vector).ToArray() };
+        var reference = entry.GetProperty("references").EnumerateArray().Single(r =>
+        {
+            var header = root.GetProperty("groups").EnumerateArray()
+                .Single(g => g.GetProperty("index").GetInt32() == r.GetProperty("owner").GetInt32());
+            return (header.GetProperty("mogiFlags").GetUInt32() & 8) != 0;
+        });
+        var owner = root.GetProperty("groups").EnumerateArray()
+            .Single(g => g.GetProperty("index").GetInt32() == reference.GetProperty("owner").GetInt32());
+        var target = root.GetProperty("groups").EnumerateArray()
+            .Single(g => g.GetProperty("index").GetInt32() == reference.GetProperty("target").GetInt32());
+        var center = portal.Vertices.Aggregate(Vector3.Zero, (a, b) => a + b) / portal.Vertices.Length;
+        var bounds = new BoundingBox(center - new Vector3(100f), center + new Vector3(100f));
+        var side = reference.GetProperty("side").GetInt16();
+        var model = new WorldModel { wrath335 = true, legacyLighting = true, portalGraphValid = true,
+            portals = [portal], doodads = [], wmoRenderBatches = [], groupBatches = [
+                new() { flags = owner.GetProperty("mogpFlags").GetUInt32(),
+                    mogiFlags = owner.GetProperty("mogiFlags").GetUInt32(),
+                    mogiBoundingBox = bounds, doodadReferences = [],
+                    portalLinks = [new() { PortalIndex = 0, TargetGroupIndex = 1, Side = side }] },
+                new() { flags = target.GetProperty("mogpFlags").GetUInt32(),
+                    mogiFlags = target.GetProperty("mogiFlags").GetUInt32(),
+                    mogiBoundingBox = bounds, doodadReferences = [], portalLinks = [] }] };
+        var scratch = new WmoPortalVisibilityScratch();
+        var visible = new bool[2];
+        foreach (var front in new[] { true, false, true })
+        {
+            var eye = center + portal.Normal * (side * (front ? 5f : -5f));
+            var projection = Matrix4x4.CreateLookAt(eye, center, Vector3.UnitZ) *
+                Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2f, 1f, 0.2f, 200f);
+            Assert.IsTrue(WmoPortalVisibility.TryCompute(model, Matrix4x4.Identity, projection,
+                eye, [true, true], visible, [], [], scratch, out _, 1760f, new(-1, -1)));
+            CollectionAssert.AreEqual(new[] { true, front }, visible);
+            Assert.AreEqual(front ? 1 : 0, scratch.ExteriorPortalViews.Forwarded.Views.Length);
+            if (front)
+                Assert.AreEqual(portal.Vertices.Length, scratch.ExteriorPortalViews.Forwarded.Views[0].VertexCount);
+        }
+    }
+
     private static Vector3 Vector(JsonElement element) => new(element[0].GetSingle(), element[1].GetSingle(), element[2].GetSingle());
     private static JsonDocument ReadFixture()
     {

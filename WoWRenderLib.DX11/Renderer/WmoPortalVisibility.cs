@@ -193,7 +193,7 @@ public static class WmoPortalVisibility
                 // marker but still traverses each registered group either way.
                 if ((flags & (ExteriorFlag | ExteriorLightingFlag)) == 0)
                     viewerInInterior = true;
-                Traverse(groupIndex, -1, 0, fullView, true, wmo, eyeLocal,
+                Traverse(groupIndex, -1, 0, fullView, true, true, wmo, eyeLocal,
                     enabledGroups, visibleGroups, visibleBatches, scratch,
                     budget, ref traversedPortalReferences, ref exhaustedBudget,
                     sceneViews, directionLocal);
@@ -213,7 +213,7 @@ public static class WmoPortalVisibility
                         continue;
                     if ((flags & (ExteriorFlag | ExteriorLightingFlag)) == 0)
                         viewerInInterior = true;
-                    Traverse(groupIndex, -1, 0, fullView, true, wmo, eyeLocal,
+                    Traverse(groupIndex, -1, 0, fullView, true, true, wmo, eyeLocal,
                         enabledGroups, visibleGroups, visibleBatches, scratch,
                         budget, ref traversedPortalReferences, ref exhaustedBudget);
                 }
@@ -236,7 +236,7 @@ public static class WmoPortalVisibility
                     !IntersectsRect(group.mogiBoundingBox, scratch.LocalToClip, exteriorView))
                     continue;
 
-                Traverse(groupIndex, -1, 0, exteriorView, false, wmo, eyeLocal, enabledGroups,
+                Traverse(groupIndex, -1, 0, exteriorView, false, false, wmo, eyeLocal, enabledGroups,
                     visibleGroups, visibleBatches, scratch, budget,
                     ref traversedPortalReferences, ref exhaustedBudget);
             }
@@ -258,6 +258,8 @@ public static class WmoPortalVisibility
         if (exhaustedBudget)
             return false;
 
+        if (wrath335 && sceneViews != null)
+            sceneViews.RenderViews.Append(scratch.ExteriorPortalViews.Forwarded);
         BuildDoodadMask(wmo, visibleGroups, visibleDoodads);
         return true;
     }
@@ -438,6 +440,7 @@ public static class WmoPortalVisibility
         int depth,
         WmoPortalRect view,
         bool propagatedFromInterior,
+        bool interiorPass,
         in WorldModel wmo,
         Vector3 eyeLocal,
         ReadOnlySpan<bool> enabledGroups,
@@ -470,6 +473,9 @@ public static class WmoPortalVisibility
             (wmo.groupBatches[groupIndex].flags & AlwaysDrawFlag) != 0)
             return;
 
+        var exteriorSeed = scratch.Wrath335 && !interiorPass && depth == 0;
+        if (exteriorSeed)
+            scratch.ExteriorPortalViews.BeginSeed();
         scratch.Path[groupIndex] = true;
         foreach (var link in wmo.groupBatches[groupIndex].portalLinks)
         {
@@ -487,10 +493,19 @@ public static class WmoPortalVisibility
                 continue;
 
             var portal = wmo.portals[link.PortalIndex];
+            // The native cache is initialized before the side test, including
+            // back-facing depth-zero links whose projection can be empty.
+            var portalView = scratch.Wrath335
+                ? GetPortalRect(link.PortalIndex, portal, eyeLocal, scratch) : default;
             if (!FacesEye(portal, eyeLocal, link.Side, scratch.Wrath335))
+            {
+                if (exteriorSeed)
+                    scratch.ExteriorPortalViews.AddBlocker();
                 continue;
+            }
 
-            var portalView = GetPortalRect(link.PortalIndex, portal, eyeLocal, scratch);
+            if (!scratch.Wrath335)
+                portalView = GetPortalRect(link.PortalIndex, portal, eyeLocal, scratch);
             WmoPortalRect clipped;
             if (scratch.Wrath335
                 ? !view.TryIntersectWrath335(portalView, out clipped)
@@ -498,25 +513,29 @@ public static class WmoPortalVisibility
                 continue;
 
             var targetGroup = wmo.groupBatches[link.TargetGroupIndex];
-            if (sceneViews != null &&
-                (targetGroup.mogiFlags & Wrath335PortalSceneViews.PortalViewFlags) != 0)
+            if (scratch.Wrath335)
             {
-                // 0x7A8F20 sets emission bit 4 before projecting the offset
-                // polygon. The emitted view is independent of the parent rect.
-                if (!scratch.EmittedPortalViews[link.PortalIndex])
+                if (interiorPass)
                 {
-                    scratch.EmittedPortalViews[link.PortalIndex] = true;
-                    var offset = portal.Normal * (link.Side > 0 ? -0.01f : 0.01f);
-                    var emitted = ProjectPortal(portal, eyeLocal, scratch, offset,
-                        allowEyeContainment: false);
-                    sceneViews.AddPortal(emitted,
-                        Wrath335PortalSceneViews.MaximumDistance(portal.Vertices,
-                            eyeLocal, directionLocal), targetGroup.mogiFlags);
+                    if ((targetGroup.mogiFlags & Wrath335PortalSceneViews.PortalViewFlags) != 0)
+                    {
+                        EmitInteriorPortal(link, portal, eyeLocal, directionLocal,
+                            targetGroup.mogiFlags, scratch, sceneViews);
+                        if ((targetGroup.mogiFlags & Wrath335PortalSceneViews.ExteriorViewFlags) != 0)
+                            continue;
+                    }
                 }
-                if ((targetGroup.mogiFlags & Wrath335PortalSceneViews.ExteriorViewFlags) != 0)
-                    continue;
+                else
+                {
+                    if ((targetGroup.mogiFlags & Wrath335PortalSceneViews.ExteriorViewFlags) != 0)
+                        continue;
+                    // 0x7A70B3 unconditionally enables the top-level emission
+                    // gate. 0x7AC409 excludes only root mask 0x140 here.
+                    if (exteriorSeed && (targetGroup.mogiFlags & 0x140) == 0)
+                        EmitExteriorPortal(link, portal, eyeLocal, scratch);
+                }
             }
-            if ((targetGroup.mogiFlags & AlwaysDrawFlag) != 0)
+            if (!scratch.Wrath335 && (targetGroup.mogiFlags & AlwaysDrawFlag) != 0)
                 continue;
             if ((targetGroup.mogiFlags & ExteriorFlag) != 0)
             {
@@ -532,12 +551,54 @@ public static class WmoPortalVisibility
             }
 
             Traverse(link.TargetGroupIndex, groupIndex, depth + 1, clipped,
-                propagatedFromInterior,
+                propagatedFromInterior, interiorPass,
                 wmo, eyeLocal, enabledGroups, visibleGroups, visibleBatches,
                 scratch, budget, ref traversedPortalReferences, ref exhaustedBudget,
                 sceneViews, directionLocal);
         }
         scratch.Path[groupIndex] = false;
+        if (exteriorSeed)
+            scratch.ExteriorPortalViews.EndSeed();
+    }
+
+    private static void EmitInteriorPortal(in WmoPortalLink link, in WmoPortal portal,
+        Vector3 eyeLocal, Vector3 directionLocal, uint destinationFlags,
+        WmoPortalVisibilityScratch scratch, Wrath335PortalSceneViews? sceneViews)
+    {
+        ref var flags = ref scratch.EmittedPortalViews[link.PortalIndex];
+        if ((flags & 4) != 0)
+            return;
+        // 0x7A8F20 sets bit 4 even when the offset polygon clips to nothing.
+        flags |= 4;
+        Span<Vector3> polygon = stackalloc Vector3[32];
+        var offset = portal.Normal * (link.Side > 0 ? -0.01f : 0.01f);
+        var count = scratch.WrathProjection.ProjectPolygon(portal, eyeLocal,
+            polygon, out var rect, offset);
+        if (count < 3)
+        {
+            flags |= 1;
+            return;
+        }
+        sceneViews?.AddPortal(rect,
+            Wrath335PortalSceneViews.MaximumDistance(portal.Vertices, eyeLocal, directionLocal),
+            destinationFlags);
+    }
+
+    private static void EmitExteriorPortal(in WmoPortalLink link, in WmoPortal portal,
+        Vector3 eyeLocal, WmoPortalVisibilityScratch scratch)
+    {
+        ref var flags = ref scratch.EmittedPortalViews[link.PortalIndex];
+        if ((flags & 12) != 0)
+            return; // 0x7A920D: either emission bit suppresses exterior emission.
+        Span<Vector3> polygon = stackalloc Vector3[32];
+        var offset = portal.Normal * (link.Side > 0 ? -0.01f : 0.01f);
+        var count = scratch.WrathProjection.ProjectPolygon(portal, eyeLocal,
+            polygon, out var rect, offset);
+        if (count < 3)
+            flags |= 1;
+        else
+            scratch.ExteriorPortalViews.AddCandidate(rect, polygon[..count]);
+        flags |= 8; // 0x7A936A also stamps failed projections and blocked candidates.
     }
 
     private static void MarkGroup(
@@ -585,10 +646,13 @@ public static class WmoPortalVisibility
         Vector3 eyeLocal, WmoPortalVisibilityScratch scratch)
     {
         if (scratch.ProjectedPortals[index])
-            return scratch.PortalRects[index];
+            return scratch.Wrath335 && (scratch.EmittedPortalViews[index] & 3) == 1
+                ? default : scratch.PortalRects[index];
 
         scratch.ProjectedPortals[index] = true;
         var result = ProjectPortal(portal, eyeLocal, scratch);
+        if (scratch.Wrath335 && Wrath335PortalProjection.ContainsEye(portal, eyeLocal))
+            scratch.EmittedPortalViews[index] |= 2;
         scratch.PortalRects[index] = result;
         return result;
     }
@@ -812,6 +876,7 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
 public sealed class WmoPortalVisibilityScratch
 {
     internal Wrath335PortalProjection WrathProjection { get; } = new();
+    internal Wrath335ExteriorPortalViews ExteriorPortalViews { get; } = new();
     internal bool Wrath335 { get; set; }
     internal WmoBspRayScratch ViewerBsp { get; } = new();
     internal int PrimaryViewerGroupIndex { get; set; } = -1;
@@ -821,7 +886,7 @@ public sealed class WmoPortalVisibilityScratch
     internal bool[] Path { get; private set; } = [];
     internal bool[] PropagatedGroups { get; private set; } = [];
     internal bool[] ProjectedPortals { get; private set; } = [];
-    internal bool[] EmittedPortalViews { get; private set; } = [];
+    internal byte[] EmittedPortalViews { get; private set; } = [];
     internal WmoPortalRect[] PortalRects { get; private set; } = [];
     internal Vector4[] PolygonA { get; private set; } = [];
     internal Vector4[] PolygonB { get; private set; } = [];
@@ -832,6 +897,7 @@ public sealed class WmoPortalVisibilityScratch
     internal void Prepare(int groupCount, int portalCount,
         in Matrix4x4 localToClip, bool legacyClient)
     {
+        ExteriorPortalViews.Reset();
         PrepareViewer(groupCount);
         if (Path.Length != groupCount)
             Path = new bool[groupCount];
@@ -844,7 +910,7 @@ public sealed class WmoPortalVisibilityScratch
         if (ProjectedPortals.Length != portalCount)
         {
             ProjectedPortals = new bool[portalCount];
-            EmittedPortalViews = new bool[portalCount];
+            EmittedPortalViews = new byte[portalCount];
             PortalRects = new WmoPortalRect[portalCount];
         }
         else

@@ -8,6 +8,7 @@ internal sealed class Wrath335PortalSceneViews
     internal const uint ViewerSkyFlags = 0x40140;
     internal const uint PortalViewFlags = 0x50148;
     internal const uint ExteriorViewFlags = 0x10008;
+    public Wrath335PortalRenderViews RenderViews { get; } = new();
     public WmoPortalRect SkyRect { get; private set; }
     public WmoPortalRect ExteriorRect { get; private set; }
     public float SkyDistance { get; private set; } = -1f;
@@ -18,6 +19,7 @@ internal sealed class Wrath335PortalSceneViews
     public void Reset(bool viewerPlacement, uint viewerRootFlags = 0,
         bool secondaryPlacement = false)
     {
+        RenderViews.Clear();
         // 0x795400 resets both unions. 0x795D40 can seed full sky from MOGI;
         // 0x79A99E..0x79AA1C discards that seed after rendering a secondary WMO.
         SkyRect = ExteriorRect = new(float.MaxValue, float.MaxValue,

@@ -33,10 +33,28 @@ internal sealed class Wrath335PortalProjection
     public WmoPortalRect Project(in WmoPortal portal, Vector3 eyeLocal,
         Vector3 offset = default, bool allowEyeContainment = true)
     {
+        ProjectCore(portal, eyeLocal, [], out var rect, offset, allowEyeContainment);
+        return rect;
+    }
+
+    // 0x7A87C7..0x7A87DC stores divided X/Y but undivided internal clip Z.
+    // The render-view consumer needs the polygon, not just its bounds.
+    public int ProjectPolygon(in WmoPortal portal, Vector3 eyeLocal,
+        Span<Vector3> projected, out WmoPortalRect rect, Vector3 offset)
+        => ProjectCore(portal, eyeLocal, projected, out rect, offset, false);
+
+    private int ProjectCore(in WmoPortal portal, Vector3 eyeLocal,
+        Span<Vector3> projected, out WmoPortalRect rect, Vector3 offset,
+        bool allowEyeContainment)
+    {
+        rect = default;
         if (portal.Vertices is not { Length: >= 3 } vertices)
-            return default;
+            return 0;
         if (allowEyeContainment && ContainsEye(portal, eyeLocal))
-            return WmoPortalRect.Full;
+        {
+            rect = WmoPortalRect.Full;
+            return 0;
+        }
 
         var count = Math.Min(vertices.Length, 12);
         var source = polygonA;
@@ -47,9 +65,11 @@ internal sealed class Wrath335PortalProjection
         {
             count = ClipAgainstPlane(source.AsSpan(0, count), destination, plane);
             if (count < 3)
-                return default;
+                return 0;
             (source, destination) = (destination, source);
         }
+        if (!projected.IsEmpty && projected.Length < count)
+            return 0;
 
         var min = new Vector2(float.PositiveInfinity);
         var max = new Vector2(float.NegativeInfinity);
@@ -59,11 +79,16 @@ internal sealed class Wrath335PortalProjection
             var divisor = Math.Max(clip.W, 0.0001f);
             var p = new Vector2(clip.X / divisor, clip.Y / divisor);
             if (!float.IsFinite(p.X) || !float.IsFinite(p.Y))
-                return default;
+                return 0;
+            if (!projected.IsEmpty)
+                // Undo DX9/DX11's 0..1 depth conversion to the client's
+                // internal -1..1 projection (0x6BF370, 0x6A9B40).
+                projected[i] = new(p, 2f * clip.Z - clip.W);
             min = Vector2.Min(min, p);
             max = Vector2.Max(max, p);
         }
-        return new(min.X, min.Y, max.X, max.Y);
+        rect = new(min.X, min.Y, max.X, max.Y);
+        return count;
     }
 
     internal static double SignedDistance(in WmoPortal portal, Vector3 point) =>

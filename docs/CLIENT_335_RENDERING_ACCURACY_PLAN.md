@@ -17,10 +17,93 @@ liquids, effects, and presentation. Translate that behavior to DX11 with an
 explicit 3.3.5 profile. A later-client implementation or a readable third-party
 shader is a lead until it matches the 12340 evidence.
 
+## Start here in a new thread
+
+Continue implementation of 3.3.5.12340 client rendering parity in the active
+Avalonia/DX11 projects. Read these opening sections and the relevant CPU audit
+section; the inventories and chronological notes below are reference material,
+not a startup reading checklist. Check the current checkout and preserve existing
+changes. Do not recreate the shader cache or re-export the IDB to begin work.
+
+- **Baseline:** the latest code batch passed 544 smoke tests (66 Render,
+  287 DX11, 191 Avalonia). Directed portal references, camera boundaries and
+  exterior depth-zero blocker/view queues are partially ported; matched client
+  pixels, full CPU closure and native occlusion remain open.
+- **First implementation slice:** recover the native scene-wide render-view
+  collection order and complement generation `0x7968D0`, then collect every
+  placement's forwarded polygon list before its consumer. The current scene
+  preparation collects only the primary placement; other placements retain
+  their own forwarded scratch lists. Begin with the
+  [exterior queue batch](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30), the
+  [Stormwind contract table](reference/client-335/CPU_SCENE_AUDIT.md#stormwind-directed-portals-and-camera-boundaries-2026-09-30)
+  and [scene-view findings](reference/client-335/CPU_SCENE_AUDIT.md#scene-portal-views-and-sky-scissor-2026-09-30).
+  The callback's two stack arguments and both pointer installations are now
+  instruction-supported, and `0x7A70B3` sets the emission gate to 1. Its full
+  group/liquid/frustum consumers remain incomplete. Trace clip-enable storage
+  `0xD2DCEC` via reader `0x7CCDF0` before adding the `0x7CCFA0` early-out.
+- **Code entry points:** [WmoPortalVisibility](../WoWRenderLib.DX11/Renderer/WmoPortalVisibility.cs),
+  [WmoScenePortalPreparation](../WoWRenderLib.DX11/Renderer/WmoScenePortalPreparation.cs),
+  [Wrath335PortalRenderViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalRenderViews.cs),
+  and [Wrath335PortalSceneViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalSceneViews.cs).
+  Extend [portal traversal tests](../WoWRenderLib.DX11.Tests/Wrath335PortalTraversalTests.cs),
+  [exterior queue tests](../WoWRenderLib.DX11.Tests/Wrath335ExteriorPortalViewsTests.cs),
+  and [Stormwind tests](../WoWRenderLib.DX11.Tests/Stormwind335PortalTests.cs) as needed.
+- **Slice acceptance:** independent expected complement polygons and ordering for
+  empty/full, disjoint/overlapping windows, repeated seeds and multiple placements;
+  retain unit-viewport rectangles separately from projected polygon coordinates.
+  Run the full smoke suite after the code batch. Final facade/sky/depth pixel
+  comparisons remain a separate capture gate; list tests do not complete occlusion.
+- **Then:** implement clip-volume early-out
+  `0x7CCFA0`, terrain clip buffers and volume draw/state, followed by global
+  exterior consumers. The [Roadmap](#roadmap) retains all CPU and SM3 work.
+
+## Working loop
+
+The unit of progress is an implemented rendering behavior with meaningful
+verification. Exports, inventory counts and repeated cache checks are supporting
+work, not completed rendering work. This revision removes routine overhead
+without lowering the parity gates; no token-per-task improvement has been measured.
+
+1. Pick one concrete gap from the roadmap and inspect its renderer/test consumer.
+2. Answer only the evidence questions that block that change. Use focused live
+   IDA MCP for new addresses, callers, field writers and instruction questions;
+   reuse small cached slices when they already answer the question. A local file
+   is not inherently cheaper or more accurate. Existing IDB labels/types remain
+   unverified. Follow a dependency now when its contract affects this behavior;
+   defer unrelated graph closure to its own workstream.
+3. Implement the recovered rule and independent behavioral coverage, scoped to
+   12340 where appropriate. Aim to finish a coherent code/test batch in a
+   continuation. An analysis-only batch is justified when a specific unknown
+   prevents a sound port; record that unknown, what was established and the exact
+   next trace instead of expanding the export inventory.
+4. Run focused checks during development and the full repository smoke suite once
+   the code batch is complete. Do not repeat tests for unchanged state. Perform
+   the matched capture when available; otherwise leave its gate explicitly open.
+5. Write one compact entry in the CPU audit: rule and build/address/sites,
+   implementation, verification, uncertainty and next action/acceptance. Keep the
+   roadmap current; update lighting/status documents only where status changes.
+   Link that entry rather than copying it into every ledger.
+
+Do not load whole manifests, sweep all cached links, regenerate function counts,
+rewrite the 27,280-row inventory or duplicate the call graph each prompt. Complete
+CPU exports are optional: save them for a concrete reproducibility need or when a
+whole-body investigation needs them. Save tool output once without replaying it
+into the conversation; retain only the relevant instruction sites and conclusions
+in working notes. Existing bulk evidence remains available on demand.
+
+Reconcile the exhaustive CSV/JSON inventories, semantic claims and indirect-call
+frontier at workstream milestones, relevant reference changes or final sign-off.
+Record snapshot dates and pending deltas in the active notes until reconciliation;
+archival counts are not current semantic coverage. The original binary hash,
+complete rendering reachability and numerical/pixel validation remain final gates.
+They are not prerequisites to every independently supported implementation slice.
+Retain the extract-once BLS workflow: it avoids actual repeated decoding and
+disassembly, independently of the optional CPU export archive.
+
 ## Roadmap
 
-Current batch: recover the Stormwind facade/single-owner portal contracts and
-camera-on-portal boundaries. The port now retains directed MOGP-owned links,
+Completed portal batch: Stormwind facade/single-owner portal contracts and
+camera-on-portal boundaries. The partial port retains directed MOGP-owned links,
 accepts null references without invalidating the graph, preserves source plane
 coefficients, uses the native polygon-edge rule and world clipping tolerance,
 omits the **near** plane, and follows the native previous-group/depth policy.
@@ -39,18 +122,30 @@ manual-lighting isolation and mode restoration pass; full smoke exits 0 with
 **524 tests** (66 Render, 267 DX11, 191 Avalonia). Matched pixels remain
 required for rendering parity.
 
+Exterior queue batch: depth-zero back-facing blockers, eligible offset-polygon
+emission, cache bits 4/8 and ordered disjoint forwarding are now implemented
+for 12340. The primary scene preparation retains its render views separately
+from sky/exterior unions; other placements retain forwarded scratch lists.
+Twenty new behavioral cases include real Stormwind facade direction crossings.
+Full smoke exits 0 with **544 tests** (66 Render, 287 DX11, 191 Avalonia).
+See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30)
+for evidence, remaining gaps and acceptance. No complement or GPU occlusion
+consumer is completed by this list port.
+
 | Priority | Next concrete work | Acceptance check |
 | --- | --- | --- |
-| 1 | Finish the entire portal pipeline: `0x7AC060` exterior render-view/blocker lists, `0x7A9200` emission bit 8, `0x795D20` forwarding, `0x7968D0` complement generation, clip-volume early-out (`0x7CCFA0`), terrain clip buffer, and portal-view volume draw/state. Recover callback and feature-gate writers before wiring consumers. | Reproduce directed and paired Stormwind portals, on-plane/edge crossings, cycles, offsets, exterior-lit groups and empty destinations in CPU traces; compare facade/sky/depth pixels at matched cameras. |
+| 1 | Finish the portal pipeline after the ported depth-zero queues, bit 8 and forwarding: scene-wide ordered list collection, `0x7968D0` complement generation, clip-volume early-out (`0x7CCFA0`), terrain clip buffer, and portal-view volume draw/state. Recover clip-enable writers and finish callback consumers before wiring those stages. | Reproduce directed and paired Stormwind portals, on-plane/edge crossings, cycles, offsets, exterior-lit groups and empty destinations in CPU traces; compare facade/sky/depth pixels at matched cameras. |
 | 2 | Propagate the global exterior rectangle and distance to terrain, standalone M2, other WMO placements, doodads and liquids, including the +33.333332 distance handoff and depth-sorted/unbucketed exceptions. Recover group availability/order and WDT bounds. | Compare accepted/rejected scene nodes and batch lists against client captures; no conservative full-frustum shortcut in Client mode. |
 | 3 | Recover viewer-liquid/plane selection, blend-sky overrides, MOCV entity lighting, animation/eligibility/bounds, then move M2 submission to its renderer and implement the shared element queues and conditional frame graph. | Independent input/order fixtures plus liquid/interior/exterior frame captures and state restoration checks. |
 | 4 | Complete Client-mode CVar consumers and native streaming/LOD/fades; implement explicit whole-map Editor demand while preserving its custom rules. | Low/default/ultra, mode-switch and whole-map tests; other-client regression checks. |
 | 5 | Close every R00–R13 CPU preparation/submission path and its DX9 SM3 selector, register, formula and fixed-state contract using the cached shader programs. | Complete rendering reachability, indirect-target closure, CPU-to-shader maps and material/effect captures; no guessed name used as scope proof. |
 | 6 | Pin the original executable hash and finish matched whole-frame numerical/pixel validation. | All workstream evidence gates pass before declaring rendering parity. |
 
-Update this roadmap and the [CPU notes](reference/client-335/CPU_SCENE_AUDIT.md#roadmap)
-after every rendering batch. The detailed workstreams and inventories below
-remain required; this table supplies the next implementation order.
+After every rendering batch, write its compact result/next action in the
+[CPU notes](reference/client-335/CPU_SCENE_AUDIT.md#roadmap) and update changed
+roadmap items here. This table owns implementation order; the detailed workstreams
+and inventories retain completion requirements. Use the [handoff](#start-here-in-a-new-thread)
+for the first slice rather than attempting the entire priority-1 pipeline at once.
 
 ## Client mode and Editor mode
 
@@ -167,9 +262,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\extract-client-s
 ```
 
 The default cache is `artifacts/client-335-shaders`, already ignored by Git.
-Start every shader investigation with its
-[index](../artifacts/client-335-shaders/index.md), `permutations.csv`,
-`manifest.json`, and per-container `programs/.../*.bls.md`.
+Search its [index](../artifacts/client-335-shaders/index.md) or `permutations.csv`
+for the relevant program, then open only its `programs/.../*.bls.md`.
+Consult `manifest.json` when provenance or invalidation needs checking.
 Those pages link directly to content-addressed `.bin`, `.asm`, and `.json`
 objects. Use narrow searches for the program, ordinal, hash, register, or opcode
 being investigated; read only the relevant assembly and CPU writers.
@@ -199,8 +294,10 @@ Hex-Rays faster or replace live IDA. Re-reading whole exports/manifests can
 consume as many tokens as live MCP, and an unchanged MCP function request can
 already be inexpensive. Use cached address/site ranges for previously inspected
 code; use MCP for new functions, xrefs, bytes and changed analysis. Persist only
-new or affected complete exports, together with compact semantic claims and
-call/frontier tables. A guessed IDB label or stale export is never authority.
+the compact claim and supporting sites needed for the implementation. Complete
+exports are optional archives; synchronize exhaustive call/frontier tables at
+milestones under the [working loop](#working-loop). A guessed IDB label or stale
+export is never authority.
 There is no measured end-to-end latency/token benchmark proving that every
 local read is cheaper than MCP; avoid such a blanket claim.
 
@@ -278,14 +375,14 @@ submission, state, selectors, and shader constants that consume them.
 The [CPU scene dossier](reference/client-335/CPU_SCENE_AUDIT.md),
 [cached-function manifest](reference/client-335/cpu-evidence.json),
 [direct scene calls](reference/client-335/scene-direct-calls.csv), and
-[call sites](reference/client-335/scene-call-sites.csv) establish the current
-audit and its unresolved frontier. They supplement the complete IDA inventory.
+[call sites](reference/client-335/scene-call-sites.csv) preserve the recorded
+audit snapshot and its unresolved frontier. New deltas belong in the active CPU
+notes until milestone reconciliation. They supplement the complete IDA inventory.
 
-Read [the saved CPU outputs](../artifacts/client-335-shaders/ida/index.md)
-before requesting another IDA decompilation. Complete function pages are
-preserved by address, with build/database metadata and references; reuse
-instruction exports for checked branches. Refresh only an affected function
-when the reference or its analysis changes. Shader investigation continues
+Use focused live IDA requests for new questions or relevant slices from
+[the saved CPU outputs](../artifacts/client-335-shaders/ida/index.md) for checked
+branches. Neither a full cache read nor an export is required before a port.
+Refresh stale evidence when the active claim needs it. Shader investigation continues
 from the existing AllDx9 cache, with SM3 as the primary profile.
 
 | CPU area | IDA scope and required outcome | Destination/ownership |
@@ -356,10 +453,13 @@ These are partial ports
 until numerical boundaries, full scene closure and matched captures pass.
 
 The [roadmap](#roadmap) prioritizes the remaining portal work. Continue CPU
-batches with these wider closure requirements:
+batches toward these wider closure requirements; they are eventual workstream
+gates, not serial prerequisites to implementing the next supported rule:
 
-1. Close the thirteen indirect call sites and recursively classify direct dependencies.
-   Pin the executable hash and register build/configuration provenance.
+1. Resolve the recorded thirteen indirect call sites and direct dependencies as
+   their contracts become necessary for active ports. Reconcile the full frontier,
+   pin the executable hash and register build/configuration provenance before
+   sign-off; unrelated unresolved sites do not block an independent proven rule.
 2. Close original streaming/insertion and group availability/order, WDT-global
    placement bounds, native transform/scale arithmetic and terrain fraction
    handoff; propagate recovered exterior rectangles/distances into terrain,
@@ -386,17 +486,24 @@ Track each rendering function and shader selector through independent gates:
 | Gate | Evidence required |
 | --- | --- |
 | Inventoried | Stable build/address or path/ordinal/hash, discovery source, owning workstream. |
-| Pseudocode inspected | Complete output, direct calls, data references, unresolved indirect targets and casts recorded. |
+| Pseudocode inspected | Relevant body/range inspected, with dependencies and uncertain casts recorded for the claimed rule. Whole-function completion requires full-body review; a local export is not required. |
 | Rule traced | Instructions resolve ambiguity; constants, flags, formulas, state, ordering and input ownership have a compact dossier. |
 | Ported | Version-scoped implementation, equivalent inputs/state, meaningful behavioral checks and register/layout validation. |
 | Capture verified | Matched reference witness covers the rule or permutation, with recorded parameters and accepted difference bounds. |
 | Excluded | Positive evidence of non-reachability or another client/backend; name absence is insufficient. |
 
-A function can be ported without being capture verified. A shader can be
+These gates qualify claims, not an obligatory export pipeline before each edit.
+A bounded rule can be ported while its enclosing function remains partially
+reviewed; state that boundary explicitly. A function can be ported without being
+capture verified. A shader can be
 disassembled without its selector semantics being known. Keep both distinctions
 in the ledgers. Compilation and smoke tests alone do not prove client parity.
 
 ### R00 — recover the complete rendering graph
+
+During implementation, follow the active path and record newly relevant
+dependencies in the compact audit entry. Perform broad inventory/exclusion
+sweeps at closure milestones; do not re-enumerate the unchanged IDB each turn.
 
 1. Seed the graph with world-frame update/render, `CWorldScene`, `CGxDeviceD3d`,
    shader loading/selection, environment/visibility, model animation/effects,
@@ -409,8 +516,9 @@ in the ledgers. Compilation and smoke tests alone do not prove client parity.
    name-candidate complement; assign a reason to every exclusion. Shared math,
    file decoding and allocators need their rendering-visible contracts, even
    when the underlying implementation remains in a dependency.
-4. Use bounded IDA pagination, verify returned counts and address uniqueness,
-   and retain the CSV. A truncated API response is not a complete inventory.
+4. When inventory collection or refresh is needed, use bounded IDA pagination,
+   verify returned counts and address uniqueness, and retain the CSV. A truncated
+   API response is not a complete inventory; unchanged inventories need no rerun.
 5. Give every reachable function an owner in R01–R13 and a dossier reference.
    The owner hints in the initial CSV are heuristic and must be corrected
    during semantic review.
@@ -418,11 +526,14 @@ in the ledgers. Compilation and smoke tests alone do not prove client parity.
    graph complete while any rendering-reachable indirect target, constant
    writer, shader branch, draw callback, or exclusion remains unexplained.
 
-A dossier should contain build/hash, address and call edges, input/output
+A completed dossier should contain build/hash, address and call edges, input/output
 ownership, units, flag bits, compact equations, operation order, constant
 writers, texture/state dependencies, port location, fixtures, capture witness,
-and remaining ambiguity. Preserve concise instruction excerpts when they
-resolve an ambiguity; reuse them on subsequent work.
+and remaining ambiguity. During a batch, record only fields relevant to the
+active claim and mark missing completion evidence pending. One linked compact
+entry can cover several helpers; do not create a full document/export per helper.
+Preserve concise instruction excerpts when they resolve an ambiguity; reuse them
+on subsequent work.
 
 ### R01 — DX9 capability, state and frame contract
 
@@ -870,12 +981,14 @@ all programs into an inaccurate shared approximation.
 
 ## Implementation sequence and deliverables
 
-Implement reviewable batches in this dependency order. Each closes a concrete
-rule/selector set and updates both evidence and the feature ledger.
+Implement reviewable slices in the roadmap order, following actual dependencies.
+The table describes workstream deliverables and completion gates, not a demand
+to finish all evidence infrastructure before doing renderer work. Each slice
+implements a concrete rule/selector set and records its verification once.
 
 | Batch | Deliverable | Gate before moving on |
 | --- | --- | --- |
-| 0 — evidence foundation | Reusable shader cache, complete IDA/source inventories, original binary hash, reachable graph, selector/constant register map. | Inventory tooling is delivered; semantic graph closure and binary hash are still pending. |
+| 0 — evidence foundation, maintained alongside ports | Reusable shader cache and address-based findings; reconcile full inventories, binary hash, reachable graph and selector/register maps at closure milestones. | Tooling is delivered. Full closure/hash remain sign-off requirements; independently established rules can be implemented now. |
 | 1 — DX9 translation | R01 state/profile/frame contract and synthetic GPU harness; explicit 3.3.5 profile. | Capability/fallback, coordinates, alpha, sampling, blending and target fixtures pass. |
 | 2 — viewer and environment | R02/R03 visibility, portal propagation, lighting/fog/sky rules. | Interior/exterior/underwater and matched-time witnesses; unresolved material-dependent terms stay open. |
 | 3 — surface and model shaders | R04/R05/R06 formulas, selectors, decoded vertex/texture contracts. | Every primary ordinal mapped or positively excluded; specular/additive/composite/alpha behavior verified. Shadow-dependent rows await batch 5. |
@@ -885,7 +998,8 @@ rule/selector set and updates both evidence and the feature ledger.
 | 7 — full-screen effects | R12 target/kernel/selection/presentation contract. | Intermediate and final target comparisons, effect transitions, resolutions and MSAA. |
 | 8 — whole-frame sign-off | Full scenario matrix, remaining closure review, cross-client regression and performance. | All release gates below satisfied with no pending rendering-visible rule. |
 
-For every batch, save a compact rule dossier and selector witnesses, implement
+For every code batch, follow the [working loop](#working-loop): record a compact
+rule and relevant selector witnesses, implement
 version-scoped behavior, add focused independent behavioral coverage, run the
 full smoke suite after code/shader/config/test changes, then compare matched
 client captures. Do not close dependent rows just because the base shader now

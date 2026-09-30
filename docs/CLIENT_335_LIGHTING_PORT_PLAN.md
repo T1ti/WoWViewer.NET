@@ -12,17 +12,22 @@ behavior from those names and track the current viewer/BSP/scene port.
 
 ## Roadmap
 
-The latest portal batch covers directed/one-owner references and camera-on-portal
-projection boundaries with 24 new tests, including real Stormwind facade
-polygons. Full smoke passes 494 tests; visual parity remains unverified.
+The latest portal batch adds exterior depth-zero blocker/view queues, emission
+bits 4/8 and ordered polygon forwarding. Full smoke passes **544 tests**, with
+20 new cases including real Stormwind facade camera crossings; visual parity
+remains unverified. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30).
 
-Next: finish the native exterior portal-view/blocker/complement and clip-buffer
+Next: collect scene-wide render views and finish the native complement and clip-buffer
 pipeline; apply global exterior rectangles/distances across scene consumers;
 then recover viewer-liquid suppression, blend-sky models and entity MOCV
 lighting. Follow the [complete roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap)
 and [CPU notes](reference/client-335/CPU_SCENE_AUDIT.md#roadmap) for acceptance
-checks and the remaining CPU/DX9 SM3 workstreams. Update these links and status
-after each batch.
+checks and the remaining CPU/DX9 SM3 workstreams. Begin a new thread with the
+[handoff](CLIENT_335_RENDERING_ACCURACY_PLAN.md#start-here-in-a-new-thread)
+and [working loop](CLIENT_335_RENDERING_ACCURACY_PLAN.md#working-loop).
+Record each batch once in the CPU audit; update this lighting ledger when its
+rules, implementation or capture status change.
 
 ## Goal and reference
 
@@ -47,7 +52,7 @@ each area is resolved instead of retaining bulk pseudocode.
 - Use the extracted 3.3.5 client shaders at
   `E:\WoWModding\aExtractedClients\WOTLK ClientFiles\shaders` as the primary
   material-shader reference. The directory contains 592 BLS containers and five
-  WFX effect descriptions. Parse each BLS container, select the matching
+  WFX effect descriptions. Use the existing shader cache to select the matching
   client backend/profile and variant, then compare its constants and
   instructions with the DX11 translation. Keep the chosen shader path,
   variant, and bytecode hash in each fixture. The file formats are described
@@ -159,7 +164,7 @@ rows until resolved.
 | `DayNight_CelestialBody__Render` (`0x9AC3C0`), `DayNight__IsSunVisibleFromPoint` (`0x9ABC60`) | Traced an occlusion query or world/M2 visibility test for glare; the client divides visible samples by projected quad area. | **Partial:** two nonblocking DX11 occlusion queries per body use the completed result and normalized projected area. The CPU world/M2 fallback is not implemented. Verify query visibility through terrain, M2, WMO, and portal transitions in matched views. |
 | `DayNight__DrawTexturedViewports` (`0x7F0870`), `Gx_DrawTexturedViewport` (`0x9AC400`), `CGWorldFrame__OnWorldRender` (`0x4F8EA0`) | Traced post-world sun/moon glare quads before the FFX glow composite, with additive blend and disabled fog, depth test/write, lighting, and cull. | **Partial render:** DX11 submits both textured glare quads after world/effects and before editor FFX glow with additive blending. Verify the new pass in an editor capture and compare occlusion and cloud cover. |
 | `ConsoleCmd_SkySunGlare` (`0x7ECE40`) | Traced the `SkySunGlare` console command, which toggles both sun and moon glare; both start enabled at client initialization. | **Ported default:** both glare passes are enabled. This is a console command, rather than a client config/CVar setting, so it is not added to Settings under the user's control rule. |
-| `CMapObj__RRenderThruPortals` (`0x7AC060`), `CMapObj__ProjectAndClipPortalPolygon` (`0x7A9090`), `CWorldScene__ProjectAndClipWorldPolygon` (`0x7A85E0`) | Signed MOPR side, eye-on-polygon full view, directed MOGP ranges, null-target skip, previous-group back edge, inclusive depth 10, five camera planes, 12 input vertices, legacy max-Y behavior, strict degeneracy and MOGP `0x48` propagation clearing. **Correction:** `0x983E70` plus projection/corner builders prove that the five planes omit **near**, retaining far. | **Partial port:** reusable projection now clips in world space with ±0.0001 classification, native asymmetric polygon edges and strict ±0.01 containment; preserves original planes and processes depth-10 portals without a path-wide guard. Real Stormwind fixtures cover paired facade portals and eleven one-owner references. Clip-volume early-out, exterior blocker/complement/view-volume rendering and numerical captures remain TODO. |
+| `CMapObj__RRenderThruPortals` (`0x7AC060`), `CMapObj__ProjectAndClipPortalPolygon` (`0x7A9090`), `CWorldScene__ProjectAndClipWorldPolygon` (`0x7A85E0`) | Signed MOPR side, eye-on-polygon full view, directed MOGP ranges, null-target skip, previous-group back edge, inclusive depth 10, five camera planes, 12 input vertices, legacy max-Y behavior, strict degeneracy and MOGP `0x48` propagation clearing. **Correction:** `0x983E70` plus projection/corner builders prove that the five planes omit **near**, retaining far. | **Partial port:** reusable projection clips in world space with ±0.0001 classification, native asymmetric polygon edges and strict ±0.01 containment; preserves original planes and processes depth-10 portals without a path-wide guard. Exterior depth-zero blockers, bit-8 offset-polygon emission and disjoint forwarding are now implemented; see the compact CPU entry above. Real Stormwind fixtures cover paired facade portals and eleven one-owner references. Scene-wide list collection, clip-volume early-out, complement/view-volume rendering and numerical captures remain TODO. |
 | `CMapObj__GetGroupFlags` (`0x7AE7B0`), `CWorldScene__CullMapObjDefGroupFromExterior` (`0x7B3A10`), `CMapObj__RenderPortalOcclusionPass` (`0x7AD1F0`), `CMapObj__CullBatch` (`0x7A7630`), `CMapObjDef__GroupRenderCallback_EnqueueLiquid` (`0x799310`) | Traced MOGI root flags and bounds for exterior/always-draw seeds, MOGP header flags for viewer checks, six signed MOBA box coordinates passed to the batch frustum culler, and WMO liquid submission through the visible-group callback. `GetGroupFlags` reads MOGI; the two flag sets cannot be substituted. Exterior group culling also calls `CWorldScene__ClipBufferCull` for depth-sorted entries. | **Partial port:** wowlib MOGI/MOGP sources remain separate; exterior/always-draw rules run even for zero-link MPQ WMOs, and MPQ batch culling uses the packed MOBA box. WMO liquids now use the group portal mask. Modern CASC keeps its prior derived-bounds path. Client clip-buffer occlusion and exterior portal-view propagation to terrain, M2, and doodads remain TODO. |
 | `CMapObj__AddPortalView` (`0x7A8F20`), `CWorldScene__CullMapObjDefGroupFromExterior` (`0x7B3A10`), `CMapObj__RRenderThruPortals` (`0x7AC060`) | An interior portal whose target MOGI flags include `0x10008` emits a portal view and stops recursion. The view contains a projected rectangle and maximum projected vertex distance. Exterior group candidates are culled against that view and, for depth-sorted entries, the terrain clip buffer before seeding with propagation 0. | **Partial:** the selected placement stops direct linked-exterior marking and uses its emitted exterior rectangle for exterior seeds. Root metadata may emit even when the destination group is unavailable. Global node distance/depth gates, unbucketed exceptions, terrain clip buffer and terrain/M2/other-WMO/doodad/liquid consumers remain TODO; facade pixels still require matched captures. |
 | `CWorldScene__ClipBufferCull` (`0x78FDC0`), `CMapChunk__UpdateCameraFacingVertexRows` (`0x7CFB10`) | Traced a 384-column horizontal terrain horizon buffer. Exterior WMO group AABBs are rejected when their projected highest point lies behind the buffer in every covered column; the test is disabled outside the client's pitch/world-enable gate. Terrain camera-facing rows populate the buffer before this cull. | **TODO:** port or match the horizon occlusion stage before declaring exterior facades fully culled. Keep its gate and update order; an unverified GPU occlusion substitute could change both latency and silhouettes. |
@@ -220,11 +225,12 @@ rendering settings independent where behavior differs.
    and six float band meanings; LightParams fields and weather variants;
    eleven hardcoded Northrend polygon lights (`0x77EED0`); sky/planet/star
    curves; cloud permutation, LOD frequency tables, and noise rounding;
-   fog constants and shader math. Use narrow named-function lookups, batched
-   decompilation, and cross-references; inspect disassembly only where the
-   decompiler is ambiguous. Cache the results in this document or a small
-   adjacent fixture file, with database address and build attached.
-   For material shaders, inspect the matching WFX pass and BLS profile/variant
+   fog constants and shader math. Use focused live IDA requests for the active
+   address/dataflow question; names are navigation hints. Verify instructions
+   where types, arithmetic or ordering affect the rule. Record compact new
+   findings with build/address/sites in the CPU audit and link them here;
+   complete local decompilation exports are optional.
+   For material shaders, inspect the matching cached WFX pass and BLS profile/variant
    first; use Wisp and Benilla as secondary readable references.
 4. Audit existing rendering tests and the current feature ledger. Establish
    a baseline capture and CPU/GPU frame-time and allocation measurements.

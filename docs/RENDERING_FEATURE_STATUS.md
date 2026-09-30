@@ -12,12 +12,21 @@ repository smoke suite; it does not imply parity with every WoW client era.
 
 ## Roadmap
 
-The next rendering work is the entire native portal occlusion/view-list pipeline,
-followed by global exterior view/distance consumers and viewer-liquid/frame
+The latest portal batch implements exterior depth-zero blocker/view queues,
+emission bits 4/8 and ordered forwarding for 12340, with retained polygon
+storage separate from sky/exterior unions. Full smoke exits 0 with **544 tests**
+(66 Render, 287 DX11, 191 Avalonia), including 20 new portal cases. Evidence and
+remaining limitations are recorded in the
+[CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-portal-render-view-queues-2026-09-30).
+The next work is scene-wide render-view collection, complements and native
+clip/volume consumers, followed by global exterior view/distance and viewer-liquid/frame
 ordering. Continue all CPU preparation and DX9 SM3 workstreams using the
 [extended roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap) and
 [CPU roadmap](reference/client-335/CPU_SCENE_AUDIT.md#roadmap).
-After each batch, retain next tasks and acceptance checks in those documents.
+For a new thread, use the [handoff](CLIENT_335_RENDERING_ACCURACY_PLAN.md#start-here-in-a-new-thread)
+and [working loop](CLIENT_335_RENDERING_ACCURACY_PLAN.md#working-loop).
+Record batch evidence once in the CPU notes, keep the roadmap's next task current,
+and update this ledger when implementation or capture status changes.
 
 Viewport controls: Client mode defaults to Ultra, and its mode switch is confined
 to viewport Advanced Rendering. Client settings remain editable in either mode.
