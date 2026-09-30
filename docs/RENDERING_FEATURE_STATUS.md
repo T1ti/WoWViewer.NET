@@ -19,6 +19,17 @@ ordering. Continue all CPU preparation and DX9 SM3 workstreams using the
 [CPU roadmap](reference/client-335/CPU_SCENE_AUDIT.md#roadmap).
 After each batch, retain next tasks and acceptance checks in those documents.
 
+Viewport controls: Client mode defaults to Ultra, and its mode switch is confined
+to viewport Advanced Rendering. Client settings remain editable in either mode.
+Editor fog defaults off and affects only Editor mode. Client mode excludes
+viewport content filters, diagnostics, fog suppression, distances/streaming,
+percentage limits and manual lighting/time. Game glow and editor glow use separate
+saved settings. Client fog stays enabled and the implemented game CVars remain
+authoritative. Mode switches preserve both banks; viewport overrides are disabled
+in Client mode. Other-client baseline fallbacks and native streaming/LOD/fades
+remain incomplete; these editor controls do not establish rendering parity.
+Verification: full smoke exits 0, **524 tests** (66 Render, 267 DX11, 191 Avalonia).
+
 ## Version matrix
 
 | Client | Content and models | Terrain | WMO | Current verification |

@@ -377,11 +377,11 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
             ExtentsMaxX = placement.Extents.Max.X,
             ExtentsMaxY = placement.Extents.Max.Y,
             ExtentsMaxZ = placement.Extents.Max.Z,
-            Flags = placement.Flags,
+            Flags = (ushort)placement.Flags,
             DoodadSet = placement.DoodadSet,
             NameSet = placement.NameSet,
             RawScale = placement.Scale,
-            EffectiveScale = (flags & (uint)WmoPlacementFlags.has_scale) != 0
+            EffectiveScale = (flags & (uint)WmoPlacementFlags.HasScale) != 0
                 ? placement.Scale / 1024f
                 : 1f
         };
@@ -408,9 +408,9 @@ public sealed class MapTerrainMetadataCacheService : IMapTerrainMetadataCacheSer
                     ? new("WDT.FileDataID", FormatFileDataId(fileDataId))
                     : new("WDT.Path", fileDataId == 0 ? path : $"{path}({fileDataId})"),
             new("WDT.ByteLength", byteLength.ToString(CultureInfo.InvariantCulture)),
-            new("WDT.HasTerrain", (root.Header.Flags & 0x1) == 0 ? "Yes" : "No"),
+            new("WDT.HasTerrain", (root.Header.Flags & WdtHeaderFlags.UsesGlobalMapObj) == 0 ? "Yes" : "No"),
             new("MVER.Version", root.Mver.ToString(CultureInfo.InvariantCulture)),
-            new("MPHD.Flags", FormatHeaderFlags(root.Header.Flags)),
+            new("MPHD.Flags", FormatHeaderFlags((uint)root.Header.Flags)),
             new("MAIN.RecordCount", mainCount.ToString(CultureInfo.InvariantCulture)),
             new("MAIN.PresentTiles", tiles.Count.ToString(CultureInfo.InvariantCulture)),
             new("MAIN.ActiveTerrainTiles", tiles.Count(tile => tile.IsActive)

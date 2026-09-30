@@ -14,6 +14,17 @@ previous-group/depth rules, null/unused graph handling, and selected-placement
 exterior-window culling. Full smoke passes **494 tests**; final-frame parity
 is still pending.
 
+Viewport controls batch: mode selection is confined to viewport Advanced
+Rendering; Settings edits client values in either mode. Editor fog defaults off,
+while Client mode excludes all viewport rendering overrides and retains game fog
+and game glow. Client projection/culling stays version-scoped; other clients'
+baseline fallback is not native-rule evidence. Verified: conflicting banks,
+mode restoration, default fog, separate glow and manual-lighting isolation pass;
+full smoke exits 0 with **524 tests** (66 Render, 267 DX11, 191 Avalonia).
+Native streaming, animation/particle eligibility and fades still
+need the recovered policies and captures in the priorities below.
+Native CPU closure and matched pixel evidence remain open in the priorities below.
+
 1. **Finish all portal consumers.** Port the depth-zero exterior blocker/view
    queues in `0x7AC060`, emission bit 8 in `0x7A9200`, forwarding `0x795D20`,
    complement generation `0x7968D0`, clip-volume early-out `0x7CCFA0`, terrain

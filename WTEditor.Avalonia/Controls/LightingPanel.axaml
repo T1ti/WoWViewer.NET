@@ -57,7 +57,7 @@
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="3">
           <WrapPanel Orientation="Horizontal" HorizontalAlignment="Stretch">
-          <Border Width="360" Classes="lighting-card">
+          <Border Width="360" Classes="lighting-card" IsEnabled="{Binding IsEditorRenderMode}">
             <StackPanel Spacing="2">
               <TextBlock Text="Time" Classes="card-title"/>
               <Grid ColumnDefinitions="105,*,48" RowDefinitions="Auto,Auto" ColumnSpacing="6">
@@ -92,7 +92,7 @@
             </StackPanel>
           </Border>
 
-          <Border Width="360" Classes="lighting-card">
+          <Border Width="360" Classes="lighting-card" IsEnabled="{Binding IsEditorRenderMode}">
             <StackPanel Spacing="2">
               <TextBlock Text="Final blended world lighting" Classes="card-title"/>
               <Grid ColumnDefinitions="105,*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="2"
@@ -156,7 +156,7 @@
           </ItemsControl>
 
           <WrapPanel Orientation="Horizontal" HorizontalAlignment="Stretch">
-          <Border Width="360" Classes="lighting-card">
+          <Border Width="360" Classes="lighting-card" IsEnabled="{Binding IsEditorRenderMode}">
             <StackPanel Spacing="2">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="Liquid settings" Classes="card-title"/>
@@ -201,7 +201,7 @@
           </WrapPanel>
 
           <TextBlock Margin="0,4,0,0" Foreground="#7890A5" FontSize="9" TextWrapping="Wrap"
-                     Text="Turn off Live local time to edit values manually. Changes are applied immediately; direction is normalized by the renderer."/>
+                     Text="Manual lighting overrides require Editor mode with Live local time off. Client mode uses the client lighting data and live time."/>
         </StackPanel>
       </ScrollViewer>
     </Grid>

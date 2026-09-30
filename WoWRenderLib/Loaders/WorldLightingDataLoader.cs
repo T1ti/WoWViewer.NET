@@ -70,40 +70,41 @@ public static class WorldLightingDataLoader
         long lightParamId,
         long time)
     {
-        // WowLib exposes the DB2 schema names verbatim as lower snake_case.
+        // Resolve columns by their upstream WoWDBDefs names. The managed
+        // lighting snapshot keeps its existing canonical keys.
         // These are required fields; a renamed/mismatched column must fail at
         // startup so the schema mapping can be corrected instead of silently
         // selecting the renderer defaults.
         var lightParamColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "light_param_id");
-        var timeColumn = Db2Schema.RequireColumn(table, "LightData", "time");
-        var idColumn = Db2Schema.RequireColumn(table, "LightData", "id");
+            "LightParamID");
+        var timeColumn = Db2Schema.RequireColumn(table, "LightData", "Time");
+        var idColumn = Db2Schema.RequireColumn(table, "LightData", "ID");
         var directColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "direct_color");
+            "DirectColor");
         var ambientColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "ambient_color");
+            "AmbientColor");
         var oceanCloseColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "ocean_close_color");
+            "OceanCloseColor");
         var oceanFarColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "ocean_far_color");
+            "OceanFarColor");
         var riverCloseColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "river_close_color");
+            "RiverCloseColor");
         var riverFarColorColumn = Db2Schema.RequireColumn(
             table,
             "LightData",
-            "river_far_color");
+            "RiverFarColor");
 
         var rowCount = Math.Min(table.RowCount, (ulong)int.MaxValue);
         for (var row = 0UL; row < rowCount; row++)
@@ -224,13 +225,13 @@ public static class WorldLightingDataLoader
             return;
         }
 
-        _ = Db2Schema.RequireColumn(table, "LightParams", "id");
+        _ = Db2Schema.RequireColumn(table, "LightParams", "ID");
         var alphaColumns = new (string Name, string Key)[]
         {
-            ("water_shallow_alpha", "water_shallow_alpha"),
-            ("water_deep_alpha", "water_deep_alpha"),
-            ("ocean_shallow_alpha", "ocean_shallow_alpha"),
-            ("ocean_deep_alpha", "ocean_deep_alpha")
+            ("WaterShallowAlpha", "water_shallow_alpha"),
+            ("WaterDeepAlpha", "water_deep_alpha"),
+            ("OceanShallowAlpha", "ocean_shallow_alpha"),
+            ("OceanDeepAlpha", "ocean_deep_alpha")
         };
 
         if (!TryFindRow(table, lightParamId, out var row))

@@ -34,6 +34,7 @@ public static class EditorIcons
     public static Geometry BoundingSphere { get; } = Geometry.Parse("M12,2 A10,10 0 1 0 12,22 A10,10 0 1 0 12,2 Z M2,12 H22 M12,2 C6,6 6,18 12,22 M12,2 C18,6 18,18 12,22");
     public static Geometry Portal { get; } = Geometry.Parse("M3,3 H21 V21 H3 Z M7,7 H17 V17 H7 Z M10,10 L17,7 M10,10 L7,17");
     public static Geometry Glow { get; } = Geometry.Parse("M12,2 L14,9 L21,12 L14,15 L12,22 L10,15 L3,12 L10,9 Z");
+    public static Geometry Fog { get; } = Geometry.Parse("M3,5 H18 V7 H3 Z M6,10 H22 V12 H6 Z M2,15 H19 V17 H2 Z M7,20 H16 V22 H7 Z");
     public static Geometry Settings { get; } = Geometry.Parse("M10,2 H14 L15,5 L18,3 L21,6 L19,9 L22,10 V14 L19,15 L21,18 L18,21 L15,19 L14,22 H10 L9,19 L6,21 L3,18 L5,15 L2,14 V10 L5,9 L3,6 L6,3 L9,5 Z M12,8 A4,4 0 1 0 12,16 A4,4 0 1 0 12,8 Z");
     public static Geometry Metrics { get; } = Geometry.Parse("M3,20 V13 H7 V20 Z M10,20 V8 H14 V20 Z M17,20 V3 H21 V20 Z");
     public static Geometry Lighting { get; } = Geometry.Parse("M11,2 H13 V5 H11 Z M11,19 H13 V22 H11 Z M2,11 H5 V13 H2 Z M19,11 H22 V13 H19 Z M4.2,5.6 L5.6,4.2 L7.7,6.3 L6.3,7.7 Z M16.3,17.7 L17.7,16.3 L19.8,18.4 L18.4,19.8 Z M16.3,6.3 L18.4,4.2 L19.8,5.6 L17.7,7.7 Z M4.2,18.4 L6.3,16.3 L7.7,17.7 L5.6,19.8 Z M12,7 A5,5 0 1 0 12,17 A5,5 0 1 0 12,7 Z");

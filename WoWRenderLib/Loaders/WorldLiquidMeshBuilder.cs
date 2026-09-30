@@ -318,10 +318,10 @@ public static class WorldLiquidMeshBuilder
     private static WorldLiquidVertexFormat ConvertVertexFormat(
         Formats.ADT.Chunks.LiquidVertexFormat format) => format switch
         {
-            Formats.ADT.Chunks.LiquidVertexFormat.height_depth => WorldLiquidVertexFormat.HeightDepth,
-            Formats.ADT.Chunks.LiquidVertexFormat.height_uv => WorldLiquidVertexFormat.HeightUv,
-            Formats.ADT.Chunks.LiquidVertexFormat.depth_only => WorldLiquidVertexFormat.DepthOnly,
-            Formats.ADT.Chunks.LiquidVertexFormat.height_uv_depth => WorldLiquidVertexFormat.HeightUvDepth,
+            Formats.ADT.Chunks.LiquidVertexFormat.HeightDepth => WorldLiquidVertexFormat.HeightDepth,
+            Formats.ADT.Chunks.LiquidVertexFormat.HeightUv => WorldLiquidVertexFormat.HeightUv,
+            Formats.ADT.Chunks.LiquidVertexFormat.DepthOnly => WorldLiquidVertexFormat.DepthOnly,
+            Formats.ADT.Chunks.LiquidVertexFormat.HeightUvDepth => WorldLiquidVertexFormat.HeightUvDepth,
             _ => WorldLiquidVertexFormat.DepthOnly
         };
 

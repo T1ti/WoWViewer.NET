@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using WoWLib;
 using Formats = WoWLib.Formats;
 using Fs = WoWLib.Filesystem;
+using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
+using HeaderFlags = WoWLib.Formats.WMO.Root.Chunks.HeaderFlags;
 using WoWRenderLib.Renderer;
 using WoWRenderLib.Services;
 using WoWRenderLib.Structs;
@@ -55,15 +57,14 @@ public static class WMOLoader
 
             var bodyVertices = body.Vertices.AsDataSpan();
             var bodyNormals = body.Normals.AsDataSpan();
-            var bodyColors = body.VertexColors2.AsDataSpan();
             var vertices = new WMOVertex[bodyVertices.Length];
             var groupBytes = ReadGroupBytes(
                 fileSystem,
                 fileDataId,
                 groupIndex,
                 groupIndex < rootData.GroupFileDataIds.Length ? rootData.GroupFileDataIds[groupIndex] : 0);
-            var textureCoordinates = ReadTextureCoordinateChunks(groupBytes, vertices.Length);
-            var colorSets = ReadVertexColorChunks(groupBytes, vertices.Length);
+            var textureCoordinates = ReadTextureCoordinateSets(body, vertices.Length);
+            var colorSets = ReadVertexColorLayers(body, vertices.Length);
             var hasPrimaryColors = colorSets[0] is { Length: > 0 };
             if (fileSystem.Kind == StorageKind.Mpq && hasPrimaryColors)
             {
@@ -79,7 +80,7 @@ public static class WMOLoader
                     header.PortalStart, header.PortalCount,
                     portalVertices, portals, portalReferences, groupFlags);
             }
-            var neutralColor = (rootFlags & 0x2) != 0
+            var neutralColor = (rootFlags & HeaderFlags.UseUnifiedRenderPath) != 0
                 ? new Vector4(0f, 0f, 0f, 1f)
                 : new Vector4(0.5f, 0.5f, 0.5f, 1f);
             for (var i = 0; i < vertices.Length; i++)
@@ -99,7 +100,7 @@ public static class WMOLoader
                     Color = hasPrimaryColors ? colorSets[0][i] : neutralColor,
                     Color2 = colorSets[1] is { Length: > 0 } secondColors
                         ? secondColors[i]
-                        : i < bodyColors.Length ? ColorVector(bodyColors[i]) : Vector4.Zero,
+                        : Vector4.Zero,
                     Color3 = Vector4.Zero
                 };
             }
@@ -184,14 +185,14 @@ public static class WMOLoader
                 groupID = (uint)preppedGroups.Count,
                 groupName = groupName,
                 mogiGroupName = groupName,
-                mogiFlags = groupInfo.Flags,
+                mogiFlags = (uint)groupInfo.Flags,
                 fogIds = header.FogIds.ToArray(),
                 mogiBoundingBox = groupIndex < groupInfos.Length
                     ? new BoundingBox(
                         ToVector3(groupInfo.BoundingBox.Min),
                         ToVector3(groupInfo.BoundingBox.Max))
                     : new BoundingBox(ToVector3(bounds.Min), ToVector3(bounds.Max)),
-                flags = header.Flags,
+                flags = (uint)header.Flags,
                 hasPrimaryVertexColors = hasPrimaryColors,
                 portalStart = header.PortalStart,
                 portalCount = header.PortalCount,
@@ -218,7 +219,7 @@ public static class WMOLoader
             LegacyLighting = fileSystem.Kind == StorageKind.Mpq,
             Wrath335 = wrath335,
             AmbientColor = PackColor(rootHeader.AmbientColor),
-            Flags = rootHeader.Flags,
+            Flags = (ushort)rootHeader.Flags,
             Fogs = fogs,
             BoundingBox = new BoundingBox(ToVector3(rootBounds.Min), ToVector3(rootBounds.Max)),
             Doodads = doodads,
@@ -247,16 +248,16 @@ public static class WMOLoader
         }
         var faceFlags = new byte[polys.Length];
         for (var index = 0; index < faceFlags.Length; index++)
-            faceFlags[index] = polys[index].Flags;
+            faceFlags[index] = (byte)polys[index].Flags;
         return new(nodes, faceReferences.ToArray(), indices, faceFlags);
     }
 
     private static ParsedWorldLiquid ReadLiquid(
         Formats.WMO.Group.Chunks.MliqData source,
         uint groupLiquid,
-        uint groupFlags,
-        uint mogiFlags,
-        ushort rootFlags,
+        GroupFlags groupFlags,
+        GroupFlags mogiFlags,
+        HeaderFlags rootFlags,
         PreppedWMOMaterial[] materials,
         WmoLiquidClip[] sharedClips)
     {
@@ -284,7 +285,7 @@ public static class WMOLoader
             tiles[index] = sourceTiles[index].Flags;
 
         var materialId = source.MaterialId;
-        var interiorColor = (rootFlags & 0x4) == 0 && materialId < materials.Length
+        var interiorColor = (rootFlags & HeaderFlags.UseLiquidTypeDbcId) == 0 && materialId < materials.Length
             ? UnpackColor(materials[materialId].Color3)
             : Vector4.One;
         return WmoLiquidMeshBuilder.Build(new WmoLiquidInput
@@ -295,9 +296,9 @@ public static class WMOLoader
             YTiles = tileDimensions.Y,
             Origin = ToVector3(source.BaseCoords),
             GroupLiquid = groupLiquid,
-            GroupFlags = groupFlags,
-            MogiFlags = mogiFlags,
-            RootFlags = rootFlags,
+            GroupFlags = (uint)groupFlags,
+            MogiFlags = (uint)mogiFlags,
+            RootFlags = (ushort)rootFlags,
             MaterialId = materialId,
             MaterialCount = materials.Length,
             InteriorColor = interiorColor,
@@ -399,8 +400,7 @@ public static class WMOLoader
         }
 
         if (groupFileDataId == 0)
-            // TODO(WMO): Surface missing group bytes in diagnostics. Falling
-            // back to neutral MOCV and zero UVs can hide an asset-path error.
+            // Collision diagnostics can fall back to wowlib's decoded polys.
             return [];
 
         try
@@ -410,42 +410,50 @@ public static class WMOLoader
         catch
         {
             // TODO(WMO): Report this group read failure with the source path.
-            // Some WMO lineages do not expose group FileDataIDs. Keep geometry
-            // usable with neutral colors and the shader's zero-UV fallback.
+            // Some WMO lineages do not expose group FileDataIDs. Vertex colors
+            // and UVs are available independently through the decoded body.
             return [];
         }
     }
 
-    // Wowlib 0.0.9 exposes MOC2 but omits the primary (and second) MOCV
-    // chunk, so decode those from the same group bytes used for MOTV.
-    internal static Vector4[][] ReadVertexColorChunks(ReadOnlySpan<byte> bytes, int vertexCount)
+    internal static Vector4[][] ReadVertexColorLayers(Formats.WMO.Group.WMOGroupBody body, int vertexCount)
     {
         var result = new Vector4[2][];
         if (vertexCount <= 0)
             return result;
 
-        var chunkSize = checked(vertexCount * 4);
-        const uint mocv = ('M' << 24) | ('O' << 16) | ('C' << 8) | 'V';
-        var offsets = FindGroupChunkPayloads(bytes, mocv, chunkSize, 4);
-        for (var colorSet = 0; colorSet < Math.Min(offsets.Count, result.Length); colorSet++)
+        var layerCount = (int)Math.Min((ulong)result.Length, body.VertexColorLayerCount());
+        for (var colorSet = 0; colorSet < layerCount; colorSet++)
         {
+            using var layer = body.VertexColorLayer((ulong)colorSet);
+            if (layer == null || layer.Count < vertexCount)
+                continue;
+            var source = layer.AsDataSpan();
             var colors = new Vector4[vertexCount];
             for (var i = 0; i < vertexCount; i++)
-            {
-                var pixel = bytes.Slice(offsets[colorSet] + i * 4, 4);
-                colors[i] = new Vector4(pixel[2] / 255f, pixel[1] / 255f,
-                    pixel[0] / 255f, pixel[3] / 255f);
-            }
+                colors[i] = ColorVector(source[i]);
             result[colorSet] = colors;
+        }
+        // MOC2 is a Dragonflight+ stream. A second MOCV layer takes priority.
+        if (result[1] == null && body is Formats.WMO.Group.WMOGroupBodyDragonflightPlus modernBody)
+        {
+            var source = modernBody.VertexColors2.AsDataSpan();
+            if (!source.IsEmpty)
+            {
+                var colors = new Vector4[vertexCount];
+                for (var i = 0; i < Math.Min(vertexCount, source.Length); i++)
+                    colors[i] = ColorVector(source[i]);
+                result[1] = colors;
+            }
         }
         return result;
     }
 
     // for old clients, In 3.3.5a this function is called ONLY when MOHD flag 0x8 ("flag_do_not_fix_vertex_color_alpha") is NOT set.
     // TODO : This changed in Build 18179
-    internal static void LegacyFixColorVertexAlpha(Vector4[] colors, int firstNonTransition, ushort rootFlags)
+    internal static void LegacyFixColorVertexAlpha(Vector4[] colors, int firstNonTransition, HeaderFlags rootFlags)
     {
-        if ((rootFlags & 0x8) != 0)
+        if ((rootFlags & HeaderFlags.DoNotFixVertexColorAlpha) != 0)
             return;
 
         for (var i = 0; i < colors.Length; i++)
@@ -468,11 +476,11 @@ public static class WMOLoader
     // The client's AttenTransVerts rewrites transition MOCV near portals.
     // Its alpha drives the two-pass blend; RGB approaches the neutral 0x7f.
     internal static void AttenuateTransitionColors(Vector4[] colors, ReadOnlySpan<Vector3> positions,
-        ushort rootFlags, ushort portalStart, ushort portalCount, ReadOnlySpan<Vector3> portalVertices,
+        HeaderFlags rootFlags, ushort portalStart, ushort portalCount, ReadOnlySpan<Vector3> portalVertices,
         ReadOnlySpan<PreppedWMOPortal> portals, ReadOnlySpan<PreppedWMOPortalReference> references,
-        ReadOnlySpan<uint> groupFlags)
+        ReadOnlySpan<GroupFlags> groupFlags)
     {
-        if ((rootFlags & 0x1) != 0)
+        if ((rootFlags & HeaderFlags.DoNotAttenuateVertices) != 0)
             return;
 
         for (var vertexIndex = 0; vertexIndex < Math.Min(colors.Length, positions.Length); vertexIndex++)
@@ -506,7 +514,7 @@ public static class WMOLoader
                             DistanceToSegment(position, polygon[edge], polygon[(edge + 1) % polygon.Length]));
                 }
 
-                if ((groupFlags[reference.GroupIndex] & 0x48) != 0)
+                if ((groupFlags[reference.GroupIndex] & (GroupFlags.Exterior | GroupFlags.ExteriorLit)) != 0)
                 {
                     var contribution = 1f - 0.15f * Math.Max(distance, 0f);
                     if (contribution > 0.001f)
@@ -558,25 +566,22 @@ public static class WMOLoader
         return Vector3.Distance(point, start + along * segment);
     }
 
-    internal static Vector2[][] ReadTextureCoordinateChunks(ReadOnlySpan<byte> bytes, int vertexCount)
+    internal static Vector2[][] ReadTextureCoordinateSets(Formats.WMO.Group.WMOGroupBody body, int vertexCount)
     {
         var result = new Vector2[4][];
         if (vertexCount <= 0)
             return result;
 
-        var chunkSize = checked(vertexCount * sizeof(float) * 2);
-        const uint motv = ('M' << 24) | ('O' << 16) | ('T' << 8) | 'V';
-        var offsets = FindGroupChunkPayloads(bytes, motv, chunkSize, 1);
-        for (var coordinateSet = 0; coordinateSet < Math.Min(offsets.Count, result.Length); coordinateSet++)
+        var setCount = (int)Math.Min((ulong)result.Length, body.TexcoordSetCount());
+        for (var coordinateSet = 0; coordinateSet < setCount; coordinateSet++)
         {
+            using var set = body.TexcoordSet((ulong)coordinateSet);
+            if (set == null || set.Count < vertexCount)
+                continue;
+            var source = set.AsDataSpan();
             var coordinates = new Vector2[vertexCount];
             for (var i = 0; i < coordinates.Length; i++)
-            {
-                var coordinateOffset = offsets[coordinateSet] + i * 8;
-                coordinates[i] = new Vector2(
-                    BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset, 4))),
-                    BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(coordinateOffset + 4, 4))));
-            }
+                coordinates[i] = new Vector2(source[i].X, source[i].Y);
 
             result[coordinateSet] = coordinates;
         }
@@ -741,7 +746,8 @@ public static class WMOLoader
         // also marks a collision face; only show it here when 0x20 (render) is
         // clear, so the overlay does not repaint normal visible geometry.
         return materialId == (modern ? 0xFFFF : 0xFF) ||
-               (flags & 0x08) != 0 && (flags & 0x20) == 0;
+               (flags & (ushort)Formats.WMO.Group.Chunks.PolyFlags.Collision) != 0 &&
+               (flags & (ushort)Formats.WMO.Group.Chunks.PolyFlags.Render) == 0;
     }
 
     internal static Vector2 GetTextureCoordinate(Vector2[][] coordinateSets, int set,
@@ -770,7 +776,7 @@ public static class WMOLoader
                 VertexShader = shaderPair.Item1,
                 PixelShader = shaderPair.Item2,
                 BlendMode = material.BlendMode,
-                Flags = material.Flags,
+                Flags = (uint)material.Flags,
                 Color1 = PackColor(material.SidnColor),
                 Color1B = PackColor(material.FrameSidnColor),
                 Color2 = material.Color2,

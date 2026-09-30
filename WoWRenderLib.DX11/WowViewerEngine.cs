@@ -229,6 +229,7 @@ namespace WoWRenderLib.DX11
         private int _lastWorldLightingTime = -1;
         private int _currentMapId = -1;
         private bool _dynamicWorldLightingEnabled;
+        private WorldLightingSettings _editorWorldLighting = WorldLightingSettings.Defaults;
         private int _fixedWorldLightingTime = 1440;
         private int _contentInitializationComplete;
 
@@ -344,6 +345,8 @@ namespace WoWRenderLib.DX11
         public void MarkTerrainChangesSaved() => sceneManager?.MarkTerrainChangesSaved();
         public void ApplyWorldLighting(WorldLightingSettings lighting)
         {
+            _editorWorldLighting = lighting;
+            lighting = WorldViewportSettings.ResolveLighting(Settings.UseClientRenderingRules, lighting);
             if (lighting.IsDynamic)
             {
                 _dynamicWorldLightingEnabled = true;
@@ -1186,44 +1189,48 @@ namespace WoWRenderLib.DX11
         public void ApplySettings(RendererSettings settings)
         {
             Settings = settings.Clone();
+            var effective = WorldViewportSettings.Resolve(Settings);
             SetMovementSpeed(Settings.MovementSpeed);
             SetMouseSensitivity(Settings.MouseSensitivity);
 
             if (activeCamera != null)
-                activeCamera.FarPlane = Math.Max(Settings.TerrainRenderDistance, Settings.ModelRenderDistance);
+                activeCamera.FarPlane = Math.Max(effective.TerrainRenderDistance, effective.ModelRenderDistance);
 
             if (sceneManager != null)
             {
-                sceneManager.TileLoadingDistance = Math.Clamp(Settings.TileLoadingDistance, 0, 32);
-                sceneManager.TerrainRenderDistance = Settings.TerrainRenderDistance;
-                sceneManager.ModelRenderDistance = Settings.ModelRenderDistance;
-                sceneManager.AnimationRenderDistancePercent = Settings.AnimationRenderDistancePercent;
-                sceneManager.ParticleRenderDistancePercent = Settings.ParticleRenderDistancePercent;
-                sceneManager.MinimumModelScreenSizePixels = Math.Clamp(Settings.MinimumModelScreenSizePixels, 0f, 16f);
-                sceneManager.TerrainLodTransitionPixels = Math.Clamp(Settings.TerrainLodTransitionPixels, 0f, 256f);
-                sceneManager.RenderADT = Settings.RenderADT;
-                sceneManager.RenderLiquid = Settings.RenderLiquid;
-                sceneManager.RenderWMO = Settings.RenderWMO;
-                sceneManager.ShowWmoCollisionMesh = Settings.ShowWmoCollisionMesh;
-                sceneManager.RenderM2 = Settings.RenderM2;
-                sceneManager.RenderParticles = Settings.RenderParticles;
-                sceneManager.DisableScreenGlow = Settings.DisableScreenGlow;
-                sceneManager.SkyCloudLod = Settings.SkyCloudLod;
-                sceneManager.AnimateModels = Settings.AnimateModels;
-                sceneManager.EnableWmoPortalCulling = Settings.EnableWmoPortalCulling;
-                if (Settings.UseConfiguredLighting)
+                sceneManager.TileLoadingDistance = Math.Clamp(effective.TileLoadingDistance, 0, 32);
+                sceneManager.TerrainRenderDistance = effective.TerrainRenderDistance;
+                sceneManager.ModelRenderDistance = effective.ModelRenderDistance;
+                sceneManager.AnimationRenderDistancePercent = effective.AnimationRenderDistancePercent;
+                sceneManager.ParticleRenderDistancePercent = effective.ParticleRenderDistancePercent;
+                sceneManager.MinimumModelScreenSizePixels = Math.Clamp(effective.MinimumModelScreenSizePixels, 0f, 16f);
+                sceneManager.TerrainLodTransitionPixels = Math.Clamp(effective.TerrainLodTransitionPixels, 0f, 256f);
+                sceneManager.RenderADT = effective.RenderADT;
+                sceneManager.RenderLiquid = effective.RenderLiquid;
+                sceneManager.RenderWMO = effective.RenderWMO;
+                sceneManager.ShowWmoCollisionMesh = effective.ShowWmoCollisionMesh;
+                sceneManager.RenderM2 = effective.RenderM2;
+                sceneManager.RenderParticles = effective.RenderParticles;
+                sceneManager.RenderFog = effective.RenderFog;
+                sceneManager.DisableScreenGlow = effective.DisableScreenGlow;
+                sceneManager.SkyCloudLod = effective.SkyCloudLod;
+                sceneManager.AnimateModels = effective.AnimateModels;
+                sceneManager.EnableWmoPortalCulling = effective.EnableWmoPortalCulling;
+                if (effective.UseConfiguredLighting)
                 {
-                    sceneManager.AmbientColor = Settings.AmbientColor;
-                    sceneManager.DiffuseColor = Settings.DiffuseColor;
+                    sceneManager.AmbientColor = effective.AmbientColor;
+                    sceneManager.DiffuseColor = effective.DiffuseColor;
                 }
-                sceneManager.ShowBoundingBoxes = Settings.ShowBoundingBoxes;
-                sceneManager.ShowBoundingSpheres = Settings.ShowBoundingSpheres;
-                sceneManager.ShowTerrainGrid = Settings.ShowTerrainGrid;
-                sceneManager.ShowTerrainWireframe = Settings.ShowTerrainWireframe;
-                sceneManager.ShowTerrainTexture = Settings.ShowTerrainTexture;
-                sceneManager.ShowTerrainVertexColor = Settings.ShowTerrainVertexColor;
+                sceneManager.ShowBoundingBoxes = effective.ShowBoundingBoxes;
+                sceneManager.ShowBoundingSpheres = effective.ShowBoundingSpheres;
+                sceneManager.ShowTerrainGrid = effective.ShowTerrainGrid;
+                sceneManager.ShowTerrainWireframe = effective.ShowTerrainWireframe;
+                sceneManager.ShowTerrainTexture = effective.ShowTerrainTexture;
+                sceneManager.ShowTerrainVertexColor = effective.ShowTerrainVertexColor;
             }
             ApplyClientViewDistance();
+            if (sceneManager != null && activeCamera != null)
+                ApplyWorldLighting(_editorWorldLighting);
         }
 
         private void ApplyClientViewDistance()

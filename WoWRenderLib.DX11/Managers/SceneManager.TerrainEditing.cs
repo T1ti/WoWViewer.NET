@@ -77,7 +77,7 @@ namespace WoWRenderLib.DX11.Managers
 
             worldModel.PlacementDoodadSet = doodadSet;
             worldModel.PlacementNameSet = nameSet;
-            if ((worldModel.PlacementFlags & (uint)MapObjDefFlags.use_sets_from_mwds) == 0)
+            if ((worldModel.PlacementFlags & (uint)MapObjDefFlags.UseSetsFromMwds) == 0)
                 worldModel.SetDoodadSetsToEnable([doodadSet]);
         }
 

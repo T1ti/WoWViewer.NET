@@ -12,6 +12,7 @@ public sealed class WorldRenderingRulesTests
     {
         var settings = new RendererSettings
         {
+            UseClientRenderingRules = false,
             TerrainRenderDistance = 100_000f, ModelRenderDistance = 50_000f,
             WrathFarClip = 350f, MinimumModelScreenSizePixels = 4f,
             TerrainLodTransitionPixels = 64f
@@ -62,10 +63,13 @@ public sealed class WorldRenderingRulesTests
         };
         var other = WorldRenderingRules.Resolve(settings, false, 0, true);
         Assert.IsFalse(other.UseClientRules);
-        Assert.AreEqual(75_000f, other.FarPlane);
+        Assert.AreEqual(WorldViewportSettings.FallbackRenderDistance, other.FarPlane);
+        Assert.AreEqual(0f, other.MinimumModelPixels);
+        Assert.IsFalse(other.PortalCulling);
         settings.UseClientRenderingRules = false;
         var editor = WorldRenderingRules.Resolve(settings, true, 0, true);
-        Assert.AreEqual(other, editor);
+        Assert.AreEqual(75_000f, editor.FarPlane);
+        Assert.AreEqual(40_000f, editor.ModelDistance);
         Assert.IsFalse(editor.PortalCulling);
         Assert.AreEqual(2f, editor.MinimumModelPixels);
     }

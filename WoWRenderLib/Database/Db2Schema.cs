@@ -10,7 +10,7 @@ namespace WoWRenderLib.Database;
 internal static class Db2Schema
 {
     /// <summary>
-    /// Looks up one exact column name without aliases. This is only for fields
+    /// Looks up one WoWDBDefs column name using WowLib's schema aliases. This is only for fields
     /// that are genuinely version-optional; callers must emit a diagnostic when
     /// it is absent rather than guessing another name.
     /// </summary>
@@ -54,7 +54,7 @@ internal static class Db2Schema
             {
                 try
                 {
-                    availableColumns.Add(table.ColumnInfo(index).Name);
+                    availableColumns.Add(table.ColumnInfo(index).DbdName);
                 }
                 catch
                 {
@@ -65,7 +65,7 @@ internal static class Db2Schema
 
             throw new InvalidDataException(
                 $"WowLib table '{tableName}' does not expose required column " +
-                $"'{columnName}'. Inspect Table.ColumnInfo().Name and update the " +
+                $"'{columnName}'. Inspect Table.ColumnInfo().DbdName and update the " +
                 "schema mapping instead of silently falling back. Available " +
                 $"columns: [{string.Join(", ", availableColumns)}].",
                 exception);

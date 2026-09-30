@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WTEditor.Application;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WTEditor.Application.Models;
 using WTEditor.Avalonia.Rendering;
@@ -16,13 +17,15 @@ public sealed partial class EditorSettingsSmokeTests
         {
             Rendering = new RenderingConfiguration
             {
+                UseClientRenderingRules = false,
                 TerrainRenderDistance = 100_000f, ModelRenderDistance = 60_000f,
                 WrathFarClip = 1200f, WrathFarClipOverride = true,
                 MinimumModelScreenSizePixels = 3f
             }
         };
-        var vm = new ClientSettingsViewModel(original) { UseClientRenderingRules = true };
-        var applied = vm.ApplyTo(original).Normalize();
+        var session = new EditorSession(new MemorySettingsStore(original));
+        using var vm = new Editor3DViewModel(session) { UseClientRenderingRules = true };
+        var applied = session.Current;
         var restored = JsonSerializer.Deserialize<PersistedRenderingSettings>(
             JsonSerializer.Serialize(PersistedRenderingSettings.From(applied.Rendering)))!.ToModel();
         Assert.IsTrue(restored.UseClientRenderingRules);
@@ -32,7 +35,9 @@ public sealed partial class EditorSettingsSmokeTests
         Assert.AreEqual(1200f, restored.WrathFarClip);
         Assert.IsTrue(restored.WrathFarClipOverride);
         vm.UseClientRenderingRules = false;
-        Assert.AreEqual(original.Rendering, vm.ApplyTo(original).Rendering);
-        Assert.IsFalse(JsonSerializer.Deserialize<PersistedRenderingSettings>("{}")!.ToModel().UseClientRenderingRules);
+        Assert.AreEqual(original.Rendering, session.Current.Rendering);
+        Assert.IsTrue(JsonSerializer.Deserialize<PersistedRenderingSettings>("{}")!.ToModel().UseClientRenderingRules);
+        Assert.IsFalse(JsonSerializer.Deserialize<PersistedRenderingSettings>(
+            """{"UseClientRenderingRules":false}""")!.ToModel().UseClientRenderingRules);
     }
 }

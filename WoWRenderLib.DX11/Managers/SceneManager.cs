@@ -26,13 +26,6 @@ using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Managers
 {
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct WrathFogCB
-    {
-        public Vector4 Parameters; // scale, bias, rate, enabled
-        public Vector4 Color;
-    }
-
     public partial class SceneManager : IDisposable
     {
         private readonly ComPtr<ID3D11Device> _device;
@@ -93,6 +86,7 @@ namespace WoWRenderLib.DX11.Managers
         public bool RenderM2 { get; set; } = true;
         public bool RenderParticles { get; set; } = true;
         public bool DisableScreenGlow { get; set; }
+        public bool RenderFog { get; set; } = true;
         public bool EnableClientGlow { get; set; }
         public bool EnableDayNightSkyColors { get; set; }
         public int SkyCloudLod { get; set; }
@@ -765,18 +759,6 @@ namespace WoWRenderLib.DX11.Managers
             return batch;
         }
 
-        private static WrathFogCB CreateWrathFogConstants(Wrath335FogState fog)
-        {
-            var width = MathF.Max(fog.EndDistance - fog.StartDistance,
-                Wrath335OutdoorFogEvaluator.MinimumShaderFogWidth);
-            return new WrathFogCB
-            {
-                Parameters = new Vector4(-1f / width,
-                    fog.EndDistance / width, fog.Rate, 1f),
-                Color = new Vector4(Wrath335InteriorFog.UnpackColor(fog.Color), 1f)
-            };
-        }
-
         private WmoSceneViewerResult LocateSceneViewerWmos(Vector3 eyeWorld,
             ref float? viewerTerrainRayLimit) =>
             _wmoSceneViewerQuery.Locate(SceneObjects, wmoInstances,
@@ -1112,7 +1094,7 @@ namespace WoWRenderLib.DX11.Managers
                         primaryInteriorFogWmo = primaryViewerWmo;
                     }
                 }
-                fogCB = CreateWrathFogConstants(outdoorFogState.Value);
+                fogCB = WorldFogConstants.Create(outdoorFogState.Value, RenderFog);
                 _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
                     ref Unsafe.NullRef<Box>(), ref fogCB, 0, 0);
                 ConstantBufferUpdates++;
@@ -1729,7 +1711,7 @@ namespace WoWRenderLib.DX11.Managers
                                 // MOMT flag 0x4 disables culling for this material.
                                 // Transition walls frequently rely on both faces being drawn.
                                 var materialFlags = wmo.preppedMats[batch.materialIndex].Flags;
-                                var twoSided = (materialFlags & (uint)WmoMaterialFlags.two_sided) != 0;
+                                var twoSided = (materialFlags & (uint)WmoMaterialFlags.TwoSided) != 0;
                                 if (twoSided != lastWmoTwoSided)
                                 {
                                     _deviceContext.RSSetState(twoSided
@@ -1774,7 +1756,7 @@ namespace WoWRenderLib.DX11.Managers
                                     if (selectedFog != boundInteriorFog)
                                     {
                                         var batchFogCB = selectedFog.HasValue
-                                            ? CreateWrathFogConstants(selectedFog.Value)
+                                            ? WorldFogConstants.Create(selectedFog.Value, RenderFog)
                                             : fogCB;
                                         _deviceContext.UpdateSubresource(wrathFogConstantBuffer, 0,
                                             ref Unsafe.NullRef<Box>(), ref batchFogCB, 0, 0);

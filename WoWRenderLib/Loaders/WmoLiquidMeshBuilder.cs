@@ -1,4 +1,6 @@
 using System.Numerics;
+using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
+using HeaderFlags = WoWLib.Formats.WMO.Root.Chunks.HeaderFlags;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.Loaders;
@@ -62,9 +64,9 @@ public static class WmoLiquidMeshBuilder
             typeId = 1;
             material = catalog.Resolve(typeId, 0);
         }
-        var isInterior = !(((input.GroupFlags & 0x48) != 0 &&
-            (input.MogiFlags & 0x48) != 0) || (material.WmoTypeFlags & 0x200) != 0);
-        if (isInterior && (input.RootFlags & 0x4) == 0 &&
+        var isInterior = !(((input.GroupFlags & (uint)(GroupFlags.Exterior | GroupFlags.ExteriorLit)) != 0 &&
+            (input.MogiFlags & (uint)(GroupFlags.Exterior | GroupFlags.ExteriorLit)) != 0) || (material.WmoTypeFlags & 0x200) != 0);
+        if (isInterior && (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) == 0 &&
             input.MaterialId >= input.MaterialCount)
             return ParsedWorldLiquid.Empty;
         if (isInterior && typeId < 21 && typeId > 0 && ((typeId - 1) & 3) == 0 &&
@@ -81,9 +83,9 @@ public static class WmoLiquidMeshBuilder
         var vertices = new List<WorldLiquidVertex>(input.Heights.Length);
         var authoredUvs = material.WmoVertexFormat == 1 &&
             input.AuthoredUvs.Length == input.Heights.Length;
-        var modernMagmaUvs = (input.RootFlags & 0x4) != 0 && typeId == 19 &&
+        var modernMagmaUvs = (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && typeId == 19 &&
             input.AuthoredUvs.Length == input.Heights.Length;
-        var modernPlanarUvs = (input.RootFlags & 0x4) != 0 && !modernMagmaUvs;
+        var modernPlanarUvs = (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && !modernMagmaUvs;
         for (var row = 0; row < input.YVertices; row++)
         for (var column = 0; column < input.XVertices; column++)
         {
@@ -227,7 +229,7 @@ public static class WmoLiquidMeshBuilder
     public static ushort ResolveLiquidType(WmoLiquidInput input)
     {
         var raw = input.GroupLiquid;
-        if ((input.RootFlags & 0x4) == 0)
+        if ((input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) == 0)
             raw = raw == 15 ? 0 : raw + 1;
         if (raw is > 0 and < 21)
             return LegacyType(raw, input.GroupFlags);
@@ -241,7 +243,7 @@ public static class WmoLiquidMeshBuilder
 
     private static ushort LegacyType(uint raw, uint groupFlags) => ((raw - 1) & 3) switch
     {
-        0 => (ushort)((groupFlags & 0x80000) != 0 ? 14 : 13),
+        0 => (ushort)((groupFlags & (uint)GroupFlags.Ocean) != 0 ? 14 : 13),
         1 => 14,
         2 => 19,
         _ => 20

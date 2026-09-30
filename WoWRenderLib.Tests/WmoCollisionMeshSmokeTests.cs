@@ -70,7 +70,9 @@ public sealed class WmoCollisionMeshSmokeTests
                 NFaces = 2, FaceStart = 1, PlaneDist = 3.5f }
         ];
         WoWLib.Formats.WMO.Group.Chunks.SmoPoly.Data[] polys =
-        [new() { Flags = 0x80 }, new() { Flags = 0x28 }];
+        [new() { Flags = WoWLib.Formats.WMO.Group.Chunks.PolyFlags.CollideHit },
+         new() { Flags = WoWLib.Formats.WMO.Group.Chunks.PolyFlags.Collision |
+                         WoWLib.Formats.WMO.Group.Chunks.PolyFlags.Render }];
         ushort[] indices = [0, 1, 2, 3, 4, 5];
         ushort[] references = [1, 1, 0];
 

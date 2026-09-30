@@ -7,7 +7,7 @@ namespace WTEditor.Avalonia.Services;
 
 public sealed class PersistedRenderingSettings
 {
-    public bool UseClientRenderingRules { get; set; }
+    public bool UseClientRenderingRules { get; set; } = true;
     public bool IsForegroundFrameRateLimitEnabled { get; set; }
     public bool IsForegroundFrameRateLimitInitialized { get; set; }
     public int ViewportFrameRateLimit { get; set; } = 60;
@@ -34,7 +34,24 @@ public sealed class PersistedRenderingSettings
     public bool ShowWmoCollisionMesh { get; set; }
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
+    public bool RenderFog { get; set; }
+    public bool EditorDisableScreenGlow { get; set; }
     public bool DisableScreenGlow { get; set; }
+    // Client EffectsPanelOptions defaults to the documented Ultra values.
+    public int ClientRenderingQuality { get; set; } = 6;
+    public int TerrainMip { get; set; } = 1;
+    public float ParticleDensity { get; set; } = 1f;
+    public float EnvironmentDetail { get; set; } = 1.5f;
+    public int GroundEffectDensity { get; set; } = 64;
+    public int GroundEffectDist { get; set; } = 140;
+    public int BaseMip { get; set; } = 1;
+    public int ExtShadowQuality { get; set; } = 4;
+    public int TextureFilteringMode { get; set; } = 5;
+    public int WeatherDensity { get; set; } = 3;
+    public int ComponentTextureLevel { get; set; } = 9;
+    public bool Specular { get; set; } = true;
+    public bool FfxDeath { get; set; } = true;
+    public bool ProjectedTextures { get; set; } = true;
     public int SkyCloudLod { get; set; }
     public float WrathFarClip { get; set; } = RenderingConfiguration.DefaultWrathFarClip;
     public bool WrathFarClipOverride { get; set; }
@@ -72,7 +89,23 @@ public sealed class PersistedRenderingSettings
         ShowWmoCollisionMesh = ShowWmoCollisionMesh,
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
+        RenderFog = RenderFog,
+        EditorDisableScreenGlow = EditorDisableScreenGlow,
         DisableScreenGlow = DisableScreenGlow,
+        ClientRenderingQuality = ClientRenderingQuality,
+        TerrainMip = TerrainMip,
+        ParticleDensity = ParticleDensity,
+        EnvironmentDetail = EnvironmentDetail,
+        GroundEffectDensity = GroundEffectDensity,
+        GroundEffectDist = GroundEffectDist,
+        BaseMip = BaseMip,
+        ExtShadowQuality = ExtShadowQuality,
+        TextureFilteringMode = TextureFilteringMode,
+        WeatherDensity = WeatherDensity,
+        ComponentTextureLevel = ComponentTextureLevel,
+        Specular = Specular,
+        FfxDeath = FfxDeath,
+        ProjectedTextures = ProjectedTextures,
         SkyCloudLod = SkyCloudLod,
         WrathFarClip = WrathFarClip,
         WrathFarClipOverride = WrathFarClipOverride,
@@ -115,7 +148,23 @@ public sealed class PersistedRenderingSettings
         ShowWmoCollisionMesh = rendering.ShowWmoCollisionMesh,
         RenderM2 = rendering.RenderM2,
         RenderParticles = rendering.RenderParticles,
+        RenderFog = rendering.RenderFog,
+        EditorDisableScreenGlow = rendering.EditorDisableScreenGlow,
         DisableScreenGlow = rendering.DisableScreenGlow,
+        ClientRenderingQuality = rendering.ClientRenderingQuality,
+        TerrainMip = rendering.TerrainMip,
+        ParticleDensity = rendering.ParticleDensity,
+        EnvironmentDetail = rendering.EnvironmentDetail,
+        GroundEffectDensity = rendering.GroundEffectDensity,
+        GroundEffectDist = rendering.GroundEffectDist,
+        BaseMip = rendering.BaseMip,
+        ExtShadowQuality = rendering.ExtShadowQuality,
+        TextureFilteringMode = rendering.TextureFilteringMode,
+        WeatherDensity = rendering.WeatherDensity,
+        ComponentTextureLevel = rendering.ComponentTextureLevel,
+        Specular = rendering.Specular,
+        FfxDeath = rendering.FfxDeath,
+        ProjectedTextures = rendering.ProjectedTextures,
         SkyCloudLod = rendering.SkyCloudLod,
         WrathFarClip = rendering.WrathFarClip,
         WrathFarClipOverride = rendering.WrathFarClipOverride,

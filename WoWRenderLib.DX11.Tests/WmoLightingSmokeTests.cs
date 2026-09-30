@@ -1,4 +1,8 @@
 using System.Numerics;
+using WoWLib;
+using WoWLib.Formats.WMO.Group;
+using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
+using HeaderFlags = WoWLib.Formats.WMO.Root.Chunks.HeaderFlags;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -23,7 +27,9 @@ public sealed class WmoLightingSmokeTests
             30, 20, 10, 255, 0, 0, 0, 0
         ];
 
-        var colors = WMOLoader.ReadVertexColorChunks(groupBytes, 2);
+        using var body = WMOGroupBody.ForVersion(Expansion.Wotlk);
+        body.Read(new byte[68].Concat(groupBytes).ToArray());
+        var colors = WMOLoader.ReadVertexColorLayers(body, 2);
 
         Assert.AreEqual(new Vector4(0f, 0f, 0f, 1f), colors[0][0]);
         Assert.AreEqual(new Vector4(16f / 255f, 8f / 255f, 4f / 255f, 128f / 255f), colors[0][1]);
@@ -48,8 +54,10 @@ public sealed class WmoLightingSmokeTests
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(106, 4), 0.25f);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(110, 4), 0.75f);
 
-        var colors = WMOLoader.ReadVertexColorChunks(bytes, 1);
-        var uvs = WMOLoader.ReadTextureCoordinateChunks(bytes, 1);
+        using var body = WMOGroupBody.ForVersion(Expansion.Wotlk);
+        body.Read(bytes[8..]);
+        var colors = WMOLoader.ReadVertexColorLayers(body, 1);
+        var uvs = WMOLoader.ReadTextureCoordinateSets(body, 1);
         Assert.AreEqual(new Vector4(56f / 255f, 34f / 255f, 12f / 255f, 128f / 255f), colors[0][0]);
         Assert.AreEqual(new Vector2(0.25f, 0.75f), uvs[0][0]);
     }
@@ -69,8 +77,73 @@ public sealed class WmoLightingSmokeTests
             (byte)'V', (byte)'C', (byte)'O', (byte)'M', 8, 0, 0, 0,
             3, 2, 1, 255, 9, 8, 7, 255
         ];
-        var colors = WMOLoader.ReadVertexColorChunks(chunk, 1);
+        using var body = WMOGroupBody.ForVersion(Expansion.Wotlk);
+        body.Read(new byte[68].Concat(chunk).ToArray());
+        var colors = WMOLoader.ReadVertexColorLayers(body, 1);
         Assert.AreEqual(new Vector4(1f / 255f, 2f / 255f, 3f / 255f, 1f), colors[0][0]);
+    }
+
+    [DataTestMethod]
+    [DataRow(Expansion.Wotlk)]
+    [DataRow(Expansion.Shadowlands)]
+    [DataRow(Expansion.Dragonflight)]
+    public void DecodedStreamsKeepAllUvsAndCopyColorsBeforeLegacyFixup(Expansion expansion)
+    {
+        using var body = WMOGroupBody.ForVersion(expansion);
+        using var layer = new WoWLib.Vector<WoWLib.Formats.Common.CImVector>();
+        using var color = new WoWLib.Formats.Common.CImVector { R = 100, G = 50, B = 25, A = 128 };
+        layer.Add(color);
+        body.AppendVertexColorLayer(layer);
+        for (var set = 0; set < 4; set++)
+        {
+            using var coordinates = new WoWLib.Vector<WoWLib.Formats.Common.C2Vector>();
+            using var coordinate = new WoWLib.Formats.Common.C2Vector { X = set + 0.25f, Y = set + 0.75f };
+            coordinates.Add(coordinate);
+            body.AppendTexcoordSet(coordinates);
+        }
+
+        var colors = WMOLoader.ReadVertexColorLayers(body, 1);
+        var uvs = WMOLoader.ReadTextureCoordinateSets(body, 1);
+        WMOLoader.LegacyFixColorVertexAlpha(colors[0], 1, 0);
+        using var original = body.VertexColorLayer(0);
+        Assert.AreEqual((byte)100, original![0].R);
+        for (var set = 0; set < 4; set++)
+            Assert.AreEqual(new Vector2(set + 0.25f, set + 0.75f), uvs[set][0]);
+    }
+
+    [TestMethod]
+    public void MissingOrShortDecodedStreamsKeepFallbackSlots()
+    {
+        using var body = WMOGroupBody.ForVersion(Expansion.Wotlk);
+        using var layer = new WoWLib.Vector<WoWLib.Formats.Common.CImVector>();
+        using var color = new WoWLib.Formats.Common.CImVector { R = 100 };
+        layer.Add(color);
+        body.AppendVertexColorLayer(layer);
+        Assert.IsNull(WMOLoader.ReadVertexColorLayers(body, 2)[0]);
+        var uvs = WMOLoader.ReadTextureCoordinateSets(body, 2);
+        Assert.AreEqual(Vector2.Zero, WMOLoader.GetTextureCoordinate(uvs, 0, 0));
+        Assert.AreEqual(new Vector2(0.2f, 0.8f),
+            WMOLoader.GetTextureCoordinate(uvs, 1, 0, new Vector2(0.2f, 0.8f)));
+    }
+
+    [TestMethod]
+    public void DragonflightMoc2FillsOnlyMissingSecondMocvLayer()
+    {
+        using var body = WMOGroupBody.ForVersion(Expansion.Dragonflight);
+        var modern = (WMOGroupBodyDragonflightPlus)body;
+        using var moc2Color = new WoWLib.Formats.Common.CImVector { R = 90, A = 255 };
+        modern.VertexColors2.Add(moc2Color);
+        var colors = WMOLoader.ReadVertexColorLayers(body, 2);
+        Assert.AreEqual(new Vector4(90f / 255f, 0, 0, 1), colors[1][0]);
+        Assert.AreEqual(Vector4.Zero, colors[1][1]);
+
+        using var layer = new WoWLib.Vector<WoWLib.Formats.Common.CImVector>();
+        using var mocvColor = new WoWLib.Formats.Common.CImVector { G = 120, A = 255 };
+        layer.Add(mocvColor);
+        body.AppendVertexColorLayer(layer);
+        body.AppendVertexColorLayer(layer);
+        Assert.AreEqual(new Vector4(0, 120f / 255f, 0, 1),
+            WMOLoader.ReadVertexColorLayers(body, 1)[1][0]);
     }
 
     [TestMethod]
@@ -86,7 +159,7 @@ public sealed class WmoLightingSmokeTests
         Assert.AreEqual(1f, colors[1].X); // 128 + (255 * 128 >> 6), then half, clamped
 
         var untouched = new[] { Vector4.One };
-        WMOLoader.LegacyFixColorVertexAlpha(untouched, 0, 0x8);
+        WMOLoader.LegacyFixColorVertexAlpha(untouched, 0, HeaderFlags.DoNotFixVertexColorAlpha);
         Assert.AreEqual(Vector4.One, untouched[0]);
     }
 
@@ -191,7 +264,7 @@ public sealed class WmoLightingSmokeTests
         } };
 
         WMOLoader.AttenuateTransitionColors(colors, positions, 0, 0, 1,
-            polygon, portals, references, [0x48u]);
+            polygon, portals, references, [GroupFlags.Exterior | GroupFlags.ExteriorLit]);
 
         Assert.AreEqual(1f, colors[0].W);
         Assert.AreEqual(101f / 255f, colors[1].W);
@@ -200,8 +273,8 @@ public sealed class WmoLightingSmokeTests
         Assert.AreEqual(50f / 255f, colors[1].X);
 
         colors.AsSpan().Clear();
-        WMOLoader.AttenuateTransitionColors(colors, positions, 0x1, 0, 1,
-            polygon, portals, references, [0x48u]);
+        WMOLoader.AttenuateTransitionColors(colors, positions, HeaderFlags.DoNotAttenuateVertices, 0, 1,
+            polygon, portals, references, [GroupFlags.Exterior | GroupFlags.ExteriorLit]);
         Assert.AreEqual(Vector4.Zero, colors[0]);
     }
 

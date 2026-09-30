@@ -154,7 +154,7 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
             }
         }
         token.ThrowIfCancellationRequested();
-        var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
+        var scale = (placement.Flags & Formats.Common.MapObjDefFlags.HasScale) != 0
             ? placement.Scale / 1024f : 1f;
         return new(ToVector(placement.Position), ToVector(placement.Rotation), scale, groups, missing);
     }
@@ -195,7 +195,7 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
         }
 
         token.ThrowIfCancellationRequested();
-        var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
+        var scale = (placement.Flags & Formats.Common.MapObjDefFlags.HasScale) != 0
             ? placement.Scale / 1024f
             : 1f;
         return new(ToVector(placement.Position), ToVector(placement.Rotation), scale, groups, missing);
@@ -227,11 +227,11 @@ public sealed class WmoMinimapLoader : IWmoMinimapLoader
         using var table = Table.Open(tableName, lineage);
         table.Read(CascFileReader.ReadFile(WmoMinimapTextureTableFileDataId));
 
-        var wmoIdColumn = Db2Schema.RequireColumn(table, tableName, "wmoid");
-        var groupColumn = Db2Schema.RequireColumn(table, tableName, "group_num");
-        var blockXColumn = Db2Schema.RequireColumn(table, tableName, "block_x");
-        var blockYColumn = Db2Schema.RequireColumn(table, tableName, "block_y");
-        var fileDataIdColumn = Db2Schema.RequireColumn(table, tableName, "file_data_id");
+        var wmoIdColumn = Db2Schema.RequireColumn(table, tableName, "WMOID");
+        var groupColumn = Db2Schema.RequireColumn(table, tableName, "GroupNum");
+        var blockXColumn = Db2Schema.RequireColumn(table, tableName, "BlockX");
+        var blockYColumn = Db2Schema.RequireColumn(table, tableName, "BlockY");
+        var fileDataIdColumn = Db2Schema.RequireColumn(table, tableName, "FileDataID");
         var records = new Dictionary<uint, List<WmoMinimapTextureRecord>>();
 
         for (var row = 0UL; row < table.RowCount; row++)

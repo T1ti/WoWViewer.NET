@@ -60,7 +60,7 @@ public partial class PlacementInformationViewModel : ViewModelBase
         try
         {
             HasWorldModelPlacement = placement.Kind == MapPlacementKind.Modf;
-            CanEditDoodadSet = (placement.Flags & (ushort)MapObjDefFlags.use_sets_from_mwds) == 0;
+            CanEditDoodadSet = (placement.Flags & (ushort)MapObjDefFlags.UseSetsFromMwds) == 0;
             DoodadSetOptions = doodadSets?.Select((name, index) =>
                 new PlacementOptionViewModel(
                     (ushort)index,

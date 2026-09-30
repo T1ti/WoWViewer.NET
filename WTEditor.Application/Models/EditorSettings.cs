@@ -28,10 +28,10 @@ public sealed record ClientConfiguration
 public sealed record RenderingConfiguration
 {
     public const int MaximumSkyCloudLod = 3;
-    public const float DefaultWrathFarClip = 350f;
+    public const float DefaultWrathFarClip = 1277f;
     public const float MinimumWrathFarClip = 183.33333f;
     public const float MaximumWrathFarClip = 1583.3334f;
-    public bool UseClientRenderingRules { get; init; }
+    public bool UseClientRenderingRules { get; init; } = true;
     public bool IsForegroundFrameRateLimitEnabled { get; init; }
     public bool IsForegroundFrameRateLimitInitialized { get; init; }
     public int ViewportFrameRateLimit { get; init; } = 60;
@@ -54,7 +54,24 @@ public sealed record RenderingConfiguration
     public bool ShowWmoCollisionMesh { get; init; }
     public bool RenderM2 { get; init; } = true;
     public bool RenderParticles { get; init; } = true;
+    public bool RenderFog { get; init; }
+    public bool EditorDisableScreenGlow { get; init; }
     public bool DisableScreenGlow { get; init; }
+    // Client EffectsPanelOptions defaults to the documented Ultra values.
+    public int ClientRenderingQuality { get; init; } = 6;
+    public int TerrainMip { get; init; } = 1;
+    public float ParticleDensity { get; init; } = 1f;
+    public float EnvironmentDetail { get; init; } = 1.5f;
+    public int GroundEffectDensity { get; init; } = 64;
+    public int GroundEffectDist { get; init; } = 140;
+    public int BaseMip { get; init; } = 1;
+    public int ExtShadowQuality { get; init; } = 4;
+    public int TextureFilteringMode { get; init; } = 5;
+    public int WeatherDensity { get; init; } = 3;
+    public int ComponentTextureLevel { get; init; } = 9;
+    public bool Specular { get; init; } = true;
+    public bool FfxDeath { get; init; } = true;
+    public bool ProjectedTextures { get; init; } = true;
     public int SkyCloudLod { get; init; }
     public float WrathFarClip { get; init; } = DefaultWrathFarClip;
     public bool WrathFarClipOverride { get; init; }
@@ -89,6 +106,17 @@ public sealed record RenderingConfiguration
                 TerrainLodTransitionPixels, 0f, 256f, defaults.TerrainLodTransitionPixels),
             TileLoadingDistance = Math.Clamp(TileLoadingDistance, 0, 32),
             SkyCloudLod = Math.Clamp(SkyCloudLod, 0, MaximumSkyCloudLod),
+            ClientRenderingQuality = Math.Clamp(ClientRenderingQuality, 1, 6),
+            TerrainMip = Math.Clamp(TerrainMip, 0, 1),
+            ParticleDensity = ClampFinite(ParticleDensity, 0.1f, 1f, defaults.ParticleDensity),
+            EnvironmentDetail = ClampFinite(EnvironmentDetail, 0.5f, 1.5f, defaults.EnvironmentDetail),
+            GroundEffectDensity = Math.Clamp(GroundEffectDensity, 16, 64),
+            GroundEffectDist = Math.Clamp(GroundEffectDist, 70, 140),
+            BaseMip = Math.Clamp(BaseMip, 0, 1),
+            ExtShadowQuality = Math.Clamp(ExtShadowQuality, 0, 4),
+            TextureFilteringMode = Math.Clamp(TextureFilteringMode, 0, 5),
+            WeatherDensity = Math.Clamp(WeatherDensity, 0, 3),
+            ComponentTextureLevel = Math.Clamp(ComponentTextureLevel, 8, 9),
             WrathFarClip = ClampFinite(WrathFarClip, MinimumWrathFarClip,
                 MaximumWrathFarClip, DefaultWrathFarClip),
             WorldLightingTime = Math.Clamp(WorldLightingTime, 0, 2879),

@@ -1,15 +1,17 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using WoWRenderLib.Structs;
+using MaterialFlags = WoWLib.Formats.WMO.Root.Chunks.MaterialFlags;
+using HeaderFlags = WoWLib.Formats.WMO.Root.Chunks.HeaderFlags;
 
 namespace WoWRenderLib.DX11.Renderer;
 
 internal static class WmoMaterialPolicy
 {
     internal const byte TransitionBatchCategory = 0;
-    private const uint SidnFlag = 0x10;
-    private const uint UnfoggedFlag = 0x2;
-    private const ushort UnifiedLightingFlag = 0x2;
+    private const uint SidnFlag = (uint)MaterialFlags.Sidn;
+    private const uint UnfoggedFlag = (uint)MaterialFlags.Unfogged;
+    private const ushort UnifiedLightingFlag = (ushort)HeaderFlags.UseUnifiedRenderPath;
 
     // CMapObj::UnifiedRender bypasses F_UNFOG for batches after the
     // transparent range. Its opaque exterior path explicitly installs the
@@ -64,16 +66,16 @@ internal static class WmoMaterialPolicy
         uint groupFlags, bool hasMocv, byte category, uint materialFlags)
     {
         if (!legacyClient)
-            return (materialFlags & 0x1) != 0 ? 0 : -1;
+            return (materialFlags & (uint)MaterialFlags.Unlit) != 0 ? 0 : -1;
 
-        var unified = (rootFlags & 0x2) != 0;
-        var unlit = (materialFlags & 0x1) != 0;
-        var window = (materialFlags & 0x20) != 0;
+        var unified = (rootFlags & UnifiedLightingFlag) != 0;
+        var unlit = (materialFlags & (uint)MaterialFlags.Unlit) != 0;
+        var window = (materialFlags & (uint)MaterialFlags.Window) != 0;
         if (category == 0) // Transition first pass.
             return unified && unlit ? 0 : window ? 2 : 1;
 
         if (unified)
-            return (groupFlags & 0x48) != 0 ? (unlit ? 0 : 1) : (window ? 2 : 3);
+            return (groupFlags & Wrath335PortalFogDistance.ExteriorGroupFlags) != 0 ? (unlit ? 0 : 1) : (window ? 2 : 3);
 
         if (!hasMocv)
             return unlit ? 0 : 1;
@@ -151,8 +153,8 @@ internal static class WmoMaterialPolicy
     // WMO material flags 0x40 and 0x80 clamp the U and V axes respectively.
     // The shared sampler array is indexed by (wrapU << 1) | wrapV.
     internal static int SamplerIndex(uint materialFlags) =>
-        ((materialFlags & 0x40) == 0 ? 2 : 0) |
-        ((materialFlags & 0x80) == 0 ? 1 : 0);
+        ((materialFlags & (uint)MaterialFlags.ClampS) == 0 ? 2 : 0) |
+        ((materialFlags & (uint)MaterialFlags.ClampT) == 0 ? 1 : 0);
 }
 
 /// <summary>Retains frame SIDN colors for each loaded material array until world time changes.</summary>

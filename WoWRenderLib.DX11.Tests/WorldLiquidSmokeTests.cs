@@ -334,7 +334,7 @@ public sealed class WorldLiquidSmokeTests
     }
 
     [TestMethod]
-    public void WowlibLiquidDb2ColumnsUseExactSchemaNames()
+    public void WowlibLiquidDb2ColumnsUseWoWDBDefsNamesAndRejectUnknownColumns()
     {
         using var version = new ClientVersion(11, 0, 0, 0, ClientFlavor.Retail);
         using var table = Table.Open("LiquidTypeXTexture", version);
@@ -342,22 +342,23 @@ public sealed class WorldLiquidSmokeTests
         var liquidTypeColumn = Db2Schema.RequireColumn(
             table,
             "LiquidTypeXTexture",
-            "liquid_type_id");
+            "LiquidTypeID");
         var fileDataColumn = Db2Schema.RequireColumn(
             table,
             "LiquidTypeXTexture",
-            "file_data_id");
+            "FileDataID");
         var orderColumn = Db2Schema.RequireColumn(
             table,
             "LiquidTypeXTexture",
-            "order_index");
+            "OrderIndex");
 
-        Assert.AreEqual("liquid_type_id", table.ColumnInfo(liquidTypeColumn).Name);
-        Assert.AreEqual("file_data_id", table.ColumnInfo(fileDataColumn).Name);
-        Assert.AreEqual("order_index", table.ColumnInfo(orderColumn).Name);
+        Assert.AreEqual("LiquidTypeID", table.ColumnInfo(liquidTypeColumn).DbdName);
+        Assert.AreEqual("FileDataID", table.ColumnInfo(fileDataColumn).DbdName);
+        Assert.AreEqual("OrderIndex", table.ColumnInfo(orderColumn).DbdName);
+        Assert.AreEqual(liquidTypeColumn, table.ColumnIndex("liquid_type_id"));
         var exception = Assert.ThrowsException<InvalidDataException>(() =>
-            Db2Schema.RequireColumn(table, "LiquidTypeXTexture", "LiquidTypeID"));
-        StringAssert.Contains(exception.Message, "liquid_type_id");
+            Db2Schema.RequireColumn(table, "LiquidTypeXTexture", "MissingLiquidTypeID"));
+        StringAssert.Contains(exception.Message, "LiquidTypeID");
     }
 
     [TestMethod]

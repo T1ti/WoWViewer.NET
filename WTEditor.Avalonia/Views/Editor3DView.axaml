@@ -131,34 +131,47 @@
             BorderBrush="#526170" BorderThickness="1" ZIndex="30">
       <StackPanel Orientation="Horizontal" Spacing="5">
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderTerrain}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show or hide terrain in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Terrain}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderLiquid}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show or hide MH2O world liquids in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Smooth}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderWorldModels}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show or hide WMO buildings in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Wmo}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderDoodads}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show or hide M2 doodads in this world viewport">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Doodad}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding AnimateModels}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Play or pause M2 animations and particle effects">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Animation}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding RenderParticles}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show or hide M2 particles; hidden particles are not calculated">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Particles}"/>
         </ToggleButton>
+        <ToggleButton x:Name="ViewportFogToggle" Classes="viewport-tool" IsChecked="{Binding RenderFog}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
+                      ToolTip.Tip="Show or hide fog in this world viewport">
+          <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Fog}"/>
+        </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainGrid}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show terrain chunk boundaries in white and ADT boundaries in red">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Grid}"/>
         </ToggleButton>
         <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainWireframe}"
+                      IsEnabled="{Binding IsEditorRenderMode}"
                       ToolTip.Tip="Show the terrain triangles; grid lines take priority when both overlays are enabled">
           <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Wireframe}"/>
         </ToggleButton>
@@ -175,31 +188,38 @@
                           VerticalAlignment="Top">
                     <StackPanel Spacing="5">
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowBoundingBoxes}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Show bounding boxes">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.BoundingBox}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowBoundingSpheres}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Show bounding spheres">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.BoundingSphere}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowWmoCollisionMesh}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Show invisible WMO collision mesh">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.CollisionMesh}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding WmoPortalCullingEnabled}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="WMO portal culling (experimental for this client build)">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Portal}"/>
                       </ToggleButton>
                       <Border Height="1" Margin="3" Background="#526170"/>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainTexture}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Show terrain texture; turn off to inspect vertex color">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Texture}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding ShowTerrainVertexColor}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Show terrain vertex color; turn off to view unmodified terrain texture">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Colour}"/>
                       </ToggleButton>
                       <ToggleButton Classes="viewport-tool" IsChecked="{Binding DisableScreenGlow}"
+                                    IsEnabled="{Binding IsEditorRenderMode}"
                                     ToolTip.Tip="Disable full-screen glow (3.3.5 ffxGlow)">
                         <PathIcon Width="16" Height="16" Data="{x:Static icons:EditorIcons.Glow}"/>
                       </ToggleButton>
@@ -213,7 +233,7 @@
                   <ScrollViewer Grid.Column="1" MaxHeight="620" VerticalScrollBarVisibility="Auto">
                   <StackPanel Spacing="10">
                     <TextBlock Text="ADVANCED RENDERING" Foreground="#FFFFFF" FontWeight="SemiBold"/>
-                    <ToggleSwitch OffContent="Editor mode" OnContent="Client mode"
+                    <ToggleSwitch x:Name="ViewportRenderingModeToggle" OffContent="Editor mode" OnContent="Client mode"
                                   IsChecked="{Binding UseClientRenderingRules}"/>
                     <TextBlock Text="Navigation" Foreground="#9FB4C6" FontWeight="SemiBold"/>
                     <Grid ColumnDefinitions="*,120" RowDefinitions="Auto" RowSpacing="6">
@@ -233,11 +253,13 @@
                                      Minimum="100" Maximum="1000000" Increment="500"/>
                       <TextBlock Grid.Row="2" Text="Tile loading radius" Foreground="#D7E2EC" VerticalAlignment="Center"/>
                       <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding TileLoadingDistance}"
+                                     IsEnabled="{Binding IsEditorRenderMode}"
                                      Minimum="0" Maximum="32" Increment="1" FormatString="0"/>
                     </Grid>
                     <Separator/>
                     <TextBlock Text="Level of detail" Foreground="#9FB4C6" FontWeight="SemiBold"/>
-                    <Grid ColumnDefinitions="*,160" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <Grid ColumnDefinitions="*,160" RowDefinitions="Auto,Auto" RowSpacing="6"
+                          IsEnabled="{Binding IsEditorRenderMode}">
                       <TextBlock Text="Animation distance" Foreground="#D7E2EC" VerticalAlignment="Center"
                                  ToolTip.Tip="Maximum animation distance as a percentage of model distance"/>
                       <Grid Grid.Column="1" ColumnDefinitions="*,38" ColumnSpacing="6">

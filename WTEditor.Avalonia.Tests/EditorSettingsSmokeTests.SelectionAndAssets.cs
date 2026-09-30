@@ -232,7 +232,9 @@ public sealed partial class EditorSettingsSmokeTests
         WriteMotvChunk(bytes, 0, (0.1f, 0.2f), (0.3f, 0.4f));
         WriteMotvChunk(bytes, 24, (0.5f, 0.6f), (0.7f, 0.8f));
 
-        var sets = WMOLoader.ReadTextureCoordinateChunks(bytes, 2);
+        using var body = WoWLib.Formats.WMO.Group.WMOGroupBody.ForVersion(WoWLib.Expansion.Wotlk);
+        body.Read(new byte[68].Concat(bytes).ToArray());
+        var sets = WMOLoader.ReadTextureCoordinateSets(body, 2);
 
         Assert.AreEqual(new Vector2(0.1f, 0.2f), sets[0][0]);
         Assert.AreEqual(new Vector2(0.3f, 0.4f), sets[0][1]);

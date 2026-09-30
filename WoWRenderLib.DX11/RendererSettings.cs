@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 public sealed class RendererSettings
 {
-    public bool UseClientRenderingRules { get; set; }
+    public bool UseClientRenderingRules { get; set; } = true;
     // Reference-noon colors from the 3.3.5 client lighting profile. They are
     // stored as linear RGB-style factors and serialized with the other
     // renderer settings so a future settings UI can edit them without a
@@ -48,7 +48,24 @@ public sealed class RendererSettings
     public bool ShowWmoCollisionMesh { get; set; }
     public bool RenderM2 { get; set; } = true;
     public bool RenderParticles { get; set; } = true;
+    public bool RenderFog { get; set; }
+    public bool EditorDisableScreenGlow { get; set; }
     public bool DisableScreenGlow { get; set; }
+    // Client EffectsPanelOptions defaults to the documented Ultra values.
+    public int ClientRenderingQuality { get; set; } = 6;
+    public int TerrainMip { get; set; } = 1;
+    public float ParticleDensity { get; set; } = 1f;
+    public float EnvironmentDetail { get; set; } = 1.5f;
+    public int GroundEffectDensity { get; set; } = 64;
+    public int GroundEffectDist { get; set; } = 140;
+    public int BaseMip { get; set; } = 1;
+    public int ExtShadowQuality { get; set; } = 4;
+    public int TextureFilteringMode { get; set; } = 5;
+    public int WeatherDensity { get; set; } = 3;
+    public int ComponentTextureLevel { get; set; } = 9;
+    public bool Specular { get; set; } = true;
+    public bool FfxDeath { get; set; } = true;
+    public bool ProjectedTextures { get; set; } = true;
     public int SkyCloudLod { get; set; }
     public float WrathFarClip { get; set; } = WoWRenderLib.Structs.Wrath335FarClip.CVarMaximum;
     public bool WrathFarClipOverride { get; set; }
@@ -82,7 +99,23 @@ public sealed class RendererSettings
         ShowWmoCollisionMesh = ShowWmoCollisionMesh,
         RenderM2 = RenderM2,
         RenderParticles = RenderParticles,
+        RenderFog = RenderFog,
+        EditorDisableScreenGlow = EditorDisableScreenGlow,
         DisableScreenGlow = DisableScreenGlow,
+        ClientRenderingQuality = ClientRenderingQuality,
+        TerrainMip = TerrainMip,
+        ParticleDensity = ParticleDensity,
+        EnvironmentDetail = EnvironmentDetail,
+        GroundEffectDensity = GroundEffectDensity,
+        GroundEffectDist = GroundEffectDist,
+        BaseMip = BaseMip,
+        ExtShadowQuality = ExtShadowQuality,
+        TextureFilteringMode = TextureFilteringMode,
+        WeatherDensity = WeatherDensity,
+        ComponentTextureLevel = ComponentTextureLevel,
+        Specular = Specular,
+        FfxDeath = FfxDeath,
+        ProjectedTextures = ProjectedTextures,
         SkyCloudLod = SkyCloudLod,
         WrathFarClip = WrathFarClip,
         WrathFarClipOverride = WrathFarClipOverride,

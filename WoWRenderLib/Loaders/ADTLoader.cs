@@ -55,10 +55,10 @@ public static class ADTLoader
         using var adt = Formats.ADT.ADT.ForVersion(fileSystem.Version);
         var wdtFlags = (Formats.WDT.Root.Chunks.MapHeaderFlags)wdt.Flags;
         var alphaFormat = (wdtFlags &
-            (Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_big_alpha |
-             Formats.WDT.Root.Chunks.MapHeaderFlags.adt_has_height_texturing)) != 0
-            ? Formats.ADT.AlphaFormat.highres_8bit
-            : Formats.ADT.AlphaFormat.lowres_4bit;
+            (Formats.WDT.Root.Chunks.MapHeaderFlags.AdtHasBigAlpha |
+             Formats.WDT.Root.Chunks.MapHeaderFlags.AdtHasHeightTexturing)) != 0
+            ? Formats.ADT.AlphaFormat.Highres8Bit
+            : Formats.ADT.AlphaFormat.Lowres4Bit;
         using var rootKey = fileSystem.Kind == StorageKind.Mpq && !string.IsNullOrWhiteSpace(files.RootAdtPath)
             ? new FileKey(files.RootAdtPath)
             : fileSystem.Kind == StorageKind.Mpq
@@ -172,8 +172,8 @@ public static class ADTLoader
             if (chunkIndex == 0)
                 parsed.startPos = vertices[0].Position;
 
-            var chunkFlags = (Formats.ADT.Chunks.MapChunkFlags)flags;
-            var highResolutionHoles = (chunkFlags & Formats.ADT.Chunks.MapChunkFlags.high_res_holes) != 0;
+            var chunkFlags = flags;
+            var highResolutionHoles = (chunkFlags & Formats.ADT.Chunks.MapChunkFlags.HighResHoles) != 0;
             var vertexBase = chunkIndex * VerticesPerChunk;
             for (var holeRow = 0; holeRow < HoleRows; holeRow++)
             {
@@ -461,8 +461,8 @@ public static class ADTLoader
                 modelFilenames,
                 modelNameOffsets,
                 placement.NameId,
-                placement.Flags,
-                (uint)Formats.Common.DoodadDefFlags.entry_is_fdid);
+                (uint)placement.Flags,
+                (uint)Formats.Common.DoodadDefFlags.EntryIsFdid);
             var position = ToVector3(placement.Position);
             var rotation = ToVector3(placement.Rotation);
             result[i] = new Doodad
@@ -472,7 +472,7 @@ public static class ADTLoader
                 scale = placement.Scale / PlacementScaleDenominator,
                 fileDataID = fileDataId,
                 uniqueID = placement.UniqueId,
-                flags = placement.Flags
+                flags = (ushort)placement.Flags
             };
         }
         return result;
@@ -496,8 +496,8 @@ public static class ADTLoader
                 wmoFilenames,
                 wmoNameOffsets,
                 placement.NameId,
-                placement.Flags,
-                (uint)Formats.Common.MapObjDefFlags.entry_is_fdid);
+                (uint)placement.Flags,
+                (uint)Formats.Common.MapObjDefFlags.EntryIsFdid);
             var position = ToVector3(placement.Position);
             var rotation = ToVector3(placement.Rotation);
             result[i] = new WorldModelBatch
@@ -506,7 +506,7 @@ public static class ADTLoader
                 rotation = rotation,
                 fileDataID = fileDataId,
                 uniqueID = placement.UniqueId,
-                flags = placement.Flags,
+                flags = (ushort)placement.Flags,
                 doodadSet = placement.DoodadSet,
                 nameSet = placement.NameSet,
                 clientViewerBounds = wrath335

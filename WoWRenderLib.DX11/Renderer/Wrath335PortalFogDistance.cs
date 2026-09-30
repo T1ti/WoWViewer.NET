@@ -14,7 +14,7 @@ internal static class Wrath335PortalFogDistance
     internal const float MaximumDistance = 25f;
     internal const int MaximumDepth = 3;
     internal const uint ExteriorGroupFlags =
-        (uint)(GroupFlags.exterior | GroupFlags.exterior_lit);
+        (uint)(GroupFlags.Exterior | GroupFlags.ExteriorLit);
     private const float DegenerateEdgeLengthSquared = 0.000001f;
 
     public static bool TryFind(in WorldModel wmo, int viewerGroupIndex,

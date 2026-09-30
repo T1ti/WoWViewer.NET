@@ -420,13 +420,13 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         if (_liquidTypeTable != null)
         {
             _hasLiquidTypeFlagsColumn = Db2Schema.TryColumn(
-                _liquidTypeTable, "flags", out _liquidTypeFlagsColumn);
+                _liquidTypeTable, "Flags", out _liquidTypeFlagsColumn);
             _hasLiquidTypeBasicClassColumn = Db2Schema.TryColumn(
-                _liquidTypeTable, "sound_bank", out _liquidTypeBasicClassColumn);
+                _liquidTypeTable, "SoundBank", out _liquidTypeBasicClassColumn);
             _hasLiquidTypeFloatColumn = Db2Schema.TryColumn(
-                _liquidTypeTable, "float", out _liquidTypeFloatColumn);
+                _liquidTypeTable, "Float", out _liquidTypeFloatColumn);
             _hasLiquidTypeIntColumn = Db2Schema.TryColumn(
-                _liquidTypeTable, "int", out _liquidTypeIntColumn);
+                _liquidTypeTable, "Int", out _liquidTypeIntColumn);
             // Vanilla/TBC LiquidType contains only id/name/flags/spell_id;
             // material_id and texture[] were introduced with the Wrath
             // schema.  Classic products report a legacy-looking major
@@ -438,18 +438,18 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                 _liquidTypeMaterialColumn = Db2Schema.RequireColumn(
                     _liquidTypeTable,
                     "LiquidType",
-                    "material_id");
+                    "MaterialID");
                 _liquidTypeTextureColumn = Db2Schema.RequireColumn(
                     _liquidTypeTable,
                     "LiquidType",
-                    "texture");
+                    "Texture");
                 _hasLiquidTypeFrameCountColumn = Db2Schema.TryColumn(
                     _liquidTypeTable,
-                    "frame_count_texture",
+                    "FrameCountTexture",
                     out _liquidTypeFrameCountColumn);
                 _hasLiquidTypeCoefficientColumn = Db2Schema.TryColumn(
                     _liquidTypeTable,
-                    "coefficient",
+                    "Coefficient",
                     out _liquidTypeCoefficientColumn);
                 _hasLiquidTypeMaterialColumn = true;
                 _hasLiquidTypeTextureColumn = true;
@@ -459,9 +459,9 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         if (_liquidMaterialTable != null)
         {
             var hasLvf = Db2Schema.TryColumn(
-                _liquidMaterialTable, "lvf", out _liquidMaterialLvfColumn);
+                _liquidMaterialTable, "LVF", out _liquidMaterialLvfColumn);
             var hasFlags = Db2Schema.TryColumn(
-                _liquidMaterialTable, "flags", out _liquidMaterialFlagsColumn);
+                _liquidMaterialTable, "Flags", out _liquidMaterialFlagsColumn);
             _hasLiquidMaterialColumns = hasLvf && hasFlags;
         }
 
@@ -470,15 +470,15 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             _liquidObjectTypeColumn = Db2Schema.RequireColumn(
                 _liquidObjectTable,
                 "LiquidObject",
-                "liquid_type_id");
+                "LiquidTypeID");
             _liquidObjectFlowDirectionColumn = Db2Schema.RequireColumn(
                 _liquidObjectTable,
                 "LiquidObject",
-                "flow_direction");
+                "FlowDirection");
             _liquidObjectFlowSpeedColumn = Db2Schema.RequireColumn(
                 _liquidObjectTable,
                 "LiquidObject",
-                "flow_speed");
+                "FlowSpeed");
         }
 
         if (_liquidTypeXTextureTable != null)
@@ -486,18 +486,18 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             _modernLiquidTypeColumn = Db2Schema.RequireColumn(
                 _liquidTypeXTextureTable,
                 "LiquidTypeXTexture",
-                "liquid_type_id");
+                "LiquidTypeID");
             _modernFileDataColumn = Db2Schema.RequireColumn(
                 _liquidTypeXTextureTable,
                 "LiquidTypeXTexture",
-                "file_data_id");
+                "FileDataID");
             _modernOrderColumn = Db2Schema.RequireColumn(
                 _liquidTypeXTextureTable,
                 "LiquidTypeXTexture",
-                "order_index");
+                "OrderIndex");
             _hasModernTypeColumn = Db2Schema.TryColumn(
                 _liquidTypeXTextureTable,
-                "type",
+                "Type",
                 out _modernTypeColumn);
         }
     }

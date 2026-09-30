@@ -22,6 +22,13 @@ internal readonly record struct WorldRenderingRules(
                 true, 0f, 0f);
         }
 
+        if (settings.UseClientRenderingRules)
+        {
+            return new(false, 1f, WorldViewportSettings.FallbackRenderDistance,
+                WorldViewportSettings.FallbackRenderDistance,
+                WorldViewportSettings.FallbackRenderDistance, false, 0f, 0f);
+        }
+
         return new(false, 1f,
             MathF.Max(settings.TerrainRenderDistance, settings.ModelRenderDistance),
             settings.TerrainRenderDistance, settings.ModelRenderDistance,

@@ -13,9 +13,9 @@ namespace WoWRenderLib.DX11.Renderer;
 /// </summary>
 public static class WmoPortalVisibility
 {
-    private const uint ExteriorFlag = (uint)GroupFlags.exterior;
-    private const uint ExteriorLightingFlag = (uint)GroupFlags.exterior_lit;
-    private const uint AlwaysDrawFlag = (uint)GroupFlags.always_draw;
+    private const uint ExteriorFlag = (uint)GroupFlags.Exterior;
+    private const uint ExteriorLightingFlag = (uint)GroupFlags.ExteriorLit;
+    private const uint AlwaysDrawFlag = (uint)GroupFlags.AlwaysDraw;
     private const int ClientPortalMaxDepth = 10;
     private const int ClientPortalMaxVertices = 12;
     private const float ClientPortalPlaneProximity = 0.01f;

@@ -98,6 +98,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _showWmoCollisionMesh;
     [ObservableProperty] private bool _renderDoodads;
     [ObservableProperty] private bool _renderParticles;
+    [ObservableProperty] private bool _renderFog;
     [ObservableProperty] private bool _animateModels;
     [ObservableProperty] private bool _wmoPortalCullingEnabled;
     [ObservableProperty] private float _minimumModelScreenSizePixels;
@@ -277,6 +278,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _showWmoCollisionMesh = session.Current.Rendering.ShowWmoCollisionMesh;
         _renderDoodads = session.Current.Rendering.RenderM2;
         _renderParticles = session.Current.Rendering.RenderParticles;
+        _renderFog = session.Current.Rendering.RenderFog;
         _animateModels = session.Current.Rendering.AnimateModels;
         _wmoPortalCullingEnabled = session.Current.Rendering.EnableWmoPortalCulling;
         _minimumModelScreenSizePixels = session.Current.Rendering.MinimumModelScreenSizePixels;
@@ -293,7 +295,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
         _showTerrainWireframe = session.Current.Rendering.ShowTerrainWireframe;
         _showTerrainTexture = session.Current.Rendering.ShowTerrainTexture;
         _showTerrainVertexColor = session.Current.Rendering.ShowTerrainVertexColor;
-        _disableScreenGlow = session.Current.Rendering.DisableScreenGlow;
+        _disableScreenGlow = session.Current.Rendering.EditorDisableScreenGlow;
         Lighting.SetPreferences(
             session.Current.Rendering.WorldLightingTime,
             session.Current.Rendering.UseLocalWorldLightingTime);
@@ -413,7 +415,9 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
     partial void OnShowTerrainVertexColorChanged(bool value) =>
         UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { ShowTerrainVertexColor = value });
     partial void OnDisableScreenGlowChanged(bool value) =>
-        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { DisableScreenGlow = value });
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { EditorDisableScreenGlow = value });
+    partial void OnRenderFogChanged(bool value) =>
+        UpdatePersistedRenderingConfiguration(_session.Current.Rendering with { RenderFog = value });
 
     private void UpdatePersistedRenderingConfiguration(RenderingConfiguration rendering)
     {
@@ -869,6 +873,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowWmoCollisionMesh = configuration.ShowWmoCollisionMesh;
             RenderDoodads = configuration.RenderM2;
             RenderParticles = configuration.RenderParticles;
+            RenderFog = configuration.RenderFog;
             MinimumModelScreenSizePixels = configuration.MinimumModelScreenSizePixels;
             TerrainLodTransitionPixels = configuration.TerrainLodTransitionPixels;
             WmoPortalCullingEnabled = configuration.EnableWmoPortalCulling;
@@ -886,7 +891,7 @@ public partial class Editor3DViewModel : ViewModelBase, IDisposable
             ShowTerrainWireframe = configuration.ShowTerrainWireframe;
             ShowTerrainTexture = configuration.ShowTerrainTexture;
             ShowTerrainVertexColor = configuration.ShowTerrainVertexColor;
-            DisableScreenGlow = configuration.DisableScreenGlow;
+            DisableScreenGlow = configuration.EditorDisableScreenGlow;
             if (Lighting.IsDynamic != configuration.UseLocalWorldLightingTime ||
                 (!configuration.UseLocalWorldLightingTime &&
                  Lighting.Time != configuration.WorldLightingTime))

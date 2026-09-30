@@ -75,7 +75,7 @@ public static class M2Loader
         var rootMaterials = root.Materials.AsDataSpan();
         var renderMaterials = new M2RenderMaterial[rootMaterials.Length];
         for (var i = 0; i < renderMaterials.Length; i++)
-            renderMaterials[i] = new(rootMaterials[i].Flags, rootMaterials[i].BlendingMode);
+            renderMaterials[i] = new((ushort)rootMaterials[i].Flags, rootMaterials[i].BlendingMode);
         var textureFileDataIds = ResolveTextureFileDataIds(fileSystem, model, textures);
         parsed.mats = new M2Material[textures.Count];
         for (var i = 0; i < parsed.mats.Length; i++)
@@ -272,7 +272,7 @@ public static class M2Loader
         var sequences = new M2Sequence[root.Sequences.Count];
         for (var i = 0; i < sequences.Length; i++)
             sequences[i] = new M2Sequence(root.Sequences[i].Duration,
-                root.Sequences[i].Flags, root.Sequences[i].AliasNext,
+                (uint)root.Sequences[i].Flags, root.Sequences[i].AliasNext,
                 root.Sequences[i].Id);
 
         var loops = new uint[root.GlobalLoops.Count];
@@ -285,7 +285,7 @@ public static class M2Loader
             var bone = root.Bones[i];
             bones[i] = new M2Bone(
                 bone.ParentBone,
-                bone.Flags,
+                (uint)bone.Flags,
                 ToVector3(bone.Pivot),
                 ReadVectorTrack(bone.Translation),
                 ReadQuaternionTrack(bone.Rotation),
@@ -795,7 +795,7 @@ public static class M2Loader
             return batch.ShaderId;
 
         ushort shaderId = 0;
-        if ((root.GlobalFlags & (uint)Formats.M2.Root.GlobalFlags.UseTextureCombinerCombos) == 0)
+        if ((root.GlobalFlags & Formats.M2.Root.GlobalFlags.UseTextureCombinerCombos) == 0)
         {
             var operation = material.BlendMode == 0 ? 0 : 1;
             if (unchecked((ushort)coordinates[coordinateIndex]) > 2)

@@ -45,7 +45,7 @@ public static class WDTCache
             var globalWmoFileDataId = fileSystem.Kind == StorageKind.Mpq
                 ? WowlibFileSystem.ResolveAssetId(fileSystem, globalWmoPath)
                 : placement.NameId;
-            var scale = (placement.Flags & (uint)Formats.Common.MapObjDefFlags.has_scale) != 0
+            var scale = (placement.Flags & Formats.Common.MapObjDefFlags.HasScale) != 0
                 ? placement.Scale / 1024f
                 : 1f;
             globalWmoPlacement = new WdtGlobalWmoPlacement(
@@ -63,7 +63,7 @@ public static class WDTCache
         {
             Path = wdtPath,
             FileDataId = fileSystem.Kind == StorageKind.Casc ? fileDataId : 0,
-            Flags = header.Flags,
+            Flags = (uint)header.Flags,
             TexFileDataId = GetTextureFileDataId(header),
             HasSplitAdts = hasSplitAdts,
             GlobalWmoExtents = root.GlobalWmo.Count > 0

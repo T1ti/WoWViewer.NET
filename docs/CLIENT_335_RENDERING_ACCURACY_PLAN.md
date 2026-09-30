@@ -27,6 +27,18 @@ omits the **near** plane, and follows the native previous-group/depth policy.
 The selected placement's exterior seeds consume its emitted window. Full smoke:
 **494 tests**, including 24 new portal cases; matched client pixels remain pending.
 
+Viewport controls batch: Client mode and Ultra are the defaults; mode selection
+is available only in the viewport's Advanced Rendering controls. Client CVars
+remain editable in Settings in either mode. Editor fog now defaults off.
+Client mode excludes viewport filters, diagnostic overlays, custom distance/LOD
+and streaming overrides, animation/particle percentage limits, fog suppression,
+manual lighting/time and the separate editor glow override. Game CVars remain
+authoritative; both saved banks survive mode switches. UI overrides are disabled
+in Client mode. Verified: conflicting-bank tests, default fog, independent glow,
+manual-lighting isolation and mode restoration pass; full smoke exits 0 with
+**524 tests** (66 Render, 267 DX11, 191 Avalonia). Matched pixels remain
+required for rendering parity.
+
 | Priority | Next concrete work | Acceptance check |
 | --- | --- | --- |
 | 1 | Finish the entire portal pipeline: `0x7AC060` exterior render-view/blocker lists, `0x7A9200` emission bit 8, `0x795D20` forwarding, `0x7968D0` complement generation, clip-volume early-out (`0x7CCFA0`), terrain clip buffer, and portal-view volume draw/state. Recover callback and feature-gate writers before wiring consumers. | Reproduce directed and paired Stormwind portals, on-plane/edge crossings, cycles, offsets, exterior-lit groups and empty destinations in CPU traces; compare facade/sky/depth pixels at matched cameras. |
@@ -43,7 +55,8 @@ remain required; this table supplies the next implementation order.
 ## Client mode and Editor mode
 
 Expose a persistent **Client mode / Editor mode** toggle. The setting is
-`UseClientRenderingRules`; existing settings default to Editor mode. Keep
+`UseClientRenderingRules`; new settings default to Client mode, and an explicitly
+saved mode is preserved. Keep
 client CVars and editor controls as separate saved values. Switching modes
 resolves effective settings without replacing either bank. A mode change must
 refresh projection, culling, streaming demand, queued draws, and any affected
@@ -58,13 +71,23 @@ cached resources through their owners.
 | Streaming | Recover native load/unload and visibility transitions; ensure all reference-visible assets are available. | Add explicit whole-map demand covering all available 64x64 tile coordinates, independent of camera-center radius, with resource budgets and progress. Large draw distances alone do not load the whole map. |
 | Verification | Matched client camera, client CVar snapshot, caps, liquid/viewer state, CPU lists, GPU constants/state and final frame. | Switching restores custom values; shared material/shader behavior and editor operations retain regression coverage. |
 
-The toggle is implemented in the settings window and viewport rendering controls.
+The toggle is available only in the viewport's Advanced Rendering controls.
+The Client Rendering settings tab uses Ultra defaults, is editable in either
+mode, and disables options without renderer consumers. Viewport fog defaults
+off in Editor mode and cannot suppress Client-mode fog. Viewport glow uses the
+separate `EditorDisableScreenGlow` setting; Client mode reads the game
+`DisableScreenGlow` value. Manual lighting/time are ignored in Client mode,
+which evaluates client lighting with live time.
 [WorldRenderingRules.cs](../WoWRenderLib.DX11/Renderer/WorldRenderingRules.cs)
 currently gates the recovered profile to MPQ **3.3.5.12340**, applies near clip
 0.2 and `World::ValidateFarClip` (0x780770), derives terrain/model distance from
 that CVar, enables portal culling, and removes the editor's arbitrary model-pixel
 and terrain-pixel LOD thresholds. Editor mode keeps custom distances, portal
-selection and those thresholds. Other clients keep their existing custom path.
+selection and those thresholds. Other clients do not receive the 3.3.5 rules;
+their Client-mode path currently uses the renderer's baseline distances and
+streaming radius, isolated from saved editor overrides. This fallback is not
+evidence of native client rules. Client animation/particle percentage limits
+are removed; native eligibility/fades remain open below.
 The recovered physical-memory branch is now honored. No hot-path settings copy
 or file access is introduced by the policy.
 

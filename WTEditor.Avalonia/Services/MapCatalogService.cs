@@ -127,13 +127,13 @@ public sealed class MapCatalogService : IMapCatalogService
             var columns = Enumerable.Range(0, checked((int)table.ColumnCount))
                 .Select(index => (Index: (ulong)index, Info: table.ColumnInfo((ulong)index)))
                 .ToArray();
-            var idColumn = table.ColumnIndex("id");
-            var directoryColumn = table.ColumnIndex("directory");
-            var nameColumn = table.ColumnIndex("map_name");
-            var optionalColumns = columns.ToDictionary(column => column.Info.Name, column => column.Index);
-            var expansionColumn = optionalColumns.TryGetValue("expansion_id", out var expansion) ? (ulong?)expansion : null;
-            var instanceColumn = optionalColumns.TryGetValue("instance_type", out var instance) ? (ulong?)instance : null;
-            var wdtColumn = optionalColumns.TryGetValue("wdt_file_data_id", out var wdt) ? (ulong?)wdt : null;
+            var idColumn = table.ColumnIndex("ID");
+            var directoryColumn = table.ColumnIndex("Directory");
+            var nameColumn = table.ColumnIndex("MapName_lang");
+            var optionalColumns = columns.ToDictionary(column => column.Info.DbdName, column => column.Index);
+            var expansionColumn = optionalColumns.TryGetValue("ExpansionID", out var expansion) ? (ulong?)expansion : null;
+            var instanceColumn = optionalColumns.TryGetValue("InstanceType", out var instance) ? (ulong?)instance : null;
+            var wdtColumn = optionalColumns.TryGetValue("WdtFileDataID", out var wdt) ? (ulong?)wdt : null;
             var records = new List<WorldMapRecord>(checked((int)table.RowCount));
             for (ulong row = 0; row < table.RowCount; row++)
             {
@@ -164,7 +164,7 @@ public sealed class MapCatalogService : IMapCatalogService
                         ? wdtPath
                         : wdtPath,
                     Settings = columns.Select(column => new WorldMapDbSetting(
-                        column.Info.Name,
+                        column.Info.DbdName,
                         ReadWowlibSetting(table, row, column.Index, column.Info, buildName),
                         column.Info.Type.ToString())).ToArray()
                 });
@@ -175,7 +175,7 @@ public sealed class MapCatalogService : IMapCatalogService
             if (fileSystem.Kind == StorageKind.Casc)
             {
                 var availableColumns = new HashSet<string>(
-                    columns.Select(column => column.Info.Name), StringComparer.OrdinalIgnoreCase);
+                    columns.Select(column => column.Info.DbdName), StringComparer.OrdinalIgnoreCase);
                 ValidateMapRecords(buildName, records, availableColumns, CASC.FileExists);
             }
             return records.OrderBy(map => map.Id).ToArray();
@@ -190,11 +190,11 @@ public sealed class MapCatalogService : IMapCatalogService
         }
         catch (Exception exception)
         {
-            var failureKey = $"{buildName}\0{column.Name}\0{exception.GetType().FullName}\0{exception.Message}";
+            var failureKey = $"{buildName}\0{column.DbdName}\0{exception.GetType().FullName}\0{exception.Message}";
             lock (_cacheLock)
             {
                 if (_reportedSettingFailures.Add(failureKey))
-                    LoadDiagnostics.Error($"Reading Map column '{column.Name}' for build {buildName}", exception);
+                    LoadDiagnostics.Error($"Reading Map column '{column.DbdName}' for build {buildName}", exception);
             }
             return $"Unavailable ({exception.GetType().Name})";
         }
