@@ -47,6 +47,9 @@
     <None Update="Shaders\glow.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Shaders\presentation_opaque.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Shaders\sky.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

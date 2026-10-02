@@ -56,6 +56,7 @@ public sealed class RendererSettings
     public int TerrainMip { get; set; } = 1;
     public float ParticleDensity { get; set; } = 1f;
     public float EnvironmentDetail { get; set; } = 1.5f;
+    public bool ObjectFade { get; set; } = true;
     public int GroundEffectDensity { get; set; } = 64;
     public int GroundEffectDist { get; set; } = 140;
     public int BaseMip { get; set; } = 1;
@@ -106,6 +107,7 @@ public sealed class RendererSettings
         TerrainMip = TerrainMip,
         ParticleDensity = ParticleDensity,
         EnvironmentDetail = EnvironmentDetail,
+        ObjectFade = ObjectFade,
         GroundEffectDensity = GroundEffectDensity,
         GroundEffectDist = GroundEffectDist,
         BaseMip = BaseMip,

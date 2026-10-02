@@ -1,4 +1,5 @@
 using System.Numerics;
+using WoWRenderLib.Raycasting;
 using WoWRenderLib.Structs;
 
 namespace WoWRenderLib.DX11.Renderer;
@@ -10,6 +11,7 @@ internal sealed class Wrath335TerrainClipBuffer
     private readonly float[] heights = new float[ColumnCount];
     private readonly bool[] protectedColumns = new bool[ColumnCount];
     private Matrix4x4 projection;
+    private Matrix4x4 radiusProjection;
     public bool Active { get; private set; }
 
     public void Clear()
@@ -30,14 +32,51 @@ internal sealed class Wrath335TerrainClipBuffer
         var view = new Matrix4x4(right.X, 0f, direction.X, 0f,
             right.Y, 0f, direction.Y, 0f, 0f, 1f, 0f, 0f,
             -Vector3.Dot(right, eye), -eye.Z, horizontal.W, 1f);
-        BeginProjected(view * cameraProjection, full.Z, enabled);
+        BeginProjected(view * cameraProjection, full.Z, enabled, cameraProjection);
     }
 
-    internal void BeginProjected(in Matrix4x4 worldProjection, float normalizedPitch, bool enabled = true)
+    internal void BeginProjected(in Matrix4x4 worldProjection, float normalizedPitch, bool enabled = true,
+        Matrix4x4? sphereProjection = null)
     {
         Clear();
         projection = worldProjection;
+        radiusProjection = sphereProjection ?? Matrix4x4.Identity;
         Active = enabled && normalizedPitch >= -0.9f && normalizedPitch <= 0.9f;
+    }
+
+    /// <summary>0x78FC40: projected sphere reader; argument 16 retains the center-Z >=50 gate.</summary>
+    public bool ContainsSphere(in BoundingSphere sphere, byte flags = 16)
+    {
+        if (!Active || !float.IsFinite(sphere.Radius) || MathF.Abs(sphere.Radius) < 0.00000023841858f)
+            return false;
+        var center = Transform(sphere.Center);
+        if ((flags & 8) == 0 && center.Z < 50f)
+            return false;
+        // 0x795671 copies the camera projection separately from the flattened world matrix.
+        // 0x78FCC2 transforms (radius,radius,0) as a POINT; translation is included.
+        var extent = new Vector2(
+            (float)((double)sphere.Radius * radiusProjection.M21 +
+                (double)sphere.Radius * radiusProjection.M11 + radiusProjection.M41),
+            (float)((double)sphere.Radius * radiusProjection.M22 +
+                (double)sphere.Radius * radiusProjection.M12 + radiusProjection.M42));
+        var inverse = 1d / center.Z;
+        var x = center.X * inverse;
+        var width = extent.Y * inverse;
+        // The native reader uses extent.X for the top and extent.Y for the width.
+        // Left arithmetic retains the extended intermediates; right reloads float stores.
+        var top = (float)(extent.X * inverse + center.Y * inverse);
+        if (!float.IsFinite(top) || !TryColumn(x - width, out var first) ||
+            !TryColumn((double)(float)x + (float)width, out var last))
+            return false;
+        last++;
+        if (first >= ColumnCount || last < 0)
+            return false;
+        first = Math.Max(first, 0);
+        last = Math.Min(last, ColumnCount - 1);
+        for (var column = first; column <= last; column++)
+            if (top > heights[column])
+                return false;
+        return true;
     }
 
     public bool ContainsBox(in BoundingBox bounds, byte flags = 1)

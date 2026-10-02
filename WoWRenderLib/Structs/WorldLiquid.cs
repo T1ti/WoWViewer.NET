@@ -56,7 +56,10 @@ public readonly record struct WorldLiquidMaterialKey(
 /// the renderer selects a frame from the slot without flattening adjacent slots
 /// into one animation sequence.
 /// </summary>
-public sealed record WorldLiquidTextureSlot(uint[] Frames);
+public sealed record WorldLiquidTextureSlot(uint[] Frames)
+{
+    public WorldLiquidWaterType ProceduralDepth { get; init; } = WorldLiquidWaterType.Unknown;
+}
 
 public sealed record WorldLiquidMaterialDescriptor(
     WorldLiquidMaterialKey Key,
@@ -77,8 +80,9 @@ public sealed record WorldLiquidMaterialDescriptor(
 
     /// <summary>
     /// Ordered LiquidType texture slots. Their meanings are material-specific;
-    /// notably, the client water shader reads slot 2 as its wave normal and
-    /// slot 3 as foam. Procedural or absent rows leave an empty slot so the
+    /// later water shaders read slot 2 as wave normal and slot 3 as foam.
+    /// The 12340 basic water shader reads slot 0 as surface and slot 1 as depth
+    /// gradient. Procedural or absent rows leave an empty slot so the
     /// original client slot numbering remains available to the renderer.
     /// </summary>
     public WorldLiquidTextureSlot[] TextureSlots { get; init; } = [];
@@ -97,7 +101,14 @@ public sealed record WorldLiquidMaterialDescriptor(
     public int WmoDepthDivisor { get; init; } = 42;
     public uint WmoAnimationPeriodMilliseconds { get; init; } = 1000;
     public float WmoTextureRotation { get; init; }
+
+    /// <summary>Present only for MPQ 3.3.5.12340; later material IDs have different contracts.</summary>
+    public Wrath335LiquidSettings? Wrath335 { get; init; }
 }
+
+public sealed record Wrath335LiquidSettings(
+    int MaterialId, int DepthMode, float TextureScale, float TextureRotation,
+    float DepthScale, uint AnimationPeriodMilliseconds);
 
 public interface IWorldLiquidMaterialCatalog
 {
@@ -183,9 +194,19 @@ public sealed class ParsedWorldLiquid
     public uint[] Indices { get; init; } = [];
     public ParsedWorldLiquidBatch[] Batches { get; init; } = [];
     public WorldLiquidMaterialDescriptor[] Materials { get; init; } = [];
+    public WorldLiquidQueryGrid[] QueryGrids { get; init; } = [];
     public uint[] TextureFileDataIds { get; init; } = [];
     public BoundingBox Bounds { get; init; }
     public bool HasBounds { get; init; }
 
     public bool IsEmpty => Vertices.Length == 0 || Indices.Length == 0 || Batches.Length == 0;
 }
+
+/// <summary>
+/// Original CPU query grid, independent of clipped/triangulated draw geometry.
+/// Terrain uses a chunk origin, offsets and a bit mask; WMO uses local origin
+/// and tile bytes. Heights retain the original vertex stride.
+/// </summary>
+public sealed record WorldLiquidQueryGrid(ushort LiquidTypeId, uint TypeFlags,
+    bool IsWmo, Vector3 Origin, int Width, int Height, int VertexStride,
+    float[] Heights, byte[] Tiles, int XOffset = 0, int YOffset = 0);

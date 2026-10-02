@@ -127,41 +127,9 @@ internal static class Wrath335WmoViewerQuery
     // NTempest::Intersect 0x9830D0 uses these axis pairs from 0xB2D6F4:
     // drop X -> (Y,Z); drop Y -> (Z,X); drop Z -> (X,Y).
     // Its <= tests include one polygon boundary and exclude the opposite one.
-    internal static bool PointInPortal(Vector3 point, ReadOnlySpan<Vector3> vertices, Vector3 normal)
-    {
-        if (vertices.Length < 3)
-            return false;
-        var dropped = MajorAxis(normal);
-        var horizontal = dropped == 0 ? 1 : dropped == 1 ? 2 : 0;
-        var vertical = dropped == 0 ? 2 : dropped == 1 ? 0 : 1;
-        var x = Component(point, horizontal);
-        var y = Component(point, vertical);
-        var previous = vertices[^1];
-        var previousAbove = y <= Component(previous, vertical);
-        var inside = false;
-        foreach (var current in vertices)
-        {
-            var currentAbove = y <= Component(current, vertical);
-            if (previousAbove != currentAbove)
-            {
-                var left = ((double)Component(current, horizontal) - x) *
-                    ((double)Component(previous, vertical) - Component(current, vertical));
-                var right = ((double)Component(previous, horizontal) - Component(current, horizontal)) *
-                    ((double)Component(current, vertical) - y);
-                if ((left <= right) == currentAbove)
-                    inside = !inside;
-            }
-            previous = current;
-            previousAbove = currentAbove;
-        }
-        return inside;
-    }
+    internal static bool PointInPortal(Vector3 point, ReadOnlySpan<Vector3> vertices, Vector3 normal) =>
+        WoWRenderLib.Renderer.Wrath335PortalPolygon.Contains(point, vertices, normal);
 
-    internal static int MajorAxis(Vector3 normal)
-    {
-        var n = Vector3.Abs(normal);
-        return n.X <= n.Y ? n.Y > n.Z ? 1 : 2 : n.X > n.Z ? 0 : 2;
-    }
-
-    private static float Component(Vector3 v, int axis) => axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
+    internal static int MajorAxis(Vector3 normal) =>
+        WoWRenderLib.Renderer.Wrath335PortalPolygon.MajorAxis(normal);
 }

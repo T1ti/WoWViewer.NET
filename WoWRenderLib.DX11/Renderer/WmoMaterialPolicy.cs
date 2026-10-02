@@ -13,6 +13,11 @@ internal static class WmoMaterialPolicy
     private const uint UnfoggedFlag = (uint)MaterialFlags.Unfogged;
     private const ushort UnifiedLightingFlag = (ushort)HeaderFlags.UseUnifiedRenderPath;
 
+    internal static int PassCount(bool legacyClient, bool wrath335, ushort rootFlags,
+        bool hasPrimaryVertexColors, byte category) =>
+        legacyClient && category == TransitionBatchCategory &&
+        (!wrath335 || (rootFlags & UnifiedLightingFlag) != 0 || hasPrimaryVertexColors) ? 2 : 1;
+
     // CMapObj::UnifiedRender bypasses F_UNFOG for batches after the
     // transparent range. Its opaque exterior path explicitly installs the
     // staged fog state, and its opaque interior path installs the current one.
@@ -35,11 +40,13 @@ internal static class WmoMaterialPolicy
     internal static bool UsesCurrentFogForPass(bool legacyClient,
         uint groupFlags, uint mogiFlags, byte category, int passIndex,
         bool? propagatedFromInterior = null, ushort rootFlags = 0,
-        bool hasPrimaryVertexColors = true) =>
+        bool hasPrimaryVertexColors = true, bool wrath335 = false) =>
         // RenderGroup dispatches non-unified groups without a primary MOCV
         // stream to ExtRender, which always installs staged outdoor fog.
         (!legacyClient || (rootFlags & UnifiedLightingFlag) != 0 ||
          hasPrimaryVertexColors) &&
+        (!wrath335 || !legacyClient || (rootFlags & UnifiedLightingFlag) == 0 ||
+         category == TransitionBatchCategory || UsesCurrentFog(true, groupFlags, mogiFlags)) &&
         (legacyClient && propagatedFromInterior.HasValue
             ? propagatedFromInterior.Value
             : UsesCurrentFog(legacyClient, groupFlags, mogiFlags)) &&
@@ -63,7 +70,7 @@ internal static class WmoMaterialPolicy
     // established DX11 lighting path because these selectors were decoded for
     // the older WMO renderer.
     internal static int ResolveLightingMode(bool legacyClient, ushort rootFlags,
-        uint groupFlags, bool hasMocv, byte category, uint materialFlags)
+        uint groupFlags, bool hasMocv, byte category, uint materialFlags, bool wrath335 = false)
     {
         if (!legacyClient)
             return (materialFlags & (uint)MaterialFlags.Unlit) != 0 ? 0 : -1;
@@ -71,6 +78,10 @@ internal static class WmoMaterialPolicy
         var unified = (rootFlags & UnifiedLightingFlag) != 0;
         var unlit = (materialFlags & (uint)MaterialFlags.Unlit) != 0;
         var window = (materialFlags & (uint)MaterialFlags.Window) != 0;
+        // 12340 dispatches this entire group to ExtRender before interpreting
+        // batch category. Its single pass honors Unlit and ignores Window.
+        if (wrath335 && !unified && !hasMocv)
+            return unlit ? 0 : 1;
         if (category == 0) // Transition first pass.
             return unified && unlit ? 0 : window ? 2 : 1;
 

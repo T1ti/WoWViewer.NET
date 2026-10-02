@@ -148,6 +148,8 @@ namespace WoWRenderLib.DX11.Managers
                         GetOrCompileShader("liquid", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("glow"))
                         GetOrCompileShader("glow", true);
+                    else if (Path.GetFileNameWithoutExtension(file) == "presentation_opaque")
+                        GetOrCompileShader("presentation_opaque", true);
                     else if (Path.GetFileNameWithoutExtension(file).StartsWith("debug"))
                         GetOrCompileShader("debug", true);
 
@@ -738,6 +740,34 @@ namespace WoWRenderLib.DX11.Managers
                             InputSlot = 1, AlignedByteOffset = 96,
                             InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
                         },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 9,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 112,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 10,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 128,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 11,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 144,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
+                        new()
+                        {
+                            SemanticName = texCoordName, SemanticIndex = 12,
+                            Format = Format.FormatR32G32B32A32Float,
+                            InputSlot = 1, AlignedByteOffset = 160,
+                            InputSlotClass = InputClassification.PerInstanceData, InstanceDataStepRate = 1
+                        },
 
                         // Buffer 1
                         new()
@@ -953,7 +983,7 @@ namespace WoWRenderLib.DX11.Managers
                         vertexCode.GetBufferPointer(), vertexCode.GetBufferSize(), ref inputLayout));
                 }
             }
-            else if (type is "sky" or "glow")
+            else if (type is "sky" or "glow" or "presentation_opaque")
             {
                 // Fullscreen triangles are generated from SV_VertexID,
                 // so Direct3D must receive a null input layout for this shader.

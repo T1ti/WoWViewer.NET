@@ -16,6 +16,7 @@ namespace WoWRenderLib.DX11.Loaders
             {
                 boundingBox = parsedM2.boundingBox,
                 boundingRadius = parsedM2.boundingRadius,
+                wrath335Bounds = parsedM2.wrath335Bounds,
                 fileDataID = parsedM2.fileDataID,
                 usesLegacyDepthFlags = parsedM2.usesLegacyDepthFlags,
                 raycastVertices = ExtractRaycastVertices(parsedM2.vertexBytes),

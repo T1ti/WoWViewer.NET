@@ -46,6 +46,41 @@ public sealed class Wrath335PortalFogDistanceTests
             wmo, 0, new Vector3(0f, 0f, 30f), out _));
     }
 
+    [TestMethod]
+    public void ConcavePortalProjectionDistinguishesInsideFromItsNotch()
+    {
+        var portal = new WmoPortal
+        {
+            Normal = Vector3.UnitZ,
+            Vertices = [new(0, 0, 0), new(3, 0, 0), new(3, 1, 0),
+                new(1, 1, 0), new(1, 3, 0), new(0, 3, 0)]
+        };
+        Assert.AreEqual(2f, Wrath335PortalFogDistance.DistanceToPolygon(new(0.5f, 2, 2), portal));
+        Assert.AreEqual(MathF.Sqrt(5), Wrath335PortalFogDistance.DistanceToPolygon(new(2, 2, 2), portal));
+    }
+
+    [TestMethod]
+    public void NativePlaneDistanceKeepsSourceNormalMagnitude()
+    {
+        var portal = Portal() with { Normal = 2 * Vector3.UnitZ };
+        Assert.AreEqual(20f, Wrath335PortalFogDistance.DistanceToPolygon(new(0, 0, 10), portal));
+        Assert.AreEqual(10f, Wrath335PortalFogDistance.DistanceToPolygon(new(0, 0, 10), portal, wrath335: false));
+    }
+
+    [TestMethod]
+    public void NearPlaneToleranceUsesTheOriginalPointAgainstPortalEdges()
+    {
+        var portal = new WmoPortal
+        {
+            Normal = new(-1, 0, 1),
+            Vertices = [new(-0.5f, -1, -0.5f), new(0.5f, -1, 0.5f),
+                new(0.5f, 1, 0.5f), new(-0.5f, 1, -0.5f)]
+        };
+        var point = new Vector3(0.501f, 0, 0.499f);
+        Assert.AreEqual(Vector3.Distance(point, new(0.5f, 0, 0.5f)),
+            Wrath335PortalFogDistance.DistanceToPolygon(point, portal), 0.0000001f);
+    }
+
     private static WmoPortal Portal() => new()
     {
         Vertices =

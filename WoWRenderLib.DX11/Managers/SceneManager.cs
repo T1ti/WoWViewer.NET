@@ -6,7 +6,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MapObjDefFlags = WoWLib.Formats.Common.MapObjDefFlags;
-using M2MaterialFlags = WoWLib.Formats.M2.Root.Record.MaterialFlags;
 using WmoMaterialFlags = WoWLib.Formats.WMO.Root.Chunks.MaterialFlags;
 using WoWRenderLib.Cache;
 using WoWRenderLib.DX11.Cache;
@@ -33,6 +32,7 @@ namespace WoWRenderLib.DX11.Managers
         private readonly ShaderManager _shaderManager;
         private readonly WmoSceneViewerQuery _wmoSceneViewerQuery;
         private readonly WmoScenePortalPreparation _wmoScenePortalPreparation = new();
+        internal Wrath335DoodadFade? DoodadFade { get; set; }
         public List<Container3D> SceneObjects { get; } = [];
         public Lock SceneObjectLock { get; } = new();
 
@@ -81,6 +81,7 @@ namespace WoWRenderLib.DX11.Managers
 
         public bool RenderADT { get; set; } = true;
         public bool RenderLiquid { get; set; } = true;
+        public bool LiquidSpecular { get; set; } = true;
         public bool RenderWMO { get; set; } = true;
         public bool ShowWmoCollisionMesh { get; set; }
         public bool RenderM2 { get; set; } = true;
@@ -169,6 +170,10 @@ namespace WoWRenderLib.DX11.Managers
         private CompiledShader wmoShaderProgram;
         private CompiledShader m2ShaderProgram;
         private readonly WorldLiquidRenderer _worldLiquidRenderer;
+        private readonly WorldLiquidViewerQuery _worldLiquidViewerQuery;
+        private Wrath335LiquidSceneState _liquidSceneState;
+        internal Wrath335ViewerLiquid ViewerLiquid => _liquidSceneState.Viewer;
+        private readonly WorldLiquidEntityQuery _worldLiquidEntityQuery = new();
         private readonly SceneGlowRenderer _glowRenderer;
         private readonly List<WmoLiquidInstance> _visibleWmoLiquids = [];
         private readonly SkyRenderer _skyRenderer;
@@ -176,13 +181,8 @@ namespace WoWRenderLib.DX11.Managers
         private readonly ObjectGizmoRenderer _objectGizmoRenderer;
         private readonly M2DepthStateController _m2DepthStates;
         private readonly M2EffectRenderer _effectRenderer;
-
-        private readonly record struct M2MeshSubmission(
-            M2InstancePacket Packet,
-            ParsedDoodadBatch Model,
-            IReadOnlyList<M2AnimationDrawGroup> Groups,
-            bool HasOpaque,
-            bool HasTranslucent);
+        private readonly M2MeshRenderer _m2MeshRenderer;
+        private readonly Func<uint, ComPtr<ID3D11ShaderResourceView>> _m2TextureResolver;
 
         private readonly record struct M2RibbonSubmission(
             M2Container Instance,
@@ -218,6 +218,7 @@ namespace WoWRenderLib.DX11.Managers
             _shaderManager = shaderManager ?? throw new ArgumentNullException(nameof(shaderManager));
             _wmoSceneViewerQuery = new(GetWmoViewerTerrainRayLimit);
             _worldLiquidRenderer = new WorldLiquidRenderer(device, deviceContext);
+            _worldLiquidViewerQuery = new(GetViewerLiquidTerrainHeight);
             _glowRenderer = new SceneGlowRenderer(device, deviceContext);
             _skyRenderer = new SkyRenderer(device, deviceContext);
             _debugBoundsRenderer = new DebugBoundsRenderer(device, deviceContext);
@@ -225,6 +226,8 @@ namespace WoWRenderLib.DX11.Managers
             ObjectGizmo = new ObjectGizmoController(ApplyObjectTransform);
             _m2DepthStates = new M2DepthStateController(device, deviceContext);
             _effectRenderer = new M2EffectRenderer(device, deviceContext);
+            _m2MeshRenderer = new M2MeshRenderer(device, deviceContext);
+            _m2TextureResolver = ResolveFrameTexture;
         }
 
         private sealed class PendingAdtPopulation(
@@ -273,11 +276,7 @@ namespace WoWRenderLib.DX11.Managers
         private ComPtr<ID3D11Buffer> layerDataConstantBuffer = default;
         private ComPtr<ID3D11Buffer> wmoPerObjectConstantBuffer = default;
         private ComPtr<ID3D11Buffer> wmoCollisionConstantBuffer = default;
-        private ComPtr<ID3D11Buffer> m2PerObjectConstantBuffer = default;
-        private ComPtr<ID3D11Buffer> m2BonePaletteConstantBuffer = default;
         private ComPtr<ID3D11Buffer> wrathFogConstantBuffer = default;
-        private M2AnimationPose? _uploadedM2Pose;
-        private long _uploadedM2PoseVersion;
         private readonly long m2AnimationEpoch = Stopwatch.GetTimestamp();
         private ComPtr<ID3D11Buffer> instanceMatrixBuffer = default;
         private ComPtr<ID3D11DepthStencilView> depthStencilView = default;
@@ -298,8 +297,6 @@ namespace WoWRenderLib.DX11.Managers
 
         private readonly ComPtr<ID3D11ShaderResourceView>[] _srvScratch =
             new ComPtr<ID3D11ShaderResourceView>[ShaderResourceSlotCount];
-        private readonly ComPtr<ID3D11SamplerState>[] _samplerScratch =
-            new ComPtr<ID3D11SamplerState>[4];
         private readonly Dictionary<uint, ComPtr<ID3D11ShaderResourceView>> _frameTextureSrvs = [];
         private readonly List<int> _visibleIndices = new(64);
         private readonly List<int> _animatedVisibleIndices = new(64);
@@ -534,18 +531,11 @@ namespace WoWRenderLib.DX11.Managers
 
                 bufferDesc = new BufferDesc
                 {
-                    ByteWidth = (uint)sizeof(M2PerObjectCB),
+                    ByteWidth = (uint)sizeof(WrathFogCB),
                     Usage = Usage.Default,
                     BindFlags = (uint)BindFlag.ConstantBuffer
                 };
-
-                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref m2PerObjectConstantBuffer));
-
-                bufferDesc.ByteWidth = (uint)sizeof(WrathFogCB);
                 SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref wrathFogConstantBuffer));
-
-                bufferDesc.ByteWidth = (uint)(M2Animation.MaxGpuBones * sizeof(Matrix4x4));
-                SilkMarshal.ThrowHResult(_device.CreateBuffer(in bufferDesc, null, ref m2BonePaletteConstantBuffer));
 
                 // Instance buffer
                 bufferDesc = new BufferDesc
@@ -619,47 +609,16 @@ namespace WoWRenderLib.DX11.Managers
             _glowRenderer.Initialize(shaderManager);
             _skyRenderer.Initialize(shaderManager, m2Shader);
             _effectRenderer.Initialize(shaderManager);
+            _m2MeshRenderer.Initialize();
             _debugBoundsRenderer.Initialize(bboxShader);
             _objectGizmoRenderer.Initialize(shaderManager);
         }
 
         private unsafe void CreateBlendStates()
         {
-            static RenderTargetBlendDesc MakeRTBlend(bool enable, Blend src, Blend dst, Blend srcA, Blend dstA) => new()
+            for (int i = 0; i < _blendStates.Length; i++)
             {
-                BlendEnable = enable ? (Silk.NET.Core.Bool32)1 : (Silk.NET.Core.Bool32)0,
-                SrcBlend = src,
-                DestBlend = dst,
-                BlendOp = BlendOp.Add,
-                SrcBlendAlpha = srcA,
-                DestBlendAlpha = dstA,
-                BlendOpAlpha = BlendOp.Add,
-                RenderTargetWriteMask = (byte)ColorWriteEnable.All
-            };
-
-            (bool enabled, Blend src, Blend dst, Blend srcA, Blend dstA)[] configs =
-            [
-                (false, Blend.One,         Blend.Zero,          Blend.One,         Blend.Zero),
-                (false, Blend.One,         Blend.Zero,          Blend.One,         Blend.Zero),
-                (true,  Blend.SrcAlpha,    Blend.InvSrcAlpha,   Blend.SrcAlpha,    Blend.InvSrcAlpha),
-                (true,  Blend.SrcAlpha,    Blend.One,           Blend.Zero,        Blend.One),
-                (true,  Blend.DestColor,   Blend.Zero,          Blend.DestAlpha,   Blend.Zero),
-                (true,  Blend.DestColor,   Blend.SrcColor,      Blend.DestAlpha,   Blend.SrcAlpha),
-                (true,  Blend.DestColor,   Blend.One,           Blend.DestAlpha,   Blend.One),
-                (true,  Blend.InvSrcAlpha, Blend.One,           Blend.InvSrcAlpha, Blend.One),
-                (true,  Blend.InvSrcAlpha, Blend.Zero,          Blend.InvSrcAlpha, Blend.Zero),
-                (true,  Blend.SrcAlpha,    Blend.Zero,          Blend.SrcAlpha,    Blend.Zero),
-                (true,  Blend.One,         Blend.One,           Blend.Zero,        Blend.One),
-                (true,  Blend.BlendFactor, Blend.InvBlendFactor,Blend.BlendFactor, Blend.InvBlendFactor),
-                (true,  Blend.InvDestColor,Blend.One,           Blend.One,         Blend.Zero),
-                (true,  Blend.One,         Blend.InvSrcAlpha,   Blend.One,         Blend.InvSrcAlpha),
-            ];
-
-            for (int i = 0; i < configs.Length; i++)
-            {
-                var (enabled, src, dst, srcA, dstA) = configs[i];
-                var blendDesc = new BlendDesc { AlphaToCoverageEnable = 0, IndependentBlendEnable = 0 };
-                blendDesc.RenderTarget[0] = MakeRTBlend(enabled, src, dst, srcA, dstA);
+                var blendDesc = SceneBlendPolicy.Description(i);
                 SilkMarshal.ThrowHResult(_device.CreateBlendState(in blendDesc, ref _blendStates[i]));
             }
         }
@@ -701,11 +660,24 @@ namespace WoWRenderLib.DX11.Managers
         };
 
         internal static bool IsM2TwoSided(ushort renderFlags) =>
-            (renderFlags & (ushort)M2MaterialFlags.TwoSided) != 0;
+            M2MeshMaterialPolicy.IsTwoSided(renderFlags);
 
         internal static int GetM2SamplerIndex(uint textureFlags) =>
-            ((textureFlags & 0x1) != 0 ? 2 : 0) |
-            ((textureFlags & 0x2) != 0 ? 1 : 0);
+            M2MeshMaterialPolicy.GetSamplerIndex(textureFlags);
+
+        private void AccumulateM2MeshStats(in M2MeshRenderStats stats)
+        {
+            M2DrawCalls += stats.M2DrawCalls;
+            M2SubmittedInstances += stats.M2SubmittedInstances;
+            M2SubmittedIndices += stats.M2SubmittedIndices;
+            M2SubmissionTimeMs += stats.SubmissionTimeMs;
+            VertexBufferBindings += stats.VertexBufferBindings;
+            IndexBufferBindings += stats.IndexBufferBindings;
+            ConstantBufferUpdates += stats.ConstantBufferUpdates;
+            InstanceBufferMapCalls += stats.InstanceBufferMapCalls;
+            TextureBindingCalls += stats.TextureBindingCalls;
+            BlendStateBindings += stats.BlendStateBindings;
+        }
 
         private ComPtr<ID3D11ShaderResourceView> ResolveFrameTexture(uint fileDataId)
         {
@@ -767,7 +739,7 @@ namespace WoWRenderLib.DX11.Managers
         private static Wrath335FogState? ResolveWmoInteriorFog(
             in WorldModel wmo, in Matrix4x4 modelMatrix,
             Vector3 eyeWorld, ReadOnlySpan<bool> enabledGroups,
-            WmoPortalVisibilityScratch scratch, int viewerGroupIndex,
+            WmoPortalVisibilityScratch scratch, int viewerGroupIndex, int secondaryViewerGroupIndex,
             Wrath335FogState outdoor, float farClip, bool expansionMode)
         {
             if (!wmo.legacyLighting || wmo.fogs is not { Length: > 1 } ||
@@ -781,6 +753,10 @@ namespace WoWRenderLib.DX11.Managers
                 return null;
 
             var eyeLocal = Vector3.Transform(eyeWorld, inverseModel);
+            if (wmo.wrath335)
+                return Wrath335WmoInteriorFogQuery.TryEvaluate(wmo,
+                    new(viewerGroupIndex, secondaryViewerGroupIndex), eyeLocal,
+                    outdoor, farClip, expansionMode, out var current) ? current : null;
             var group = wmo.groupBatches[viewerGroupIndex];
             if (!Wrath335WmoFogVolumes.TryEvaluate(wmo.fogs,
                     group.fogIds ?? [], eyeLocal, out var volume))
@@ -1051,14 +1027,16 @@ namespace WoWRenderLib.DX11.Managers
             Wrath335FogState? currentInteriorFogState = null;
             WMOContainer? primaryInteriorFogWmo = null;
             float? viewerTerrainRayLimit = null;
-            var sceneViewer = EnableWmoPortalCulling ||
+            var sceneViewer = RenderLiquid || EnableWmoPortalCulling ||
                               (EnableDayNightSkyColors && _activeWorldSky.HasFogData)
                 ? LocateSceneViewerWmos(camera.Position, ref viewerTerrainRayLimit)
                 : default;
+            _liquidSceneState = _liquidSceneState.Advance(
+                _worldLiquidViewerQuery.Locate(sceneViewer, SceneObjects, adtContainers, camera.Position));
             var portalPreparationStarted = Stopwatch.GetTimestamp();
             _wmoScenePortalPreparation.Prepare(sceneViewer, EnableWmoPortalCulling,
                 camera.Position, camera.Front, viewProjection, SceneObjects, CurrentMapId,
-                projectionMatrix, camera.FarPlane);
+                projectionMatrix, camera.FarPlane, DoodadFade);
             var portalPreparationElapsed = Stopwatch.GetElapsedTime(portalPreparationStarted).TotalMilliseconds;
             WmoCullingTimeMs += portalPreparationElapsed;
             CullingTimeMs += portalPreparationElapsed;
@@ -1086,6 +1064,7 @@ namespace WoWRenderLib.DX11.Managers
                     currentInteriorFogState = ResolveWmoInteriorFog(primaryModel,
                         primaryViewerWmo.GetModelMatrix(), camera.Position,
                         primaryViewerWmo.EnabledGroups, scratch, primaryGroupIndex,
+                        sceneViewer.Primary.SecondaryGroupIndex,
                         outdoorFogState.Value, camera.FarPlane,
                         CurrentMapId >= Wrath335FarClip.OutlandMapId);
                     if (currentInteriorFogState.HasValue)
@@ -1132,8 +1111,6 @@ namespace WoWRenderLib.DX11.Managers
             uint wmoVertexStride = (uint)Marshal.SizeOf<WMOVertex>();
             uint wmoVertexOffset = 0;
 
-            uint m2VertexStride = (uint)Marshal.SizeOf<M2Vertex>();
-            uint m2VertexOffset = 0;
 
             uint instanceStride = 64; //matrix4x4 but marshal complained so hardcoded it 
             uint instanceOffset = 0;
@@ -1495,7 +1472,7 @@ namespace WoWRenderLib.DX11.Managers
                     continue;
 
                 var wmo = firstInstance.GetWMO();
-                wmoConstantBuffer.useLegacyLighting = wmo.legacyLighting ? 1 : 0;
+                wmoConstantBuffer.useLegacyLighting = wmo.legacyLighting ? (wmo.wrath335 ? 2 : 1) : 0;
                 wmoConstantBuffer.unifiedMocv = (wmo.flags & 0x2) != 0 ? 1 : 0;
                 wmoConstantBuffer.rootAmbientColor = WmoMaterialPolicy.PackedRgb(wmo.ambientColor);
                 candidateWMOs += instances.Count;
@@ -1743,8 +1720,8 @@ namespace WoWRenderLib.DX11.Managers
                                     lastWmoSamplerIndex = samplerIndex;
                                 }
 
-                                var passCount = wmo.legacyLighting &&
-                                    batch.category == WmoMaterialPolicy.TransitionBatchCategory ? 2 : 1;
+                                var passCount = WmoMaterialPolicy.PassCount(wmo.legacyLighting, wmo.wrath335,
+                                    wmo.flags, currentGroupHasPrimaryVertexColors, batch.category);
                                 for (var pass = 0; pass < passCount; pass++)
                                 {
                                     var selectedFog = visibilityBatch.InteriorFog.HasValue &&
@@ -1755,7 +1732,7 @@ namespace WoWRenderLib.DX11.Managers
                                             visibilityBatch.PropagatedMask.Length == wmo.groupBatches.Length
                                                 ? visibilityBatch.PropagatedMask[batch.groupID]
                                                 : null,
-                                            wmo.flags, currentGroupHasPrimaryVertexColors)
+                                            wmo.flags, currentGroupHasPrimaryVertexColors, wmo.wrath335)
                                         ? visibilityBatch.InteriorFog : null;
                                     if (selectedFog != boundInteriorFog)
                                     {
@@ -1832,18 +1809,9 @@ namespace WoWRenderLib.DX11.Managers
                 0,
                 Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds - WmoCullingTimeMs);
 
-            // Set up M2 stuff (unchanged per M2 so we do it before we loop)
+            // Prepare M2 placements and retained poses for both mesh phases.
             passStarted = Stopwatch.GetTimestamp();
             gpuTimer?.BeginDoodads();
-            _m2DepthStates.BeginPass();
-            _deviceContext.RSSetState(wmoRasterizerState);
-            _deviceContext.IASetInputLayout(m2ShaderProgram.InputLayout);
-            _deviceContext.VSSetShader(m2ShaderProgram.VertexShader, ref nullClassInstance, 0);
-            _deviceContext.PSSetShader(m2ShaderProgram.PixelShader, ref nullClassInstance, 0);
-            _deviceContext.VSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
-            _deviceContext.PSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
-            _deviceContext.VSSetConstantBuffers(1, 1, ref m2BonePaletteConstantBuffer);
-
             var m2ConstantBuffer = new M2PerObjectCB
             {
                 projection_matrix = projectionMatrix,
@@ -1865,20 +1833,6 @@ namespace WoWRenderLib.DX11.Managers
                 doodadMaterialLit = 1,
                 _pad = 0
             };
-            var lastM2BlendMode = float.NaN;
-            var lastM2VertexShader = int.MinValue;
-            var lastM2PixelShader = int.MinValue;
-            var lastM2AlphaRef = float.NaN;
-            var lastM2HasSkinning = -1;
-            var lastDoodadMaterialLit = -1;
-            var lastM2FogMode = -1;
-            var lastM2HasAnimation = false;
-            var lastM2MaterialColor = Vector4.Zero;
-            var lastM2TexMatrix1 = Matrix4x4.Identity;
-            var lastM2TexMatrix2 = Matrix4x4.Identity;
-            var lastM2HasTexMatrix1 = -1;
-            var lastM2HasTexMatrix2 = -1;
-            bool? lastM2TwoSided = null;
             var ribbonSubmissions = _ribbonSubmissions;
             var particleSubmissions = _particleSubmissions;
             var m2MeshSubmissions = _m2MeshSubmissions;
@@ -1886,10 +1840,13 @@ namespace WoWRenderLib.DX11.Managers
             ribbonSubmissions.Clear();
             particleSubmissions.Clear();
             m2MeshSubmissions.Clear();
+            _worldLiquidEntityQuery.BeginFrame(adtContainers);
 
             // Sample a shared animation frame only when a visible animated model needs it.
 
             var m2CameraPosition = camera.Position;
+            WrathFogCB? doodadCurrentFog = currentInteriorFogState is { } currentDoodadFog
+                ? WorldFogConstants.Create(currentDoodadFog, RenderFog) : null;
             foreach (var packet in m2InstancePackets.Values)
             {
                 var instances = packet.Instances;
@@ -1926,15 +1883,15 @@ namespace WoWRenderLib.DX11.Managers
                         (!RenderWMO || !parentWmo.IsCameraVisibleForFrame(_renderFrameNumber)))
                         continue;
 
+                    packet.RefreshSpatialData(i, instance, m2);
+                    var sphere = packet.WorldBounds[i];
                     if (EnableWmoPortalCulling && parentWmo is not null &&
                         !parentWmo.IsDoodadPortalVisible(instance.WmoDoodadIndex,
-                            _renderFrameNumber))
+                            _renderFrameNumber, sphere))
                     {
                         portalCulledM2s++;
                         continue;
                     }
-                    packet.RefreshSpatialData(i, instance, m2);
-                    var sphere = packet.WorldBounds[i];
                     var cameraToSphere = sphere.Center - m2CameraPosition;
                     var distanceSquared = cameraToSphere.LengthSquared();
                     if (ScreenSpaceCulling.IntersectsRenderDistanceSquared(distanceSquared, sphere.Radius, ModelRenderDistance) &&
@@ -1997,10 +1954,8 @@ namespace WoWRenderLib.DX11.Managers
                     (animation.HasAnimatedBones || animation.HasMaterialTracks))
                 {
                     var animationStarted = Stopwatch.GetTimestamp();
-                    var rigidCameraView = cameraMatrix;
-                    rigidCameraView.M41 = rigidCameraView.M42 = rigidCameraView.M43 = 0;
                     animationGroups = packet.BuildAnimationGroups(
-                        animation, m2.submeshes, animationTime, rigidCameraView,
+                        animation, m2.submeshes, animationTime, cameraMatrix,
                         _visibleIndices, _animatedVisibleIndices,
                         preserveLastPose: !AnimateModels);
                     M2AnimationTimeMs += Stopwatch.GetElapsedTime(animationStarted).TotalMilliseconds;
@@ -2054,192 +2009,52 @@ namespace WoWRenderLib.DX11.Managers
                     M2ParticleRibbonTimeMs += Stopwatch.GetElapsedTime(effectsStarted).TotalMilliseconds;
                 }
 
-                var hasOpaque = false;
-                var hasTranslucent = false;
-                foreach (var batch in m2.submeshes)
-                {
-                    if ((int)batch.blendType > 1 ||
-                        M2DepthPolicy.ForMaterial(
-                            m2.usesLegacyDepthFlags, batch.renderFlags) != M2DepthMode.Default)
-                        hasTranslucent = true;
-                    else
-                        hasOpaque = true;
-                }
+                animationGroups = packet.DoodadDrawGroups.Build(animationGroups, instances, _renderFrameNumber, m2.submeshes);
+                var (hasOpaque, hasTranslucent) = M2DoodadFadeDrawGroups.Passes(
+                    animationGroups, m2.submeshes, m2.usesLegacyDepthFlags);
                 m2MeshSubmissions.Add(new M2MeshSubmission(
-                    packet, m2, animationGroups, hasOpaque, hasTranslucent));
+                    packet, m2, animationGroups, hasOpaque, hasTranslucent,
+                    _worldLiquidEntityQuery.Prepare(packet, m2, animationGroups,
+                        cameraMatrix, _liquidSceneState.SceneLiquidTypeId != 0)));
             }
 
-            void DrawM2Meshes(bool translucent)
+            var liquidFrame = new WorldLiquidFrame(camera, Environment.TickCount64,
+                LightDirection, AmbientColor, DiffuseColor, ActiveWorldLighting,
+                _activeWorldSky.SunColor, LiquidSpecular);
+            if (RenderLiquid)
             {
-                foreach (var submission in m2MeshSubmissions)
-                {
-                    if (translucent ? !submission.HasTranslucent : !submission.HasOpaque)
-                        continue;
-                    var packet = submission.Packet;
-                    var m2 = submission.Model;
-                    var animationGroups = submission.Groups;
-                    var vertexBuffer = m2.vertexBuffer;
-                    var indiceBuffer = m2.indiceBuffer;
-
-                    _deviceContext.IASetVertexBuffers(0, 1, ref vertexBuffer, in m2VertexStride, in m2VertexOffset);
-                    _deviceContext.IASetIndexBuffer(indiceBuffer, Format.FormatR16Uint, 0);
-                    VertexBufferBindings++;
-                    IndexBufferBindings++;
-
-                    foreach (var animationGroup in animationGroups)
-                    {
-                        var pose = animationGroup.Pose;
-                        m2ConstantBuffer.hasSkinning = pose?.BonePalette is not null ? 1 : 0;
-                        if (pose?.BonePalette is { } palette &&
-                            (!ReferenceEquals(_uploadedM2Pose, pose) ||
-                             _uploadedM2PoseVersion != pose.Version))
-                        {
-                            _deviceContext.UpdateSubresource(m2BonePaletteConstantBuffer, 0,
-                                ref Unsafe.NullRef<Box>(), ref palette[0], 0, 0);
-                            ConstantBufferUpdates++;
-                            _uploadedM2Pose = pose;
-                            _uploadedM2PoseVersion = pose.Version;
-                        }
-
-                        for (int batchStart = 0; batchStart < animationGroup.Indices.Count; batchStart += MaxInstancesPerBatch)
-                        {
-                            int batchCount = Math.Min(MaxInstancesPerBatch, animationGroup.Indices.Count - batchStart);
-
-                            unsafe
-                            {
-                                MappedSubresource mapped = default;
-                                SilkMarshal.ThrowHResult(_deviceContext.Map(instanceMatrixBuffer, 0, Map.WriteDiscard, 0, ref mapped));
-
-                                var dest = new Span<M2InstanceData>(mapped.PData, batchCount);
-                                for (int i = 0; i < batchCount; i++)
-                                {
-                                    var index = animationGroup.Indices[batchStart + i];
-                                    dest[i] = M2InstanceData.ForScene(packet.Instances[index], packet.WorldMatrices[index]);
-                                }
-
-                                _deviceContext.Unmap(instanceMatrixBuffer, 0);
-                                InstanceBufferMapCalls++;
-                            }
-
-                            var m2InstanceStride = (uint)Marshal.SizeOf<M2InstanceData>();
-                            _deviceContext.IASetVertexBuffers(1, 1, ref instanceMatrixBuffer, in m2InstanceStride, in instanceOffset);
-                            VertexBufferBindings++;
-
-                            for (int j = 0; j < m2.submeshes.Length; j++)
-                            {
-                                var batch = m2.submeshes[j];
-                                var isTransparent = (int)batch.blendType > 1 ||
-                                    M2DepthPolicy.ForMaterial(
-                                        m2.usesLegacyDepthFlags, batch.renderFlags) != M2DepthMode.Default;
-                                if (isTransparent != translucent)
-                                    continue;
-
-                                _m2DepthStates.Apply(m2.usesLegacyDepthFlags, batch.renderFlags);
-
-                                var isTwoSided = IsM2TwoSided(batch.renderFlags);
-                                if (lastM2TwoSided != isTwoSided)
-                                {
-                                    _deviceContext.RSSetState(
-                                        isTwoSided ? m2TwoSidedRasterizerState : wmoRasterizerState);
-                                    lastM2TwoSided = isTwoSided;
-                                }
-
-                                m2ConstantBuffer.blendMode = batch.blendType;
-                                m2ConstantBuffer.alphaRef = ApplyBlendMode(
-                                    GetM2BlendStateIndex((int)batch.blendType), ref currentBlendType);
-                                m2ConstantBuffer.vertexShader = (int)batch.vertexShaderID;
-                                m2ConstantBuffer.pixelShader = (int)batch.pixelShaderID;
-                                m2ConstantBuffer.doodadMaterialLit = Wrath335WmoDoodadLighting.IsMaterialLit(
-                                    batch.renderFlags, (int)batch.blendType) ? 1 : 0;
-                                m2ConstantBuffer.fogMode = (int)Wrath335M2FogPolicy.ForMaterial(
-                                    m2.usesLegacyDepthFlags, (int)batch.blendType,
-                                    (batch.renderFlags & (ushort)M2MaterialFlags.Unfogged) != 0);
-                                if (pose is not null)
-                                {
-                                    var material = pose.Materials[j];
-                                    m2ConstantBuffer.materialColor = material.Color;
-                                    m2ConstantBuffer.texMatrix1 = material.TextureMatrix1;
-                                    m2ConstantBuffer.texMatrix2 = material.TextureMatrix2;
-                                    m2ConstantBuffer.hasTexMatrix1 = material.HasTextureMatrix1 ? 1 : 0;
-                                    m2ConstantBuffer.hasTexMatrix2 = material.HasTextureMatrix2 ? 1 : 0;
-                                }
-                                else
-                                {
-                                    m2ConstantBuffer.materialColor = Vector4.One;
-                                    m2ConstantBuffer.texMatrix1 = Matrix4x4.Identity;
-                                    m2ConstantBuffer.texMatrix2 = Matrix4x4.Identity;
-                                    m2ConstantBuffer.hasTexMatrix1 = 0;
-                                    m2ConstantBuffer.hasTexMatrix2 = 0;
-                                }
-
-                                if (m2ConstantBuffer.blendMode != lastM2BlendMode ||
-                                    m2ConstantBuffer.vertexShader != lastM2VertexShader ||
-                                    m2ConstantBuffer.pixelShader != lastM2PixelShader ||
-                                    m2ConstantBuffer.alphaRef != lastM2AlphaRef ||
-                                    m2ConstantBuffer.fogMode != lastM2FogMode ||
-                                    m2ConstantBuffer.hasSkinning != lastM2HasSkinning ||
-                                    m2ConstantBuffer.doodadMaterialLit != lastDoodadMaterialLit ||
-                                    lastM2HasAnimation != (pose is not null) ||
-                                    m2ConstantBuffer.materialColor != lastM2MaterialColor ||
-                                    !m2ConstantBuffer.texMatrix1.Equals(lastM2TexMatrix1) ||
-                                    !m2ConstantBuffer.texMatrix2.Equals(lastM2TexMatrix2) ||
-                                    m2ConstantBuffer.hasTexMatrix1 != lastM2HasTexMatrix1 ||
-                                    m2ConstantBuffer.hasTexMatrix2 != lastM2HasTexMatrix2)
-                                {
-                                    _deviceContext.UpdateSubresource(m2PerObjectConstantBuffer, 0, ref Unsafe.NullRef<Box>(), ref m2ConstantBuffer, 0, 0);
-                                    ConstantBufferUpdates++;
-                                    lastM2BlendMode = m2ConstantBuffer.blendMode;
-                                    lastM2VertexShader = m2ConstantBuffer.vertexShader;
-                                    lastM2PixelShader = m2ConstantBuffer.pixelShader;
-                                    lastM2AlphaRef = m2ConstantBuffer.alphaRef;
-                                    lastM2FogMode = m2ConstantBuffer.fogMode;
-                                    lastM2HasSkinning = m2ConstantBuffer.hasSkinning;
-                                    lastDoodadMaterialLit = m2ConstantBuffer.doodadMaterialLit;
-                                    lastM2HasAnimation = pose is not null;
-                                    lastM2MaterialColor = m2ConstantBuffer.materialColor;
-                                    lastM2TexMatrix1 = m2ConstantBuffer.texMatrix1;
-                                    lastM2TexMatrix2 = m2ConstantBuffer.texMatrix2;
-                                    lastM2HasTexMatrix1 = m2ConstantBuffer.hasTexMatrix1;
-                                    lastM2HasTexMatrix2 = m2ConstantBuffer.hasTexMatrix2;
-                                }
-
-                                for (int s = 0; s < batch.material.Length; s++)
-                                    _srvScratch[s] = ResolveFrameTexture(batch.material[s]);
-                                if (batch.material.Length > 0)
-                                {
-                                    _deviceContext.PSSetShaderResources(0, (uint)batch.material.Length, ref _srvScratch[0]);
-                                    var samplerCount = Math.Min(batch.material.Length, _samplerScratch.Length);
-                                    for (var s = 0; s < samplerCount; s++)
-                                    {
-                                        var flags = batch.textureFlags is { } textureFlags && s < textureFlags.Length
-                                            ? textureFlags[s]
-                                            : 0;
-                                        _samplerScratch[s] = m2TextureSamplers[GetM2SamplerIndex(flags)];
-                                    }
-                                    _deviceContext.PSSetSamplers(0, (uint)samplerCount, ref _samplerScratch[0]);
-                                    TextureBindingCalls++;
-                                }
-
-                                _deviceContext.DrawIndexedInstanced(batch.numFaces, (uint)batchCount, batch.firstFace, 0, 0);
-                                drawCalls++;
-                                M2DrawCalls++;
-                                M2SubmittedInstances += (uint)batchCount;
-                                var submittedIndices = (ulong)batch.numFaces * (uint)batchCount;
-                                submittedIndexCount += submittedIndices;
-                                M2SubmittedIndices += submittedIndices;
-                            }
-                        }
-                    }
-                }
+                var prepared = _worldLiquidRenderer.Prepare(camera, adtContainers,
+                    _visibleWmoLiquids, coarseCulledTileIndices,
+                    TerrainRenderDistance, ModelRenderDistance);
+                candidateLiquidBatches = prepared.CandidateBatches;
+                visibleLiquidBatches = prepared.VisibleBatches;
+                LiquidCullingTimeMs = prepared.CullingMilliseconds;
+                CullingTimeMs += prepared.CullingMilliseconds;
             }
+            // 12340 CWorldScene list 0 flush precedes the outer opaque M2 draw.
+            gpuTimer?.BeginEarlyLiquids();
+            if (RenderLiquid)
+            {
+                var early = _worldLiquidRenderer.RenderPrepared(liquidFrame, WorldLiquidDrawPhase.Early);
+                LiquidDrawCalls += early.DrawCalls;
+                LiquidSubmittedIndices += early.SubmittedIndices;
+                LiquidSubmissionTimeMs += early.SubmissionMilliseconds;
+                drawCalls += early.DrawCalls;
+                submittedIndexCount += early.SubmittedIndices;
+                _deviceContext.RSSetState(rasterizerState);
+                currentBlendType = -1;
+            }
+            gpuTimer?.EndEarlyLiquids();
 
-            // Opaque M2 geometry writes depth before translucent water. Draw
-            // read-only/blended M2 materials after water so a nearer beam or
-            // particle is not tinted by water farther from the camera.
-            var opaqueM2Started = Stopwatch.GetTimestamp();
-            DrawM2Meshes(false);
-            var opaqueM2SubmissionTimeMs = Stopwatch.GetElapsedTime(opaqueM2Started).TotalMilliseconds;
-            _m2DepthStates.EndPass();
+            var m2Bindings = new M2MeshRenderBindings(m2ShaderProgram,
+                wmoRasterizerState, m2TwoSidedRasterizerState, _blendStates,
+                m2TextureSamplers, _m2TextureResolver);
+            var opaqueM2Stats = _m2MeshRenderer.Draw(m2MeshSubmissions, false,
+                m2ConstantBuffer, _renderFrameNumber, fogCB, doodadCurrentFog, m2Bindings);
+            AccumulateM2MeshStats(opaqueM2Stats);
+            drawCalls += opaqueM2Stats.M2DrawCalls;
+            submittedIndexCount += opaqueM2Stats.M2SubmittedIndices;
+            currentBlendType = -1;
             ApplyBlendMode(0, ref currentBlendType);
 
             // Draw bounds against opaque scene depth before the liquid pass.
@@ -2266,30 +2081,23 @@ namespace WoWRenderLib.DX11.Managers
             gpuTimer?.EndDebug();
             DebugSubmissionTimeMs = Stopwatch.GetElapsedTime(passStarted).TotalMilliseconds;
 
+            var waterPasses = ViewerLiquid.PassOrder;
+            var beforeLiquidM2Stats = _m2MeshRenderer.Draw(m2MeshSubmissions, true,
+                m2ConstantBuffer, _renderFrameNumber, fogCB, doodadCurrentFog, m2Bindings,
+                waterPasses.BeforeLiquid);
+            AccumulateM2MeshStats(beforeLiquidM2Stats);
+            drawCalls += beforeLiquidM2Stats.M2DrawCalls;
+            submittedIndexCount += beforeLiquidM2Stats.M2SubmittedIndices;
+
             gpuTimer?.BeginLiquids();
             if (RenderLiquid)
             {
-                var liquidStats = _worldLiquidRenderer.Render(
-                    camera,
-                    adtContainers,
-                    _visibleWmoLiquids,
-                    coarseCulledTileIndices,
-                    TerrainRenderDistance,
-                    ModelRenderDistance,
-                    Environment.TickCount64,
-                    LightDirection,
-                    AmbientColor,
-                    DiffuseColor,
-                    ActiveWorldLighting);
-                candidateLiquidBatches = liquidStats.CandidateBatches;
-                visibleLiquidBatches = liquidStats.VisibleBatches;
-                LiquidDrawCalls = liquidStats.DrawCalls;
-                LiquidSubmittedIndices = liquidStats.SubmittedIndices;
-                LiquidCullingTimeMs = liquidStats.CullingMilliseconds;
-                LiquidSubmissionTimeMs = liquidStats.SubmissionMilliseconds;
+                var liquidStats = _worldLiquidRenderer.RenderPrepared(liquidFrame, WorldLiquidDrawPhase.Late);
+                LiquidDrawCalls += liquidStats.DrawCalls;
+                LiquidSubmittedIndices += liquidStats.SubmittedIndices;
+                LiquidSubmissionTimeMs += liquidStats.SubmissionMilliseconds;
                 drawCalls += liquidStats.DrawCalls;
                 submittedIndexCount += liquidStats.SubmittedIndices;
-                CullingTimeMs += liquidStats.CullingMilliseconds;
 
                 _deviceContext.RSSetState(rasterizerState);
                 ComPtr<ID3D11DepthStencilState> nullLiquidDepthState = default;
@@ -2298,21 +2106,14 @@ namespace WoWRenderLib.DX11.Managers
             }
             gpuTimer?.EndLiquids();
 
+            var translucentM2Stats = _m2MeshRenderer.Draw(m2MeshSubmissions, true,
+                m2ConstantBuffer, _renderFrameNumber, fogCB, doodadCurrentFog, m2Bindings,
+                waterPasses.AfterLiquid);
+            AccumulateM2MeshStats(translucentM2Stats);
+            drawCalls += translucentM2Stats.M2DrawCalls;
+            submittedIndexCount += translucentM2Stats.M2SubmittedIndices;
+            currentBlendType = -1;
             _m2DepthStates.BeginPass();
-            _deviceContext.RSSetState(wmoRasterizerState);
-            _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
-            _deviceContext.IASetInputLayout(m2ShaderProgram.InputLayout);
-            _deviceContext.VSSetShader(m2ShaderProgram.VertexShader, ref nullClassInstance, 0);
-            _deviceContext.PSSetShader(m2ShaderProgram.PixelShader, ref nullClassInstance, 0);
-            _deviceContext.VSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
-            _deviceContext.PSSetConstantBuffers(0, 1, ref m2PerObjectConstantBuffer);
-            _deviceContext.VSSetConstantBuffers(1, 1, ref m2BonePaletteConstantBuffer);
-            lastM2TwoSided = null;
-            var translucentM2Started = Stopwatch.GetTimestamp();
-            DrawM2Meshes(true);
-            var translucentM2SubmissionTimeMs =
-                Stopwatch.GetElapsedTime(translucentM2Started).TotalMilliseconds;
-            M2SubmissionTimeMs = opaqueM2SubmissionTimeMs + translucentM2SubmissionTimeMs;
 
             var effectDrawStarted = Stopwatch.GetTimestamp();
             _effectRenderer.BeginFrame();
@@ -2460,6 +2261,7 @@ namespace WoWRenderLib.DX11.Managers
                 _debugBoundsRenderer.Dispose();
                 _m2DepthStates.Dispose();
                 _effectRenderer.Dispose();
+                _m2MeshRenderer.Dispose();
                 _skyRenderer.Dispose();
                 _worldLiquidRenderer.Dispose();
                 _glowRenderer.Dispose();
@@ -2476,8 +2278,6 @@ namespace WoWRenderLib.DX11.Managers
                 depthTexture.Dispose();
                 adtPerObjectConstantBuffer.Dispose();
                 layerDataConstantBuffer.Dispose();
-                m2PerObjectConstantBuffer.Dispose();
-                m2BonePaletteConstantBuffer.Dispose();
                 wrathFogConstantBuffer.Dispose();
                 wmoPerObjectConstantBuffer.Dispose();
                 wmoCollisionConstantBuffer.Dispose();

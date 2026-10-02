@@ -1,6 +1,6 @@
 # WTEditor rendering feature status
 
-Last updated: 2026-10-01. This is the working rendering ledger for future
+Last updated: 2026-10-02. This is the working rendering ledger for future
 client-version work. Update the version matrix, open issues, and next steps
 when a fix lands or a visual comparison changes their status. WowLib remains
 the only client-file reader and parser; Wisp is a rendering reference for 3.3.5.
@@ -12,16 +12,130 @@ repository smoke suite; it does not imply parity with every WoW client era.
 
 ## Roadmap
 
-The latest batch connects static 12340 WMO doodad MODR/MODS ownership and MOGI
-light-bank classification. Interior copies use the baked MODD ambient/diffuse
-split; exterior copies retain sunlight. The instance stream supports both in
-one M2 draw, with the native unlit/modulate gate and neutral sky/other-client
-fallback. Full smoke exits 0 with **698 tests** (66 Render, 441 DX11,
-191 Avalonia), including 24 new cases and a live M2 shader WARP pixel fixture.
-See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
-Next for doodads: callback frustum/sphere culling, shared-owner admission order
-and per-instance current/staged fog. Underwater/dynamic lights, entity MOCV,
-shadows and matched client pixels remain open.
+Active work is the liquid replacement. Basic MPQ 3.3.5.12340 water/specular-water
+and magma now use recovered SM3 formulas, native animated slots, generated
+gradients, depth/UV inputs and indoor material alpha. Material-flag list 0/1,
+retained placement identities and decoded-grid viewer queries are connected.
+Retained terrain/MODR entity queries, scene-side history and live mesh water
+interleaving/clipping are connected. Full smoke: 1,052, exit 0, including 14 new
+entity/mesh cases (two WARP fixtures). Complete liquid parity remains open:
+allocator order, neighboring WMO links/native cache histories, shared effect
+ordering, procedural water, ripples, underwater,
+local lights and matched client captures. See the
+[entity/mesh audit](reference/client-335/CPU_SCENE_AUDIT.md#entity-liquid-cache-scene-history-and-mesh-water-clipping-2026-10-02)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+
+The preceding WMO transition audit corrects 12340 attenuation/portal-distance
+polygon rules, the final transition endpoint, packed material diffuse 127/255,
+non-unified/no-MOCV pass dispatch and forced-staged unified opaque exterior fog.
+Interior MFOG now requires a strict MOGP interior among retained viewer groups;
+portal weighting considers both groups while volume IDs remain from the first.
+Full smoke exits 0 with **744 tests** (66 Render, 485 DX11, 193 Avalonia),
+including 22 new CPU/WARP transition/fog cases. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-colors-lighting-and-fog-2026-10-01).
+The subsequent live inspection traces the Client-only Stormwind gray layer to
+transition alpha reaching the imported GUI image. Editor glow masked this by
+writing opaque alpha. `WowViewerEngine.RenderTo` now finishes with an alpha-only
+opaque pass, preserving every scene RGB channel and internal material alpha.
+Full smoke exits 0 with **746 tests** (66 Render, 487 DX11, 193 Avalonia).
+The captured full scene changes zero RGB pixels and has opaque alpha throughout
+after the pass. See the
+[presentation audit](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-alpha-and-opaque-gui-presentation-2026-10-01).
+Rebuilt GUI acceptance and matched native pixels remain open; unified lighting
+still lacks local-light/material/shadow/fallback coverage.
+
+The preceding batch adds six-plane portal sphere admission and per-instance fog to
+the static 12340 WMO doodad lighting port. Repeated callback frusta form a union;
+unbucketed/final group consumers retain call-time state and append order. The
+first accepting owner selects staged/current fog independently of baked MODD
+versus sunlight. Full smoke exits 0 with **718 tests** (66 Render, 459 DX11,
+193 Avalonia), including 18 new cases and extended live M2 shader WARP fog pixels.
+See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-portal-sphere-admission-and-instance-fog-2026-10-01).
+The subsequent exterior doodad batch replaces the adapter with scene-wide
+sphere depth buckets and cropped-frustum/static-volume/terrain-sphere admission,
+before the current band's horizon updates. Terrain rejection consumes pending
+eligibility; frustum/volume failures retain portal retry. Bucket draws retain
+the previous portal-written staged/current fog bank. Full smoke exits 0 with
+**778 tests** (66 Render, 519 DX11, 193 Avalonia), including 32 new cases.
+See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-doodad-depth-buckets-and-terrain-sphere-admission-2026-10-01).
+The next batch ports loaded WMO doodad size categories, detail-scaled bucket/
+portal prefilters and CPU distance/alpha eligibility. Fresh exterior definitions
+start with staged fog; rejected submissions retain portal-written history.
+Full smoke exits 0 with **812 tests** (66 Render, 553 DX11, 193 Avalonia),
+including 34 new cases. That batch retained CPU opacity for the following GPU
+consumer audit. See the
+[size/fade audit](reference/client-335/CPU_SCENE_AUDIT.md#doodad-size-categories-cpu-fade-gates-and-initial-fog-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+The default non-shadow WMO doodad GPU fade path now composes instance/material
+alpha, partitions faded draw groups and selects recovered blend/cutout state
+while retaining authored depth flags. Full smoke exits 0 with **827 tests**
+(66 Render, 568 DX11, 193 Avalonia), including 15 new cases and extended WARP
+fade, cutout and depth-restoration pixels. That batch left ZFill, shadow variants,
+layered dispatch and native lifetimes open for the following audit. Native global
+ordering and matched client captures remain open. See the
+[GPU fade audit](reference/client-335/CPU_SCENE_AUDIT.md#doodad-gpu-fade-alpha-and-material-state-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+Underwater/dynamic lights, entity MOCV, shadows and matched client pixels remain open.
+
+The following layered-material batch uses the base material to select native WMO
+doodad queues, independently of depth flags, while each layer retains its own
+blend/cutout/depth state. Translucent bases exclude full-alpha instances from
+native instancing. Full smoke exits 0 with **841 tests** (66 Render, 582 DX11,
+193 Avalonia), including 14 new cases and extended scene/WARP fixtures.
+ZFill control/eligibility/clone state is recovered but its port requires sorted
+element queues and model eligibility reseeding. M2 mesh submission has since
+moved into its renderer; next recover those contracts, then shadow selectors/native lifetimes.
+See the [layer/ZFill audit](reference/client-335/CPU_SCENE_AUDIT.md#doodad-layered-material-partition-and-zfill-dependency-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+
+M2 mesh renderer batch: constants, bone palette, dynamic instance uploads and
+mesh depth states now belong to `M2MeshRenderer`. SceneManager retains CPU
+preparation/frame order and consumes returned telemetry. Full smoke exits 0
+with **843 tests** (66 Render, 584 DX11, 193 Avalonia). WARP coverage verifies
+both material phases, 1,025-instance uploads, pose versions, intervening pipeline
+state and failure cleanup. At that batch native sorted keys/comparator and
+shared mesh/effect/water queues remained next, followed by ZFill eligibility
+lifetimes. See the [renderer audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-mesh-submission-renderer-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+
+The subsequent batch ports CPU-only model/mesh distance rules, full base transparent/
+opaque comparator fallbacks and native heap mechanics. Full smoke exits 0 with
+**874 tests** (66 Render, 615 DX11, 193 Avalonia), including 31 ordering cases.
+This is a tested policy foundation awaiting live decoded/pose/identity adapters,
+water queues and additive regrouping; GPU order and live feature status are
+unchanged. Those adapters and particle secondary-key/additive producers precede
+ZFill eligibility reseeding. See the [ordering audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-element-keys-comparator-and-heap-policy-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+
+The decoded-input batch retains authored WotLK MPQ mesh sort flags, signed
+priority/layer and section center-bone/center/radius/bone-count values. Its
+explicit bone/model/view adapter reads current transforms and rejects missing
+translucent center bones. Full smoke exits 0 with **899 tests** (66 Render,
+640 DX11, 193 Avalonia), including 25 new decoding/transform cases. Native
+pose/billboard/full-bone mapping and identity adaptation were its next dependency.
+See the [decoded-input audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-decoded-sort-metadata-and-transform-inputs-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
+
+The retained-pose batch now keeps all WotLK CPU bones beside the 256-entry GPU
+palette, corrects live billboard/root-relative parent inputs and native parent/
+normalization gates, and provides lifetime-owned packet/pose/resource sort inputs.
+Full smoke exits 0 with **920 tests** (66 Render, 661 DX11, 193 Avalonia), including
+21 new cases. The following CPU queue batch ports particle/ribbon keys, additive
+regrouping and per-type water routing into retained shared queues. Full smoke exits
+0 with **957 tests** (66 Render, 698 DX11, 193 Avalonia), including 37 new cases.
+Native mesh preparation now retains authored water bounds and simple-animation
+eligibility, selects resolved shader-table identities, and composes alpha/water
+routing into retained queues. Entity lighting and initial particle water flags are
+ported; section +0x0E is corrected to bone-combo start. Full smoke exits 0 with
+**992 tests** (66 Render, 733 DX11, 193 Avalonia), including 35 new cases.
+Mesh water partitions/clipping now consume live terrain/MODR entity queries and
+viewer-dependent ordering. Global shared mesh/effect sorting, neighboring WMO
+links/native cache histories, live effect tables, attachment/runtime overrides,
+reference allocator ties and matched pixels remain
+open; see the [pose/identity audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-full-pose-billboard-and-retained-sort-identities-2026-10-01)
+and [queue audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-particle-keys-additive-regrouping-and-water-queues-2026-10-01)
+and [preparation audit](reference/client-335/CPU_SCENE_AUDIT.md#m2-native-mesh-preparation-and-shader-selectors-2026-10-01)
+and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
 
 The preceding portal batch connects the 12340 terrain clip buffer to exterior WMO
 box rejection. Loaded terrain edge updates follow each depth band's WMO tests;
@@ -127,8 +241,8 @@ The client frame audit also confirms liquid-dependent ordering of M2 passes
 1/2 and a common sorted mesh/ribbon/particle/callback list. The editor's
 current asset/effect loops and water order do not yet reproduce that system.
 Next CPU batches establish viewer-liquid/plane selection, alpha/eligibility
-and animation/bounds policies, then move M2 submission into a dedicated
-renderer before wiring the recovered frame/element queues. Terrain, WMO,
+and animation/bounds policies before wiring the recovered frame/element queues
+into the extracted M2 mesh renderer. Terrain, WMO,
 detail, shadow, sky/weather, FFX, and resource preparation remain required
 workstreams with their own CPU-to-shader contracts.
 
@@ -165,6 +279,15 @@ TODO(WMO):
    query for dynamic entities. Entity BSP/MOCV lighting remains open. Static
    12340 WMO doodad mesh lighting now uses its MODD baseline and MOGI owner
    classification; its native mesh callback does not invoke a floor query.
+   Portal callbacks now retain sphere frusta, and the first accepting group
+   selects staged/current fog per instance. Exterior spatial admission and retained
+   portal-written fog history are ported. Fresh staged fog, loaded WMO size/detail
+   prefilters, CPU distance/alpha eligibility and default non-shadow GPU fade
+   and layered base-material partition are now connected. Sorted ZFill clones,
+   shadow alpha variants,
+   native ordering/availability and matched client pixels remain open. See the
+   [layer/ZFill entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-layered-material-partition-and-zfill-dependency-2026-10-01)
+   and [rendering roadmap](CLIENT_335_RENDERING_ACCURACY_PLAN.md#roadmap).
    Keep that static baseline separate from the remaining entity lighting audit.
    The page also lists detail/render/trans MOPY debug modes. Normal editor
    rendering already consumes MOBA index ranges and the MOGP transition,
@@ -218,7 +341,8 @@ TODO(WMO):
    terrain and water. Compare the beam's colour and width with the client after
    the new M2/water ordering and glow pass; any remaining difference may need
    the missing distance fog or more exact client glow parameters. General
-   interleaving of translucent water and M2s at different depths remains open.
+   sorted mesh/ribbon/particle interleaving remains open; mesh water partitions
+   and crossing-plane clipping are now connected.
 4. Extend WMO parity by material family and interior/exterior lighting mode,
    starting with an in-editor Duskwood tree recheck for black cutout cards and
    leaf edges. Then add fog and sky/environment effects that are still listed
@@ -226,10 +350,10 @@ TODO(WMO):
 5. Compare 3.3.5 terrain, M2, WMO, and liquid at fixed camera positions and
    LightData times against the client/Wisp. Recheck the legacy vertex-light
    clamp and world-space M2 normal fixes on hills, rotated doodads, and WMOs.
-   Liquid currently uses a simple forward water pass without the reference
-   scene-colour/depth inputs. Wisp also records exact ADT liquid materials as
-   unfinished, so compare terrain water with the 3.3.5 client itself before
-   tuning tint and alpha. Use Wisp's WMO liquid path for WMO water checks.
+   Basic 12340 water/magma now use recovered two-texture/one-texture SM3
+   programs, which do not require scene-color/depth buffers. Procedural material
+   3 has a separate six-texture program and remains open. Compare terrain and
+   WMO liquids against the client; passing WARP formulas is not frame parity.
 6. Check the 3.3.5 noon light direction on slopes and model faces. Wisp's
    reference noon ray vector is `(-0.5613, -0.5613, -0.6082)`; our DX11 shaders
    use `(0.5613, 0.5613, 0.6082)` toward the light. The prior vertical-only
@@ -335,7 +459,7 @@ for every M2 effect or other client versions.
 | ADT terrain geometry and textures | Partial parity | Layered diffuse/height textures, LOD, editor overlays, culling, and streaming are active. MCAL sampling and composition need the per-version visual checks above. |
 | WMO rendering | Partial parity | Groups, materials, instancing, doodad sets, portal visibility, and selection are active. The 3.3.5 path keeps MOGI and MOGP flags separate, uses downward viewer-group hits, projected nested portal rectangles, and the client packed MOBA batch bounds. Portal-less MPQ WMOs still cull interior groups outdoors; a real floor hit supersedes bounds-only candidates. Native static CPU occluders gate exterior group spheres and world portal polygons, preserving updated-placement and cached interior bypasses. Terrain clip-buffer box rejection and depth-band edge updates are connected, including hole erasure and unbucketed exceptions. Instance grouping and modern CASC batch bounds remain. Exact terrain fraction/rounding, native streaming/group availability and terrain combined bounds, protected horizon sources, GPU volume occlusion, and portal views for outdoor terrain, M2, liquid, and doodads remain. The user's reference/editor exterior captures still require a matched regression view. WotLK alpha-key cutout and WMO material clamp flags are connected; interior/material permutations remain. |
 | M2 rendering | Partial parity | Static geometry/material combinations and instancing are active. 3.3.5 skeletal/material animation, billboard bones, per-instance selection, and first ribbon and particle draw passes are active. The white instance portal particle plane is visually confirmed; broader effect parity and visual comparison remain. Opaque and translucent M2 submeshes are submitted on opposite sides of the liquid pass without repeating animation evaluation. Hermite and Bezier tracks currently use Wisp's linear fallback because their tangents are not retained. World-space M2 normals and WotLK material depth flags need broader visual confirmation. |
-| MH2O liquid rendering | Partial parity | Geometry, material families, LightData colors, and LightParams alpha are active. All-zero named LightData color quartets resolve to the shared non-black client-material palette in both renderer and UI snapshots while retaining the selected LightParams alpha values. Water now draws between opaque and translucent M2 submeshes, preventing distant water from washing over a nearer additive beam. Water and transparent M2s still lack general per-depth interleaving, and the forward water pass lacks scene-colour/depth refraction. Wisp marks exact ADT liquid materials unfinished, so 3.3.5 terrain-water tint/alpha needs a comparison against the client; WMO liquid can be checked against Wisp. |
+| MH2O / WMO liquid rendering | Partial parity | MPQ 3.3.5.12340 basic water/specular-water/magma use recovered SM3 equations, native animated slots/clocks, 8x64 gradients, depth/UV rules and indoor alpha. Sun band 9 feeds exterior specular; the fixed indoor light contributes zero specular. Material flags split lists; list 0 draws before opaque M2, with retained placement/generation identities and duplicate suppression. Decoded bilinear grids feed the viewer type/depth query, retaining original WMO query type/tolerance independently of draw remaps. WARP verifies shader/blend/fog/state and list/shared-placement pixels; other clients retain their fallback. Retained terrain/MODR entity caches, update/render viewer histories and mesh water partitions/clipping are connected; WARP covers both viewer branches, moving skins, sparse uploads and state reset. Allocator order, neighboring WMO links/native cache histories, shared effect sorting, configurable clip-off behavior, portal-dependent WMO color, local lights, procedural material 3, waves/ripples, underwater fog/particulate, MCLQ and matched captures remain open. Basic water does not require scene-color/depth refraction resources. |
 | Dynamic time-of-day lighting | Implemented | Light/LightParams and either LightData (builds after 15595) or LightIntBand/LightFloatBand (builds through 15595) are loaded by DBD column name and evaluated on the circular 0–2880 timeline. Legacy Light coordinates and falloff radii are converted from inches; legacy LightSkybox model paths resolve through the MPQ asset registry. Missing tables, columns, band rows, and referenced entries are reported in the console. Map navigation is durable view-model state, replayed whenever the DX11 renderer attaches/restarts, then retained by the engine until content/database initialization finishes and applied on the render thread with dynamic evaluation enabled. Renderer-owned controls are read-only while live lighting is active, and delayed TwoWay control echoes cannot disable dynamic updates. |
 | Local radial lights | Implemented | Light falloff volumes are blended from the camera in renderer-native center-origin GameCoords space. |
 | Zone lighting | Implemented | ZoneLight polygons use the same center-origin camera space, including vertical bounds, transition distance, and priority ordering. |

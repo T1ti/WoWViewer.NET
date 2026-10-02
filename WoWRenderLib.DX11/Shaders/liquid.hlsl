@@ -19,6 +19,10 @@ cbuffer PerObject : register(b0)
     float4 liquidAlphaParameters; // ocean shallow/deep, river shallow/deep
     float4 wmoWaterColor; // exterior environment tint, or white indoors
     float4 wmoParameters; // basic class, texture rotation, shallow/deep alpha
+    float4 nativeParameters; // 12340 program, UV scale, rotation, gradient depth scale
+    float4 nativeOffset; // magma scroll, gradient U, generated WMO UV
+    float4 nativeVertexColor;
+    float4 nativeSpecular; // CM2Lighting specular RGB, exponent 6
 };
 
 cbuffer WrathFog : register(b4)
@@ -28,7 +32,9 @@ cbuffer WrathFog : register(b4)
 };
 
 Texture2D liquidTexture : register(t0);
+Texture2D depthGradient : register(t1);
 SamplerState linearWrap : register(s0);
+SamplerState linearClamp : register(s1);
 
 struct VSIn
 {
@@ -46,6 +52,9 @@ struct VSOut
     float2 cellCoord : TEXCOORD2;
     float3 normal : NORMAL;
     float fogVisibility : TEXCOORD3;
+    float4 primaryColor : COLOR0;
+    float3 secondaryColor : COLOR1;
+    float2 gradientCoord : TEXCOORD4;
 };
 
 VSOut VS_Main(VSIn input)
@@ -59,6 +68,52 @@ VSOut VS_Main(VSIn input)
         ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
     output.depth = saturate(input.depth);
     output.cellCoord = input.cellCoord;
+    output.primaryColor = 0;
+    output.secondaryColor = 0;
+    output.gradientCoord = 0;
+
+    if (nativeParameters.x > 0.5f)
+    {
+        float2 uv = input.texCoord;
+        // The native WMO emitter generates coordinates after applying the
+        // placement's rotation, with its translation removed.
+        if (nativeOffset.w > 0.5f)
+            uv = mul((float3x3)model_matrix, float3(uv, 0)).xy;
+        output.normal = mul((float3x3)model_matrix, float3(0, 0, 1));
+        output.gradientCoord = float2(nativeOffset.z, input.depth * nativeParameters.w);
+        if (nativeParameters.x > 2.5f)
+        {
+            output.texCoord = uv + nativeOffset.xy;
+            output.primaryColor = nativeVertexColor;
+        }
+        else
+        {
+            float cs = cos(nativeParameters.z), sn = sin(nativeParameters.z);
+            uv *= nativeParameters.y;
+            output.texCoord = float2(uv.x * cs - uv.y * sn, uv.x * sn + uv.y * cs);
+            float3 toLight = lightDirection.xyz;
+            float3 ambient = lightingAmbient.rgb, diffuse = lightingDiffuse.rgb;
+            if (liquidColorParameters.w > 0.5f)
+            {
+                toLight = float3(0, 0, 1);
+                ambient = 0;
+                diffuse = 1;
+            }
+            // vsLiquidWater*: primary = vertex * (ambient + diffuse * saturate(N.L)).
+            // Normal transformation is not normalized by the reference VS.
+            output.primaryColor = nativeVertexColor * float4(
+                ambient + diffuse * saturate(dot(output.normal, toLight)), 1);
+            if (nativeParameters.x > 1.5f)
+            {
+                float3 normalView = mul((float3x3)view_matrix, output.normal);
+                float3 lightView = mul((float3x3)view_matrix, toLight);
+                float3 halfVector = normalize(lightView - normalize(viewPosition.xyz));
+                output.secondaryColor = nativeSpecular.rgb * pow(
+                    max(dot(normalView, halfVector), 0), nativeSpecular.w);
+            }
+        }
+        return output;
+    }
 
     if (familyParameters.w > 0.5f)
     {
@@ -86,6 +141,29 @@ VSOut VS_Main(VSIn input)
 
 float4 PS_Main(VSOut input) : SV_Target
 {
+    if (nativeParameters.x > 0.5f)
+    {
+        float4 wave = liquidTexture.Sample(linearWrap, input.texCoord);
+        float3 rgb;
+        float alpha;
+        if (nativeParameters.x > 2.5f)
+        {
+            // psLiquidMagma: vertex RGB * texture RGB; alpha is always one.
+            rgb = input.primaryColor.rgb * wave.rgb;
+            alpha = 1;
+        }
+        else
+        {
+            float4 gradient = depthGradient.Sample(linearClamp, input.gradientCoord);
+            // psLiquidWaterNoSpec: primary * depth gradient + surface RGB.
+            rgb = input.primaryColor.rgb * gradient.rgb + wave.rgb;
+            alpha = input.primaryColor.a * gradient.a;
+            // psLiquidWater: the surface alpha scales only this additive glint.
+            if (nativeParameters.x > 1.5f)
+                rgb += wave.a * (input.secondaryColor + 0.25f);
+        }
+        return float4(lerp(fogColor.rgb, rgb, input.fogVisibility), alpha);
+    }
     float4 sampled = familyParameters.w > 0.5f && familyParameters.z < 0.5f
         ? float4(1.0f, 1.0f, 1.0f, 1.0f)
         : liquidTexture.Sample(linearWrap, input.texCoord);

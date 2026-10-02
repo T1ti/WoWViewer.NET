@@ -17,6 +17,165 @@ public sealed class WmoSceneViewerQueryTests
     private static readonly BoundingBox Bounds = new(new(-10f, -10f, -2000f), new(10f, 10f, 10f));
 
     [TestMethod]
+    public void LoadedDoodadOpacityReachesInstanceStreamsAndSeparatesFadedDrawGroups()
+    {
+        using var scene = new CpuScene();
+        var model = QueueModel(QueueGroup(10, 8) with { doodadReferences = [0, 1, 2, 3] });
+        model.doodads = [default, default, default, default];
+        model.doodadsReferencedByGroups = [true, true, true, true];
+        var placement = scene.Add(model);
+        var box = new BoundingBox(Vector3.Zero, new(2, 2, 2));
+        scene.AddDoodad(placement, 0, new(new(80, 0, 1), 0.01f), box);
+        scene.AddDoodad(placement, 1, new(new(95, 0, 1), 0.01f), box);
+        scene.AddDoodad(placement, 2, new(new(97.5f, 0, 1), 0.01f), box);
+        scene.AddDoodad(placement, 3, new(new(85, 0, 1), 0.01f), box);
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(new(default, default, true), true, Eye, Vector3.UnitX, QueueCamera,
+            scene.Objects, doodadFade: new(1));
+        placement.SetPortalVisibilityFrame(32);
+        Assert.IsTrue(placement.TryGetDoodadSubmissionOpacity(1, 32, out var opacity));
+        Assert.AreEqual(0.5f, opacity);
+        Assert.IsFalse(placement.TryGetDoodadSubmissionOpacity(1, 33, out _));
+        var data = M2InstanceData.ForScene(placement.ActiveDoodads[1], Matrix4x4.Identity, 32, default, null);
+        Assert.AreEqual(new Vector4(0.5f, 1, 0, 0), data.RenderParameters);
+        Assert.AreEqual(Vector4.Zero, M2InstanceData.ForScene(placement.ActiveDoodads[1], Matrix4x4.Identity,
+            33, default, null).RenderParameters);
+
+        var source = new M2AnimationDrawGroup();
+        var pose = new M2AnimationPose { Materials = [new() { Color = Vector4.One }] };
+        source.Reset(pose);
+        source.AddInstance(0); source.AddInstance(1); source.AddInstance(2); source.AddInstance(3);
+        var builder = new M2DoodadFadeDrawGroups();
+        var groups = builder.Build([source], placement.ActiveDoodads, 32);
+        Assert.AreEqual(3, groups.Count);
+        Assert.IsTrue(groups.All(group => ReferenceEquals(pose, group.Pose)));
+        Assert.AreEqual(1f, groups[0].DoodadOpacity);
+        Assert.AreEqual(0.5f, groups[1].DoodadOpacity);
+        Assert.AreEqual(0.25f, groups[2].DoodadOpacity);
+        Assert.AreEqual(2, groups[0].Indices.Count);
+        Assert.AreEqual(1, groups[1].Indices.Count);
+        Assert.AreEqual(1, groups[2].Indices.Count);
+        Assert.AreEqual((true, true), M2DoodadFadeDrawGroups.Passes(groups, [new() { blendType = 0 }], true));
+        pose.Materials = [new() { Color = new(1, 1, 1, 0.5f) }];
+        groups = builder.Build([source], placement.ActiveDoodads, 32);
+        Assert.AreEqual(4, groups.Count); // Material alpha also excludes the native instanced path.
+        Assert.IsTrue(groups.All(group => group.Indices.Count == 1));
+        Assert.AreEqual((false, true), M2DoodadFadeDrawGroups.Passes(groups, [new() { blendType = 0 }], true));
+        // Full-alpha additive layers of an opaque base stay in its opaque group.
+        pose.Materials = [new() { Color = Vector4.One }];
+        Submesh[] layered = [new() { blendType = 3, baseBlendType = 0 }];
+        groups = builder.Build([source], placement.ActiveDoodads, 32, layered);
+        Assert.AreEqual(3, groups.Count);
+        Assert.AreEqual(2, groups[0].Indices.Count);
+        Assert.AreEqual((true, true), M2DoodadFadeDrawGroups.Passes(groups, layered, true));
+        // A translucent base excludes every layer from the native instanced path,
+        // even when this layer's blend is opaque and instance alpha is one.
+        layered = [new() { blendType = 0, baseBlendType = 2 }];
+        groups = builder.Build([source], placement.ActiveDoodads, 32, layered);
+        Assert.AreEqual(4, groups.Count);
+        Assert.IsTrue(groups.All(group => group.Indices.Count == 1));
+        Assert.AreEqual((false, true), M2DoodadFadeDrawGroups.Passes(groups, layered, true));
+        var retained = groups[0];
+        groups = builder.Build([source], placement.ActiveDoodads, 33);
+        Assert.AreEqual(1, groups.Count);
+        Assert.AreSame(retained, groups[0]);
+        Assert.IsFalse(groups[0].NativeDoodadFade);
+        CollectionAssert.AreEqual(new[] { 0, 1, 2, 3 }, groups[0].Indices.ToArray());
+        Assert.AreEqual((true, false), M2DoodadFadeDrawGroups.Passes(groups, [new() { blendType = 0 }], true));
+    }
+
+    [DataTestMethod]
+    [DataRow(1.5f, true, true)]
+    [DataRow(1f, true, false)]
+    [DataRow(1f, false, true)]
+    [DataRow(0.5f, false, false)]
+    public void ScenePreparationAppliesDetailAndObjectFadeToLoadedDoodads(float detail, bool objectFade, bool visible)
+    {
+        using var scene = new CpuScene();
+        var model = QueueModel(QueueGroup(10, 8) with { doodadReferences = [0] });
+        model.doodads = [default];
+        model.doodadsReferencedByGroups = [true];
+        var placement = scene.Add(model);
+        var sphere = new WoWRenderLib.Raycasting.BoundingSphere(new(99.96f, 0, 0.5f), 0.01f);
+        scene.AddDoodad(placement, 0, sphere, new(new(99, -1, 0), new(101, 1, 1)));
+        var preparation = new WmoScenePortalPreparation();
+        preparation.Prepare(new(default, default, true), true, Eye, Vector3.UnitX, QueueCamera,
+            scene.Objects, doodadFade: new(detail, objectFade));
+        placement.SetPortalVisibilityFrame(31);
+        Assert.AreEqual(visible, placement.IsDoodadPortalVisible(0, 31, sphere));
+        Assert.IsTrue(placement.IsDoodadPortalVisible(0, 32, sphere));
+    }
+
+    [TestMethod]
+    public void ScenePreparationEnlistsLoadedExteriorDoodadsAcrossBandsWithProfileAndFrameGuards()
+    {
+        using var scene = new CpuScene();
+        var model = QueueModel(QueueGroup(10, 8) with { doodadReferences = [0, 1, 2] });
+        model.doodads = [default, default, default];
+        model.doodadsReferencedByGroups = [true, true, true];
+        var placement = scene.Add(model);
+        var inside = new WoWRenderLib.Raycasting.BoundingSphere(new(101, 0, 0.5f), 0.01f);
+        var cutoff = new WoWRenderLib.Raycasting.BoundingSphere(new(2500, 0, 0.5f), 0.01f);
+        var outside = new WoWRenderLib.Raycasting.BoundingSphere(new(101, 2, 0.5f), 0.01f);
+        scene.AddDoodad(placement, 0, inside);
+        scene.AddDoodad(placement, 1, cutoff);
+        scene.AddDoodad(placement, 2, outside);
+        var preparation = PrepareScene(scene);
+        placement.SetPortalVisibilityFrame(30);
+        Assert.IsTrue(Groups(placement)[0]);
+        Assert.IsTrue(placement.IsDoodadPortalVisible(0, 30, inside));
+        Assert.IsTrue(placement.TryGetDoodadCurrentFog(0, 30, out var current));
+        Assert.IsFalse(current); // fresh definitions start with staged fog
+        Assert.IsFalse(placement.IsDoodadPortalVisible(1, 30, cutoff));
+        Assert.IsFalse(placement.IsDoodadPortalVisible(2, 30, outside));
+        Assert.IsTrue(placement.IsDoodadPortalVisible(1, 31, cutoff));
+        placement.EnabledGroups[0] = false;
+        PrepareScene(scene, preparation: preparation);
+        Assert.IsFalse(placement.IsDoodadPortalVisible(0, 30, inside));
+        preparation.Prepare(new(default, default, true), false, Eye, Vector3.UnitX, QueueCamera, scene.Objects);
+        Assert.IsFalse(placement.TryGetDoodadCurrentFog(0, 30, out _));
+    }
+
+    [TestMethod]
+    public void ScenePreparationCarriesPortalSphereAdmissionAndFogIntoThePlacementFrame()
+    {
+        using var scene = new CpuScene();
+        var root = Floor(0) with { portalLinks =
+            [new() { PortalIndex = 0, TargetGroupIndex = 1, Side = 1 },
+             new() { PortalIndex = 1, TargetGroupIndex = 2, Side = 1 }] };
+        var model = Model(root, Floor(-1) with { doodadReferences = [0] },
+            Floor(-1, 0x40) with { doodadReferences = [1] });
+        model.portalGraphValid = true;
+        model.portals = [ClipPortal(0.5f, 0.2f), ClipPortal(0.6f, 0.2f)];
+        model.doodads = [default, default];
+        model.doodadsReferencedByGroups = [true, true];
+        var placement = scene.Add(model);
+        var preparation = new WmoScenePortalPreparation();
+        var viewer = scene.Locate();
+        Assert.AreSame(placement, viewer.Primary.Instance);
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        placement.SetPortalVisibilityFrame(20);
+        var inside = new WoWRenderLib.Raycasting.BoundingSphere(new(0, 0, 0.75f), 0.01f);
+        var outside = new WoWRenderLib.Raycasting.BoundingSphere(new(0.5f, 0, 0.75f), 0.01f);
+        Assert.IsTrue(placement.IsDoodadPortalVisible(0, 20, inside));
+        Assert.IsTrue(placement.TryGetDoodadCurrentFog(0, 20, out var current));
+        Assert.IsTrue(current);
+        Assert.IsTrue(placement.IsDoodadPortalVisible(1, 20, inside));
+        Assert.IsTrue(placement.TryGetDoodadCurrentFog(1, 20, out current));
+        Assert.IsFalse(current);
+        Assert.IsFalse(placement.IsDoodadPortalVisible(0, 20, outside));
+        Assert.IsTrue(placement.IsDoodadPortalVisible(0, 21, outside));
+        Assert.IsFalse(placement.TryGetDoodadCurrentFog(1, 21, out _));
+        preparation.Prepare(viewer, false, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.IsFalse(placement.TryGetDoodadCurrentFog(1, 20, out _));
+        preparation.Prepare(viewer, true, Eye, -Vector3.UnitZ, Matrix4x4.Identity, scene.Objects);
+        Assert.IsFalse(placement.TryGetDoodadCurrentFog(1, 20, out _));
+        Assert.IsTrue(placement.IsDoodadPortalVisible(1, 20, inside));
+        Assert.IsTrue(placement.TryGetDoodadCurrentFog(1, 20, out current));
+        Assert.IsFalse(current);
+    }
+
+    [TestMethod]
     public void EqualHitsFollowSceneInsertionOrderAcrossRepeatedAssets()
     {
         using var scene = new CpuScene();
@@ -782,6 +941,12 @@ public sealed class WmoSceneViewerQueryTests
         private readonly Dictionary<uint, WorldModel> _cache = (Dictionary<uint, WorldModel>)
             typeof(WMOCache).GetField("Cache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         private readonly List<uint> _keys = [];
+        private static readonly FieldInfo M2DeviceField = typeof(M2Cache).GetField(
+            "cachedDevice", BindingFlags.NonPublic | BindingFlags.Static)!;
+        private readonly object? _previousM2Device = M2DeviceField.GetValue(null);
+        private readonly Dictionary<uint, ParsedDoodadBatch> _m2Cache = (Dictionary<uint, ParsedDoodadBatch>)
+            typeof(M2Cache).GetField("Cache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+        private readonly List<uint> _m2Keys = [];
         private readonly List<WMOContainer> _placements = [];
         private readonly WmoSceneViewerQuery _query;
         public readonly List<Container3D> Objects = [];
@@ -819,13 +984,34 @@ public sealed class WmoSceneViewerQueryTests
 
         public WmoSceneViewerResult Locate() => _query.Locate(Objects, Buckets, Eye, ref TerrainLimit);
 
+        public void AddDoodad(WMOContainer placement, int index, WoWRenderLib.Raycasting.BoundingSphere sphere,
+            BoundingBox? bounds = null)
+        {
+            var key = uint.MaxValue - (uint)_m2Keys.Count;
+            while (_m2Cache.ContainsKey(key)) key--;
+            _m2Keys.Add(key);
+            _m2Cache.Add(key, new() { fileDataID = key, mats = [] });
+            var doodad = new M2Container(default, key, 0)
+            {
+                ParentWMO = placement, WmoDoodadIndex = index, CachedBoundingSphere = sphere, CachedBoundingBox = bounds
+            };
+            placement.ActiveDoodads.Add(doodad);
+            Objects.Add(doodad);
+        }
+
         public void Dispose()
         {
             foreach (var placement in _placements)
                 WMOCache.Release(placement.FileDataId, 0);
             foreach (var key in _keys)
                 _cache.Remove(key);
+            foreach (var key in _m2Keys)
+            {
+                M2Cache.Release(key, 0);
+                _m2Cache.Remove(key);
+            }
             DeviceField.SetValue(null, _previousDevice);
+            M2DeviceField.SetValue(null, _previousM2Device);
         }
     }
 }

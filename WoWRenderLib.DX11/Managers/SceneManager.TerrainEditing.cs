@@ -479,6 +479,19 @@ namespace WoWRenderLib.DX11.Managers
             }
         }
 
+        private float GetViewerLiquidTerrainHeight(Vector3 eyeWorld)
+        {
+            lock (SceneObjectLock)
+            {
+                var originZ = eyeWorld.Z;
+                foreach (var tile in adtContainers)
+                    if (tile.IsLoaded && float.IsFinite(tile.Terrain.terrainBounds.Max.Z))
+                        originZ = Math.Max(originZ, tile.Terrain.terrainBounds.Max.Z);
+                return TryRaycastTerrainLocked(new Ray(new(eyeWorld.X, eyeWorld.Y, originZ + 1), -Vector3.UnitZ),
+                    out var hit, includeUnrenderedTerrain: true) ? hit.WorldPosition.Z : -10000;
+            }
+        }
+
         private float GetWmoViewerTerrainRayLimit(Vector3 eyeWorld)
         {
             // CWorldScene::LocateViewer3 stops its 1760-unit downward WMO ray

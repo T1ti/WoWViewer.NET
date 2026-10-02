@@ -66,6 +66,8 @@ internal sealed class GpuFrameTimer : IDisposable
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].TerrainEnd));
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].LiquidStart));
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].LiquidEnd));
+                SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].EarlyLiquidStart));
+                SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].EarlyLiquidEnd));
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].DebugStart));
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].DebugEnd));
                 SilkMarshal.ThrowHResult(device.CreateQuery<ID3D11Query>(in timestampDesc, ref _queries[index].End));
@@ -104,6 +106,8 @@ internal sealed class GpuFrameTimer : IDisposable
         current.TerrainEndWritten = false;
         current.LiquidStartWritten = false;
         current.LiquidEndWritten = false;
+        current.EarlyLiquidStartWritten = false;
+        current.EarlyLiquidEndWritten = false;
         current.DebugStartWritten = false;
         current.DebugEndWritten = false;
         current.DetailedPassTiming = DetailedPassTimingEnabled && _openedFrameCount++ % 8 == 0;
@@ -175,6 +179,14 @@ internal sealed class GpuFrameTimer : IDisposable
         ref _queries[_writeIndex].LiquidStart,
         ref _queries[_writeIndex].LiquidStartWritten);
 
+    public void BeginEarlyLiquids() => WriteTimestamp(
+        ref _queries[_writeIndex].EarlyLiquidStart,
+        ref _queries[_writeIndex].EarlyLiquidStartWritten);
+
+    public void EndEarlyLiquids() => WriteTimestamp(
+        ref _queries[_writeIndex].EarlyLiquidEnd,
+        ref _queries[_writeIndex].EarlyLiquidEndWritten);
+
     public void EndLiquids() => WriteTimestamp(
         ref _queries[_writeIndex].LiquidEnd,
         ref _queries[_writeIndex].LiquidEndWritten);
@@ -244,6 +256,8 @@ internal sealed class GpuFrameTimer : IDisposable
             ulong terrainEnd = 0;
             ulong liquidStart = 0;
             ulong liquidEnd = 0;
+            ulong earlyLiquidStart = 0;
+            ulong earlyLiquidEnd = 0;
             ulong debugStart = 0;
             ulong debugEnd = 0;
             ulong end = 0;
@@ -277,6 +291,10 @@ internal sealed class GpuFrameTimer : IDisposable
             var liquidEndResult = query.DetailedPassTiming
                 ? _context.GetData(query.LiquidEnd, &liquidEnd, sizeof(ulong), 1)
                 : 0;
+            var earlyLiquidStartResult = query.DetailedPassTiming
+                ? _context.GetData(query.EarlyLiquidStart, &earlyLiquidStart, sizeof(ulong), 1) : 0;
+            var earlyLiquidEndResult = query.DetailedPassTiming
+                ? _context.GetData(query.EarlyLiquidEnd, &earlyLiquidEnd, sizeof(ulong), 1) : 0;
             var debugStartResult = query.DetailedPassTiming
                 ? _context.GetData(query.DebugStart, &debugStart, sizeof(ulong), 1)
                 : 0;
@@ -290,6 +308,7 @@ internal sealed class GpuFrameTimer : IDisposable
                 doodadStartResult != 0 || doodadEndResult != 0 ||
                 terrainStartResult != 0 || terrainEndResult != 0 ||
                 liquidStartResult != 0 || liquidEndResult != 0 ||
+                earlyLiquidStartResult != 0 || earlyLiquidEndResult != 0 ||
                 debugStartResult != 0 || debugEndResult != 0 || endResult != 0)
                 continue;
 
@@ -308,13 +327,19 @@ internal sealed class GpuFrameTimer : IDisposable
                     LatestWorldModelMilliseconds = ElapsedMilliseconds(worldModelStart, worldModelEnd, disjoint.Frequency);
                     LatestDoodadMilliseconds = ElapsedMilliseconds(doodadStart, doodadEnd, disjoint.Frequency);
                     LatestTerrainMilliseconds = ElapsedMilliseconds(terrainStart, terrainEnd, disjoint.Frequency);
-                    LatestLiquidMilliseconds = ElapsedMilliseconds(liquidStart, liquidEnd, disjoint.Frequency);
-                    // Liquid and debug passes sit between opaque and translucent
-                    // M2 submissions. Exclude both intervals from M2 time.
+                    var lateLiquidMilliseconds = ElapsedMilliseconds(liquidStart, liquidEnd, disjoint.Frequency);
+                    var earlyLiquidMilliseconds = ElapsedMilliseconds(earlyLiquidStart, earlyLiquidEnd, disjoint.Frequency);
+                    LatestLiquidMilliseconds = lateLiquidMilliseconds + earlyLiquidMilliseconds;
+                    // Both liquid lists and the debug interval sit within the
+                    // surrounding M2 preparation/submission timer.
                     if (LatestDoodadMilliseconds is { } doodadMilliseconds &&
-                        LatestLiquidMilliseconds is { } liquidMilliseconds &&
+                        lateLiquidMilliseconds is { } liquidMilliseconds &&
                         doodadStart <= liquidStart && liquidEnd <= doodadEnd)
                         LatestDoodadMilliseconds = Math.Max(0, doodadMilliseconds - liquidMilliseconds);
+                    if (LatestDoodadMilliseconds is { } afterLateLiquid &&
+                        earlyLiquidMilliseconds is { } earlyMilliseconds &&
+                        doodadStart <= earlyLiquidStart && earlyLiquidEnd <= doodadEnd)
+                        LatestDoodadMilliseconds = Math.Max(0, afterLateLiquid - earlyMilliseconds);
                     LatestDebugMilliseconds = ElapsedMilliseconds(debugStart, debugEnd, disjoint.Frequency);
                     if (LatestDoodadMilliseconds is { } remainingDoodadMilliseconds &&
                         LatestDebugMilliseconds is { } debugMilliseconds &&
@@ -339,6 +364,8 @@ internal sealed class GpuFrameTimer : IDisposable
             _queries[index].TerrainStart.Dispose();
             _queries[index].LiquidEnd.Dispose();
             _queries[index].LiquidStart.Dispose();
+            _queries[index].EarlyLiquidEnd.Dispose();
+            _queries[index].EarlyLiquidStart.Dispose();
             _queries[index].DoodadEnd.Dispose();
             _queries[index].DoodadStart.Dispose();
             _queries[index].WorldModelEnd.Dispose();
@@ -373,6 +400,8 @@ internal sealed class GpuFrameTimer : IDisposable
         public ComPtr<ID3D11Query> TerrainEnd;
         public ComPtr<ID3D11Query> LiquidStart;
         public ComPtr<ID3D11Query> LiquidEnd;
+        public ComPtr<ID3D11Query> EarlyLiquidStart;
+        public ComPtr<ID3D11Query> EarlyLiquidEnd;
         public ComPtr<ID3D11Query> DebugStart;
         public ComPtr<ID3D11Query> DebugEnd;
         public ComPtr<ID3D11Query> End;
@@ -389,6 +418,8 @@ internal sealed class GpuFrameTimer : IDisposable
         public bool TerrainEndWritten;
         public bool LiquidStartWritten;
         public bool LiquidEndWritten;
+        public bool EarlyLiquidStartWritten;
+        public bool EarlyLiquidEndWritten;
         public bool DebugStartWritten;
         public bool DebugEndWritten;
         public bool DetailedPassTiming;

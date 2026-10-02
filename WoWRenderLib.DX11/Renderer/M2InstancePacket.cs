@@ -34,6 +34,7 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     private readonly List<int> _retainedVisibleIndices = [];
 
     public M2AnimationPoseCache AnimationCache { get; } = new();
+    public M2DoodadFadeDrawGroups DoodadDrawGroups { get; } = new();
 
     /// <summary>Render the culled placements without touching animation state.</summary>
     public IReadOnlyList<M2AnimationDrawGroup> GetStaticDrawGroups(IReadOnlyList<int> visibleIndices)
@@ -172,11 +173,11 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
             var frame = Instances[instanceIndex].AnimationState.GetFrameKey(
                 animation, sceneTimeMilliseconds, defaultSequenceIndex);
             M2AnimationDrawGroup group;
-            if (animation.HasBillboardBones)
+            if (animation.HasViewDependentBones)
             {
                 // A billboard pose is unique to its placement and camera orientation.
                 var key = new M2AnimationPoseKey(frame, instanceIndex,
-                    WorldRigidMatrices[instanceIndex] * cameraView);
+                    WorldMatrices[instanceIndex] * cameraView);
                 group = RentGroup(AnimationCache.GetPose(animation, key, submeshes, true));
             }
             else if (!_sharedGroupsByFrame.TryGetValue(frame, out group!))
@@ -215,13 +216,13 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     {
         var sequence = Instances[instanceIndex].AnimationState.GetFrameKey(
             animation, 0, defaultSequenceIndex).SequenceIndex;
-        if (!animation.HasBillboardBones &&
+        if (!animation.HasViewDependentBones &&
             _initialSharedPoses.TryGetValue(sequence, out var sharedPose))
             return sharedPose;
 
         var initialFrame = new M2AnimationFrameKey(sequence, 0);
         var initialKey = M2AnimationPoseKey.Shared(initialFrame);
-        if (animation.HasBillboardBones)
+        if (animation.HasViewDependentBones)
         {
             if (_distantBillboardKeys.TryGetValue(instanceIndex, out var retainedKey))
             {
@@ -236,12 +237,12 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
             if (initialKey.InstanceIndex < 0)
             {
                 initialKey = new M2AnimationPoseKey(initialFrame, instanceIndex,
-                    WorldRigidMatrices[instanceIndex] * cameraView);
+                    WorldMatrices[instanceIndex] * cameraView);
                 _distantBillboardKeys[instanceIndex] = initialKey;
             }
         }
         var pose = _initialPoseCache.GetPose(animation, initialKey, submeshes, true)!;
-        if (!animation.HasBillboardBones)
+        if (!animation.HasViewDependentBones)
             _initialSharedPoses.Add(sequence, pose);
         return pose;
     }
@@ -249,6 +250,7 @@ internal sealed class M2InstancePacket(List<M2Container> instances)
     private static M2AnimationPose CopyPose(M2AnimationPose source) => new()
     {
         Version = source.Version,
+        BoneModelMatrices = (Matrix4x4[])source.BoneModelMatrices.Clone(),
         BonePalette = source.BonePalette is { } bones ? (Matrix4x4[])bones.Clone() : null,
         Materials = (M2AnimatedMaterial[])source.Materials.Clone()
     };
@@ -347,6 +349,8 @@ internal sealed class M2AnimationDrawGroup
     private readonly List<int> _ownedIndices = [];
 
     public M2AnimationPose? Pose { get; private set; }
+    public bool NativeDoodadFade { get; set; }
+    public float DoodadOpacity { get; set; } = 1f;
     public IReadOnlyList<int> Indices { get; private set; }
 
     public M2AnimationDrawGroup() => Indices = _ownedIndices;

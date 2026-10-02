@@ -60,6 +60,10 @@ struct VSInput
     float4 instanceAmbient : TEXCOORD6;
     float4 instanceDiffuse : TEXCOORD7;
     float4 instanceDirection : TEXCOORD8;
+    float4 instanceFogParameters : TEXCOORD9;
+    float4 instanceFogColor : TEXCOORD10;
+    float4 instanceRenderParameters : TEXCOORD11;
+    float4 instanceWaterPlane : TEXCOORD12;
 };
 
 struct VSOutput
@@ -72,6 +76,9 @@ struct VSOutput
     float EdgeFade : TEXCOORD4;
     float3 LitColor : TEXCOORD5;
     float FogVisibility : TEXCOORD6;
+    nointerpolation float3 FogColor : TEXCOORD7;
+    nointerpolation float2 DoodadRenderParameters : TEXCOORD8;
+    float WaterClipDistance : SV_ClipDistance0;
 };
 
 // Environment-map coordinates used by the Wisp/WebWowViewer shader family.
@@ -89,6 +96,7 @@ float2 posToTexCoord(float3 vertexPosInView, float3 normal)
 VSOutput VS_Main(VSInput input)
 {
     VSOutput output;
+    output.DoodadRenderParameters = input.instanceRenderParameters.xy;
 
     float4x4 instanceMatrix = float4x4(
         input.instanceRow0,
@@ -126,11 +134,15 @@ VSOutput VS_Main(VSInput input)
     }
 
     float4 worldPos = mul(instanceMatrix, float4(modelPosition, 1.0));
+    output.WaterClipDistance = input.instanceRenderParameters.z > 0.5f
+        ? dot(worldPos, input.instanceWaterPlane) : 1.0f;
     float4 viewPosition = mul(view_matrix, worldPos);
     output.position = mul(projection_matrix, viewPosition);
-    float linearVisibility = max(viewPosition.z * fogParameters.x + fogParameters.y, 0.0f);
-    output.FogVisibility = fogParameters.w > 0.5f
-        ? min(pow(linearVisibility, fogParameters.z), 1.0f) : 1.0f;
+    float4 selectedFog = input.instanceFogColor.w > 0.5f ? input.instanceFogParameters : fogParameters;
+    output.FogColor = input.instanceFogColor.w > 0.5f ? input.instanceFogColor.rgb : fogColor.rgb;
+    float linearVisibility = max(viewPosition.z * selectedFog.x + selectedFog.y, 0.0f);
+    output.FogVisibility = selectedFog.w > 0.5f
+        ? min(pow(linearVisibility, selectedFog.z), 1.0f) : 1.0f;
 
     // M2 instances carry the model transform in the second vertex stream.
     // Use it for normals as well as positions; using model_matrix (identity)
@@ -311,6 +323,9 @@ float4 PS_Main(VSOutput input) : SV_TARGET
 
     float3 mesh_color = MeshColor.rgb;
     float mesh_opacity = MeshColor.a * input.EdgeFade;
+    bool nativeDoodad = input.DoodadRenderParameters.y > 0.5f;
+    if (nativeDoodad)
+        mesh_opacity *= input.DoodadRenderParameters.x;
 
     float3 mat_diffuse = float3(0.0, 0.0, 0.0);
     float3 specular = float3(0.0, 0.0, 0.0);
@@ -555,7 +570,14 @@ float4 PS_Main(VSOutput input) : SV_TARGET
     float final_opacity;
     bool do_discard = false;
 
-    if (iBlendMode == 13)
+    if (nativeDoodad)
+    {
+        // SM3 Combiners_Opaque returns diffuse alpha; Mod returns texture*diffuse alpha.
+        // The native alpha test consumes the composed output, including model opacity.
+        final_opacity = discard_alpha * mesh_opacity;
+        do_discard = alphaRef > 0.0f && final_opacity < alphaRef;
+    }
+    else if (iBlendMode == 13)
     {
         final_opacity = discard_alpha * mesh_opacity;
     }
@@ -588,7 +610,7 @@ float4 PS_Main(VSOutput input) : SV_TARGET
 
     // CM2SceneRender::SetupLighting selects black/white/gray fog for the
     // additive and modulated legacy blend families. Modern paths pass 0/1.
-    float3 materialFogColor = fogColor.rgb;
+    float3 materialFogColor = input.FogColor;
     if (fogMode == 2)
         materialFogColor = 0.0f;
     else if (fogMode == 3)

@@ -277,6 +277,7 @@ namespace WoWRenderLib.DX11
         private ComPtr<ID3D11RenderTargetView> _sharedRTV = default;
         private ComPtr<IDXGIKeyedMutex> _keyedMutex = default;
         private GpuFrameTimer? _gpuFrameTimer;
+        private OpaquePresentationRenderer? _opaquePresentationRenderer;
         public ComPtr<ID3D11ShaderResourceView> SharedSRV { get; private set; }
         public uint SharedTextureWidth => (uint)viewportWidth;
         public uint SharedTextureHeight => (uint)viewportHeight;
@@ -480,6 +481,7 @@ namespace WoWRenderLib.DX11
                 bboxShaderProgram = shaderManager.GetOrCompileShader("boundingbox");
 
                 sceneManager.Initialize(shaderManager, adtShaderProgram, wmoShaderProgram, m2ShaderProgram, bboxShaderProgram);
+                _opaquePresentationRenderer = new OpaquePresentationRenderer(device, deviceContext, shaderManager);
                 sceneManager.TerrainTileHeightAvailable += OnTerrainTileHeightAvailable;
 
                 shadersReady = true;
@@ -681,8 +683,9 @@ namespace WoWRenderLib.DX11
             RenderCore(deltaTime, useSharedMutex: true, synchronousStreamingBudgetMilliseconds: 10d);
 
         /// <summary>
-        /// Renders directly into an externally-owned RTV. No application-side texture
-        /// copy is performed. The target must be keyed-mutex acquired by the caller.
+        /// Renders an opaque world image directly into an externally-owned RTV.
+        /// No application-side texture copy is performed. The target must be
+        /// keyed-mutex acquired by the caller.
         /// </summary>
         public unsafe void RenderTo(
             double deltaTime,
@@ -696,13 +699,15 @@ namespace WoWRenderLib.DX11
                 throw new InvalidOperationException("External render targets are not enabled for this engine.");
 
             sceneManager.SetRenderTarget(target);
-            RenderCore(deltaTime, useSharedMutex: false, synchronousStreamingBudgetMilliseconds);
+            RenderCore(deltaTime, useSharedMutex: false, synchronousStreamingBudgetMilliseconds,
+                opaquePresentationTarget: target);
         }
 
         private unsafe void RenderCore(
             double deltaTime,
             bool useSharedMutex,
-            double synchronousStreamingBudgetMilliseconds)
+            double synchronousStreamingBudgetMilliseconds,
+            ComPtr<ID3D11RenderTargetView> opaquePresentationTarget = default)
         {
             if (!IsInitialized) return;
             var renderStarted = Stopwatch.GetTimestamp();
@@ -740,6 +745,12 @@ namespace WoWRenderLib.DX11
                         out bool renderGizmoWasUsing,
                         out bool renderGizmoWasOver,
                         _gpuFrameTimer);
+                    // WMO transition alpha is a lighting weight. Avalonia's
+                    // imported BGRA texture must not interpret it as viewport
+                    // transparency, especially when the glow pass is disabled.
+                    if (opaquePresentationTarget.Handle != null)
+                        drawCalls += _opaquePresentationRenderer!.Render(
+                            opaquePresentationTarget, (uint)viewportWidth, (uint)viewportHeight);
                     //if (renderImGUI)
                     //    RenderGizmo();
 
@@ -880,6 +891,8 @@ namespace WoWRenderLib.DX11
                 sceneManager.SceneLoadFailed -= OnSceneLoadFailed;
                 sceneManager.Dispose();
             }
+            _opaquePresentationRenderer?.Dispose();
+            _opaquePresentationRenderer = null;
             shaderManager?.Dispose();
             imgui?.Dispose();
             _lifetimeCancellation.Dispose();
@@ -1188,6 +1201,7 @@ namespace WoWRenderLib.DX11
 
         public void ApplySettings(RendererSettings settings)
         {
+            var lightingModeChanged = Settings.UseClientRenderingRules != settings.UseClientRenderingRules;
             Settings = settings.Clone();
             var effective = WorldViewportSettings.Resolve(Settings);
             SetMovementSpeed(Settings.MovementSpeed);
@@ -1229,7 +1243,9 @@ namespace WoWRenderLib.DX11
                 sceneManager.ShowTerrainVertexColor = effective.ShowTerrainVertexColor;
             }
             ApplyClientViewDistance();
-            if (sceneManager != null && activeCamera != null)
+            // View filters and overlays must retain the evaluated LightData and
+            // its contributors. Only a mode change needs to resolve saved lighting again.
+            if (lightingModeChanged && sceneManager != null && activeCamera != null)
                 ApplyWorldLighting(_editorWorldLighting);
         }
 
@@ -1247,6 +1263,8 @@ namespace WoWRenderLib.DX11
             sceneManager.EnableWmoPortalCulling = rules.PortalCulling;
             sceneManager.MinimumModelScreenSizePixels = rules.MinimumModelPixels;
             sceneManager.TerrainLodTransitionPixels = rules.TerrainLodPixels;
+            sceneManager.DoodadFade = Wrath335DoodadFade.Resolve(Settings, _isWrath335ReferenceClient);
+            sceneManager.LiquidSpecular = Settings.Specular;
         }
 
         public void NavigateTo(

@@ -362,39 +362,6 @@ public sealed class WorldLiquidSmokeTests
     }
 
     [TestMethod]
-    public void WaterUsesLightParamsAlphaWithoutWaveTextureMaskingCoverage()
-    {
-        var shaderPath = Path.Combine(AppContext.BaseDirectory, "Shaders", "liquid.hlsl");
-        var shaderSource = File.ReadAllText(shaderPath);
-
-        Assert.IsFalse(
-            shaderSource.Contains("surface.a * sampled.a", StringComparison.Ordinal),
-            "The water wave texture alpha must not make the MH2O surface transparent.");
-        Assert.IsFalse(
-            shaderSource.Contains("sampled.a *", StringComparison.Ordinal),
-            "The animated liquid texture alpha must not mask the MH2O surface.");
-        StringAssert.Contains(
-            shaderSource,
-            "surface.a = lerp(closeAlpha, farAlpha, depthMix);");
-        StringAssert.Contains(
-            shaderSource,
-            "float finalCoverage = saturate(surface.a);");
-        StringAssert.Contains(
-            shaderSource,
-            "? surface.rgb * waveDetail");
-        StringAssert.Contains(
-            shaderSource,
-            "float3 lighting = lightingAmbient.rgb + lightingDiffuse.rgb * directional;");
-        Assert.IsFalse(
-            shaderSource.Contains("0.35f + 0.65f", StringComparison.Ordinal),
-            "Direct lighting must use the reference Lambert term without a fabricated minimum.");
-        Assert.IsFalse(
-            WorldLiquidRenderer.UsesOpaqueComposition(WorldLiquidMaterialFamily.Water));
-        Assert.IsFalse(
-            WorldLiquidRenderer.UsesOpaqueComposition(WorldLiquidMaterialFamily.Swamp));
-    }
-
-    [TestMethod]
     public void LiquidLightingPaletteMatchesReferenceWaterTypeSelection()
     {
         Assert.IsFalse(WorldLiquidRenderer.UsesRiverLightingPalette(
@@ -425,37 +392,6 @@ public sealed class WorldLiquidSmokeTests
                 3,
                 WorldLiquidMaterialFamily.Magma,
                 hasModernTextureData: false));
-    }
-
-    [TestMethod]
-    public void SimpleWaterFallbackDoesNotBindIncompleteHighDetailInputs()
-    {
-        var material = new WorldLiquidMaterialDescriptor(
-            new WorldLiquidMaterialKey(2, 2),
-            WorldLiquidMaterialFamily.Water,
-            Vector4.One,
-            Vector4.One,
-            1f,
-            0f,
-            0f,
-            [10, 20, 30, 40])
-        {
-            WaterType = WorldLiquidWaterType.Ocean,
-            TextureSlots =
-            [
-                new WorldLiquidTextureSlot([10]),
-                new WorldLiquidTextureSlot([]),
-                new WorldLiquidTextureSlot([30, 31]),
-                new WorldLiquidTextureSlot([40])
-            ]
-        };
-
-        Assert.IsTrue(WorldLiquidRenderer.IsWaterMaterial(material));
-
-        var shaderPath = Path.Combine(AppContext.BaseDirectory, "Shaders", "liquid.hlsl");
-        var shaderSource = File.ReadAllText(shaderPath);
-        StringAssert.Contains(shaderSource, "Texture2D liquidTexture : register(t0);");
-        Assert.IsFalse(shaderSource.Contains("register(t1)", StringComparison.Ordinal));
     }
 
     private static ParsedWorldLiquid Build(params WorldLiquidLayerInput[] layers) =>

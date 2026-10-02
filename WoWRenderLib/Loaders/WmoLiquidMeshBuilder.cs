@@ -47,17 +47,22 @@ public static class WmoLiquidMeshBuilder
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(catalog);
-        if (input.XTiles <= 0 || input.YTiles <= 0 ||
+        var noTiles = input.XTiles == 0 || input.YTiles == 0;
+        if (input.XTiles < 0 || input.YTiles < 0 || (!noTiles && (
             input.XTiles >= input.XVertices || input.YTiles >= input.YVertices ||
             (long)input.XVertices * input.YVertices > 65535 ||
             input.Heights.Length != input.XVertices * input.YVertices ||
-            input.Tiles.Length != input.XTiles * input.YTiles ||
+            input.Tiles.Length != input.XTiles * input.YTiles)) ||
             !float.IsFinite(input.Origin.X) || !float.IsFinite(input.Origin.Y) ||
             !float.IsFinite(input.Origin.Z))
             return ParsedWorldLiquid.Empty;
 
         var typeId = ResolveLiquidType(input);
         var material = catalog.Resolve(typeId, 0);
+        // QueryLiquid reads group +0x144 directly. The interior type-17 remap
+        // at 0x793E8F and missing-record fallback affect draw settings only.
+        var queryTypeId = typeId;
+        var queryTypeFlags = material.WmoTypeFlags;
         if (catalog is WorldLiquidMaterialCatalog databaseCatalog &&
             databaseCatalog.HasLiquidType(1) && !databaseCatalog.HasLiquidType(typeId))
         {
@@ -66,26 +71,39 @@ public static class WmoLiquidMeshBuilder
         }
         var isInterior = !(((input.GroupFlags & (uint)(GroupFlags.Exterior | GroupFlags.ExteriorLit)) != 0 &&
             (input.MogiFlags & (uint)(GroupFlags.Exterior | GroupFlags.ExteriorLit)) != 0) || (material.WmoTypeFlags & 0x200) != 0);
-        if (isInterior && (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) == 0 &&
+        if (isInterior && material.Wrath335 == null &&
+            (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) == 0 &&
             input.MaterialId >= input.MaterialCount)
             return ParsedWorldLiquid.Empty;
         if (isInterior && typeId < 21 && typeId > 0 && ((typeId - 1) & 3) == 0 &&
-            catalog is WorldLiquidMaterialCatalog databaseCatalogForInterior &&
-            databaseCatalogForInterior.HasLiquidType(17))
+            (material.Wrath335 != null || catalog is WorldLiquidMaterialCatalog databaseCatalogForInterior &&
+                databaseCatalogForInterior.HasLiquidType(17)))
         {
-            typeId = 17;
-            material = catalog.Resolve(typeId, 0);
+            var interiorMaterial = catalog.Resolve(17, 0);
+            if (material.Wrath335 == null || interiorMaterial.Key.LiquidTypeId == 17)
+            {
+                typeId = 17;
+                material = interiorMaterial;
+            }
         }
         var color = isInterior ? input.InteriorColor : Vector4.One;
-        color.W = 1f;
+        if (material.Wrath335 == null)
+            color.W = 1f;
         material = material with { ShallowColor = color, DeepColor = color };
+        WorldLiquidQueryGrid[] queryGrids = material.Wrath335 != null ?
+            [new(queryTypeId, queryTypeFlags, true, input.Origin,
+                input.XTiles, input.YTiles, input.XVertices,
+                (float[])input.Heights.Clone(), (byte[])input.Tiles.Clone())] : [];
+        if (noTiles) return queryGrids.Length == 0 ? ParsedWorldLiquid.Empty : new() { QueryGrids = queryGrids };
 
         var vertices = new List<WorldLiquidVertex>(input.Heights.Length);
         var authoredUvs = material.WmoVertexFormat == 1 &&
             input.AuthoredUvs.Length == input.Heights.Length;
-        var modernMagmaUvs = (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && typeId == 19 &&
+        var modernMagmaUvs = material.Wrath335 == null &&
+            (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && typeId == 19 &&
             input.AuthoredUvs.Length == input.Heights.Length;
-        var modernPlanarUvs = (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && !modernMagmaUvs;
+        var modernPlanarUvs = material.Wrath335 == null &&
+            (input.RootFlags & (ushort)HeaderFlags.UseLiquidTypeDbcId) != 0 && !modernMagmaUvs;
         for (var row = 0; row < input.YVertices; row++)
         for (var column = 0; column < input.XVertices; column++)
         {
@@ -99,7 +117,7 @@ public static class WmoLiquidMeshBuilder
             vertices.Add(new WorldLiquidVertex
             {
                 Position = position,
-                Depth = material.WmoVertexFormat != 1 &&
+                Depth = (material.Wrath335 != null ? material.WmoVertexFormat is 0 or 2 : material.WmoVertexFormat != 1) &&
                     input.Depths.Length == input.Heights.Length
                     ? Math.Clamp(input.Depths[index] / (float)material.WmoDepthDivisor, 0f, 1f)
                     : 0f,
@@ -168,7 +186,7 @@ public static class WmoLiquidMeshBuilder
             }
         }
         if (indices.Count == 0)
-            return ParsedWorldLiquid.Empty;
+            return queryGrids.Length == 0 ? ParsedWorldLiquid.Empty : new() { QueryGrids = queryGrids };
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
         foreach (var index in indices)
@@ -190,6 +208,7 @@ public static class WmoLiquidMeshBuilder
                 IsWmo = true
             }],
             Materials = [material],
+            QueryGrids = queryGrids,
             TextureFileDataIds = material.TextureFileDataIds.Distinct().Where(id => id != 0).ToArray(),
             Bounds = bounds,
             HasBounds = true

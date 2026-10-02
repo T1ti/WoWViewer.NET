@@ -1320,7 +1320,7 @@ internal sealed class SkyRenderer(
                 }
                 cache.BeginFrame(animation, time, true);
                 var frame = new M2AnimationFrameKey(animation.DefaultSequenceIndex, time);
-                var key = animation.HasBillboardBones
+                var key = animation.HasViewDependentBones
                     ? new M2AnimationPoseKey(frame, 0, SkyboxTransform * view)
                     : M2AnimationPoseKey.Shared(frame);
                 pose = cache.GetPose(animation, key, model.submeshes, true);

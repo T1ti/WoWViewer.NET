@@ -1,6 +1,7 @@
 using System.Numerics;
 using GroupFlags = WoWLib.Formats.WMO.Group.Chunks.GroupFlags;
 using WoWRenderLib.DX11.Structs;
+using WoWRenderLib.Renderer;
 
 namespace WoWRenderLib.DX11.Renderer;
 
@@ -46,7 +47,7 @@ internal static class Wrath335PortalFogDistance
             if ((wmo.groupBatches[targetIndex].mogiFlags & ExteriorGroupFlags) != 0)
             {
                 var candidate = DistanceToPolygon(
-                    viewerLocal, wmo.portals[link.PortalIndex]);
+                    viewerLocal, wmo.portals[link.PortalIndex], wmo.wrath335);
                 if (candidate < closest)
                     closest = candidate;
             }
@@ -58,7 +59,7 @@ internal static class Wrath335PortalFogDistance
         }
     }
 
-    internal static float DistanceToPolygon(Vector3 point, in WmoPortal portal)
+    internal static float DistanceToPolygon(Vector3 point, in WmoPortal portal, bool wrath335 = true)
     {
         var vertices = portal.Vertices;
         if (vertices == null || vertices.Length < 3)
@@ -68,25 +69,33 @@ internal static class Wrath335PortalFogDistance
             return float.PositiveInfinity;
 
         var signedPlaneDistance = Vector3.Dot(portal.Normal, point) + portal.Distance;
-        var projected = point - portal.Normal * (signedPlaneDistance / normalLengthSquared);
-        var inside = true;
-        var winding = 0f;
-        for (var i = 0; i < vertices.Length; i++)
+        var projected = wrath335
+            ? Wrath335PortalPolygon.ProjectForCrossing(point, portal.Normal, signedPlaneDistance)
+            : point - portal.Normal * (signedPlaneDistance / normalLengthSquared);
+        var inside = wrath335 ? Wrath335PortalPolygon.Contains(projected, vertices, portal.Normal) : true;
+        if (!wrath335)
         {
-            var edge = vertices[(i + 1) % vertices.Length] - vertices[i];
-            var side = Vector3.Dot(Vector3.Cross(edge, projected - vertices[i]), portal.Normal);
-            if (MathF.Abs(side) <= DegenerateEdgeLengthSquared)
-                continue;
-            if (winding == 0f)
-                winding = MathF.Sign(side);
-            else if (side * winding < 0f)
+            var winding = 0f;
+            for (var i = 0; i < vertices.Length; i++)
             {
-                inside = false;
-                break;
+                var edge = vertices[(i + 1) % vertices.Length] - vertices[i];
+                var side = Vector3.Dot(Vector3.Cross(edge, projected - vertices[i]), portal.Normal);
+                if (MathF.Abs(side) <= DegenerateEdgeLengthSquared)
+                    continue;
+                if (winding == 0f)
+                    winding = MathF.Sign(side);
+                else if (side * winding < 0f)
+                {
+                    inside = false;
+                    break;
+                }
             }
         }
         if (inside)
-            return MathF.Abs(signedPlaneDistance) / MathF.Sqrt(normalLengthSquared);
+            // 0x984F3B returns the absolute source-plane evaluation without
+            // normalizing it. Other clients retain the previous metric.
+            return wrath335 ? MathF.Abs(signedPlaneDistance)
+                : MathF.Abs(signedPlaneDistance) / MathF.Sqrt(normalLengthSquared);
 
         var closestSquared = float.PositiveInfinity;
         for (var i = 0; i < vertices.Length; i++)

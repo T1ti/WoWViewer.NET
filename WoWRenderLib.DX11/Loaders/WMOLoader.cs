@@ -163,7 +163,7 @@ namespace WoWRenderLib.DX11.Loaders
                             group.flags,
                             group.hasPrimaryVertexColors,
                             groupBatch.Category,
-                            mat.Flags),
+                            mat.Flags, preppedWMO.Wrath335),
                         category = groupBatch.Category,
                         bounds = groupBatch.Bounds,
                         hasBounds = groupBatch.HasBounds,

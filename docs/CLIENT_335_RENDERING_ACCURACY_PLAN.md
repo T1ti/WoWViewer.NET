@@ -1,6 +1,6 @@
 # 3.3.5.12340 rendering accuracy plan: DX9 Shader Model 3.0
 
-Last updated: 2026-10-01. Reference: 32-bit `Wow.exe` 3.3.5 build 12340,
+Last updated: 2026-10-02. Reference: 32-bit `Wow.exe` 3.3.5 build 12340,
 Direct3D 9 with `vs_3_0` / `ps_3_0` capabilities. Destination:
 `WTEditor.Avalonia`, `WoWRenderLib.DX11`, and their dependencies.
 
@@ -25,24 +25,135 @@ section; the inventories and chronological notes below are reference material,
 not a startup reading checklist. Check the current checkout and preserve existing
 changes. Do not recreate the shader cache or re-export the IDB to begin work.
 
-- **Baseline:** the latest code batch passed 698 smoke tests (66 Render,
-  441 DX11, 191 Avalonia). Static WMO doodads now use MODR ownership and
+- **Current focus / baseline:** replace the approximate liquid implementation.
+  Basic 12340 water/specular-water/magma now reach terrain and WMO draws with
+  native slots, clocks, generated 8x64 gradients, depth ramps, UV rules and
+  retained indoor alpha. Specular uses packed sun band 9; the fixed indoor light
+  contributes zero specular. Native material-flag lists now flush separately,
+  list 0 before opaque M2, with placement/generation-owned identities and duplicate
+  suppression. Retained CPU grids feed a live viewer type/depth query, preserving
+  original WMO query types independently of indoor draw remaps. Retained entity
+  queries now feed live mesh above/below partitions and signed GPU clipping around
+  list 1. Scene +0x140 retains the update-time ID separately from the refreshed
+  render viewer ID. Full smoke exits 0 with **1,052 tests** (66 Render, 793 DX11,
+  193 Avalonia); the latest batch adds 14 cases, including two WARP fixtures.
+  Complete liquid parity remains open. **Next:** neighboring WMO spatial links
+  and native availability histories, shared mesh/ribbon/particle water queues;
+  then procedural material 3, waves, ripples and underwater fog/particulate. MCLQ,
+  portal-dependent WMO color, local-light variants and matched captures remain
+  required. See the [entity/mesh batch](reference/client-335/CPU_SCENE_AUDIT.md#entity-liquid-cache-scene-history-and-mesh-water-clipping-2026-10-02)
+  and [queue/query batch](reference/client-335/CPU_SCENE_AUDIT.md#liquid-lists-retained-identities-and-viewer-grid-query-2026-10-02)
+  and [basic shader batch](reference/client-335/CPU_SCENE_AUDIT.md#basic-liquid-shaders-gradients-and-native-inputs-2026-10-02).
+- **Prior M2 baseline:** that batch passed 992 smoke tests (66 Render,
+  733 DX11, 193 Avalonia). WotLK MPQ mesh batches retain authored sort flags,
+  signed priority/layer and section center-bone/center/radius/bone-combo/influence inputs.
+  Section +0x0E was previously mislabeled/decoded as bone count; it is now
+  corrected to bone-combo start. Authored water bounds/radius remain separate
+  from expanded culling bounds. Native simple-animation eligibility enables
+  a guarded root-only no-pose path. Mesh shader selectors resolve actual supplied
+  effect-table identities, and composed-alpha mesh preparation feeds retained queues;
+  post-query entity lighting and initial particle force-below mapping are ported,
+  with 35 new preparation cases. Scene-wide effect/resource and liquid-query/cache
+  producers remain open.
+  The live pose cache now retains the full CPU skeleton separately from its
+  256-entry mesh upload palette. Full placement/view transforms feed billboard
+  and root-relative parent evaluation, with native normalization/inheritance gates.
+  A retained mesh adapter reads these poses and lifetime-owned model/shared/batch
+  tokens; BLP tokens follow resolved SRV lifetimes. Tokens preserve sharing and
+  generations, not reference-process allocator order. There are 21 new pose/identity
+  cases alongside 25 native-profile/transform cases. CPU-only M2 model/mesh distance keys, the complete
+  base transparent/opaque comparators and native heap mechanics are ported,
+  with 31 ordering cases. Particle/ribbon keys, the gated additive regrouping
+  heap and per-type water sphere/plane routing now feed retained CPU queues,
+  with 37 new cases including production packet/pose keys across frames.
+  Live producers, GPU interleaving and water clipping remain open; these
+  policy/input batches do not change GPU order.
+  M2 mesh submission now owns its constants, palette,
+  instance uploads and depth states in `M2MeshRenderer`; SceneManager retains
+  preparation and frame ordering. WARP fixtures cover both phases, 1,025-instance
+  chunking, pose updates and state/upload cleanup on failures.
+  Exterior doodads now enlist sphere-derived depth
+  buckets and consume cropped frusta, static volumes and the terrain-sphere
+  reader before each band's horizon updates. Terrain rejection consumes pending
+  eligibility; frustum/volume failure retains it. Portal-written fog banks persist
+  across exterior frames. Loaded WMO doodads use transformed-box size categories,
+  detail-scaled bucket/portal thresholds and CPU hard-distance/alpha eligibility;
+  fresh definitions start with staged fog. Retained opacity now reaches GPU
+  draws, composed alpha selects the translucent blend and scaled cutout reference,
+  and fading instances leave the opaque group. Default non-shadow fade pixels
+  and authored depth/state restoration pass. Layered meshes use their base
+  material's queue class, with blend/cutout/depth state retained per layer.
+  ZFill controls/eligibility/clone state are recovered; native sorted queues
+  and eligibility reseeding still block its port. Shadow variants remain open.
+  The Client-only Stormwind gray layer was traced to
+  transition alpha surviving into Avalonia's imported BGRA image; Editor glow
+  masked it by writing opaque alpha. External presentation now writes alpha 1
+  after all scene passes, preserving every RGB channel and native material alpha.
+  GPU regressions and the captured scene verify this correction; acceptance in
+  the user's rebuilt viewport and matched reference pixels remain open.
+  Static WMO doodads now use MODR ownership and
   MOGI-derived baked MODD lighting indoors, with per-instance DX11 inputs and
-  native material lit gates. Exterior WMO gates consume the 384-column
+  native material lit gates. Portal callbacks retain six-plane sphere frusta;
+  unbucketed/final group consumers choose staged/current fog on first admission
+  and carry it per M2 instance. Exterior WMO gates consume the 384-column
   terrain clip buffer with depth-band edge updates, MCNK hole erasure and
   updated-placement bypasses, alongside static CPU occluder volumes.
   World-horizon line sources, native terrain/streaming bounds, GPU volumes,
   numerical captures and matched client pixels remain open.
   The original bounded portal/occlusion list has five
   incomplete function contracts; it is not a full rendering-closure count.
-- **First implementation slice (current WMO/doodad lighting focus):** retain each
-  visible-group callback's portal frustum and recover doodad sphere acceptance
-  and the first-accepted-group fog writer at `0x799C91`. Replace the group-only
-  doodad mask with that union and carry staged/current fog per instance. Start
-  with the [static doodad lighting batch](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
-  Acceptance: a visible group's off-window doodad is rejected, either of two
-  portal windows may admit a sphere, shared references submit once with the
-  native fog choice, and indoor/outdoor transitions do not retain stale state.
+- **First acceptance slice (reported WMO gray layer):** rebuild/reopen the
+  affected viewport and compare Client/Editor modes with glow enabled/disabled
+  at placement 10047 and the captured noon camera. The headless scene retains
+  identical RGB in all 451,200 pixels while making its final alpha opaque.
+  Verify the UI wash is gone, then compare native lighting/fog pixels.
+  `0x7A9380` and `0x7A8B10` remain partial ports: local-light permutations,
+  shadow receivers, other material families and fallback paths remain open.
+  See the [presentation audit](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-alpha-and-opaque-gui-presentation-2026-10-01).
+- **Next doodad slice:** connect live producers to retained native CPU queues;
+  supply live owned effect tables/resolved texture keys and effect admission/
+  child lifetimes, then neighboring WMO spatial links and native availability/
+  invalidation histories. Terrain/MODR entity queries, retries, scene +0x140 history
+  and mesh water partitions/clipping are connected. Guarded simple poses, mesh shader
+  selectors/table adaptation, authored bounds and initial particle water mapping
+  are ported. Particle/ribbon keys, `0x81F9E0` additive regrouping and per-type
+  water routing are ported. Implement shared GPU mesh/ribbon/particle interleaving
+  before wiring ZFill's color-mask
+  clones into the extracted M2 renderer. Separate
+  `M2UseZFill` (default on) from `objectFadeZFill` (default off, clears eligibility
+  for size categories 0–2 during preparation); trace model bit 0x40 reseeding and
+  loaded-definition lifetimes, then shadow alpha selectors. Base-material layer
+  partition is ported. `CM2+0x178` now
+  reaches default non-shadow WMO doodad GPU fades; size-category writers
+  (`def+0x24`), initial staged fog, `0x78FB60` thresholds and `0x791CB0` CPU gates
+  are ported. Global sorted element/water queues remain a separate submission gap.
+  The `0x7998A0`/`0x7987A0` spatial consumers and `0x78FC40` terrain-sphere
+  reader are partially ported; see the
+  [layer/ZFill batch](reference/client-335/CPU_SCENE_AUDIT.md#doodad-layered-material-partition-and-zfill-dependency-2026-10-01)
+  and [M2 renderer batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-mesh-submission-renderer-2026-10-01).
+  The [ordering policy batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-element-keys-comparator-and-heap-policy-2026-10-01)
+  records the full base comparator and exact adapter inputs.
+  The [decoded-input batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-decoded-sort-metadata-and-transform-inputs-2026-10-01)
+  retains those authored values without a listfile or asset-ID sort proxy.
+  The [retained-pose batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-full-pose-billboard-and-retained-sort-identities-2026-10-01)
+  establishes direct full-bone indexing and corrects live billboard/parent inputs;
+  CM2 attachment/runtime override lifetimes and allocator-dependent ties remain open.
+  The [queue batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-particle-keys-additive-regrouping-and-water-queues-2026-10-01)
+  records particle callers, scene-wide additive count gates and water-routing contracts.
+  The [preparation batch](reference/client-335/CPU_SCENE_AUDIT.md#m2-native-mesh-preparation-and-shader-selectors-2026-10-01)
+  records simple initialization, resolved shader-table selection and the corrected
+  section bone-combo field; GPU consumption remains open.
+  Acceptance: preserve the 25 decoding/transform and 31 ordering cases;
+  preserve the 21 full-bone/billboard/parent/identity cases; complete attachment/runtime
+  histories; preserve the 35 preparation and 37 additive/water queue cases and add live producer,
+  interleaved GPU/water clip pixels and state restoration fixtures;
+  sorted clone/color ordering, independent ZFill control/category
+  and toggle/reload histories, shadow/layered cutout fixtures,
+  indoor/exterior and unload/reload histories. Preserve mixed opaque/cutout/alpha
+  fade pixels/state restoration and category/distance/alpha
+  boundaries, CVar gates, fresh staged fog,
+  verified sphere bucket floors/cutoffs, retry versus consumption and prior
+  portal fog history; compare matched client captures.
 - **Remaining exterior occlusion slice:** finish the exterior queue consumers' native
   horizon feed. Trace writers of the sort-table line list at bucket offset 0x3C
   (bucket-zero base `0xCD9084`) and endpoints passed at `0x7938BC` to
@@ -69,6 +180,8 @@ changes. Do not recreate the shader cache or re-export the IDB to begin work.
   instruction-supported, and `0x7A70B3` sets the emission gate to 1. Its full
   group/liquid/frustum consumers remain incomplete.
 - **Code entry points:** [WmoPortalVisibility](../WoWRenderLib.DX11/Renderer/WmoPortalVisibility.cs),
+  [M2MeshRenderer](../WoWRenderLib.DX11/Renderer/M2MeshRenderer.cs),
+  [Wrath335M2ElementOrdering](../WoWRenderLib.DX11/Renderer/Wrath335M2ElementOrdering.cs),
   [WmoScenePortalPreparation](../WoWRenderLib.DX11/Renderer/WmoScenePortalPreparation.cs),
   [Wrath335PortalRenderViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalRenderViews.cs),
   [Wrath335ExteriorGroupOrder](../WoWRenderLib.DX11/Renderer/Wrath335ExteriorGroupOrder.cs),
@@ -76,6 +189,8 @@ changes. Do not recreate the shader cache or re-export the IDB to begin work.
   [Wrath335ClipVolumes](../WoWRenderLib.DX11/Renderer/Wrath335ClipVolumes.cs),
   [Wrath335TerrainClipBuffer](../WoWRenderLib.DX11/Renderer/Wrath335TerrainClipBuffer.cs),
   [Wrath335SceneTerrainOcclusion](../WoWRenderLib.DX11/Renderer/Wrath335SceneTerrainOcclusion.cs),
+  [Wrath335ExteriorDoodads](../WoWRenderLib.DX11/Renderer/Wrath335ExteriorDoodads.cs),
+  [Wrath335WmoDoodadVisibility](../WoWRenderLib.DX11/Renderer/Wrath335WmoDoodadVisibility.cs),
   [Wrath335PortalComplement](../WoWRenderLib.DX11/Renderer/Wrath335PortalComplement.cs),
   and [Wrath335PortalSceneViews](../WoWRenderLib.DX11/Renderer/Wrath335PortalSceneViews.cs).
   Extend [portal traversal tests](../WoWRenderLib.DX11.Tests/Wrath335PortalTraversalTests.cs),
@@ -85,6 +200,8 @@ changes. Do not recreate the shader cache or re-export the IDB to begin work.
   [scene preparation tests](../WoWRenderLib.DX11.Tests/WmoSceneViewerQueryTests.cs),
   [CPU occluder tests](../WoWRenderLib.DX11.Tests/Wrath335ClipVolumesTests.cs),
   [terrain clip-buffer tests](../WoWRenderLib.DX11.Tests/Wrath335TerrainClipBufferTests.cs),
+  [exterior doodad tests](../WoWRenderLib.DX11.Tests/Wrath335ExteriorDoodadsTests.cs),
+  [terrain sphere tests](../WoWRenderLib.DX11.Tests/Wrath335TerrainSphereOcclusionTests.cs),
   and [Stormwind tests](../WoWRenderLib.DX11.Tests/Stormwind335PortalTests.cs) as needed.
 - **Slice acceptance:** independent world-horizon endpoint/enlistment fixtures,
   protected-line versus hole ordering and accepted/rejected WMO cases. Retain the verified global
@@ -140,6 +257,24 @@ Retain the extract-once BLS workflow: it avoids actual repeated decoding and
 disassembly, independently of the optional CPU export archive.
 
 ## Roadmap
+
+Liquid implementation is the active priority following the user's report that
+the existing pass is inaccurate. Basic 12340 material 1/2 shaders and their
+texture/gradient inputs, material-flag lists, retained placement identities and
+decoded-grid viewer queries are connected. Entity terrain/MODR caches, scene-side
+history and mesh water interleaving/clipping are connected for the default clip
+setting. Neighboring WMO links, native availability/invalidation histories, shared
+effect ordering and material 3 remain open. The current full smoke baseline is
+**1,052**. The
+[entity/mesh audit](reference/client-335/CPU_SCENE_AUDIT.md#entity-liquid-cache-scene-history-and-mesh-water-clipping-2026-10-02)
+records formulas, addresses, verification and ordered acceptance checks.
+
+Focused IDB annotation batch: the fog-rate helper at `0x7ECD00` now has
+verified distance argument names, descriptive temporaries and typed supporting
+globals; fresh decompilation of its three callers passed and the IDB was saved.
+See the [compact CPU review](reference/client-335/CPU_SCENE_AUDIT.md#daynight-fog-rate-idb-annotations-2026-10-01)
+for original-return-width uncertainty and ordered numerical follow-up checks.
+This adds no rendering implementation or parity closure.
 
 Completed portal batch: Stormwind facade/single-owner portal contracts and
 camera-on-portal boundaries. The partial port retains directed MOGP-owned links,
@@ -241,17 +376,144 @@ and unlit/modulate materials retain the native lit gate. Full smoke exits 0 with
 **698 tests** (66 Render, 441 DX11, 191 Avalonia), including 24 new cases and
 a WARP pixel fixture using the live M2 shader/input layout. See the
 [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#static-wmo-doodad-ownership-and-baked-lighting-2026-10-01).
-Portal sphere/frustum culling, per-doodad fog, underwater/dynamic lights, entity
+At that batch, portal sphere/frustum culling and per-doodad fog remained open;
+the following batch advances those consumers. Underwater/dynamic lights, entity
 MOCV queries and matched client captures remain open.
+
+Doodad portal/fog batch: every scene callback retains a six-plane world frustum.
+Unbucketed consumers snapshot the frustum chain and propagated flag at their
+call site; final group consumers follow first-callback append order. The first
+accepting owner selects staged/current fog per M2 instance. Full smoke exits 0
+with **718 tests** (66 Render, 459 DX11, 193 Avalonia); 18 new CPU cases and
+extended live-shader WARP fog pixels pass. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-portal-sphere-admission-and-instance-fog-2026-10-01).
+At that batch, the exterior adapter retained scene fog; native enlistment,
+terrain-sphere occlusion, fog history, size/fade gates and captures were open.
+The exterior spatial batch below advances those consumers.
+
+WMO transition batch: native root bypasses, final transition endpoint,
+near-plane projection and major-axis polygon rules are audited. The 12340 port
+corrects attenuation/portal distance, c28=127/255, non-unified/no-MOCV pass
+dispatch, forced-staged unified opaque exterior fog and strict-interior
+eligibility/portal weighting across both retained viewer groups. Full smoke exits 0
+with **744 tests** (66 Render, 485 DX11, 193 Avalonia), including 22 new CPU/WARP
+cases. See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-colors-lighting-and-fog-2026-10-01).
+The subsequent live inspection identifies the gray layer as presentation alpha:
+native transition states leave their lighting weight in target alpha, which
+the GUI treats as viewport transparency when glow is disabled. The final
+external-image pass writes alpha 1 without changing RGB. Full smoke exits 0
+with **746 tests** (66 Render, 487 DX11, 193 Avalonia). The captured full scene
+has zero changed RGB pixels and zero nonopaque pixels after this pass; rebuilt
+UI acceptance and full native lighting parity remain open. See the
+[presentation audit](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-alpha-and-opaque-gui-presentation-2026-10-01).
+
+Exterior doodad spatial batch: the scene-wide queue replaces the exterior
+adapter with sphere-depth buckets, originating-group floors, nearest-even cutoffs,
+one active shared-definition link and per-band spatial admission. The terrain
+sphere reader retains its separate projected radius, center-depth/epsilon/pitch
+gates and extra right column. Frustum/volume failures retain portal eligibility;
+terrain rejection consumes it. Bucket draws retain the last portal-written fog
+bank across frames. Full smoke exits 0 with **778 tests** (66 Render, 519 DX11,
+193 Avalonia), including 32 new behavioral cases and the loaded-M2 preparation
+seam. See the [compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#exterior-doodad-depth-buckets-and-terrain-sphere-admission-2026-10-01).
+At that batch, initial fog-bit writers and size/fade gates remained open; the
+following batch advances them. Definition availability and animation/barrier
+branches still leave both bucket functions partial.
+
+Doodad size/fade batch: loaded WMO definitions use inclusive transformed-box
+categories, detail-scaled thresholds, bucket and first-callback group prefilters,
+then center-distance and alpha submission gates. Fresh MODD definitions start
+with staged fog; a submission rejection preserves portal-written history.
+At that batch CPU opacity was retained without GPU fade blend/state; the
+following batch connects the default non-shadow path.
+Full smoke exits 0 with **812 tests** (66 Render, 553 DX11, 193 Avalonia),
+including 34 new cases. See the
+[compact CPU entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-size-categories-cpu-fade-gates-and-initial-fog-2026-10-01).
+
+Doodad GPU fade batch: per-instance opacity composes with animated material alpha,
+opaque/cutout materials move to the translucent blend below the native threshold,
+and scaled byte cutout references test composed output alpha. Full-opacity
+instances remain grouped; distance/material-alpha fades submit separately with
+their pose retained. Authored depth flags remain active and restore for the next
+draw. Full smoke exits 0 with **827 tests** (66 Render, 568 DX11, 193 Avalonia),
+including 15 new cases and extended live-shader WARP fade/cutout/depth pixels.
+See the [compact CPU/shader entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-gpu-fade-alpha-and-material-state-2026-10-01).
+At that batch ZFill, shadow/layered variants and global ordering remained open.
+
+Layered doodad material batch: queue classification uses the base material at
+`materialIndex - materialLayer` and composed alpha, independently of depth flags.
+Each layer retains its blend/cutout/depth state; translucent bases also exclude
+full-opacity instances from native instancing. Full smoke exits 0 with **841 tests**
+(66 Render, 582 DX11, 193 Avalonia), including 14 new cases and extended loaded-
+scene/WARP fixtures. ZFill controls, eligibility and clone state are recovered,
+but sorted queues and model eligibility reseeding block its port. See the
+[compact entry](reference/client-335/CPU_SCENE_AUDIT.md#doodad-layered-material-partition-and-zfill-dependency-2026-10-01).
+
+M2 mesh renderer batch: `M2MeshRenderer` now owns mesh constants, the retained
+bone palette, dynamic instance uploads and depth states. SceneManager prepares
+the same placements/poses and keeps opaque meshes before water and translucent
+meshes afterward. Returned statistics preserve the facade's draw/work/upload/
+binding counters and submission time. Full smoke exits 0 with **843 tests**
+(66 Render, 584 DX11, 193 Avalonia); two WARP cases verify phase pixels, the
+1,024-instance boundary, palette version changes, intervening pipeline state
+and failure cleanup. Native sort keys/queues and ZFill eligibility reseeding
+remain open. See the [compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-mesh-submission-renderer-2026-10-01).
+
+M2 element ordering policy batch: model/mesh key production, full base
+transparent comparator and opaque mesh/ribbon/particle fallbacks, wrapped
+texture-handle differences and native heap equality behavior are CPU policies.
+Full smoke exits 0 with **874 tests** (66 Render, 615 DX11, 193 Avalonia),
+including 31 new ordering cases. These policies await live decoded/pose/identity
+adapters, water routing and additive regrouping; current GPU draw order is
+unchanged. See the [compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-element-keys-comparator-and-heap-policy-2026-10-01).
+
+M2 decoded-input batch: the shared loader retains WotLK MPQ batch flags,
+signed priority/layer and selected section center-bone/sort-center/radius/bone
+count as owned values. `Wrath335M2MeshSortInputAdapter` composes supplied bone
+and model/view matrices, scales near/far radius by the transformed first axis,
+and rejects missing translucent center bones. Full smoke exits 0 with **899 tests**
+(66 Render, 640 DX11, 193 Avalonia), including 25 new cases. Native
+pose/billboard/full-bone mapping and retained identities were the next dependency;
+see the following batch. See the [compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-decoded-sort-metadata-and-transform-inputs-2026-10-01).
+
+M2 retained-pose batch: native full-bone indexing is recovered; the live pose cache
+retains all CPU matrices and supplies a separate byte-indexed GPU palette. Billboard
+and root-relative parent poses now consume complete placement/view transforms,
+exclusive parent modes and native squared normalization thresholds. Lifetime-owned
+model/shared/batch and resolved SRV tokens preserve sharing/reload generations;
+the mesh adapter consumes production packets/poses, without changing queue order.
+Full smoke exits 0 with **920 tests** (66 Render, 661 DX11, 193 Avalonia), including
+21 new cases. The following CPU queue batch ports particle/ribbon keys,
+additive regrouping and water routing; live producers and GPU consumption remain next.
+Allocator-dependent ties, CM2 attachment/runtime overrides and matched pixels
+remain open. See the [compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-full-pose-billboard-and-retained-sort-identities-2026-10-01).
+
+M2 CPU queue batch: particle/ribbon distance keys, separator-preserving additive
+regrouping under scene-wide particle/cache gates, transformed sphere/plane water
+selection and per-type routing feed retained opaque/above/below index queues.
+Full smoke exits 0 with **957 tests** (66 Render, 698 DX11, 193 Avalonia),
+including 37 new cases and a high-bone production packet/pose fixture across frames.
+Live queue producers, GPU interleaving and water clipping remain next. See the
+[compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-particle-keys-additive-regrouping-and-water-queues-2026-10-01).
+
+M2 native mesh preparation batch: authored water bounds, native simple/root-only
+eligibility and shader selectors/resolved-table adaptation feed composed-alpha
+mesh queue preparation. Post-query entity lighting and initial particle water
+flags are ported. Section +0x0E is corrected to bone-combo start. Full smoke
+exits 0 with **992 tests** (66 Render, 733 DX11, 193 Avalonia), including 35 new
+cases. Live effect-table owners, liquid queries/cache histories and GPU queues
+remain open. See the [compact entry](reference/client-335/CPU_SCENE_AUDIT.md#m2-native-mesh-preparation-and-shader-selectors-2026-10-01).
 
 | Priority | Next concrete work | Acceptance check |
 | --- | --- | --- |
-| 1 | Finish callback/doodad portal-frustum sphere acceptance, shared-reference submission and per-instance staged/current fog (`0x799310`, writer `0x799C91`). Then finish protected world-horizon line sources (`0x7938BC` -> `0x7CC880`/`0x78F900`), native terrain combined bounds/availability, exterior doodad enlistment (`0x7998A0`, post-cull `0x79A242`) and GPU volume state (`0x796C10`), activation/streaming lifetimes and projection numerical validation. | Doodad sphere/window union and first-admission fog fixtures, with frame reset and shared-reference cases; independent horizon-line producer/enlistment and hole-order fixtures; preserve depth-band/unbucketed exceptions, static occluders, global queue/cache behavior and cutoffs; compare doodad/facade/sky/depth pixels at matched cameras. |
-| 2 | Propagate the global exterior rectangle and distance to terrain, standalone M2, other WMO placements, doodads and liquids, including the +33.333332 distance handoff and depth-sorted/unbucketed exceptions. Recover group availability/order and WDT bounds. | Compare accepted/rejected scene nodes and batch lists against client captures; no conservative full-frustum shortcut in Client mode. |
-| 3 | Recover viewer-liquid/plane selection, blend-sky overrides, MOCV entity lighting, animation/eligibility/bounds, then move M2 submission to its renderer and implement the shared element queues and conditional frame graph. | Independent input/order fixtures plus liquid/interior/exterior frame captures and state restoration checks. |
-| 4 | Complete Client-mode CVar consumers and native streaming/LOD/fades; implement explicit whole-map Editor demand while preserving its custom rules. | Low/default/ultra, mode-switch and whole-map tests; other-client regression checks. |
-| 5 | Close every R00–R13 CPU preparation/submission path and its DX9 SM3 selector, register, formula and fixed-state contract using the cached shader programs. | Complete rendering reachability, indirect-target closure, CPU-to-shader maps and material/effect captures; no guessed name used as scope proof. |
-| 6 | Pin the original executable hash and finish matched whole-frame numerical/pixel validation. | All workstream evidence gates pass before declaring rendering parity. |
+| 0 (active) | Finish R10 liquids: material-flag list 0/1, retained placement identities and decoded-grid viewer type/depth are connected. Terrain/MODR entity caches, scene-side history and mesh water partitions/clipping are connected. Complete neighboring WMO links/native cache histories and shared mesh/effect GPU ordering. Port six-texture procedural material 3, waves, ripples, underwater fog/particulate and MCLQ. Finish portal-dependent WMO color, local lights and sampler/resource/state lifetimes. | Preserve the 29 basic liquid, 19 queue/query and 14 entity/mesh cases and other-client fallback pixels. Add neighboring WMO link/native availability traces, above/below/straddling effects and shared interleaved GPU readbacks; procedural/ripple GPU fixtures; matched terrain/WMO water, magma/slime and underwater captures at fixed camera/time. Validate allocator order and native query edges/floor geometry. Close all R10 witnesses before declaring parity. |
+| 1 | Accept the opaque-presentation fix in the rebuilt Stormwind viewport with both modes/glow settings, then compare native light/fog pixels. Continue the remaining unified local-light/shadow/material selectors; strict-interior eligibility and both retained viewer-group portal weights are ported. | UI gray wash removed at the captured camera/time; authored alpha and native transition draws retained; identical final RGB and opaque external alpha (GPU/scene checks pass). Full unified parity requires remaining selector/state contracts and matched native pixels. |
+| 2 | Connect owned live effect tables/resolved texture keys and scene-wide mesh/effect admission/children to retained CPU queues. Guarded simple poses, shader selectors/table adaptation, authored bounds, initial particle water mapping, additive regrouping and per-type routing are ported. Terrain/MODR entity queries, cache retry, scene-side history and mesh clipping are connected. Finish neighboring WMO links/native invalidation and CM2 attachment/runtime histories. Then shared sorted GPU mesh/effect/water consumption, ordered ZFill clones, model bit 0x40 reseeding, definition availability/lifetimes and shadow alpha selectors. Default WMO GPU fades, layered partition and CPU size/detail/alpha gates are ported. Then finish protected horizon sources (`0x7938BC` -> `0x7CC880`/`0x78F900`), native terrain bounds/availability, GPU volumes (`0x796C10`), streaming lifetimes and projection validation. | Preserve 35 preparation, 37 additive/water queue, 21 full-bone/billboard/parent/pose/identity, 25 decoded-input/transform and 31 CPU ordering cases. Complete owned resource/missing/fallback/reload and liquid-cache/placement histories, interleaved draw traces, both-side crossing pixels and state restoration. Sorted clone/color ordering, independent `M2UseZFill`/`objectFadeZFill` category controls and toggle/reload histories; shadow/layered cutout fixtures; retain mesh chunk/pose/pipeline cleanup and mixed-material fade pixels/state restoration, category/CVar boundaries, fresh fog, sphere buckets and pending/shared fog behavior; independent horizon-line/hole-order fixtures; preserve depth-band/unbucketed exceptions and static occluders; compare matched pixels. |
+| 3 | Propagate the global exterior rectangle and distance to terrain, standalone M2, other WMO placements, doodads and liquids, including the +33.333332 distance handoff and depth-sorted/unbucketed exceptions. Recover group availability/order and WDT bounds. | Compare accepted/rejected scene nodes and batch lists against client captures; no conservative full-frustum shortcut in Client mode. |
+| 4 | Recover viewer-liquid/plane selection, blend-sky overrides, MOCV entity lighting and animation/eligibility/bounds; implement shared element queues and the conditional frame graph using the extracted M2 renderer. | Independent input/order fixtures plus liquid/interior/exterior frame captures and state restoration checks. |
+| 5 | Complete Client-mode CVar consumers and native streaming/LOD/fades; implement explicit whole-map Editor demand while preserving its custom rules. | Low/default/ultra, mode-switch and whole-map tests; other-client regression checks. |
+| 6 | Close every R00–R13 CPU preparation/submission path and its DX9 SM3 selector, register, formula and fixed-state contract using the cached shader programs. | Complete rendering reachability, indirect-target closure, CPU-to-shader maps and material/effect captures; no guessed name used as scope proof. |
+| 7 | Pin the original executable hash and finish matched whole-frame numerical/pixel validation. | All workstream evidence gates pass before declaring rendering parity. |
 
 After every rendering batch, write its compact result/next action in the
 [CPU notes](reference/client-335/CPU_SCENE_AUDIT.md#roadmap) and update changed
@@ -968,6 +1230,19 @@ Validate regeneration and placement determinism as well as final shading.
 
 ### R10 — liquids, procedural water, magma and ripples
 
+2026-10-02 implementation: basic material 1 water/specular-water and material 2
+magma now use recovered SM3 equations and native texture/gradient inputs in the
+live DX11 pass. The 29-case batch includes WARP blend/fog/specular/indoor-alpha
+and gradient-update readbacks. A further 19-case batch connects separate material
+lists, retained placement identities, duplicate suppression and decoded-grid viewer
+queries. A further 14 cases cover retained entity queries, scene-side history and
+live mesh water partitions/clipping. Full smoke: 1,052, exit 0. Neighboring WMO
+links and native cache histories, shared effect ordering, procedural material 3,
+local-light variants, underwater and matched pixels remain open; see the
+[entity/mesh audit](reference/client-335/CPU_SCENE_AUDIT.md#entity-liquid-cache-scene-history-and-mesh-water-clipping-2026-10-02)
+and [queue/query audit](reference/client-335/CPU_SCENE_AUDIT.md#liquid-lists-retained-identities-and-viewer-grid-query-2026-10-02)
+and [basic shader audit](reference/client-335/CPU_SCENE_AUDIT.md#basic-liquid-shaders-gradients-and-native-inputs-2026-10-02).
+
 SM3 vertex: `vsLiquidMagma`, `vsLiquidProcWater`,
 `vsLiquidProcWater_Editor`, `vsLiquidWater`, `vsLiquidWaterNoSpec`;
 matching five `psLiquid*` pixel programs; `WaterRipples` in both stages.
@@ -1255,7 +1530,7 @@ fallback-profile inventory are in the CSV/manifest linked above.
 | `MapObjDiffuse_T1_Refl` | 71688 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjDiffuse_T1_Refl.bls.md) — audit pending |
 | `MapObjSpecular_T1` | 71388 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjSpecular_T1.bls.md) — audit pending |
 | `MapObjUDiffuse_Comp` | 71568 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUDiffuse_Comp.bls.md) — audit pending |
-| `MapObjUDiffuse_T1` | 65088 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUDiffuse_T1.bls.md) — audit pending |
+| `MapObjUDiffuse_T1` | 65088 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUDiffuse_T1.bls.md) — ordinals 0/1 unified lighting/fog audited in the [transition entry](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-colors-lighting-and-fog-2026-10-01); remaining permutations/captures pending |
 | `MapObjUDiffuse_T1_Env` | 0 | 0 | 0 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUDiffuse_T1_Env.bls.md) — resolve fallback |
 | `MapObjUDiffuse_T1_Refl` | 72408 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUDiffuse_T1_Refl.bls.md) — audit pending |
 | `MapObjUSpecular_T1` | 72108 | 90 | 18 | [cached program](../artifacts/client-335-shaders/programs/vertex/vs_3_0/MapObjUSpecular_T1.bls.md) — audit pending |
@@ -1305,11 +1580,11 @@ fallback-profile inventory are in the CSV/manifest linked above.
 | `DetailDoodad` | 14780 | 8 | 7 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/DetailDoodad.bls.md) — audit pending |
 | `MapObjComposite` | 31100 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjComposite.bls.md) — audit pending |
 | `MapObjComposite_V` | 0 | 0 | 0 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjComposite_V.bls.md) — resolve fallback |
-| `MapObjDiffuse` | 29948 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjDiffuse.bls.md) — audit pending |
+| `MapObjDiffuse` | 29948 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjDiffuse.bls.md) — ordinal 0 RGB/fog/texture-times-vertex-alpha audited in the [transition entry](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-colors-lighting-and-fog-2026-10-01); remaining permutations/captures pending |
 | `MapObjEnv` | 30652 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjEnv.bls.md) — audit pending |
 | `MapObjEnvMetal` | 30908 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjEnvMetal.bls.md) — audit pending |
 | `MapObjMetal` | 29788 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjMetal.bls.md) — audit pending |
-| `MapObjOpaque` | 29788 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjOpaque.bls.md) — audit pending |
+| `MapObjOpaque` | 29788 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjOpaque.bls.md) — ordinal 0 RGB/fog/vertex-alpha and unified effect binding audited in the [transition entry](reference/client-335/CPU_SCENE_AUDIT.md#wmo-transition-colors-lighting-and-fog-2026-10-01); remaining permutations/captures pending |
 | `MapObjSpecular` | 29788 | 16 | 14 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/MapObjSpecular.bls.md) — audit pending |
 | `psLiquidMagma` | 176 | 1 | 1 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/psLiquidMagma.bls.md) — audit pending |
 | `psLiquidProcWater` | 1456 | 1 | 1 | [cached program](../artifacts/client-335-shaders/programs/pixel/ps_3_0/psLiquidProcWater.bls.md) — audit pending |

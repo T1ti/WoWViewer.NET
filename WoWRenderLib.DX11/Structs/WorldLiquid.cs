@@ -15,6 +15,7 @@ public struct WorldLiquidResources
     public ParsedWorldLiquidBatch[] batches;
     internal BoundingSphere[] batchSpheres;
     public WorldLiquidMaterialDescriptor[] materials;
+    public WorldLiquidQueryGrid[] queryGrids;
     public uint[] textureFileDataIds;
     public BoundingBox bounds;
     public bool hasBounds;

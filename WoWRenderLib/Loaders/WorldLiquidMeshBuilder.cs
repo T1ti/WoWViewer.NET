@@ -61,6 +61,7 @@ public static class WorldLiquidMeshBuilder
         var vertices = new List<WorldLiquidVertex>();
         var indices = new List<uint>();
         var batches = new List<ParsedWorldLiquidBatch>();
+        var queryGrids = new List<WorldLiquidQueryGrid>();
         var materials = new List<WorldLiquidMaterialDescriptor>();
         var materialIndexes = new Dictionary<WorldLiquidMaterialKey, int>();
         var textureIds = new HashSet<uint>();
@@ -107,7 +108,15 @@ public static class WorldLiquidMeshBuilder
                         layer.ChunkPosition.Y - (layer.XOffset + column) * UnitSize,
                         height);
                     var depth = ReadDepth(layer, vertexIndex);
-                    var uv = ReadUv(layer, position, vertexIndex);
+                    if (material.Wrath335 is { } native)
+                    {
+                        var depthByte = vertexIndex < layer.Depthmap.Length ? layer.Depthmap[vertexIndex] :
+                            layer.VertexFormat == WorldLiquidVertexFormat.DepthOnly ? 255 : 0;
+                        depth = material.WmoVertexFormat is 0 or 2
+                            ? Math.Min(depthByte / (native.DepthMode == 1 ? 255f : 42f), 1f)
+                            : 0f;
+                    }
+                    var uv = ReadUv(layer, position, vertexIndex, material.Wrath335 != null);
                     var cellCoord = new Vector2(
                         column / (float)layer.Width,
                         row / (float)layer.Height);
@@ -124,6 +133,11 @@ public static class WorldLiquidMeshBuilder
             }
 
             var localIndices = new List<uint>(layer.Width * layer.Height * 6);
+            if (material.Wrath335 != null)
+                queryGrids.Add(new(layer.LiquidTypeId, material.WmoTypeFlags, false,
+                    layer.ChunkPosition, layer.Width, layer.Height, layer.Width + 1,
+                    localVertices.Select(vertex => vertex.Position.Z).ToArray(),
+                    (byte[])layer.ExistsBitmap.Clone(), layer.XOffset, layer.YOffset));
             for (var row = 0; row < layer.Height; row++)
             {
                 for (var column = 0; column < layer.Width; column++)
@@ -209,7 +223,7 @@ public static class WorldLiquidMeshBuilder
         }
 
         if (batches.Count == 0)
-            return ParsedWorldLiquid.Empty;
+            return queryGrids.Count == 0 ? ParsedWorldLiquid.Empty : new() { QueryGrids = [.. queryGrids] };
 
         return new ParsedWorldLiquid
         {
@@ -217,6 +231,7 @@ public static class WorldLiquidMeshBuilder
             Indices = indices.ToArray(),
             Batches = batches.ToArray(),
             Materials = materials.ToArray(),
+            QueryGrids = [.. queryGrids],
             TextureFileDataIds = [.. textureIds],
             Bounds = new BoundingBox(boundsMin, boundsMax),
             HasBounds = hasBounds
@@ -386,15 +401,19 @@ public static class WorldLiquidMeshBuilder
         return layer.Depthmap[index] / 255f;
     }
 
-    private static Vector2 ReadUv(WorldLiquidLayerInput layer, Vector3 position, int index)
+    private static Vector2 ReadUv(WorldLiquidLayerInput layer, Vector3 position, int index, bool wrath335)
     {
         var carriesUv = layer.VertexFormat is WorldLiquidVertexFormat.HeightUv or
             WorldLiquidVertexFormat.HeightUvDepth;
         if (carriesUv && index < layer.Uvmap.Length)
         {
-            // MH2O UVMapEntry stores signed 16-bit texture coordinates. The
-            // client shader converts them with s/t * 3 / 256, not /8.
-            return layer.Uvmap[index] * (3f / 256f);
+            // 12340 terrain loads unsigned words and multiplies by 3/256;
+            // its WMO emitter uses signed words and 1/256. Keep the existing
+            // later-client MH2O conversion outside this profile.
+            return (wrath335
+                ? new Vector2(unchecked((ushort)(int)layer.Uvmap[index].X),
+                    unchecked((ushort)(int)layer.Uvmap[index].Y))
+                : layer.Uvmap[index]) * (3f / 256f);
         }
 
         // This is the planar mapping used by the reference liquid materials

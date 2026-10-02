@@ -15,6 +15,7 @@ internal sealed class WmoScenePortalPreparation
     private readonly Dictionary<WMOContainer, int> placementIndices = [];
     private readonly List<BoundingBox> visibleBounds = [];
     private readonly Wrath335SceneExteriorGroups exteriorGroups = new();
+    private readonly Wrath335ExteriorDoodads exteriorDoodads = new();
     private readonly Wrath335PortalPlacementCache cache = new();
     internal Wrath335ClipVolumes ClipVolumes { get; } = new();
     internal Wrath335SceneTerrainOcclusion TerrainOcclusion { get; } = new();
@@ -23,7 +24,7 @@ internal sealed class WmoScenePortalPreparation
     public void Prepare(in WmoSceneViewerResult viewer, bool portalCulling,
         Vector3 eyeWorld, Vector3 cameraForwardWorld, in Matrix4x4 viewProjection,
         IReadOnlyList<Container3D> sceneObjects, int mapId = -1,
-        Matrix4x4? cameraProjection = null, float farClip = 1000f)
+        Matrix4x4? cameraProjection = null, float farClip = 1000f, Wrath335DoodadFade? doodadFade = null)
     {
         for (var index = 0; index < activeCount; index++)
             placements[index].Release();
@@ -33,6 +34,7 @@ internal sealed class WmoScenePortalPreparation
         cache.Reset();
         ClipVolumes.Clear(); // 0x79A96F: interior passes precede static volume construction.
         TerrainOcclusion.Clear();
+        exteriorDoodads.Clear();
         Views.Reset(false);
         UsesWrath335Rules = portalCulling && viewer.UsesWrath335Rules;
         if (!UsesWrath335Rules)
@@ -55,6 +57,7 @@ internal sealed class WmoScenePortalPreparation
             var placement = placements[placementIndex];
             placementIndices.Add(instance, placementIndex);
             placement.Model = model;
+            placement.Primary = ReferenceEquals(instance, viewer.Primary.Instance);
             placement.Enabled = instance.EnabledGroups;
             instance.GetPortalVisibilityBuffers(model, out placement.Groups, out placement.Doodads,
                 out placement.Batches, out var scratch);
@@ -62,6 +65,13 @@ internal sealed class WmoScenePortalPreparation
             placement.Applied = WmoPortalVisibility.TryBeginWrath335Scene(model,
                 instance.GetModelMatrix(), viewProjection, eyeWorld, cameraForwardWorld,
                 placement.Enabled, placement.Groups, placement.Batches, scratch, visibleBounds, ClipVolumes);
+            if (placement.Applied)
+            {
+                scratch.DoodadVisibility.ConfigureFade(doodadFade, eyeWorld, cameraForwardWorld);
+                foreach (var doodad in instance.ActiveDoodads)
+                    if (doodad.GetBoundingSphere() is { } sphere)
+                        scratch.DoodadVisibility.SetExteriorSphere(doodad.WmoDoodadIndex, sphere, doodad.GetBoundingBox());
+            }
             exteriorGroups.AddPlacement(placementIndex, model.groupBatches, placement.Enabled,
                 instance.GetModelMatrix(), instance.ViewerRuntimeFlags, placement.Applied);
         }
@@ -89,6 +99,7 @@ internal sealed class WmoScenePortalPreparation
                     viewProjection, Views.ExteriorRect, Views.ExteriorDistance, hasPrimary, farClip, ClipVolumes);
         }
         exteriorGroups.Complete(hasPrimary, Views.HasExteriorView);
+        exteriorDoodads.Begin(eyeWorld, cameraForwardWorld, viewProjection, Views.ExteriorRect);
         var seeds = exteriorGroups.Seeds;
         var seedIndex = 0;
         for (var bucket = 0; bucket < 64; bucket++)
@@ -96,6 +107,8 @@ internal sealed class WmoScenePortalPreparation
             TerrainOcclusion.BeginBucket(bucket);
             while (seedIndex < seeds.Length && seeds[seedIndex].Bucket == bucket)
                 VisitExterior(seeds[seedIndex++]);
+            // 0x79A830: definitions consume the earlier-band horizon before 0x79A836 updates it.
+            exteriorDoodads.Consume(bucket, ClipVolumes, TerrainOcclusion.Buffer);
             TerrainOcclusion.EndBucket(bucket);
         }
         while (seedIndex < seeds.Length)
@@ -104,7 +117,8 @@ internal sealed class WmoScenePortalPreparation
         {
             var placement = placements[index];
             if (placement.Applied)
-                WmoPortalVisibility.FinishWrath335Scene(placement.Model, placement.Groups, placement.Doodads);
+                WmoPortalVisibility.FinishWrath335Scene(placement.Model, placement.Groups, placement.Doodads,
+                    placement.Scratch!, placement.Primary);
         }
     }
 
@@ -117,7 +131,9 @@ internal sealed class WmoScenePortalPreparation
         var placement = placements[seed.PlacementIndex];
         // 0x79A221/0x7B3A76 use flags=1 at both terrain gates. Unbucketed a4=1
         // bypasses sphere and terrain tests, while keeping the full camera test.
-        if (!unbucketed && (ClipVolumes.ContainsSphere(Wrath335ClipVolumes.GroupSphere(
+        if (!unbucketed && (!WmoPortalVisibility.IntersectsRect(seed.Bounds,
+                placement.Scratch!.SceneViewProjection, Views.ExteriorRect) ||
+            ClipVolumes.ContainsSphere(Wrath335ClipVolumes.GroupSphere(
                 placement.Model.groupBatches[seed.GroupIndex].mogiBoundingBox,
                 placement.Scratch!.ModelToWorld)) || TerrainOcclusion.Buffer.ContainsBox(seed.Bounds, 1)))
             return;
@@ -127,6 +143,12 @@ internal sealed class WmoScenePortalPreparation
             placement.Enabled, placement.Groups, placement.Batches, scratch, cache,
             ref placement.References);
         Views.RenderViews.Append(scratch.ExteriorPortalViews.Forwarded);
+        if (unbucketed)
+            scratch.DoodadVisibility.ConsumeGroup(seed.GroupIndex, scratch.PropagatedGroups[seed.GroupIndex]);
+        else
+            // 0x79A242 enlists after the SOURCE gates, independently of callback visibility.
+            exteriorDoodads.Enlist(scratch.DoodadVisibility,
+                placement.Model.groupBatches[seed.GroupIndex].doodadReferences ?? [], seed.Bucket);
     }
 
     private void VisitInterior(in WmoViewerPlacement viewer, Wrath335PortalSceneViews? views)
@@ -167,6 +189,7 @@ internal sealed class WmoScenePortalPreparation
         public bool[] Enabled = [], Groups = [], Doodads = [], Batches = [];
         public WmoPortalVisibilityScratch? Scratch;
         public bool Applied;
+        public bool Primary;
         public int References;
         public void Release()
         {
@@ -174,11 +197,13 @@ internal sealed class WmoScenePortalPreparation
             {
                 Scratch.SceneVisibleBounds = null;
                 Scratch.WrathProjection.ClipVolumes = null;
+                Scratch.DoodadVisibility.Clear();
             }
             Model = default;
             Enabled = Groups = Doodads = Batches = [];
             Scratch = null;
             Applied = false;
+            Primary = false;
             References = 0;
         }
     }

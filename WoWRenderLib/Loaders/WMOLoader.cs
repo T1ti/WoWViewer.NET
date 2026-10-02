@@ -71,6 +71,10 @@ public static class WMOLoader
                 var firstNonTransition = 0;
                 for (var batchIndex = 0; batchIndex < Math.Min(header.TransBatchCount, body.Batches.Count); batchIndex++)
                     firstNonTransition = Math.Max(firstNonTransition, body.Batches[batchIndex].MaxIndex + 1);
+                // 12340 uses the final transition batch's inclusive endpoint,
+                // rather than the largest endpoint anywhere in the range.
+                if (wrath335 && header.TransBatchCount > 0 && header.TransBatchCount <= body.Batches.Count)
+                    firstNonTransition = body.Batches[header.TransBatchCount - 1].MaxIndex + 1;
                 firstNonTransition = Math.Min(firstNonTransition, bodyVertices.Length);
                 LegacyFixColorVertexAlpha(colorSets[0], firstNonTransition, rootFlags);
                 var positions = new Vector3[firstNonTransition];
@@ -78,7 +82,7 @@ public static class WMOLoader
                     positions[i] = ToVector3(bodyVertices[i]);
                 AttenuateTransitionColors(colorSets[0], positions, rootFlags,
                     header.PortalStart, header.PortalCount,
-                    portalVertices, portals, portalReferences, groupFlags);
+                    portalVertices, portals, portalReferences, groupFlags, wrath335);
             }
             var neutralColor = (rootFlags & HeaderFlags.UseUnifiedRenderPath) != 0
                 ? new Vector4(0f, 0f, 0f, 1f)
@@ -178,7 +182,7 @@ public static class WMOLoader
                     reference.Side));
             }
             var liquid = ReadLiquid(body.Liquid, header.GroupLiquid, header.Flags,
-                groupInfo.Flags, rootFlags, materials, [.. liquidClips]);
+                groupInfo.Flags, rootFlags, materials, [.. liquidClips], wrath335);
             preppedGroups.Add(new PreppedWMOGroup
             {
                 sourceGroupIndex = groupIndex,
@@ -259,7 +263,8 @@ public static class WMOLoader
         GroupFlags mogiFlags,
         HeaderFlags rootFlags,
         PreppedWMOMaterial[] materials,
-        WmoLiquidClip[] sharedClips)
+        WmoLiquidClip[] sharedClips,
+        bool wrath335)
     {
         if (source.Empty)
             return ParsedWorldLiquid.Empty;
@@ -285,7 +290,7 @@ public static class WMOLoader
             tiles[index] = sourceTiles[index].Flags;
 
         var materialId = source.MaterialId;
-        var interiorColor = (rootFlags & HeaderFlags.UseLiquidTypeDbcId) == 0 && materialId < materials.Length
+        var interiorColor = (wrath335 || (rootFlags & HeaderFlags.UseLiquidTypeDbcId) == 0) && materialId < materials.Length
             ? UnpackColor(materials[materialId].Color3)
             : Vector4.One;
         return WmoLiquidMeshBuilder.Build(new WmoLiquidInput
@@ -450,7 +455,7 @@ public static class WMOLoader
     }
 
     // for old clients, In 3.3.5a this function is called ONLY when MOHD flag 0x8 ("flag_do_not_fix_vertex_color_alpha") is NOT set.
-    // TODO : This changed in Build 18179
+    // TODO : This function changed in Build 18179
     internal static void LegacyFixColorVertexAlpha(Vector4[] colors, int firstNonTransition, HeaderFlags rootFlags)
     {
         if ((rootFlags & HeaderFlags.DoNotFixVertexColorAlpha) != 0)
@@ -478,7 +483,7 @@ public static class WMOLoader
     internal static void AttenuateTransitionColors(Vector4[] colors, ReadOnlySpan<Vector3> positions,
         HeaderFlags rootFlags, ushort portalStart, ushort portalCount, ReadOnlySpan<Vector3> portalVertices,
         ReadOnlySpan<PreppedWMOPortal> portals, ReadOnlySpan<PreppedWMOPortalReference> references,
-        ReadOnlySpan<GroupFlags> groupFlags)
+        ReadOnlySpan<GroupFlags> groupFlags, bool wrath335 = false)
     {
         if ((rootFlags & HeaderFlags.DoNotAttenuateVertices) != 0)
             return;
@@ -501,8 +506,11 @@ public static class WMOLoader
                 var polygon = portalVertices.Slice(portal.StartVertex, portal.VertexCount);
                 var signedDistance = Vector3.Dot(portal.Normal, position) + portal.Distance;
                 var projected = position - portal.Normal * signedDistance;
+                if (wrath335)
+                    projected = Wrath335PortalPolygon.ProjectForCrossing(position, portal.Normal, signedDistance);
                 float distance;
-                if (PointInPortal(projected, polygon, portal.Normal))
+                if (wrath335 ? Wrath335PortalPolygon.Contains(projected, polygon, portal.Normal)
+                    : PointInPortal(projected, polygon, portal.Normal))
                 {
                     distance = reference.Side == 1 ? signedDistance : -signedDistance;
                 }

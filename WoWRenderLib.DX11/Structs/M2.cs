@@ -15,6 +15,7 @@ namespace WoWRenderLib.DX11.Structs
         public ushort[] raycastIndices;
         public BoundingBox boundingBox;
         public float boundingRadius;
+        public Wrath335M2Bounds? wrath335Bounds;
         public Submesh[] submeshes;
         public M2Material[] mats;
         public M2Geoset[] geosets;

@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace WoWRenderLib.Structs
@@ -38,6 +38,7 @@ namespace WoWRenderLib.Structs
         public byte[] indiceBytes;
         public BoundingBox boundingBox;
         public float boundingRadius;
+        public Wrath335M2Bounds? wrath335Bounds;
         public Submesh[] submeshes;
         public M2Material[] mats;
         public M2Geoset[] geosets;
@@ -77,6 +78,23 @@ namespace WoWRenderLib.Structs
         public readonly ushort indexCount { get; init; }
     }
 
+    /// <summary>Authored 12340 batch/section inputs for native element ordering.</summary>
+    public readonly record struct Wrath335M2Bounds(Vector3 Minimum, Vector3 Maximum, float Radius);
+
+    public readonly record struct Wrath335M2MeshSortMetadata(
+        byte BatchFlags,
+        sbyte PriorityPlane,
+        ushort MaterialLayer,
+        ushort CenterBoneIndex,
+        ushort SectionBoneComboIndex,
+        Vector3 SortCenter,
+        float SortRadius,
+        bool RawDistance)
+    {
+        public ushort BoneInfluences { get; init; }
+        public ushort ShaderId { get; init; }
+    }
+
     public readonly struct Submesh
     {
         public readonly uint firstFace { get; init; }
@@ -85,6 +103,11 @@ namespace WoWRenderLib.Structs
         public readonly int[] textureIndices { get; init; }
         public readonly uint[] textureFlags { get; init; }
         public readonly uint blendType { get; init; }
+        // 12340 queues a material layer using materialIndex - materialLayer.
+        // Null keeps callers without decoded layer metadata on their existing rule.
+        public readonly uint? baseBlendType { get; init; }
+        // Only the WotLK MPQ loader publishes these client-specific sort inputs.
+        public readonly Wrath335M2MeshSortMetadata? wrath335Sort { get; init; }
         public readonly ushort renderFlags { get; init; }
         public readonly ushort geosetId { get; init; }
         public readonly int index { get; init; }

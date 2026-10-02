@@ -25,6 +25,10 @@ internal readonly record struct WorldLiquidRenderStats(
 
 internal readonly record struct WmoLiquidInstance(WMOContainer Instance, int GroupIndex);
 
+internal readonly record struct WorldLiquidFrame(Camera Camera, long TimeMilliseconds,
+    Vector3 LightDirection, Vector3 AmbientColor, Vector3 DiffuseColor,
+    WorldLightingSettings Lighting, Vector3 SpecularColor, bool Specular);
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct WorldLiquidPerObjectCB
 {
@@ -47,6 +51,10 @@ internal struct WorldLiquidPerObjectCB
     public Vector4 LiquidAlphaParameters;
     public Vector4 WmoWaterColor;
     public Vector4 WmoParameters;
+    public Vector4 NativeParameters; // program, surface scale, rotation, depth scale
+    public Vector4 NativeOffset; // magma scroll XY, gradient U, generated WMO UV
+    public Vector4 NativeVertexColor;
+    public Vector4 NativeSpecular;
 }
 
 /// <summary>
@@ -67,9 +75,16 @@ internal sealed class WorldLiquidRenderer(
     private ComPtr<ID3D11BlendState> _alphaBlendState;
     private ComPtr<ID3D11BlendState> _opaqueBlendState;
     private ComPtr<ID3D11ShaderResourceView> _missingTexture;
+    private ComPtr<ID3D11SamplerState> _surfaceSampler, _gradientSampler;
+    private readonly Wrath335LiquidTextures _nativeTextures = new(device, deviceContext);
+    private sealed class SlotState { public bool Ready; }
+    private readonly ConditionalWeakTable<WorldLiquidTextureSlot, SlotState> _slotStates = new();
+    private int _currentBlend = -1;
     private readonly List<VisibleBatch> _visibleBatches = new(256);
     private readonly List<WorldLiquidSortKey> _visibleBatchOrder = new(256);
     private readonly WorldLiquidBoundsCache _wmoBoundsCache = new();
+    private readonly Wrath335LiquidInstances _instances = new();
+    private readonly HashSet<uint> _submittedInstances = [];
     private static readonly Comparison<WorldLiquidSortKey> SortBatches =
         WorldLiquidBatchOrdering.Compare;
     private ShaderManager? _shaderManager;
@@ -173,6 +188,16 @@ internal sealed class WorldLiquidRenderer(
             SilkMarshal.ThrowHResult(_device.CreateBlendState(
                 in opaqueDesc,
                 ref _opaqueBlendState));
+
+            var sampler = new SamplerDesc
+            {
+                Filter = Filter.MinMagMipLinear, AddressU = TextureAddressMode.Wrap,
+                AddressV = TextureAddressMode.Wrap, AddressW = TextureAddressMode.Wrap,
+                MaxLOD = float.MaxValue
+            };
+            SilkMarshal.ThrowHResult(_device.CreateSamplerState(in sampler, ref _surfaceSampler));
+            sampler.AddressU = sampler.AddressV = sampler.AddressW = TextureAddressMode.Clamp;
+            SilkMarshal.ThrowHResult(_device.CreateSamplerState(in sampler, ref _gradientSampler));
         }
 
         _initialized = true;
@@ -184,27 +209,22 @@ internal sealed class WorldLiquidRenderer(
             _shader = _shaderManager.GetOrCompileShader("liquid");
     }
 
-    public WorldLiquidRenderStats Render(
+    public WorldLiquidRenderStats Prepare(
         Camera camera,
         IReadOnlyList<ADTContainer> adtContainers,
         IReadOnlyList<WmoLiquidInstance> wmoLiquids,
         IReadOnlySet<int> coarseCulledTileIndices,
         float renderDistance,
-        float wmoRenderDistance,
-        long timeMilliseconds,
-        Vector3 lightDirection,
-        Vector3 ambientColor,
-        Vector3 diffuseColor,
-        WorldLightingSettings clientLighting)
+        float wmoRenderDistance)
     {
+        _visibleBatches.Clear();
+        _visibleBatchOrder.Clear();
+        _submittedInstances.Clear();
         if (!_initialized || (adtContainers.Count == 0 && wmoLiquids.Count == 0))
             return default;
 
         var cullingStarted = Stopwatch.GetTimestamp();
-        _visibleBatches.Clear();
-        _visibleBatchOrder.Clear();
         var view = camera.GetViewMatrix();
-        var projection = camera.GetProjectionMatrix();
         var frustum = camera.GetFrustum();
         var cameraPosition = camera.Position;
         var candidateCount = 0;
@@ -223,6 +243,9 @@ internal sealed class WorldLiquidRenderer(
             var batches = liquid.batches;
             var batchSpheres = liquid.batchSpheres;
             candidateCount += batches.Length;
+            // Allocate the generation before visibility selection, so camera
+            // movement does not assign identities in a new order.
+            _instances.Get(container, batches, 0);
             if (coarseCulledTileIndices.Contains(container.mapTile.PositionIndex))
                 continue;
             var modelMatrix = default(Matrix4x4);
@@ -245,6 +268,9 @@ internal sealed class WorldLiquidRenderer(
                 }
                 var viewCenter = Vector3.Transform(bounds.Center, view).Z;
                 var visibleIndex = _visibleBatches.Count;
+                var material = Material(liquid, batch);
+                var identity = material.Wrath335 != null ? _instances.Get(container, batches, batchIndex) : 0;
+                if (identity != 0 && !_submittedInstances.Add(identity)) continue;
                 _visibleBatches.Add(new VisibleBatch(
                     container,
                     liquid,
@@ -252,7 +278,7 @@ internal sealed class WorldLiquidRenderer(
                     batchIndex));
                 _visibleBatchOrder.Add(new WorldLiquidSortKey(
                     visibleIndex, viewCenter, tileOrder,
-                    batch.ChunkIndex, batch.LayerIndex));
+                    batch.ChunkIndex, batch.LayerIndex, Wrath335LiquidInstances.Phase(material), identity));
             }
         }
 
@@ -267,6 +293,7 @@ internal sealed class WorldLiquidRenderer(
             var matrix = wmoLiquid.Instance.GetModelMatrix();
             var transformedBounds = _wmoBoundsCache.GetOrUpdate(
                 wmoLiquid.Instance, wmoLiquid.GroupIndex, liquid.batches, matrix);
+            _instances.Get(wmoLiquid.Instance, liquid.batches, 0);
             tileOrder++;
             for (var batchIndex = 0; batchIndex < liquid.batches.Length; batchIndex++)
             {
@@ -280,11 +307,14 @@ internal sealed class WorldLiquidRenderer(
                 if (frustum.ClassifyAxisAlignedBox(bounds.Min, bounds.Max) == Frustum.BoxIntersection.Outside)
                     continue;
                 var visibleIndex = _visibleBatches.Count;
+                var material = Material(liquid, batch);
+                var identity = material.Wrath335 != null ? _instances.Get(wmoLiquid.Instance, liquid.batches, batchIndex) : 0;
+                if (identity != 0 && !_submittedInstances.Add(identity)) continue;
                 _visibleBatches.Add(new VisibleBatch(
                     liquid.batches, liquid, matrix, batchIndex));
                 _visibleBatchOrder.Add(new WorldLiquidSortKey(
                     visibleIndex, Vector3.Transform(bounds.Center, view).Z,
-                    tileOrder, wmoLiquid.GroupIndex, 0));
+                    tileOrder, wmoLiquid.GroupIndex, 0, Wrath335LiquidInstances.Phase(material), identity));
             }
         }
 
@@ -292,26 +322,26 @@ internal sealed class WorldLiquidRenderer(
             _visibleBatchOrder.Sort(SortBatches);
         var cullingMilliseconds = Stopwatch.GetElapsedTime(cullingStarted).TotalMilliseconds;
 
-        if (_visibleBatches.Count == 0)
-            return new WorldLiquidRenderStats(
-                candidateCount,
-                0,
-                0,
-                0,
-                cullingMilliseconds,
-                0);
+        return new(candidateCount, _visibleBatches.Count, 0, 0, cullingMilliseconds, 0);
+    }
+
+    /// <summary>Draw a prepared native list once; restores blend/depth/raster and unbinds borrowed textures.</summary>
+    public WorldLiquidRenderStats RenderPrepared(in WorldLiquidFrame frame, WorldLiquidDrawPhase phase)
+    {
+        if (!_initialized || _visibleBatchOrder.Count == 0) return default;
+        var view = frame.Camera.GetViewMatrix();
+        var projection = frame.Camera.GetProjectionMatrix();
+        var timeMilliseconds = frame.TimeMilliseconds;
+        var lightDirection = frame.LightDirection;
+        var ambientColor = frame.AmbientColor;
+        var diffuseColor = frame.DiffuseColor;
+        var clientLighting = frame.Lighting;
+        var specularColor = frame.SpecularColor;
+        var specular = frame.Specular;
 
         var submissionStarted = Stopwatch.GetTimestamp();
-        _deviceContext.RSSetState(_rasterizerState);
-        _deviceContext.OMSetDepthStencilState(_depthStencilState, 0);
-        _deviceContext.IASetPrimitiveTopology(
-            D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
-        _deviceContext.IASetInputLayout(_shader.InputLayout);
-        ComPtr<ID3D11ClassInstance> nullClassInstance = default;
-        _deviceContext.VSSetShader(_shader.VertexShader, ref nullClassInstance, 0);
-        _deviceContext.PSSetShader(_shader.PixelShader, ref nullClassInstance, 0);
-        _deviceContext.VSSetConstantBuffers(0, 1, ref _constantBuffer);
-        _deviceContext.PSSetConstantBuffers(0, 1, ref _constantBuffer);
+        _nativeTextures.Update(clientLighting);
+        BeginSubmission();
 
         var drawCalls = 0U;
         ulong submittedIndices = 0;
@@ -352,163 +382,166 @@ internal sealed class WorldLiquidRenderer(
         object? boundOwner = null;
         var vertexStride = (uint)Marshal.SizeOf<WorldLiquidVertex>();
         var vertexOffset = 0U;
-        var blendFactor = 1f;
-        var currentBlend = -1;
 
-        foreach (var sortKey in _visibleBatchOrder)
+        try
         {
-            var visible = _visibleBatches[sortKey.VisibleIndex];
-            var liquid = visible.Liquid;
-            var batch = liquid.batches[visible.BatchIndex];
-            if (!ReferenceEquals(boundOwner, visible.Owner))
+            for (var orderIndex = 0; orderIndex < _visibleBatchOrder.Count; orderIndex++)
             {
-                var vertexBuffer = liquid.vertexBuffer;
-                _deviceContext.IASetVertexBuffers(
-                    0,
-                    1,
-                    ref vertexBuffer,
-                    in vertexStride,
-                    in vertexOffset);
-                _deviceContext.IASetIndexBuffer(
-                    liquid.indexBuffer,
-                    Format.FormatR32Uint,
-                    0);
-                boundOwner = visible.Owner;
+                var sortKey = _visibleBatchOrder[orderIndex];
+                if (sortKey.Phase != phase || sortKey.VisibleIndex < 0) continue;
+                // Consume before drawing: repeat flushes and texture-not-ready
+                // entries cannot submit the same instance again in this frame.
+                _visibleBatchOrder[orderIndex] = sortKey with { VisibleIndex = -1 };
+                var visible = _visibleBatches[sortKey.VisibleIndex];
+                var liquid = visible.Liquid;
+                var batch = liquid.batches[visible.BatchIndex];
+                if (!ReferenceEquals(boundOwner, visible.Owner))
+                {
+                    var vertexBuffer = liquid.vertexBuffer;
+                    _deviceContext.IASetVertexBuffers(
+                        0,
+                        1,
+                        ref vertexBuffer,
+                        in vertexStride,
+                        in vertexOffset);
+                    _deviceContext.IASetIndexBuffer(
+                        liquid.indexBuffer,
+                        Format.FormatR32Uint,
+                        0);
+                    boundOwner = visible.Owner;
+                }
+
+                var material = Material(liquid, batch);
+                var isWater = IsWaterMaterial(material);
+                var native = material.Wrath335;
+                var program = native != null ? Wrath335Liquid.Program(native.MaterialId, specular) : 0;
+                var isOpaque = program != 0 ? program == 3 :
+                    !batch.IsWmo && UsesOpaqueComposition(material.Family);
+
+                // 12340 terrain and WMO share animated slot-zero surface data.
+                // Other clients retain the existing surface fallback selection.
+                var wmoFrames = material.TextureSlots is { Length: > 0 }
+                    ? material.TextureSlots[0].Frames
+                    : [];
+                var textureId = program != 0
+                    ? wmoFrames.Length > 0
+                        ? wmoFrames[Wrath335Liquid.Frame(timeMilliseconds,
+                            program == 3 ? 1250u : native!.AnimationPeriodMilliseconds, wmoFrames.Length)]
+                        : 0u
+                    : batch.IsWmo
+                    ? wmoFrames.Length > 0
+                        ? wmoFrames[SelectWmoFrame(timeMilliseconds,
+                            material.WmoAnimationPeriodMilliseconds, wmoFrames.Length)]
+                        : 0u
+                    : material.TextureFileDataIds is { Length: > 0 }
+                        ? material.TextureFileDataIds[0]
+                        : 0u;
+                ComPtr<ID3D11ShaderResourceView> texture = default;
+                var hasLoadedTexture = program != 0
+                    ? material.TextureSlots.Length > 0 && TryResolveNativeSlot(material.TextureSlots[0],
+                        timeMilliseconds, program == 3 ? 1250u : native!.AnimationPeriodMilliseconds, out texture)
+                    : textureId != 0 && BLPCache.TryGetLoaded(textureId, out texture);
+                if (program != 0 && !hasLoadedTexture)
+                    continue; // Native draws wait for all animated frames to become resident.
+                if (!hasLoadedTexture)
+                    texture = _missingTexture;
+                ComPtr<ID3D11ShaderResourceView> gradient = _missingTexture;
+                var clampGradient = false;
+                if (program is 1 or 2)
+                {
+                    if (material.TextureSlots.Length > 1)
+                    {
+                        var slot = material.TextureSlots[1];
+                        if (slot.ProceduralDepth != WorldLiquidWaterType.Unknown)
+                        {
+                            gradient = _nativeTextures.Get(slot.ProceduralDepth);
+                            clampGradient = true;
+                        }
+                        else if (slot.Frames.Length > 0)
+                        {
+                            if (!TryResolveNativeSlot(slot, timeMilliseconds, 1250, out gradient))
+                                continue;
+                        }
+                        else continue;
+                    }
+                    else continue;
+                }
+
+                var cb = new WorldLiquidPerObjectCB
+                {
+                    Model = visible.Model,
+                    View = view,
+                    Projection = projection,
+                    ShallowColor = material.ShallowColor,
+                    DeepColor = material.DeepColor,
+                    FlowParameters = new Vector4(
+                        timeSeconds,
+                        material.UvScale,
+                        material.FlowDirectionRadians,
+                        material.FlowSpeed),
+                    FamilyParameters = new Vector4(
+                        isWater ? 1f : 0f,
+                        material.Family == WorldLiquidMaterialFamily.Magma ? 1f : 0f,
+                        hasLoadedTexture ? 1f : 0f,
+                        batch.IsWmo ? 1f : 0f),
+                    LightingAmbient = lightingAmbient,
+                    LightingDiffuse = lightingDiffuse,
+                    // Keep RGB and alpha as separate inputs. The simple pass uses
+                    // standard source-alpha blending to approximate the reference
+                    // shader's water-tint-over-scene/refraction mix.
+                    OceanCloseColor = oceanCloseLighting,
+                    OceanFarColor = oceanFarLighting,
+                    RiverCloseColor = riverCloseLighting,
+                    RiverFarColor = riverFarLighting,
+                    LiquidColorParameters = new Vector4(
+                        useClientLiquidColors && isWater && !batch.IsWmoInterior ? 1f : 0f,
+                        UsesRiverLightingPalette(material.WaterType) ? 1f : 0f,
+                        clientLighting.HasLiquidAlphaData && isWater ? 1f : 0f,
+                        batch.IsWmoInterior ? 1f : 0f),
+                    DepthCoefficients = material.DepthCoefficients,
+                    LightDirection = normalizedLightDirection,
+                    LiquidAlphaParameters = new Vector4(
+                        oceanShallowAlpha,
+                        oceanDeepAlpha,
+                        riverShallowAlpha,
+                        riverDeepAlpha),
+                    WmoWaterColor = new Vector4(
+                        batch.IsWmoInterior
+                            ? Vector3.One
+                            : useClientLiquidColors
+                                ? clampedRiverCloseColor
+                                : WorldLiquidColorDefaults.RiverClose,
+                        0f),
+                    WmoParameters = new Vector4(
+                        material.WmoBasicClass,
+                        material.WmoTextureRotation,
+                        riverShallowAlpha,
+                        riverDeepAlpha),
+                    NativeParameters = native != null ? new Vector4(program,
+                        native.TextureScale, native.TextureRotation, native.DepthScale) : default,
+                    NativeOffset = native != null ? new Vector4(
+                        program == 3 ? Wrath335Liquid.Scroll(timeMilliseconds, native.TextureScale) : 0,
+                        program == 3 ? Wrath335Liquid.Scroll(timeMilliseconds, native.TextureRotation) : 0,
+                        batch.IsWmoInterior ? 1 : 0,
+                        batch.IsWmo && material.WmoVertexFormat != 1 ? 1 : 0) : default,
+                    NativeVertexColor = batch.IsWmo ? material.ShallowColor : Vector4.One,
+                    NativeSpecular = new Vector4(Wrath335Liquid.Specular(specularColor, batch.IsWmoInterior), 6)
+                };
+                SubmitBatch(cb, batch.IndexCount, batch.FirstIndex, isOpaque, texture, gradient, clampGradient);
+                drawCalls++;
+                submittedIndices += batch.IndexCount;
             }
-
-            var material = liquid.materials is { Length: > 0 } &&
-                batch.MaterialIndex >= 0 &&
-                batch.MaterialIndex < liquid.materials.Length
-                ? liquid.materials[batch.MaterialIndex]
-                : WorldLiquidMaterialCatalog.Shared.Resolve(0, 0);
-            var isWater = IsWaterMaterial(material);
-            // The current DX11 fallback is the simple forward liquid path. It
-            // does not have the scene-color/depth inputs required by the
-            // reference high-detail water material, so water retains the
-            // known-working alpha-blended pass instead of pretending to be
-            // that material with only its normal/foam textures.
-            var isOpaque = !batch.IsWmo && UsesOpaqueComposition(material.Family);
-            var blendState = isOpaque ? _opaqueBlendState : _alphaBlendState;
-            var depthState = isOpaque ? _opaqueDepthStencilState : _depthStencilState;
-            var blendKey = isOpaque ? 1 : 2;
-            if (currentBlend != blendKey)
-            {
-                _deviceContext.OMSetDepthStencilState(depthState, 0);
-                _deviceContext.OMSetBlendState(blendState, ref blendFactor, uint.MaxValue);
-                currentBlend = blendKey;
-            }
-
-            // WMO surfaces animate slot zero. ADT water uses its first texture
-            // as wave data, not albedo. The shader needs the load state to
-            // choose the surface fallback while an asset is absent/loading.
-            var wmoFrames = material.TextureSlots is { Length: > 0 }
-                ? material.TextureSlots[0].Frames
-                : [];
-            var textureId = batch.IsWmo
-                ? wmoFrames.Length > 0
-                    ? wmoFrames[SelectWmoFrame(timeMilliseconds,
-                        material.WmoAnimationPeriodMilliseconds, wmoFrames.Length)]
-                    : 0u
-                : material.TextureFileDataIds is { Length: > 0 }
-                    ? material.TextureFileDataIds[0]
-                    : 0u;
-            ComPtr<ID3D11ShaderResourceView> texture = default;
-            var hasLoadedTexture = textureId != 0 &&
-                BLPCache.TryGetLoaded(textureId, out texture);
-            if (!hasLoadedTexture)
-                texture = _missingTexture;
-
-            var cb = new WorldLiquidPerObjectCB
-            {
-                Model = visible.Model,
-                View = view,
-                Projection = projection,
-                ShallowColor = material.ShallowColor,
-                DeepColor = material.DeepColor,
-                FlowParameters = new Vector4(
-                    timeSeconds,
-                    material.UvScale,
-                    material.FlowDirectionRadians,
-                    material.FlowSpeed),
-                FamilyParameters = new Vector4(
-                    isWater ? 1f : 0f,
-                    material.Family == WorldLiquidMaterialFamily.Magma ? 1f : 0f,
-                    hasLoadedTexture ? 1f : 0f,
-                    batch.IsWmo ? 1f : 0f),
-                LightingAmbient = lightingAmbient,
-                LightingDiffuse = lightingDiffuse,
-                // Keep RGB and alpha as separate inputs. The simple pass uses
-                // standard source-alpha blending to approximate the reference
-                // shader's water-tint-over-scene/refraction mix.
-                OceanCloseColor = oceanCloseLighting,
-                OceanFarColor = oceanFarLighting,
-                RiverCloseColor = riverCloseLighting,
-                RiverFarColor = riverFarLighting,
-                LiquidColorParameters = new Vector4(
-                    useClientLiquidColors && isWater && !batch.IsWmoInterior ? 1f : 0f,
-                    UsesRiverLightingPalette(material.WaterType) ? 1f : 0f,
-                    clientLighting.HasLiquidAlphaData && isWater ? 1f : 0f,
-                    batch.IsWmoInterior ? 1f : 0f),
-                DepthCoefficients = material.DepthCoefficients,
-                LightDirection = normalizedLightDirection,
-                LiquidAlphaParameters = new Vector4(
-                    oceanShallowAlpha,
-                    oceanDeepAlpha,
-                    riverShallowAlpha,
-                    riverDeepAlpha),
-                WmoWaterColor = new Vector4(
-                    batch.IsWmoInterior
-                        ? Vector3.One
-                        : useClientLiquidColors
-                            ? clampedRiverCloseColor
-                            : WorldLiquidColorDefaults.RiverClose,
-                    0f),
-                WmoParameters = new Vector4(
-                    material.WmoBasicClass,
-                    material.WmoTextureRotation,
-                    riverShallowAlpha,
-                    riverDeepAlpha)
-            };
-            _deviceContext.UpdateSubresource(
-                _constantBuffer,
-                0,
-                ref Unsafe.NullRef<Box>(),
-                ref cb,
-                0,
-                0);
-
-            // The high-detail reference material's slot 2/3 normal and foam
-            // inputs are only valid together with scene backbuffer/depth.
-            _deviceContext.PSSetShaderResources(0, 1, ref texture);
-            _deviceContext.DrawIndexed(
-                batch.IndexCount,
-                batch.FirstIndex,
-                0);
-            drawCalls++;
-            submittedIndices += batch.IndexCount;
         }
-
-        // Do not leak liquid SRVs into the next pass. The caller restores its
-        // opaque state immediately after this method returns.
-        ComPtr<ID3D11ShaderResourceView> nullSrv = default;
-        _deviceContext.PSSetShaderResources(0, 1, ref nullSrv);
-        _deviceContext.OMSetBlendState(_opaqueBlendState, ref blendFactor, uint.MaxValue);
-        ComPtr<ID3D11DepthStencilState> nullDepthStencilState = default;
-        ComPtr<ID3D11RasterizerState> nullRasterizerState = default;
-        _deviceContext.OMSetDepthStencilState(nullDepthStencilState, 0);
-        _deviceContext.RSSetState(nullRasterizerState);
-
-        return new WorldLiquidRenderStats(
-            candidateCount,
-            _visibleBatches.Count,
-            drawCalls,
-            submittedIndices,
-            cullingMilliseconds,
+        finally { EndSubmission(); }
+        return new(0, 0, drawCalls, submittedIndices, 0,
             Stopwatch.GetElapsedTime(submissionStarted).TotalMilliseconds);
     }
 
     public void Dispose()
     {
+        _nativeTextures.Dispose();
+        _gradientSampler.Dispose();
+        _surfaceSampler.Dispose();
         _missingTexture.Dispose();
         _opaqueBlendState.Dispose();
         _alphaBlendState.Dispose();
@@ -518,7 +551,81 @@ internal sealed class WorldLiquidRenderer(
         _constantBuffer.Dispose();
         _visibleBatches.Clear();
         _visibleBatchOrder.Clear();
+        _slotStates.Clear();
+        _instances.Clear();
+        _submittedInstances.Clear();
         _initialized = false;
+    }
+
+    internal void BeginSubmission()
+    {
+        _currentBlend = -1;
+        _deviceContext.RSSetState(_rasterizerState);
+        _deviceContext.IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
+        _deviceContext.IASetInputLayout(_shader.InputLayout);
+        ComPtr<ID3D11ClassInstance> instance = default;
+        _deviceContext.VSSetShader(_shader.VertexShader, ref instance, 0);
+        _deviceContext.PSSetShader(_shader.PixelShader, ref instance, 0);
+        _deviceContext.VSSetConstantBuffers(0, 1, ref _constantBuffer);
+        _deviceContext.PSSetConstantBuffers(0, 1, ref _constantBuffer);
+        _deviceContext.PSSetSamplers(0, 1, ref _surfaceSampler);
+        _deviceContext.PSSetSamplers(1, 1, ref _gradientSampler);
+    }
+
+    private bool TryResolveNativeSlot(WorldLiquidTextureSlot slot, long time, uint period,
+        out ComPtr<ID3D11ShaderResourceView> texture)
+    {
+        texture = default;
+        if (slot.Frames.Length == 0) return false;
+        var state = _slotStates.GetValue(slot, static _ => new SlotState());
+        if (!state.Ready)
+        {
+            foreach (var frame in slot.Frames)
+                if (frame == 0 || !BLPCache.TryGetLoaded(frame, out _)) return false;
+            state.Ready = true;
+        }
+        if (BLPCache.TryGetLoaded(slot.Frames[Wrath335Liquid.Frame(time, period, slot.Frames.Length)], out texture))
+            return true;
+        state.Ready = false;
+        return false;
+    }
+
+    // Textures and geometry are borrowed. Caller owns the render target, fog
+    // bank and IA buffers; the same submission entry is exercised by WARP.
+    internal void SubmitBatch(WorldLiquidPerObjectCB cb, uint count, uint first,
+        bool opaque, ComPtr<ID3D11ShaderResourceView> surface,
+        ComPtr<ID3D11ShaderResourceView> gradient, bool clampGradient = true)
+    {
+        var key = opaque ? 1 : 2;
+        if (_currentBlend != key)
+        {
+            var factor = 1f;
+            _deviceContext.OMSetDepthStencilState(opaque ? _opaqueDepthStencilState : _depthStencilState, 0);
+            _deviceContext.OMSetBlendState(opaque ? _opaqueBlendState : _alphaBlendState, ref factor, uint.MaxValue);
+            _currentBlend = key;
+        }
+        _deviceContext.UpdateSubresource(_constantBuffer, 0, ref Unsafe.NullRef<Box>(), ref cb, 0, 0);
+        _deviceContext.PSSetShaderResources(0, 1, ref surface);
+        _deviceContext.PSSetShaderResources(1, 1, ref gradient);
+        var sampler = clampGradient ? _gradientSampler : _surfaceSampler;
+        _deviceContext.PSSetSamplers(1, 1, ref sampler);
+        _deviceContext.DrawIndexed(count, first, 0);
+    }
+
+    internal void EndSubmission()
+    {
+        ComPtr<ID3D11ShaderResourceView> srv = default;
+        _deviceContext.PSSetShaderResources(0, 1, ref srv);
+        _deviceContext.PSSetShaderResources(1, 1, ref srv);
+        ComPtr<ID3D11SamplerState> sampler = default;
+        _deviceContext.PSSetSamplers(0, 1, ref sampler);
+        _deviceContext.PSSetSamplers(1, 1, ref sampler);
+        var factor = 1f;
+        _deviceContext.OMSetBlendState(_opaqueBlendState, ref factor, uint.MaxValue);
+        ComPtr<ID3D11DepthStencilState> depth = default;
+        ComPtr<ID3D11RasterizerState> rasterizer = default;
+        _deviceContext.OMSetDepthStencilState(depth, 0);
+        _deviceContext.RSSetState(rasterizer);
     }
 
     private static bool IsWithinRenderDistance(
@@ -573,4 +680,8 @@ internal sealed class WorldLiquidRenderer(
         float.IsFinite(color.X) ? Math.Clamp(color.X, 0f, 4f) : 0f,
         float.IsFinite(color.Y) ? Math.Clamp(color.Y, 0f, 4f) : 0f,
         float.IsFinite(color.Z) ? Math.Clamp(color.Z, 0f, 4f) : 0f);
+
+    private static WorldLiquidMaterialDescriptor Material(WorldLiquidResources liquid, ParsedWorldLiquidBatch batch) =>
+        liquid.materials is { Length: > 0 } && (uint)batch.MaterialIndex < (uint)liquid.materials.Length
+            ? liquid.materials[batch.MaterialIndex] : WorldLiquidMaterialCatalog.Shared.Resolve(0, 0);
 }

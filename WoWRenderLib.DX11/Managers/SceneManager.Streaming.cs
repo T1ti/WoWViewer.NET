@@ -78,6 +78,8 @@ namespace WoWRenderLib.DX11.Managers
                         M2Cache.Release(m2.FileDataId, m2.ParentTileIndex);
                     SceneObjects.Clear();
                     adtContainers.Clear();
+                    _worldLiquidEntityQuery.Clear();
+                    _liquidSceneState = default;
                 }
                 pendingAdtPopulations.Clear();
                 pendingWMODoodads.Clear();

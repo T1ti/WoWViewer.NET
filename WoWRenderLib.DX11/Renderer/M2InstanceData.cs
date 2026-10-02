@@ -12,6 +12,29 @@ internal struct M2InstanceData
     public Vector4 Ambient;
     public Vector4 Diffuse;
     public Vector4 Direction;
+    public Vector4 FogParameters;
+    public Vector4 FogColor;
+    public Vector4 RenderParameters; // X=opacity, Y=12340 native doodad material rules; zero-filled streams stay neutral.
+    public Vector4 WaterPlane; // World-space signed plane; RenderParameters.Z enables clipping.
+
+    internal static M2InstanceData ForScene(M2Container instance, Matrix4x4 world, long frame,
+        in WrathFogCB stagedFog, WrathFogCB? currentFog)
+    {
+        var result = ForScene(instance, world);
+        if (instance.ParentWMO is { } owner &&
+            owner.TryGetDoodadSubmissionOpacity(instance.WmoDoodadIndex, frame, out var opacity))
+            result.RenderParameters = new(opacity, 1, 0, 0);
+        if (result.Ambient.W > 0.5f && instance.ParentWMO is { } parent &&
+            parent.TryGetDoodadCurrentFog(instance.WmoDoodadIndex, frame, out var current))
+            result.SetFog(current && currentFog.HasValue ? currentFog.Value : stagedFog);
+        return result;
+    }
+
+    internal void SetFog(in WrathFogCB fog)
+    {
+        FogParameters = fog.Parameters;
+        FogColor = new(fog.Color.X, fog.Color.Y, fog.Color.Z, 1); // Explicit bank, including disabled fog.
+    }
 
     internal static M2InstanceData ForScene(M2Container instance, Matrix4x4 world)
     {

@@ -57,6 +57,7 @@ public static class M2Loader
             usesLegacyDepthFlags = fileSystem.Kind == StorageKind.Mpq,
             boundingBox = renderBoundingBox,
             boundingRadius = renderBoundingRadius,
+            wrath335Bounds = ReadWrath335Bounds(root, fileSystem.Kind == StorageKind.Mpq),
             fileDataID = fileDataId,
             vertexCount = vertices.Length,
             animationCount = counts.AnimationCount,
@@ -98,7 +99,7 @@ public static class M2Loader
                 .ToArray();
         }
 
-        var profile = ReadProfile(model);
+        var profile = ReadProfile(model, fileSystem.Kind == StorageKind.Mpq);
         if (profile == null || profile.Vertices.Length == 0)
         {
             // Spell, glow, and other effect M2s can contain emitters without a
@@ -167,13 +168,15 @@ public static class M2Loader
         ushort TextureComboIndex,
         ushort TextureCoordComboIndex,
         ushort MaterialIndex,
+        ushort MaterialLayer,
         ushort ColorIndex,
         ushort TextureWeightComboIndex,
-        ushort TextureTransformComboIndex);
+        ushort TextureTransformComboIndex,
+        Wrath335M2MeshSortMetadata? Sort);
 
     internal readonly record struct M2RenderMaterial(ushort Flags, ushort BlendMode);
 
-    private static ProfileData? ReadProfile(Formats.M2.M2 model)
+    private static ProfileData? ReadProfile(Formats.M2.M2 model, bool isMpq)
     {
         Formats.M2.Skin.M2SkinProfile? profile = model switch
         {
@@ -190,10 +193,11 @@ public static class M2Loader
             _ => null
         };
 
-        return profile is null ? null : ToProfile(profile);
+        return profile is null ? null : ToProfile(profile, model.Root, isMpq);
     }
 
-    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfile profile)
+    private static ProfileData ToProfile(Formats.M2.Skin.M2SkinProfile profile,
+        Formats.M2.Root.M2Root root, bool isMpq)
     {
         var vertices = profile.Vertices.AsSpan().ToArray();
         var indices = profile.Indices.AsSpan().ToArray();
@@ -201,7 +205,21 @@ public static class M2Loader
         var sourceBatches = profile.Batches.AsDataSpan();
         var batches = new BatchData[sourceBatches.Length];
         for (var i = 0; i < batches.Length; i++)
-            batches[i] = ToBatch(sourceBatches[i]);
+        {
+            var batch = sourceBatches[i];
+            Wrath335M2MeshSortMetadata? sort = null;
+            if (isMpq && root is Formats.M2.Root.M2RootWotlk &&
+                batch.SkinSectionIndex < profile.Submeshes.Count &&
+                profile.Submeshes[batch.SkinSectionIndex] is Formats.M2.Skin.M2SkinSectionTbcPlus section)
+            {
+                sort = new(batch.Flags, batch.PriorityPlane, batch.MaterialLayer,
+                    section.CenterBoneIndex, section.BoneComboIndex,
+                    ToVector3(section.SortCenterPosition), section.SortRadius,
+                    (((uint)root.GlobalFlags) & 0x10) != 0)
+                { BoneInfluences = section.BoneInfluences, ShaderId = batch.ShaderId };
+            }
+            batches[i] = ToBatch(batch, sort);
+        }
 
         return new ProfileData(vertices, indices, sections, batches);
     }
@@ -223,16 +241,19 @@ public static class M2Loader
         section.IndexStart,
         section.IndexCount);
 
-    private static BatchData ToBatch(Formats.M2.Skin.M2Batch.Data batch) => new(
+    private static BatchData ToBatch(Formats.M2.Skin.M2Batch.Data batch,
+        Wrath335M2MeshSortMetadata? sort) => new(
         batch.ShaderId,
         batch.SkinSectionIndex,
         batch.TextureCount,
         batch.TextureComboIndex,
         batch.TextureCoordComboIndex,
         batch.MaterialIndex,
+        batch.MaterialLayer,
         batch.ColorIndex,
         batch.TextureWeightComboIndex,
-        batch.TextureTransformComboIndex);
+        batch.TextureTransformComboIndex,
+        sort);
 
     private static M2Vertex[] ReadVertices(WoWLib.Vector<Formats.M2.Root.Record.M2Vertex> vertices)
     {
@@ -261,13 +282,15 @@ public static class M2Loader
     private static uint PackBytes(byte x, byte y, byte z, byte w) =>
         (uint)x | ((uint)y << 8) | ((uint)z << 16) | ((uint)w << 24);
 
+    private static Wrath335M2Bounds? ReadWrath335Bounds(Formats.M2.Root.M2Root root, bool isMpq) =>
+        isMpq && root is Formats.M2.Root.M2RootWotlk
+            ? new(ToVector3(root.BoundingBox.Min), ToVector3(root.BoundingBox.Max), root.BoundingSphereRadius)
+            : null;
+
     private static M2Animation ReadAnimation(Formats.M2.Root.M2RootWotlk root)
     {
         static bool HasKeys<T>(M2Track<T> track) =>
             track.Timelines.Any(timeline => timeline.Times.Length > 0 && timeline.Values.Length > 0);
-
-        if (root.Bones.Count > M2Animation.MaxGpuBones)
-            throw new InvalidDataException($"M2 contains {root.Bones.Count} bones, exceeding the renderer's {M2Animation.MaxGpuBones}-bone palette.");
 
         var sequences = new M2Sequence[root.Sequences.Count];
         for (var i = 0; i < sequences.Length; i++)
@@ -317,7 +340,13 @@ public static class M2Loader
             Bones = bones,
             Sequences = sequences,
             GlobalLoops = loops,
-            HasAnimatedBones = bones.Any(bone => (bone.Flags & 0x2F8) != 0),
+            HasAnimatedBones = bones.Any(bone => (bone.Flags & 0x2FF) != 0),
+            // 0x834215..0x83425C: one bone/sequence, no transform/billboard
+            // flags, model lights/cameras/ribbons/particles/colors. Weight and
+            // texture-transform tracks do not disqualify the native simple path.
+            Wrath335UsesSimpleAnimation = bones.Length == 1 && sequences.Length == 1 &&
+                (bones[0].Flags & 0x2F8) == 0 && root.Lights.Count == 0 && root.Cameras.Count == 0 &&
+                root.RibbonEmitters.Count == 0 && root.ParticleEmitters.Count == 0 && root.Colors.Count == 0,
             HasBillboardBones = bones.Any(bone => (bone.Flags & 0x78) != 0),
             HasMaterialTracks = colors.Any(color => HasKeys(color.Color) || HasKeys(color.Alpha))
                 || weights.Any(HasKeys)
@@ -697,6 +726,14 @@ public static class M2Loader
         }).ToArray();
     }
 
+    /// <summary>Decode a loaded profile through the same snapshot path as ParseM2.</summary>
+    internal static Submesh[] ReadSubmeshes(
+        Formats.M2.Root.M2Root root,
+        Formats.M2.Skin.M2SkinProfile profile,
+        M2Material[] textures,
+        ReadOnlySpan<M2RenderMaterial> materials,
+        bool isMpq) => ReadSubmeshes(root, ToProfile(profile, root, isMpq), textures, materials, isMpq);
+
     private static Submesh[] ReadSubmeshes(
         Formats.M2.Root.M2Root root,
         ProfileData profile,
@@ -745,6 +782,10 @@ public static class M2Loader
                 textureIndices = textureIndices,
                 textureFlags = textureFlags,
                 blendType = material.BlendMode,
+                baseBlendType = root is Formats.M2.Root.M2RootWotlk
+                    ? ResolveBaseRenderMaterial(batch.MaterialIndex, batch.MaterialLayer, materials).BlendMode
+                    : null,
+                wrath335Sort = batch.Sort,
                 renderFlags = material.Flags,
                 geosetId = section.Id,
                 index = i,
@@ -780,6 +821,14 @@ public static class M2Loader
         ushort materialIndex,
         ReadOnlySpan<M2RenderMaterial> materials) =>
         materialIndex < materials.Length ? materials[materialIndex] : default;
+
+    internal static M2RenderMaterial ResolveBaseRenderMaterial(
+        ushort materialIndex, ushort materialLayer, ReadOnlySpan<M2RenderMaterial> materials) =>
+        // Native 0x821F32..0x821F47 assumes a valid layer offset. Retain the
+        // current material for malformed editor data rather than indexing before it.
+        materialLayer <= materialIndex && materialIndex - materialLayer < materials.Length
+            ? materials[materialIndex - materialLayer]
+            : ResolveRenderMaterial(materialIndex, materials);
 
     private static ushort ResolveWotlkShaderId(
         Formats.M2.Root.M2RootWotlk root,

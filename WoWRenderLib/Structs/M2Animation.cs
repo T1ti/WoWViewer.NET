@@ -11,7 +11,13 @@ public sealed class M2Animation
     public required M2Sequence[] Sequences { get; init; }
     public required uint[] GlobalLoops { get; init; }
     public bool HasAnimatedBones { get; init; }
+    /// <summary>Decoded 12340 initializer's root-only animation contract (model flag 0x1000).</summary>
+    public bool Wrath335UsesSimpleAnimation { get; init; }
     public bool HasBillboardBones { get; init; }
+    private bool? _hasViewDependentBones;
+    /// <summary>Billboards and root-relative parent inheritance require a placement/view pose.</summary>
+    public bool HasViewDependentBones => _hasViewDependentBones ??=
+        HasBillboardBones || Bones.Any(bone => (bone.Flags & 0x7F) != 0);
     public bool HasMaterialTracks { get; init; }
     public M2ColorAnimation[] Colors { get; init; } = [];
     public M2Track<float>[] TextureWeights { get; init; } = [];
@@ -113,13 +119,14 @@ public sealed class M2Animation
     internal Matrix4x4 EvaluateRigidBone(
         int boneIndex, int sequenceIndex, double elapsedMilliseconds)
     {
-        Span<int> chain = stackalloc int[MaxGpuBones];
+        // CPU bone indices are full-width; the byte-indexed GPU palette is not
+        // a skeleton limit. Validate the chain, then compose child to root below.
         var count = 0;
         for (var index = boneIndex; index >= 0;)
         {
-            if ((uint)index >= Bones.Length || count >= chain.Length)
+            if ((uint)index >= Bones.Length || count >= Bones.Length)
                 throw new ArgumentOutOfRangeException(nameof(boneIndex));
-            chain[count++] = index;
+            count++;
             var parent = Bones[index].Parent;
             if (parent < 0)
                 break;
@@ -132,9 +139,11 @@ public sealed class M2Animation
         var sequence = (uint)sequenceIndex < Sequences.Length
             ? Sequences[sequenceIndex] : default;
         var result = Matrix4x4.Identity;
-        for (var i = count - 1; i >= 0; i--)
+        // Row-vector composition permits child-local * ancestor-local without
+        // storing/reversing the chain, including chains longer than 256 bones.
+        for (var index = boneIndex; index >= 0; index = Bones[index].Parent)
         {
-            var bone = Bones[chain[i]];
+            var bone = Bones[index];
             if ((bone.Flags & 0x7F) != 0)
                 throw new ArgumentException("The bone chain needs a full palette.", nameof(boneIndex));
             if ((bone.Flags & 0x280) == 0)
@@ -146,11 +155,10 @@ public sealed class M2Animation
                 InterpolateRotation);
             var scale = bone.Scale.Sample(sequenceIndex, sequence,
                 GlobalLoops, elapsedMilliseconds, Vector3.One, Vector3.Lerp);
-            result = Matrix4x4.CreateTranslation(-bone.Pivot)
+            result *= Matrix4x4.CreateTranslation(-bone.Pivot)
                 * Matrix4x4.CreateScale(scale)
                 * Matrix4x4.CreateFromQuaternion(rotation)
-                * Matrix4x4.CreateTranslation(bone.Pivot + translation)
-                * result;
+                * Matrix4x4.CreateTranslation(bone.Pivot + translation);
         }
         return result;
     }
@@ -195,8 +203,9 @@ public sealed class M2Animation
             Math.Min(timeline.Times.Length, timeline.Values.Length) > 1);
 
     /// <summary>
-    /// Evaluate camera-facing bones using the rigid model-to-view orientation.
-    /// Scale and translation must be excluded from <paramref name="modelToView"/>.
+    /// Evaluate camera-facing bones with the complete model-to-view transform.
+    /// Returns model-space matrices after native view-space evaluation. Placement
+    /// scale is needed by locked axes and parent inheritance; translation pins pivots.
     /// </summary>
     public void Evaluate(
         int sequenceIndex,
@@ -223,7 +232,7 @@ public sealed class M2Animation
             var parent = bone.Parent >= 0 && bone.Parent < i
                 ? palette[bone.Parent]
                 : root;
-            if ((bone.Flags & 7) != 0)
+            if (bone.Parent >= 0 && bone.Parent < i && (bone.Flags & 7) != 0)
                 parent = AdjustParent(parent, root, bone.Pivot, bone.Flags);
 
             // In 3.3.5 the animated gate is bit 0x200 or 0x80. An unanimated
@@ -298,14 +307,17 @@ public sealed class M2Animation
                 1 => new Vector3(adjusted.M21, adjusted.M22, adjusted.M23),
                 _ => new Vector3(adjusted.M31, adjusted.M32, adjusted.M33)
             };
-            if ((flags & 4) != 0)
+            var rootBasis = GetBasis(root, axis);
+            // 0x82F88D..0x82FBBB: these are exclusive modes (mask 6).
+            // Mode 4 keeps parent axis length, with the native small-root gate.
+            basis = (flags & 6) switch
             {
-                var rootBasis = GetBasis(root, axis);
-                if (rootBasis.LengthSquared() > 1e-10f)
-                    basis = rootBasis * (basis.Length() / rootBasis.Length());
-            }
-            if ((flags & 2) != 0 && basis.LengthSquared() > 1e-10f)
-                basis = Vector3.Normalize(basis) * GetBasis(root, axis).Length();
+                2 => NormalizeIfPossible(basis) * rootBasis.Length(),
+                4 => rootBasis * (SquaredLength(rootBasis) > 0.0000099999997f
+                    ? (float)Math.Sqrt(SquaredLength(basis) / SquaredLength(rootBasis)) : 1f),
+                6 => rootBasis,
+                _ => basis
+            };
             switch (axis)
             {
                 case 0:
@@ -395,8 +407,17 @@ public sealed class M2Animation
     private static Vector3 SwizzleAndNormalize(Vector3 value) =>
         NormalizeIfPossible(new Vector3(value.Y, value.Z, -value.X));
 
-    private static Vector3 NormalizeIfPossible(Vector3 value) =>
-        value.Length() > 1e-5f ? Vector3.Normalize(value) : value;
+    // 0x4C3600: compare squared length, strictly, to float bits 0x34800000.
+    // Unordered and tiny values fall through without normalization.
+    private static Vector3 NormalizeIfPossible(Vector3 value)
+    {
+        var length = SquaredLength(value);
+        return length > BitConverter.Int32BitsToSingle(0x34800000)
+            ? value * (float)(1 / Math.Sqrt(length)) : value;
+    }
+
+    private static double SquaredLength(Vector3 value) =>
+        (double)value.X * value.X + (double)value.Y * value.Y + (double)value.Z * value.Z;
 
     private static Vector3 GetBasis(in Matrix4x4 matrix, int index) => index switch
     {

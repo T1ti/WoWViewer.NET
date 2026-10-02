@@ -18,7 +18,7 @@ cbuffer PerObject : register(b0)
     float3 ambientColor;
     float _pad1;
     float3 diffuseColor;
-    int useLegacyLighting;
+    int useLegacyLighting; // 0 modern, 1 other legacy, 2 build 12340
     float3 sidnColor;
     float _pad2;
     float3 specularColor;
@@ -153,8 +153,10 @@ VSOut VS_Main(VSIn input)
         // Wisp's c29 is already halved in byte space on the CPU. Combining it
         // here lets the final 2x texture modulation tint the night glow.
         // Noggit reference: add full SIDN RGB after texturing instead.
+        // 12340 uploads the packed material diffuse 0x7f7f7f to c28.
+        float materialDiffuse = useLegacyLighting == 2 ? 127.0f / 255.0f : 0.5f;
         o.LitColor = lightingMode == 0 ? mocv
-            : unifiedMocv != 0 ? saturate(0.5f * lightTerm + mocv + sidnColor)
+            : unifiedMocv != 0 ? saturate(materialDiffuse * lightTerm + mocv + sidnColor)
             : saturate(mocv * lightTerm + sidnColor);
     }
     else

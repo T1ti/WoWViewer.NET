@@ -21,9 +21,9 @@ internal static class WorldLiquidLoader
     {
         ArgumentNullException.ThrowIfNull(parsed);
         if (parsed.IsEmpty)
-            return default;
+            return new() { queryGrids = parsed.QueryGrids };
 
-        WorldLiquidResources result = default;
+        WorldLiquidResources result = new() { queryGrids = parsed.QueryGrids };
         var acquiredTextureIds = new List<uint>();
         try
         {

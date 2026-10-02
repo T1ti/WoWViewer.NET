@@ -3,6 +3,33 @@
 These rules apply to changes under `WoWRenderLib.DX11` and supplement the
 repository-level instructions.
 
+## Efficient extraction from IDA
+
+Use the installed official Hex-Rays `ida` MCP server to read and decompile the
+reference client. Match the requested database path; reuse its valid instance ID
+and verified API signatures within the session. Rediscover after connection loss
+or a target change. For a database already open in IDA, attach to that GUI instance.
+
+Start from the active rendering question and existing focused evidence. Batch
+related reads in one `execute_python` call, returning bounded pseudocode,
+instruction slices and compact JSON tagged by address. Request only the callers,
+field writers, constants or cross-references needed to resolve the current claim;
+expand when that evidence leaves a concrete gap. Reuse unchanged evidence and
+avoid full database exports or broad function dumps.
+
+Look up unfamiliar API families with focused `reference` queries and consult the
+plugin's matching API recipe only when needed. Reuse known signatures; inspect a
+method's runtime signature/docstring when reference examples conflict with the
+installed API. Normalize dataclasses and IDA objects before returning JSON.
+
+Recover the algorithm, data layout, coordinate conventions and render-state
+contract from instructions and data flow. Existing names, prototypes and
+decompiler output remain hypotheses. Check disputed types, arithmetic, branches
+and calling conventions against disassembly and relevant callers before porting.
+Record build/address evidence and remaining uncertainty in the existing CPU audit
+entry; verify the extracted behavior with focused renderer tests and the required
+smoke suite.
+
 ## Keep SceneManager an orchestrator
 
 - `Managers/SceneManager.cs` owns frame ordering, shared scene state, and the

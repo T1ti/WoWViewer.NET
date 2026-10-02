@@ -11,6 +11,7 @@ using WoWRenderLib.DX11.Streaming;
 using WoWRenderLib.Diagnostics;
 using WoWRenderLib.DX11.Structs;
 using WoWRenderLib.Services;
+using WoWRenderLib.DX11.Renderer;
 
 namespace WoWRenderLib.DX11.Cache
 {
@@ -24,6 +25,7 @@ namespace WoWRenderLib.DX11.Cache
         private static readonly ConcurrentDictionary<uint, ComPtr<ID3D11ShaderResourceView>> Cache = new();
         private static readonly ConcurrentDictionary<uint, byte> AlphaDepths = new();
         private static readonly ConcurrentDictionary<uint, List<uint>> Users = new();
+        private static readonly Wrath335M2RetainedHandleIdentities SortIdentities = new();
 
         // The old TEX cache supplied an immediate low-resolution texture for
         // many BLPs.  wowlib does not expose that blob cache, so allocating a
@@ -136,6 +138,15 @@ namespace WoWRenderLib.DX11.Cache
 
             return fallback;
         }
+
+        // Render-thread only, like texture ownership/release. Resolve the actual
+        // loaded/pending/fallback SRV: different asset requests can share a handle.
+        internal static unsafe uint GetCurrentSortIdentity(uint fileDataId,
+            ComPtr<ID3D11ShaderResourceView> fallback) =>
+            SortIdentities.Resolve((nint)GetCurrent(fileDataId, fallback).Handle);
+
+        private static unsafe void RetireSortIdentity(ComPtr<ID3D11ShaderResourceView> texture) =>
+            SortIdentities.Retire((nint)texture.Handle);
 
         /// <summary>
         /// Returns only a fully decoded and uploaded texture. Callers that
@@ -342,7 +353,10 @@ namespace WoWRenderLib.DX11.Cache
                     failures.Forget(fileDataId);
 
                     if (Cache.TryRemove(fileDataId, out var srv))
+                    {
+                        RetireSortIdentity(srv);
                         srv.Dispose();
+                    }
                     AlphaDepths.TryRemove(fileDataId, out _);
                 }
                 else
@@ -369,6 +383,7 @@ namespace WoWRenderLib.DX11.Cache
                 if (Cache.TryGetValue(blpId, out var blp))
                 {
                     Cache.TryRemove(blpId, out _);
+                    RetireSortIdentity(blp);
                     blp.Dispose();
                     AlphaDepths.TryRemove(blpId, out _);
                 }
@@ -382,6 +397,7 @@ namespace WoWRenderLib.DX11.Cache
                 kv.Value.Dispose();
 
             Cache.Clear();
+            SortIdentities.Clear();
             AlphaDepths.Clear();
             Users.Clear();
             inFlight.Clear();

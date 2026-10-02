@@ -204,6 +204,25 @@ namespace WoWRenderLib.DX11.Objects
             (uint)doodadIndex >= (uint)_portalVisibleDoodads.Length ||
             _portalVisibleDoodads[doodadIndex];
 
+        internal bool IsDoodadPortalVisible(int doodadIndex, long frameNumber, in BoundingSphere sphere) =>
+            _portalVisibilityFrame == frameNumber && _portalVisibilityScratch.DoodadVisibility.Prepared
+                ? _portalVisibilityScratch.DoodadVisibility.Accept(doodadIndex, sphere)
+                : IsDoodadPortalVisible(doodadIndex, frameNumber);
+
+        internal bool TryGetDoodadCurrentFog(int doodadIndex, long frameNumber, out bool current)
+        {
+            current = false;
+            return _portalVisibilityFrame == frameNumber &&
+                _portalVisibilityScratch.DoodadVisibility.TryGetCurrentFog(doodadIndex, out current);
+        }
+
+        internal bool TryGetDoodadSubmissionOpacity(int doodadIndex, long frameNumber, out float opacity)
+        {
+            opacity = 1f;
+            return _portalVisibilityFrame == frameNumber &&
+                _portalVisibilityScratch.DoodadVisibility.TryGetSubmissionOpacity(doodadIndex, out opacity);
+        }
+
         internal void SetCameraVisibilityFrame(long frameNumber, bool visible)
         {
             _cameraVisibilityFrame = frameNumber;

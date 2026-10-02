@@ -52,16 +52,21 @@ internal sealed class M2AnimationPoseCache
         pose = _availablePoses.Count > 0
             ? _availablePoses.Pop()
             : new M2AnimationPose();
+        if (pose.BoneModelMatrices.Length != animation.Bones.Length)
+            pose.BoneModelMatrices = new Matrix4x4[animation.Bones.Length];
+        if (animation.HasViewDependentBones)
+            animation.Evaluate(key.Frame.SequenceIndex, key.Frame.TimeMilliseconds,
+                pose.BoneModelMatrices, key.ModelToView);
+        else
+            animation.Evaluate(key.Frame.SequenceIndex, key.Frame.TimeMilliseconds,
+                pose.BoneModelMatrices);
+
         if (animation.HasAnimatedBones)
         {
             pose.BonePalette ??= new Matrix4x4[M2Animation.MaxGpuBones];
             Array.Fill(pose.BonePalette, Matrix4x4.Identity);
-            if (animation.HasBillboardBones)
-                animation.Evaluate(key.Frame.SequenceIndex, key.Frame.TimeMilliseconds,
-                    pose.BonePalette, key.ModelToView);
-            else
-                animation.Evaluate(key.Frame.SequenceIndex, key.Frame.TimeMilliseconds,
-                    pose.BonePalette);
+            pose.BoneModelMatrices.AsSpan(0, Math.Min(animation.Bones.Length,
+                M2Animation.MaxGpuBones)).CopyTo(pose.BonePalette);
         }
         else
         {
@@ -99,6 +104,9 @@ internal readonly record struct M2AnimationPoseKey(
 internal sealed class M2AnimationPose
 {
     public long Version { get; set; }
+    /// <summary>Full CPU skeleton, direct authored indices, including center bones above 255.</summary>
+    public Matrix4x4[] BoneModelMatrices { get; set; } = [];
+    /// <summary>Byte-indexed mesh upload only; never use this as the CPU sort-bone table.</summary>
     public Matrix4x4[]? BonePalette { get; set; }
     public M2AnimatedMaterial[] Materials { get; set; } = [];
 }

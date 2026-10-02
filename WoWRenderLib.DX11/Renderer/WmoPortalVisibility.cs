@@ -295,11 +295,13 @@ public static class WmoPortalVisibility
         WmoPortalVisibilityScratch scratch, List<BoundingBox> visibleBounds,
         Wrath335ClipVolumes? clipVolumes = null)
     {
+        scratch.DoodadVisibility.Clear();
         if (!wmo.wrath335 || !wmo.legacyLighting ||
             !TryBegin(wmo, modelMatrix, viewProjection, eyeWorld, forward, enabled, groups, batches, scratch))
             return false;
         scratch.SceneVisibleBounds = visibleBounds;
         scratch.WrathProjection.ClipVolumes = clipVolumes;
+        scratch.DoodadVisibility.Begin(wmo.groupBatches, wmo.doodads.Length, viewProjection);
         return true;
     }
 
@@ -355,7 +357,11 @@ public static class WmoPortalVisibility
     }
 
     internal static void FinishWrath335Scene(in WorldModel wmo, ReadOnlySpan<bool> groups,
-        Span<bool> doodads) => BuildDoodadMask(wmo, groups, doodads);
+        Span<bool> doodads, WmoPortalVisibilityScratch scratch, bool primaryPlacement)
+    {
+        BuildDoodadMask(wmo, groups, doodads);
+        scratch.DoodadVisibility.Finish(wmo.groupBatches, scratch.PropagatedGroups, primaryPlacement);
+    }
 
     private static void LocateViewerGroups(in WorldModel wmo,
         in Matrix4x4 modelMatrix, Vector3 eyeWorld,
@@ -705,9 +711,15 @@ public static class WmoPortalVisibility
         in Matrix4x4 localToClip,
         WmoPortalVisibilityScratch? scratch = null)
     {
-        if (!visibleGroups[groupIndex] && scratch?.SceneVisibleBounds is { } bounds)
-            bounds.Add(Wrath335ExteriorGroupOrder.WorldBounds(wmo.groupBatches[groupIndex].mogiBoundingBox,
-                scratch.ModelToWorld));
+        if (scratch?.SceneVisibleBounds is { } bounds)
+        {
+            var worldBounds = Wrath335ExteriorGroupOrder.WorldBounds(wmo.groupBatches[groupIndex].mogiBoundingBox,
+                scratch.ModelToWorld);
+            if (scratch.Wrath335)
+                scratch.DoodadVisibility.RecordCallback(groupIndex, view, worldBounds);
+            if (!visibleGroups[groupIndex])
+                bounds.Add(worldBounds);
+        }
         visibleGroups[groupIndex] = true;
         if (visibleBatches.IsEmpty || wmo.wmoRenderBatches == null)
             return;
@@ -976,6 +988,7 @@ internal readonly record struct WmoPortalRect(float MinX, float MinY, float MaxX
 /// <summary>Reusable camera and portal projection storage owned by one WMO placement.</summary>
 public sealed class WmoPortalVisibilityScratch
 {
+    internal Wrath335WmoDoodadVisibility DoodadVisibility { get; } = new();
     internal Wrath335PortalProjection WrathProjection { get; } = new();
     internal Wrath335ExteriorPortalViews ExteriorPortalViews { get; } = new();
     internal Wrath335ExteriorGroupOrder ExteriorGroupOrder { get; } = new();
@@ -1005,6 +1018,7 @@ public sealed class WmoPortalVisibilityScratch
         in Matrix4x4 localToClip, bool legacyClient)
     {
         SceneVisibleBounds = null;
+        DoodadVisibility.Clear();
         ExteriorPortalViews.Reset();
         PrepareViewer(groupCount);
         if (Path.Length != groupCount)

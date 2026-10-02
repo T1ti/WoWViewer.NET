@@ -23,6 +23,7 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
     private readonly Dictionary<ushort, WorldLiquidWaterType> _modernWaterTypes = [];
     private readonly Lock _lock = new();
     private Fs.FileSystem? _fileSystem;
+    private bool _wrath335;
     private Table? _liquidTypeTable;
     private Table? _liquidObjectTable;
     private Table? _liquidTypeXTextureTable;
@@ -71,6 +72,9 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
 
             DisposeTables();
             _fileSystem = fileSystem;
+            _wrath335 = fileSystem.Kind == StorageKind.Mpq &&
+                fileSystem.Version.Major == 3 && fileSystem.Version.Minor == 3 &&
+                fileSystem.Version.Patch == 5 && fileSystem.Version.Build == 12340;
             _descriptors.Clear();
             _modernTextureIds.Clear();
             _modernTextureSlots.Clear();
@@ -114,6 +118,10 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
     private WorldLiquidMaterialDescriptor CreateDescriptor(WorldLiquidMaterialKey requestedKey)
     {
         var effectiveTypeId = requestedKey.LiquidTypeId;
+        if (_wrath335 && _liquidTypeTable != null &&
+            !TryFindRow(_liquidTypeTable, effectiveTypeId, out _) &&
+            TryFindRow(_liquidTypeTable, 1, out _))
+            effectiveTypeId = 1;
         var flowDirection = 0f;
         var flowSpeed = 0f;
         if (requestedKey.LiquidObjectOrLvf >= 42 && _liquidObjectTable != null &&
@@ -159,9 +167,23 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         var wmoDepthDivisor = 42;
         var wmoAnimationPeriod = 1000u;
         var wmoTextureRotation = 0f;
+        Wrath335LiquidSettings? wrath335 = null;
         if (_liquidTypeTable != null &&
             TryFindRow(_liquidTypeTable, effectiveTypeId, out var typeRow))
         {
+            if (_wrath335 && _hasLiquidTypeMaterialColumn &&
+                TryGetInt(_liquidTypeTable, typeRow, _liquidTypeMaterialColumn, out var nativeMaterial))
+            {
+                // Settings +0x318: Float[0..17]; +0x308: Int[0..3].
+                wrath335 = new Wrath335LiquidSettings((int)nativeMaterial,
+                    (int)GetIntOrDefault(_liquidTypeTable, typeRow, _liquidTypeIntColumn, 0),
+                    ReadNativeFloat(0), ReadNativeFloat(1), ReadNativeFloat(2),
+                    unchecked((uint)GetIntOrDefault(_liquidTypeTable, typeRow, _liquidTypeIntColumn, 1)));
+
+                float ReadNativeFloat(ulong element) => _hasLiquidTypeFloatColumn &&
+                    TryGetFloat(_liquidTypeTable, typeRow, _liquidTypeFloatColumn, element, out var value)
+                    ? value : 0f;
+            }
             if (_hasLiquidTypeFlagsColumn &&
                 TryGetInt(_liquidTypeTable, typeRow, _liquidTypeFlagsColumn, out var flags))
                 wmoTypeFlags = unchecked((uint)flags);
@@ -216,7 +238,8 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
             WmoMaterialFlags = wmoMaterialFlags,
             WmoDepthDivisor = wmoDepthDivisor,
             WmoAnimationPeriodMilliseconds = wmoAnimationPeriod,
-            WmoTextureRotation = wmoTextureRotation
+            WmoTextureRotation = wmoTextureRotation,
+            Wrath335 = wrath335
         };
     }
 
@@ -290,15 +313,15 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
 
             if (IsProceduralDepthTexture(path))
             {
-                // The client binds a neutral texture for procedural depth,
-                // but the row still occupies its original texture slot.
-                slots.Add(new WorldLiquidTextureSlot([]));
+                // This slot names a generated texture, not a missing BLP.
+                slots.Add(new WorldLiquidTextureSlot([]) { ProceduralDepth = ProceduralDepthType(path) });
                 continue;
             }
 
             var hasFrameTemplate = TryFindFramePlaceholder(path, out _, out _, out _);
-            var frameCount = hasFrameTemplate && !_hasLiquidTypeFrameCountColumn ? 32 : 1;
-            if (element < (ulong)frameCountElementCount &&
+            var frameCount = hasFrameTemplate && _wrath335 ? 30 :
+                hasFrameTemplate && !_hasLiquidTypeFrameCountColumn ? 32 : 1;
+            if (!_wrath335 && element < (ulong)frameCountElementCount &&
                 TryGetInt(
                     _liquidTypeTable,
                     typeRow,
@@ -338,7 +361,11 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
                     }
                 }
                 if (hasFrameTemplate && !frameResolved)
-                    break;
+                {
+                    if (!_wrath335)
+                        break;
+                    slotFrames.Add(0); // Preserve all thirty native frame positions.
+                }
             }
 
             // Preserve the slot even when every frame failed to resolve. The
@@ -672,6 +699,12 @@ public sealed class WorldLiquidMaterialCatalog : IWorldLiquidMaterialCatalog
         path.Equals("proceduralOceanDepthTex", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("proceduralRiverDepthTex", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("proceduralWmoWaterTex", StringComparison.OrdinalIgnoreCase);
+
+    private static WorldLiquidWaterType ProceduralDepthType(string path) =>
+        path.Equals("proceduralOceanDepthTex", StringComparison.OrdinalIgnoreCase) ? WorldLiquidWaterType.Ocean :
+        path.Equals("proceduralRiverDepthTex", StringComparison.OrdinalIgnoreCase) ? WorldLiquidWaterType.River :
+        path.Equals("proceduralWmoWaterTex", StringComparison.OrdinalIgnoreCase) ? WorldLiquidWaterType.Wmo :
+        WorldLiquidWaterType.Unknown;
 
     private static bool TryGetFloat(Table table, ulong row, ulong column, out float value)
     {
